@@ -23,6 +23,28 @@ export async function getSettings(_req, res, next) {
   }
 }
 
+/** PUBLIC branding subset (logo + name + colour) — safe to expose; used by the
+ * unauthenticated login page so it can show the right theme-aware logo. */
+export async function getBranding(_req, res, next) {
+  try {
+    const s = await Setting.getSingleton();
+    if (backfillLogos(s)) await s.save();
+    res.json(
+      ok({
+        branding: {
+          companyName: s.companyName,
+          logoLight: s.logoLight,
+          logoDark: s.logoDark,
+          logoUrl: s.logoUrl,
+          brandColor: s.brandColor,
+        },
+      }),
+    );
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function updateSettings(req, res, next) {
   try {
     const body = updateSettingsSchema.parse(req.body);

@@ -3,6 +3,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/requirePermission.js';
 import {
   getSettings,
+  getBranding,
   updateSettings,
   uploadLogo,
   removeLogo,
@@ -11,6 +12,10 @@ import {
 } from '../controllers/settings.controller.js';
 
 export const settingsRouter = express.Router();
+
+// PUBLIC — branding only (logo + name + colour), so the login page (which is
+// unauthenticated) can show the right logo. Must be BEFORE requireAuth.
+settingsRouter.get('/branding', getBranding);
 
 settingsRouter.use(requireAuth);
 

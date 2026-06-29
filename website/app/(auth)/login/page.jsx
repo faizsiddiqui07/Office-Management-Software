@@ -17,8 +17,10 @@ import { Input } from '@/components/ui/input';
 import { PasswordInput } from '@/components/ui/password-input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
+import { Brand } from '@/components/shell/brand';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { useAuth } from '@/lib/auth';
+import { usePublicBranding } from '@/lib/settings';
 
 const features = [
   { icon: CalendarClock, title: 'Smart attendance', desc: 'Check-in, late and overtime — captured automatically.' },
@@ -29,6 +31,10 @@ const features = [
 export default function LoginPage() {
   const router = useRouter();
   const { user, isLoading, login } = useAuth();
+  const { data: branding } = usePublicBranding();
+  const companyName = branding?.companyName?.trim() || 'Architectus Bureau';
+  // Left panel is always a dark gradient → always use the light (dark-mode) logo.
+  const panelLogo = branding?.logoDark || branding?.logoUrl || branding?.logoLight || '/logo.png';
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
   const [loading, setLoading] = React.useState(false);
@@ -73,7 +79,7 @@ export default function LoginPage() {
 
           <div className="relative">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo.png" alt="Architectus Bureau" className="h-16 w-auto object-contain" />
+            <img src={panelLogo} alt={companyName} className="h-12 w-auto max-w-[260px] object-contain" />
           </div>
 
           <div className="relative space-y-8">
@@ -111,7 +117,7 @@ export default function LoginPage() {
           </div>
 
           <div className="relative flex items-center justify-between text-xs text-white/60">
-            <span>© 2026 Architectus Bureau</span>
+            <span>© 2026 {companyName}</span>
             <span className="inline-flex items-center gap-1.5">
               <ShieldCheck className="size-4" /> Secure &amp; private
             </span>
@@ -126,8 +132,7 @@ export default function LoginPage() {
 
           <div className="w-full max-w-md">
             <div className="mb-10 flex justify-center lg:hidden">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/logo.png" alt="Architectus Bureau" className="h-12 w-auto object-contain" />
+              <Brand />
             </div>
 
             <div className="space-y-2">

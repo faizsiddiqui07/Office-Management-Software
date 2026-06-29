@@ -2,11 +2,14 @@
 
 import { Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useSettings } from '@/lib/settings';
+import { useSettings, usePublicBranding } from '@/lib/settings';
 
 export function Brand({ className, compact = false }) {
   const { data: settings } = useSettings();
-  const name = settings?.companyName?.trim() || 'Architectus Bureau';
+  const { data: branding } = usePublicBranding();
+  // Prefer live (authed) settings; fall back to public branding (works on login).
+  const b = settings || branding;
+  const name = b?.companyName?.trim() || 'Architectus Bureau';
 
   // Compact (small mobile screens): square app mark — crisp and space-efficient.
   if (compact) {
@@ -18,8 +21,8 @@ export function Brand({ className, compact = false }) {
   }
 
   // Main wordmark — separate light/dark versions, toggled by theme via CSS.
-  const light = (settings?.logoLight || settings?.logoDark || settings?.logoUrl || '').trim();
-  const dark = (settings?.logoDark || settings?.logoUrl || settings?.logoLight || '').trim();
+  const light = (b?.logoLight || b?.logoDark || b?.logoUrl || '').trim();
+  const dark = (b?.logoDark || b?.logoUrl || b?.logoLight || '').trim();
 
   if (light || dark) {
     return (
