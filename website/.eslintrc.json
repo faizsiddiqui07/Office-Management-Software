@@ -1,0 +1,14 @@
+{
+  "extends": ["next/core-web-vitals"],
+  "overrides": [
+    {
+      "files": ["components/ui/**/*.{js,jsx}"],
+      "rules": {
+        "no-unused-vars": "off",
+        "react-hooks/exhaustive-deps": "off",
+        "react/no-unescaped-entities": "off",
+        "prefer-const": "off"
+      }
+    }
+  ]
+}

@@ -1,0 +1,114 @@
+import { Attendance } from '../models/Attendance.js';
+import { LeaveRequest } from '../models/LeaveRequest.js';
+import { LeaveBalance } from '../models/LeaveBalance.js';
+import { User } from '../models/User.js';
+import { Setting } from '../models/Setting.js';
+import { Holiday } from '../models/Holiday.js';
+import { AuditLog } from '../models/AuditLog.js';
+import { can } from '../lib/permissions.js';
+import { companyDayFromYMD, ymdInTz } from '../lib/time.js';
+import { getTodayPayload, attendanceOverview } from './attendance.service.js';
+import { getOrCreateBalance } from './leave.service.js';
+import { listVisible } from './announcement.service.js';
+import { expenseSummary } from './expense.service.js';
+import { computePeriod } from './report.service.js';
+
+export async function buildDashboard(user) {
+  const settings = await Setting.getSingleton();
+  const now = new Date();
+  const todayYMD = ymdInTz(now);
+  const year = Number(todayYMD.slice(0, 4));
+  const role = user.role;
+
+  const out = { role, generatedAt: now.toISOString(), company: { name: settings.companyName, currency: settings.currency } };
+
+  // ── Common (everyone) ─────────────────────────────────────
+  out.today = await getTodayPayload(user);
+  out.balance = (await getOrCreateBalance(user._id, year)).toJSON();
+  out.announcements = (await listVisible(user)).slice(0, 5);
+  out.upcomingHolidays = (await Holiday.find({ endYMD: { $gte: todayYMD } }).sort({ startYMD: 1 }).limit(5)).map((h) => h.toJSON());
+  out.myPendingLeaves = (await LeaveRequest.find({ user: user._id, status: 'PENDING' }).sort({ appliedAt: -1 })).map((l) => l.toJSON());
+
+  const month = computePeriod('monthly', todayYMD);
+  const monthStart = companyDayFromYMD(month.from);
+  const monthEnd = companyDayFromYMD(month.to);
+
+  // ── Manager+ (view everyone): team snapshot ───────────────
+  if (can(user, 'viewEveryone')) {
+    const overview = await attendanceOverview(todayYMD);
+    out.team = {
+      total: overview.summary.total,
+      present: overview.summary.present + overview.summary.late,
+      late: overview.summary.late,
+      absent: overview.summary.absent,
+      onLeave: overview.summary.onLeave,
+      pendingApprovals: await LeaveRequest.countDocuments({ status: 'PENDING' }),
+    };
+    // team overtime this month
+    const teamOt = await Attendance.aggregate([
+      { $match: { date: { $gte: monthStart, $lte: monthEnd } } },
+      { $group: { _id: null, overtime: { $sum: '$overtimeMinutes' } } },
+    ]);
+    out.team.overtimeMinutes = teamOt[0]?.overtime ?? 0;
+  }
+
+  // ── Expense viewers: month expense rollup ─────────────────
+  if (can(user, 'viewExpenses')) {
+    const sum = await expenseSummary({ from: month.from, to: month.to });
+    out.expenses = { monthTotal: sum.total, count: sum.count, byCategory: sum.byCategory.slice(0, 6), currency: settings.currency };
+  }
+
+  // ── Leadership: rich analytics ────────────────────────────
+  if (can(user, 'leadershipDashboard')) {
+    const overview = await attendanceOverview(todayYMD);
+    const [headcount, otAgg, balances, yearExpenses, pendingApprovals, recent] = await Promise.all([
+      User.countDocuments({ isActive: true }),
+      Attendance.aggregate([
+        { $match: { date: { $gte: monthStart, $lte: monthEnd }, overtimeMinutes: { $gt: 0 } } },
+        { $group: { _id: '$user', overtimeMinutes: { $sum: '$overtimeMinutes' } } },
+        { $sort: { overtimeMinutes: -1 } },
+        { $limit: 5 },
+      ]),
+      LeaveBalance.find({ year }),
+      expenseSummary({ from: `${year}-01-01`, to: `${year}-12-31` }),
+      LeaveRequest.find({ status: 'PENDING' }).sort({ appliedAt: -1 }).limit(6).populate('user', 'name employeeId'),
+      AuditLog.find().sort({ createdAt: -1 }).limit(10).populate('actor', 'name'),
+    ]);
+
+    const otUsers = await User.find({ _id: { $in: otAgg.map((o) => o._id) } }).select('name');
+    const otMap = new Map(otUsers.map((u) => [String(u._id), u.name]));
+
+    out.analytics = {
+      headcount,
+      attendanceRate: overview.summary.total ? Math.round(((overview.summary.present + overview.summary.late) / overview.summary.total) * 100) : 0,
+      breakdown: {
+        present: overview.summary.present,
+        late: overview.summary.late,
+        absent: overview.summary.absent,
+        onLeave: overview.summary.onLeave,
+      },
+      overtimeLeaders: otAgg.map((o) => ({ name: otMap.get(String(o._id)) ?? '—', overtimeMinutes: o.overtimeMinutes })),
+      leaveUtilization: {
+        used: balances.reduce((s, b) => s + b.used, 0),
+        total: balances.reduce((s, b) => s + b.totalQuota, 0),
+      },
+      monthlyExpenseTrend: yearExpenses.byMonth,
+      pendingApprovals: pendingApprovals.map((l) => ({
+        id: l.id,
+        name: l.user?.name ?? '—',
+        type: l.type,
+        startYMD: l.startYMD,
+        endYMD: l.endYMD,
+        days: l.workingDays,
+      })),
+      recentActivity: recent.map((a) => ({
+        action: a.action,
+        actor: a.actor?.name ?? 'System',
+        entityType: a.entityType,
+        createdAt: a.createdAt,
+      })),
+    };
+  }
+
+  return out;
+}

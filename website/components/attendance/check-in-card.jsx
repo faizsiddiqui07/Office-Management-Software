@@ -1,0 +1,150 @@
+'use client';
+
+import * as React from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
+import { LogIn, LogOut, MapPin } from 'lucide-react';
+import { api } from '@/lib/api';
+import { cn } from '@/lib/utils';
+import { GlassCard } from '@/components/glass/glass-card';
+import { StatusBadge, STATUS_TONES } from '@/components/glass/status-badge';
+import { Button } from '@/components/ui/button';
+import { COMPANY_TZ, formatClock, formatFullDate, formatTime, formatDuration } from '@/lib/time';
+
+/** Resolve the device's current GPS position, or reject with a friendly message. */
+function getPosition() {
+  return new Promise((resolve, reject) => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      reject(new Error('Location is not available on this device/browser'));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      (err) =>
+        reject(new Error(err?.code === 1 ? 'Please allow location access to mark attendance' : 'Could not get your location — try again')),
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 },
+    );
+  });
+}
+
+export function CheckInCard() {
+  const qc = useQueryClient();
+  const [now, setNow] = React.useState(() => Date.now());
+
+  React.useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['attendance', 'today'],
+    queryFn: () => api.get('/attendance/today'),
+    refetchOnWindowFocus: true,
+  });
+
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['attendance'] });
+
+  const checkInMut = useMutation({
+    mutationFn: async () => {
+      const body = data?.gps?.enabled ? await getPosition() : undefined;
+      return api.post('/attendance/check-in', body);
+    },
+    onSuccess: () => {
+      toast.success('Checked in — have a great day!');
+      invalidate();
+    },
+    onError: (e) => toast.error(e?.message || 'Could not check in'),
+  });
+
+  const checkOutMut = useMutation({
+    mutationFn: async () => {
+      const body = data?.gps?.enabled ? await getPosition() : undefined;
+      return api.post('/attendance/check-out', body);
+    },
+    onSuccess: () => {
+      toast.success('Checked out — see you tomorrow!');
+      invalidate();
+    },
+    onError: (e) => toast.error(e?.message || 'Could not check out'),
+  });
+
+  const record = data?.record;
+  const workEndAt = data?.workEndAt ? new Date(data.workEndAt).getTime() : null;
+  const checkedIn = !!record?.checkInAt;
+  const checkedOut = !!record?.checkOutAt;
+
+  let elapsedMin = 0;
+  let overtimeMin = 0;
+  if (checkedIn && !checkedOut) {
+    elapsedMin = (now - new Date(record.checkInAt).getTime()) / 60000;
+    overtimeMin = workEndAt ? Math.max(0, (now - workEndAt) / 60000) : 0;
+  } else if (checkedOut) {
+    elapsedMin = record.workedMinutes;
+    overtimeMin = record.overtimeMinutes;
+  }
+
+  const status = record?.status;
+
+  return (
+    <GlassCard className="p-6 sm:p-8">
+      <div className="flex flex-col gap-6">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-sm text-muted-foreground">{formatFullDate(now)}</p>
+            <p className="mt-1 font-mono text-3xl font-semibold tabular-nums tracking-tight sm:text-4xl">
+              {formatClock(now)}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">Company time · {COMPANY_TZ}</p>
+          </div>
+          {status ? (
+            <StatusBadge tone={STATUS_TONES[status] ?? 'neutral'}>{status.replace('_', ' ')}</StatusBadge>
+          ) : null}
+        </div>
+
+        <div className="grid grid-cols-3 gap-3">
+          <Stat label="Check-in" value={checkedIn ? formatTime(record.checkInAt) : '—'} />
+          <Stat label={checkedOut ? 'Worked' : 'Elapsed'} value={checkedIn ? formatDuration(elapsedMin) : '—'} />
+          <Stat label="Overtime" value={checkedIn ? formatDuration(overtimeMin) : '—'} highlight={overtimeMin > 0} />
+        </div>
+
+        {data?.gps?.enabled && !checkedOut ? (
+          <p className="-mb-1 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+            <MapPin className="size-3.5" /> Location required — you must be at the office.
+          </p>
+        ) : null}
+
+        {!checkedIn ? (
+          <Button
+            onClick={() => checkInMut.mutate()}
+            disabled={checkInMut.isPending || isLoading}
+            className="h-12 w-full text-base"
+          >
+            <LogIn /> {checkInMut.isPending ? 'Checking in…' : 'Check in'}
+          </Button>
+        ) : !checkedOut ? (
+          <Button
+            onClick={() => checkOutMut.mutate()}
+            disabled={checkOutMut.isPending}
+            variant="outline"
+            className="h-12 w-full text-base"
+          >
+            <LogOut /> {checkOutMut.isPending ? 'Checking out…' : 'Check out'}
+          </Button>
+        ) : (
+          <div className="rounded-2xl bg-success/10 p-3 text-center text-sm font-medium text-success ring-1 ring-success/20">
+            You&apos;re done for today — checked out at {formatTime(record.checkOutAt)}
+          </div>
+        )}
+      </div>
+    </GlassCard>
+  );
+}
+
+function Stat({ label, value, highlight }) {
+  return (
+    <div className="rounded-2xl bg-foreground/[0.04] p-3 text-center ring-1 ring-border/50">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className={cn('mt-0.5 text-lg font-semibold tabular-nums', highlight && 'text-primary')}>{value}</p>
+    </div>
+  );
+}

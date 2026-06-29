@@ -1,0 +1,186 @@
+'use client';
+
+import { CalendarDays, Clock, UserCheck, UserX } from 'lucide-react';
+import { StatCard } from '@/components/glass/stat-card';
+import { GlassCard } from '@/components/glass/glass-card';
+import { DataTable } from '@/components/glass/data-table';
+import { StatusBadge } from '@/components/glass/status-badge';
+import { formatDuration } from '@/lib/time';
+import { formatMoney, categoryLabel } from '@/lib/expense';
+import { formatRange, formatYMD } from '@/lib/leave';
+import { prettyRole } from '@/lib/permissions';
+
+function AttendanceSection({ data }) {
+  const t = data.attendance.totals;
+  const columns = [
+    {
+      id: 'name',
+      header: 'Employee',
+      accessorFn: (r) => `${r.name} ${r.employeeId}`,
+      cell: ({ row }) => (
+        <div>
+          <p className="font-medium">{row.original.name}</p>
+          <p className="text-xs text-muted-foreground">
+            {row.original.employeeId} · {prettyRole(row.original.role)}
+          </p>
+        </div>
+      ),
+    },
+    { id: 'present', header: 'Present', cell: ({ row }) => <span className="tabular-nums">{row.original.present}</span> },
+    { id: 'late', header: 'Late', cell: ({ row }) => <span className="tabular-nums">{row.original.late}</span> },
+    { id: 'absent', header: 'Absent', cell: ({ row }) => <span className="tabular-nums">{row.original.absent}</span> },
+    { id: 'onLeave', header: 'On leave', cell: ({ row }) => <span className="tabular-nums">{row.original.onLeave}</span> },
+    { id: 'worked', header: 'Worked', cell: ({ row }) => <span className="tabular-nums">{row.original.workedHours}h</span> },
+    { id: 'ot', header: 'OT', cell: ({ row }) => <span className="tabular-nums">{formatDuration(row.original.overtimeMinutes)}</span> },
+  ];
+  return (
+    <section className="space-y-4">
+      <h2 className="text-lg font-semibold tracking-tight">Attendance</h2>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard label="Attendance rate" value={`${t.attendanceRate}%`} icon={UserCheck} tone="success" hint={`${data.workingDays} working days`} />
+        <StatCard label="Present / Late" value={`${t.present} / ${t.late}`} icon={CalendarDays} tone="default" />
+        <StatCard label="Absent / Leave" value={`${t.absent} / ${t.onLeave}`} icon={UserX} tone="warning" />
+        <StatCard label="Overtime" value={formatDuration(t.overtimeMinutes)} icon={Clock} tone="info" hint={`${t.workedHours}h worked`} />
+      </div>
+      <DataTable columns={columns} data={data.attendance.perEmployee} searchPlaceholder="Search employees…" pageSize={8} emptyMessage="No employees." />
+    </section>
+  );
+}
+
+function LeavesSection({ data }) {
+  const takenCols = [
+    { id: 'name', header: 'Employee', accessorFn: (r) => r.name, cell: ({ row }) => <span className="font-medium">{row.original.name}</span> },
+    { id: 'type', header: 'Type', cell: ({ row }) => row.original.type },
+    { id: 'dates', header: 'Dates', cell: ({ row }) => formatRange(row.original.startYMD, row.original.endYMD) },
+    { id: 'days', header: 'Days', cell: ({ row }) => <span className="tabular-nums">{row.original.days}</span> },
+  ];
+  const balCols = [
+    { id: 'name', header: 'Employee', accessorFn: (r) => r.name, cell: ({ row }) => <span className="font-medium">{row.original.name}</span> },
+    { id: 'used', header: 'Used', cell: ({ row }) => <span className="tabular-nums">{row.original.used}</span> },
+    { id: 'remaining', header: 'Remaining', cell: ({ row }) => <span className="tabular-nums">{row.original.remaining}</span> },
+    { id: 'total', header: 'Quota', cell: ({ row }) => <span className="tabular-nums">{row.original.total}</span> },
+  ];
+  return (
+    <section className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold tracking-tight">Leaves</h2>
+        <span className="text-sm text-muted-foreground">{data.leaves.taken.length} taken · {data.leaves.pending.length} pending</span>
+      </div>
+      {data.leaves.taken.length ? (
+        <DataTable columns={takenCols} data={data.leaves.taken} searchable={false} pageSize={6} emptyMessage="No leaves." />
+      ) : (
+        <GlassCard className="p-5 text-sm text-muted-foreground">No approved leaves in this period.</GlassCard>
+      )}
+      <div className="space-y-2">
+        <h3 className="text-sm font-medium text-muted-foreground">Remaining balances</h3>
+        <DataTable columns={balCols} data={data.leaves.balances} searchPlaceholder="Search…" pageSize={6} emptyMessage="No balances." />
+      </div>
+    </section>
+  );
+}
+
+function ExpensesSection({ data }) {
+  const e = data.expenses;
+  const listCols = [
+    { id: 'date', header: 'Date', accessorFn: (r) => r.dateYMD, cell: ({ row }) => formatYMD(row.original.dateYMD) },
+    {
+      id: 'title',
+      header: 'Title',
+      accessorFn: (r) => `${r.title} ${r.vendor}`,
+      cell: ({ row }) => (
+        <div>
+          <p className="font-medium">{row.original.title}</p>
+          {row.original.vendor ? <p className="text-xs text-muted-foreground">{row.original.vendor}</p> : null}
+        </div>
+      ),
+    },
+    { id: 'cat', header: 'Category', cell: ({ row }) => <StatusBadge tone="primary" dot={false}>{categoryLabel(row.original.category)}</StatusBadge> },
+    { id: 'amount', header: 'Amount', cell: ({ row }) => <span className="font-medium tabular-nums">{formatMoney(row.original.amount)}</span> },
+  ];
+  return (
+    <section className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold tracking-tight">Expenses</h2>
+        <span className="text-sm font-medium">{formatMoney(e.total)} · {e.count} entries</span>
+      </div>
+      {e.byCategory.length ? (
+        <GlassCard className="space-y-2 p-5">
+          {e.byCategory.map((c) => (
+            <div key={c.category} className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">{categoryLabel(c.category)}</span>
+              <span className="font-medium tabular-nums">{formatMoney(c.total)}</span>
+            </div>
+          ))}
+        </GlassCard>
+      ) : null}
+      {e.list.length ? (
+        <DataTable columns={listCols} data={e.list} searchPlaceholder="Search…" pageSize={8} emptyMessage="No expenses." />
+      ) : (
+        <GlassCard className="p-5 text-sm text-muted-foreground">No expenses in this period.</GlassCard>
+      )}
+    </section>
+  );
+}
+
+function RosterSection({ data }) {
+  const cols = [
+    { id: 'name', header: 'Name', accessorFn: (r) => `${r.name} ${r.employeeId}`, cell: ({ row }) => <span className="font-medium">{row.original.name}</span> },
+    { id: 'id', header: 'ID', cell: ({ row }) => <span className="text-sm tabular-nums text-muted-foreground">{row.original.employeeId}</span> },
+    { id: 'role', header: 'Role', cell: ({ row }) => <StatusBadge tone="primary" dot={false}>{prettyRole(row.original.role)}</StatusBadge> },
+    { id: 'dept', header: 'Department', cell: ({ row }) => <span className="text-sm text-muted-foreground">{row.original.department || '—'}</span> },
+  ];
+  return (
+    <section className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold tracking-tight">Roster · {data.roster.headcount} staff</h2>
+        <div className="flex flex-wrap gap-1.5">
+          {Object.entries(data.roster.byRole).map(([r, n]) => (
+            <StatusBadge key={r} tone="neutral" dot={false}>
+              {prettyRole(r)}: {n}
+            </StatusBadge>
+          ))}
+        </div>
+      </div>
+      <DataTable columns={cols} data={data.roster.members} searchPlaceholder="Search staff…" pageSize={8} emptyMessage="No members." />
+    </section>
+  );
+}
+
+function DuesSection({ data }) {
+  const d = data.dues;
+  const cols = [
+    { id: 'name', header: 'Person', accessorFn: (r) => `${r.name} ${r.employeeId}`, cell: ({ row }) => <span className="font-medium">{row.original.name}</span> },
+    { id: 'id', header: 'ID', cell: ({ row }) => <span className="text-sm tabular-nums text-muted-foreground">{row.original.employeeId}</span> },
+    { id: 'role', header: 'Role', cell: ({ row }) => <StatusBadge tone="primary" dot={false}>{prettyRole(row.original.role)}</StatusBadge> },
+    { id: 'pending', header: 'Pending', cell: ({ row }) => <span className="font-medium tabular-nums text-destructive">{row.original.pending ? formatMoney(row.original.pending) : '—'}</span> },
+    { id: 'advance', header: 'Advance', cell: ({ row }) => <span className="tabular-nums text-muted-foreground">{row.original.advance ? formatMoney(row.original.advance) : '—'}</span> },
+  ];
+  return (
+    <section className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold tracking-tight">Dues</h2>
+        <span className="text-sm text-muted-foreground">
+          {formatMoney(d.totalPending)} pending · {d.owingCount} owing · {formatMoney(d.totalAdvance)} advance
+        </span>
+      </div>
+      {d.people.length ? (
+        <DataTable columns={cols} data={d.people} searchPlaceholder="Search people…" pageSize={8} emptyMessage="No dues." />
+      ) : (
+        <GlassCard className="p-5 text-sm text-muted-foreground">No outstanding dues.</GlassCard>
+      )}
+    </section>
+  );
+}
+
+export function ReportPreview({ data, sections }) {
+  const has = (s) => sections.includes(s);
+  return (
+    <div className="space-y-10">
+      {has('attendance') && data.attendance ? <AttendanceSection data={data} /> : null}
+      {has('leaves') && data.leaves ? <LeavesSection data={data} /> : null}
+      {has('expenses') && data.expenses ? <ExpensesSection data={data} /> : null}
+      {has('roster') && data.roster ? <RosterSection data={data} /> : null}
+      {has('dues') && data.dues ? <DuesSection data={data} /> : null}
+    </div>
+  );
+}

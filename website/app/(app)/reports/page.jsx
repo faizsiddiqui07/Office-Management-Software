@@ -1,0 +1,34 @@
+'use client';
+
+import { FileText } from 'lucide-react';
+import { useAuth } from '@/lib/auth';
+import { can } from '@/lib/permissions';
+import { PageHeader } from '@/components/glass/page-header';
+import { MyReportCard } from '@/components/reports/my-report-card';
+import { CompanyReportBuilder } from '@/components/reports/company-report-builder';
+import { COMPANY_REPORT_PERMS } from '@/lib/report';
+
+export default function ReportsPage() {
+  const { user } = useAuth();
+  const canCompany = !!user && COMPANY_REPORT_PERMS.some((p) => can(user, p));
+
+  return (
+    <div className="space-y-8">
+      <PageHeader
+        eyebrow="Reports"
+        title="Reports"
+        icon={FileText}
+        description="Generate detailed, branded PDF reports — your own records, or company-wide if you have access."
+      />
+
+      <MyReportCard />
+
+      {canCompany ? (
+        <>
+          <div className="border-t border-border/50" />
+          <CompanyReportBuilder />
+        </>
+      ) : null}
+    </div>
+  );
+}

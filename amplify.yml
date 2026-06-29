@@ -1,0 +1,22 @@
+version: 1
+# Monorepo: the Next.js frontend lives in the `website/` folder.
+applications:
+  - appRoot: website
+    frontend:
+      phases:
+        preBuild:
+          commands:
+            - npm ci
+        build:
+          # NEXT_PUBLIC_API_URL is provided as an Amplify environment variable
+          # (Console → App settings → Environment variables) and baked in at build.
+          commands:
+            - npm run build
+      artifacts:
+        baseDirectory: .next
+        files:
+          - '**/*'
+      cache:
+        paths:
+          - node_modules/**/*
+          - .next/cache/**/*
