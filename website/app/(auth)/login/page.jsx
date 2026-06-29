@@ -12,13 +12,11 @@ import {
   Lock,
   Mail,
   ShieldCheck,
-  Sparkles,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { PasswordInput } from '@/components/ui/password-input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { Brand } from '@/components/shell/brand';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { useAuth } from '@/lib/auth';
 
@@ -73,14 +71,9 @@ export default function LoginPage() {
             />
           </div>
 
-          <div className="relative flex items-center gap-3">
-            <span className="flex size-11 items-center justify-center rounded-2xl bg-white/15 ring-1 ring-white/25 backdrop-blur">
-              <Sparkles className="size-6" />
-            </span>
-            <div className="leading-tight">
-              <p className="text-base font-semibold">Office Management</p>
-              <p className="text-xs text-white/70">Internal workspace</p>
-            </div>
+          <div className="relative">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.png" alt="Architectus Bureau" className="h-16 w-auto object-contain" />
           </div>
 
           <div className="relative space-y-8">
@@ -118,7 +111,7 @@ export default function LoginPage() {
           </div>
 
           <div className="relative flex items-center justify-between text-xs text-white/60">
-            <span>© 2026 Office Management</span>
+            <span>© 2026 Architectus Bureau</span>
             <span className="inline-flex items-center gap-1.5">
               <ShieldCheck className="size-4" /> Secure &amp; private
             </span>
@@ -133,7 +126,8 @@ export default function LoginPage() {
 
           <div className="w-full max-w-md">
             <div className="mb-10 flex justify-center lg:hidden">
-              <Brand />
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/logo.png" alt="Architectus Bureau" className="h-12 w-auto object-contain" />
             </div>
 
             <div className="space-y-2">
