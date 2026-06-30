@@ -8,8 +8,27 @@ import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { GlassCard } from '@/components/glass/glass-card';
 import { StatusBadge, STATUS_TONES } from '@/components/glass/status-badge';
+import { AppDialog } from '@/components/glass/app-dialog';
 import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { COMPANY_TZ, formatClock, formatFullDate, formatTime, formatDuration } from '@/lib/time';
+
+export const LATE_REASONS = [
+  'Site / Field visit',
+  'Client meeting',
+  'Traffic / Transport',
+  'Medical',
+  'Personal',
+  'Other',
+];
 
 /** Resolve the device's current GPS position, or reject with a friendly message. */
 function getPosition() {
@@ -30,6 +49,9 @@ function getPosition() {
 export function CheckInCard() {
   const qc = useQueryClient();
   const [now, setNow] = React.useState(() => Date.now());
+  const [lateOpen, setLateOpen] = React.useState(false);
+  const [lateCategory, setLateCategory] = React.useState('');
+  const [lateNote, setLateNote] = React.useState('');
 
   React.useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -45,12 +67,15 @@ export function CheckInCard() {
   const invalidate = () => qc.invalidateQueries({ queryKey: ['attendance'] });
 
   const checkInMut = useMutation({
-    mutationFn: async () => {
-      const body = data?.gps?.enabled ? await getPosition() : undefined;
+    mutationFn: async (lateReason) => {
+      const coords = data?.gps?.enabled ? await getPosition() : null;
+      const body = { ...(coords || {}), ...(lateReason ? { lateReason } : {}) };
       return api.post('/attendance/check-in', body);
     },
     onSuccess: () => {
       toast.success('Checked in — have a great day!');
+      setLateCategory('');
+      setLateNote('');
       invalidate();
     },
     onError: (e) => toast.error(e?.message || 'Could not check in'),
@@ -85,58 +110,118 @@ export function CheckInCard() {
 
   const status = record?.status;
 
+  // Would this check-in (right now) be late? → ask for an optional reason first.
+  const lateThreshold = data?.workStartAt
+    ? new Date(data.workStartAt).getTime() + (data.settings?.graceMinutes || 0) * 60000
+    : null;
+  const wouldBeLate = !checkedIn && lateThreshold != null && now > lateThreshold;
+
+  const onCheckIn = () => {
+    if (wouldBeLate) setLateOpen(true);
+    else checkInMut.mutate(undefined);
+  };
+  const submitLate = () => {
+    const reason = lateCategory || lateNote.trim() ? { category: lateCategory, note: lateNote.trim() } : undefined;
+    setLateOpen(false);
+    checkInMut.mutate(reason);
+  };
+
   return (
-    <GlassCard className="p-6 sm:p-8">
-      <div className="flex flex-col gap-6">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-sm text-muted-foreground">{formatFullDate(now)}</p>
-            <p className="mt-1 font-mono text-3xl font-semibold tabular-nums tracking-tight sm:text-4xl">
-              {formatClock(now)}
+    <>
+      <GlassCard className="p-6 sm:p-8">
+        <div className="flex flex-col gap-6">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm text-muted-foreground">{formatFullDate(now)}</p>
+              <p className="mt-1 font-mono text-3xl font-semibold tabular-nums tracking-tight sm:text-4xl">
+                {formatClock(now)}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">Company time · {COMPANY_TZ}</p>
+            </div>
+            {status ? (
+              <StatusBadge tone={STATUS_TONES[status] ?? 'neutral'}>{status.replace('_', ' ')}</StatusBadge>
+            ) : null}
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <Stat label="Check-in" value={checkedIn ? formatTime(record.checkInAt) : '—'} />
+            <Stat label={checkedOut ? 'Worked' : 'Elapsed'} value={checkedIn ? formatDuration(elapsedMin) : '—'} />
+            <Stat label="Overtime" value={checkedIn ? formatDuration(overtimeMin) : '—'} highlight={overtimeMin > 0} />
+          </div>
+
+          {data?.gps?.enabled && !checkedOut ? (
+            <p className="-mb-1 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+              <MapPin className="size-3.5" /> Location required — you must be at the office.
             </p>
-            <p className="mt-1 text-xs text-muted-foreground">Company time · {COMPANY_TZ}</p>
-          </div>
-          {status ? (
-            <StatusBadge tone={STATUS_TONES[status] ?? 'neutral'}>{status.replace('_', ' ')}</StatusBadge>
           ) : null}
+
+          {!checkedIn ? (
+            <Button onClick={onCheckIn} disabled={checkInMut.isPending || isLoading} className="h-12 w-full text-base">
+              <LogIn /> {checkInMut.isPending ? 'Checking in…' : 'Check in'}
+            </Button>
+          ) : !checkedOut ? (
+            <Button
+              onClick={() => checkOutMut.mutate()}
+              disabled={checkOutMut.isPending}
+              variant="outline"
+              className="h-12 w-full text-base"
+            >
+              <LogOut /> {checkOutMut.isPending ? 'Checking out…' : 'Check out'}
+            </Button>
+          ) : (
+            <div className="rounded-2xl bg-success/10 p-3 text-center text-sm font-medium text-success ring-1 ring-success/20">
+              You&apos;re done for today — checked out at {formatTime(record.checkOutAt)}
+            </div>
+          )}
         </div>
+      </GlassCard>
 
-        <div className="grid grid-cols-3 gap-3">
-          <Stat label="Check-in" value={checkedIn ? formatTime(record.checkInAt) : '—'} />
-          <Stat label={checkedOut ? 'Worked' : 'Elapsed'} value={checkedIn ? formatDuration(elapsedMin) : '—'} />
-          <Stat label="Overtime" value={checkedIn ? formatDuration(overtimeMin) : '—'} highlight={overtimeMin > 0} />
-        </div>
-
-        {data?.gps?.enabled && !checkedOut ? (
-          <p className="-mb-1 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
-            <MapPin className="size-3.5" /> Location required — you must be at the office.
-          </p>
-        ) : null}
-
-        {!checkedIn ? (
-          <Button
-            onClick={() => checkInMut.mutate()}
-            disabled={checkInMut.isPending || isLoading}
-            className="h-12 w-full text-base"
-          >
-            <LogIn /> {checkInMut.isPending ? 'Checking in…' : 'Check in'}
-          </Button>
-        ) : !checkedOut ? (
-          <Button
-            onClick={() => checkOutMut.mutate()}
-            disabled={checkOutMut.isPending}
-            variant="outline"
-            className="h-12 w-full text-base"
-          >
-            <LogOut /> {checkOutMut.isPending ? 'Checking out…' : 'Check out'}
-          </Button>
-        ) : (
-          <div className="rounded-2xl bg-success/10 p-3 text-center text-sm font-medium text-success ring-1 ring-success/20">
-            You&apos;re done for today — checked out at {formatTime(record.checkOutAt)}
+      <AppDialog
+        open={lateOpen}
+        onOpenChange={setLateOpen}
+        title="You're checking in late"
+        description="Add a quick reason so your team has the context — totally optional."
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setLateOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={submitLate} disabled={checkInMut.isPending}>
+              {checkInMut.isPending ? 'Checking in…' : 'Check in'}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4 py-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="late-cat">Reason</Label>
+            <Select value={lateCategory} onValueChange={setLateCategory}>
+              <SelectTrigger id="late-cat" className="w-full bg-background/50">
+                <SelectValue placeholder="Select a reason (optional)" />
+              </SelectTrigger>
+              <SelectContent>
+                {LATE_REASONS.map((r) => (
+                  <SelectItem key={r} value={r}>
+                    {r}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-        )}
-      </div>
-    </GlassCard>
+          <div className="space-y-1.5">
+            <Label htmlFor="late-note">Note (optional)</Label>
+            <Textarea
+              id="late-note"
+              value={lateNote}
+              onChange={(e) => setLateNote(e.target.value)}
+              placeholder="e.g. Morning site visit at the client location"
+              className="min-h-20 bg-background/50"
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">Reason is optional — you can just check in. Your manager can mark on-duty lates as excused.</p>
+        </div>
+      </AppDialog>
+    </>
   );
 }
 

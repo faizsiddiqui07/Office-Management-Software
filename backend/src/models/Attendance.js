@@ -5,6 +5,12 @@ const metaSchema = new mongoose.Schema(
   { _id: false },
 );
 
+// Why a check-in was late (e.g. a morning site visit). Optional.
+const lateReasonSchema = new mongoose.Schema(
+  { category: { type: String, default: '' }, note: { type: String, default: '' } },
+  { _id: false },
+);
+
 const attendanceSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -21,6 +27,12 @@ const attendanceSchema = new mongoose.Schema(
     overtimeMinutes: { type: Number, default: 0 },
     checkInMeta: { type: metaSchema, default: undefined },
     checkOutMeta: { type: metaSchema, default: undefined },
+    // Late check-in: optional reason + leadership "excuse" (so on-duty lates
+    // aren't counted against the person).
+    lateReason: { type: lateReasonSchema, default: undefined },
+    excused: { type: Boolean, default: false },
+    excusedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    excusedAt: { type: Date, default: null },
   },
   { timestamps: true },
 );

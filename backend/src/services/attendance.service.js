@@ -46,7 +46,16 @@ function verifyGeofence(gps, coords) {
   return { lat: coords.lat, lng: coords.lng, distance };
 }
 
-export async function checkIn(user, meta, coords) {
+/** Keep only a sane reason payload (category + short note). */
+function cleanLateReason(lateReason) {
+  if (!lateReason || typeof lateReason !== 'object') return null;
+  const category = String(lateReason.category || '').trim().slice(0, 40);
+  const note = String(lateReason.note || '').trim().slice(0, 300);
+  if (!category && !note) return null;
+  return { category, note };
+}
+
+export async function checkIn(user, meta, coords, lateReason) {
   const now = new Date();
   const day = companyTzMidnight(now);
   const settings = await Setting.getSingleton();
@@ -57,13 +66,29 @@ export async function checkIn(user, meta, coords) {
   }
 
   const geoMeta = verifyGeofence(settings.gpsAttendance, coords);
-  const status = isLateCheckIn(now, day, settings.workStart, settings.graceMinutes) ? 'LATE' : 'PRESENT';
+  const isLate = isLateCheckIn(now, day, settings.workStart, settings.graceMinutes);
+  const status = isLate ? 'LATE' : 'PRESENT';
+  const reason = isLate ? cleanLateReason(lateReason) : null; // reason only meaningful when late
+
+  const set = { checkInAt: now, status, checkInMeta: { ...meta, ...geoMeta } };
+  const update = reason ? { $set: { ...set, lateReason: reason } } : { $set: set, $unset: { lateReason: '' } };
 
   const record = await Attendance.findOneAndUpdate(
     { user: user._id, date: day },
-    { $set: { checkInAt: now, status, checkInMeta: { ...meta, ...geoMeta } } },
+    update,
     { upsert: true, new: true, setDefaultsOnInsert: true },
   );
+  return record;
+}
+
+/** Leadership marks a LATE record as excused (on-duty) — or un-excuses it. */
+export async function excuseLate(approver, attendanceId, excused) {
+  const record = await Attendance.findById(attendanceId);
+  if (!record) throw httpError(404, 'NOT_FOUND', 'Attendance record not found');
+  record.excused = excused !== false;
+  record.excusedBy = record.excused ? approver._id : null;
+  record.excusedAt = record.excused ? new Date() : null;
+  await record.save();
   return record;
 }
 
@@ -205,6 +230,7 @@ export async function attendanceOverview(ymd) {
     total: rows.length,
     present: rows.filter((r) => r.status === 'PRESENT').length,
     late: rows.filter((r) => r.status === 'LATE').length,
+    excused: rows.filter((r) => r.status === 'LATE' && r.attendance?.excused).length,
     absent: rows.filter((r) => r.status === 'ABSENT').length,
     onLeave: rows.filter((r) => r.status === 'ON_LEAVE').length,
   };

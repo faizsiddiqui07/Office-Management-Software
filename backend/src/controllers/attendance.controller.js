@@ -25,11 +25,22 @@ function handleErr(res, err, next) {
 
 export async function checkIn(req, res, next) {
   try {
-    const record = await svc.checkIn(req.user, reqMeta(req), reqCoords(req));
+    const record = await svc.checkIn(req.user, reqMeta(req), reqCoords(req), req.body?.lateReason);
     await audit({ actor: req.user._id, action: 'attendance.check_in', entityType: 'Attendance', entityId: record.id });
     // Alert leadership in-app — fire-and-forget so it never delays/breaks check-in.
     notifyCheckIn(req.user, record).catch(() => {});
     res.status(201).json(ok({ record: record.toJSON() }));
+  } catch (err) {
+    handleErr(res, err, next);
+  }
+}
+
+/** Leadership: excuse (or un-excuse) a late check-in so it isn't counted against the person. */
+export async function excuse(req, res, next) {
+  try {
+    const record = await svc.excuseLate(req.user, req.params.id, req.body?.excused);
+    await audit({ actor: req.user._id, action: 'attendance.excuse', entityType: 'Attendance', entityId: record.id, meta: { excused: record.excused } });
+    res.json(ok({ record: record.toJSON() }));
   } catch (err) {
     handleErr(res, err, next);
   }
