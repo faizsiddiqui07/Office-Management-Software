@@ -27,6 +27,7 @@ export function DataTable({
   pageSize = 8,
   emptyMessage = 'No results found.',
   className,
+  onRowClick,
 }) {
   const [sorting, setSorting] = React.useState([]);
   const [globalFilter, setGlobalFilter] = React.useState('');
@@ -105,7 +106,11 @@ export function DataTable({
         <TableBody>
           {rows.length ? (
             rows.map((row) => (
-              <TableRow key={row.id} className="border-border/50">
+              <TableRow
+                key={row.id}
+                onClick={onRowClick ? () => onRowClick(row.original) : undefined}
+                className={cn('border-border/50', onRowClick && 'cursor-pointer hover:bg-foreground/[0.04]')}
+              >
                 {row.getVisibleCells().map((cell) => (
                   <TableCell key={cell.id} className="px-4 py-3">
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
