@@ -92,8 +92,10 @@ export async function buildReport(type, dateYMD) {
     if (!byUser.has(uid)) byUser.set(uid, { present: 0, late: 0, onLeave: 0, workedMinutes: 0, overtimeMinutes: 0 });
     const m = byUser.get(uid);
     if (r.status === 'PRESENT') m.present += 1;
-    else if (r.status === 'LATE') m.late += 1;
-    else if (r.status === 'ON_LEAVE') m.onLeave += 1;
+    else if (r.status === 'LATE') {
+      if (r.excused) m.present += 1; // excused (on-duty) late counts as present, not late
+      else m.late += 1;
+    } else if (r.status === 'ON_LEAVE') m.onLeave += 1;
     m.workedMinutes += r.workedMinutes || 0;
     m.overtimeMinutes += r.overtimeMinutes || 0;
   }
@@ -218,6 +220,7 @@ export async function buildReport(type, dateYMD) {
 const STATUS_LABEL = {
   PRESENT: 'Present',
   LATE: 'Late',
+  ON_DUTY: 'On-duty',
   ABSENT: 'Absent',
   ON_LEAVE: 'On leave',
   HOLIDAY: 'Holiday',
@@ -249,7 +252,9 @@ export async function buildSelfReport({ user, type, dateYMD }) {
 
   // ── Day-by-day attendance ─────────────────────────────────
   const byYmd = new Map();
-  for (const r of records) byYmd.set(ymdOf(new Date(r.date)), r);
+  // Key by the COMPANY-timezone day (records store the TZ-midnight instant);
+  // using UTC here would shift check-ins to the wrong calendar day.
+  for (const r of records) byYmd.set(ymdInTz(new Date(r.date)), r);
 
   const days = [];
   let cur = new Date(`${from}T00:00:00Z`);
@@ -265,7 +270,7 @@ export async function buildSelfReport({ user, type, dateYMD }) {
     let workedHours = 0;
     let overtimeMinutes = 0;
     if (rec) {
-      status = rec.status;
+      status = rec.status === 'LATE' && rec.excused ? 'ON_DUTY' : rec.status;
       if (rec.checkInAt) checkIn = formatCompany(rec.checkInAt, 'hh:mm a');
       if (rec.checkOutAt) checkOut = formatCompany(rec.checkOutAt, 'hh:mm a');
       workedHours = round1((rec.workedMinutes || 0) / 60);
@@ -286,12 +291,14 @@ export async function buildSelfReport({ user, type, dateYMD }) {
   const tally = (s) => days.filter((d) => d.status === s).length;
   const present = tally('PRESENT');
   const late = tally('LATE');
+  const onDuty = tally('ON_DUTY');
   const absent = tally('ABSENT');
   const onLeave = tally('ON_LEAVE');
-  const workingDays = present + late + absent + onLeave;
+  const workingDays = present + late + onDuty + absent + onLeave;
   const attTotals = {
     present,
     late,
+    onDuty,
     absent,
     onLeave,
     holidays: tally('HOLIDAY'),
@@ -299,7 +306,7 @@ export async function buildSelfReport({ user, type, dateYMD }) {
     workingDays,
     workedHours: round1(days.reduce((s, d) => s + d.workedHours, 0)),
     overtimeMinutes: days.reduce((s, d) => s + d.overtimeMinutes, 0),
-    attendanceRate: workingDays > 0 ? Math.round(((present + late) / workingDays) * 100) : 0,
+    attendanceRate: workingDays > 0 ? Math.round(((present + late + onDuty) / workingDays) * 100) : 0,
   };
 
   // ── Leaves ────────────────────────────────────────────────

@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { COMPANY_TZ, formatClock, formatFullDate, formatTime, formatDuration } from '@/lib/time';
+import { effectiveStatus, attendanceStatusLabel } from '@/lib/attendance';
 
 export const LATE_REASONS = [
   'Site / Field visit',
@@ -108,7 +109,7 @@ export function CheckInCard() {
     overtimeMin = record.overtimeMinutes;
   }
 
-  const status = record?.status;
+  const status = effectiveStatus(record);
 
   // Would this check-in (right now) be late? → ask for an optional reason first.
   const lateThreshold = data?.workStartAt
@@ -139,7 +140,7 @@ export function CheckInCard() {
               <p className="mt-1 text-xs text-muted-foreground">Company time · {COMPANY_TZ}</p>
             </div>
             {status ? (
-              <StatusBadge tone={STATUS_TONES[status] ?? 'neutral'}>{status.replace('_', ' ')}</StatusBadge>
+              <StatusBadge tone={STATUS_TONES[status] ?? 'neutral'}>{attendanceStatusLabel(status)}</StatusBadge>
             ) : null}
           </div>
 

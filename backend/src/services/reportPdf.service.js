@@ -19,6 +19,7 @@ const ROLE_LABELS = {
 
 const STATUS_COLOR = {
   PRESENT: '#16a34a',
+  ON_DUTY: '#16a34a',
   LATE: '#d97706',
   ABSENT: '#dc2626',
   ON_LEAVE: '#2563eb',
@@ -333,6 +334,7 @@ function selfAttendanceSection(d, accent) {
     stat('Working days', t.workingDays, 's2'),
     stat('Present', t.present, 's3'),
     stat('Late', t.late, 's4'),
+    stat('On-duty', t.onDuty ?? 0, 's4b'),
     stat('Absent', t.absent, 's5'),
     stat('On leave', t.onLeave, 's6'),
     stat('Worked hours', `${t.workedHours}h`, 's7'),

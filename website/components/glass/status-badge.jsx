@@ -37,6 +37,7 @@ export function StatusBadge({ tone = 'neutral', dot = true, className, children,
 /** Maps domain statuses (attendance, leave) to a tone. Extended in later phases. */
 export const STATUS_TONES = {
   PRESENT: 'success',
+  ON_DUTY: 'success',
   APPROVED: 'success',
   LATE: 'warning',
   PENDING: 'warning',

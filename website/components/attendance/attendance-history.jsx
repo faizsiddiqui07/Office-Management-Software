@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { formatTime, formatDuration, formatDayLabel, recentMonths } from '@/lib/time';
+import { effectiveStatus, attendanceStatusLabel } from '@/lib/attendance';
 
 const columns = [
   { accessorKey: 'date', header: 'Date', cell: ({ row }) => formatDayLabel(row.original.date) },
@@ -34,11 +35,12 @@ const columns = [
   {
     accessorKey: 'status',
     header: 'Status',
-    cell: ({ row }) => (
-      <StatusBadge tone={STATUS_TONES[row.original.status] ?? 'neutral'}>
-        {row.original.status.replace('_', ' ')}
-      </StatusBadge>
-    ),
+    cell: ({ row }) => {
+      const s = effectiveStatus(row.original);
+      return (
+        <StatusBadge tone={STATUS_TONES[s] ?? 'neutral'}>{attendanceStatusLabel(s)}</StatusBadge>
+      );
+    },
   },
 ];
 
@@ -51,11 +53,11 @@ export function AttendanceHistory() {
     queryKey: ['attendance', 'history', month.from, month.to],
     queryFn: () => api.get(`/attendance?from=${month.from}&to=${month.to}&limit=100`),
   });
-  const records = data?.records ?? [];
+  const records = React.useMemo(() => data?.records ?? [], [data]);
 
   const summary = React.useMemo(() => {
     const present = records.filter((r) => r.status === 'PRESENT' || r.status === 'LATE').length;
-    const late = records.filter((r) => r.status === 'LATE').length;
+    const late = records.filter((r) => r.status === 'LATE' && !r.excused).length; // excused = on-duty, not late
     const overtime = records.reduce((s, r) => s + (r.overtimeMinutes || 0), 0);
     return { present, late, overtime };
   }, [records]);

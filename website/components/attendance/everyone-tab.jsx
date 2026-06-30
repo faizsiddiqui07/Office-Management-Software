@@ -3,10 +3,11 @@
 import * as React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Check, TriangleAlert, UserCheck, Users, UserX } from 'lucide-react';
+import { TriangleAlert, UserCheck, Users, UserX } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can, prettyRole } from '@/lib/permissions';
+import { effectiveStatus, attendanceStatusLabel } from '@/lib/attendance';
 import { DataTable } from '@/components/glass/data-table';
 import { StatCard } from '@/components/glass/stat-card';
 import { StatusBadge, STATUS_TONES } from '@/components/glass/status-badge';
@@ -68,18 +69,10 @@ export function EveryoneTab() {
         {
           id: 'status',
           header: 'Status',
-          cell: ({ row }) => (
-            <div className="flex flex-col items-start gap-1">
-              <StatusBadge tone={STATUS_TONES[row.original.status] ?? 'neutral'}>
-                {row.original.status.replace('_', ' ')}
-              </StatusBadge>
-              {row.original.attendance?.excused ? (
-                <span className="inline-flex items-center gap-1 rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-medium text-success ring-1 ring-success/20">
-                  <Check className="size-3" /> On-duty
-                </span>
-              ) : null}
-            </div>
-          ),
+          cell: ({ row }) => {
+            const s = effectiveStatus(row.original.attendance, row.original.status);
+            return <StatusBadge tone={STATUS_TONES[s] ?? 'neutral'}>{attendanceStatusLabel(s)}</StatusBadge>;
+          },
         },
         {
           id: 'reason',

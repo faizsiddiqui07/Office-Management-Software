@@ -38,8 +38,8 @@ export async function buildDashboard(user) {
     const overview = await attendanceOverview(todayYMD);
     out.team = {
       total: overview.summary.total,
-      present: overview.summary.present + overview.summary.late,
-      late: overview.summary.late,
+      present: overview.summary.present + overview.summary.late, // everyone who showed up
+      late: Math.max(0, overview.summary.late - (overview.summary.excused || 0)), // excused = on-duty, not late
       absent: overview.summary.absent,
       onLeave: overview.summary.onLeave,
       pendingApprovals: await LeaveRequest.countDocuments({ status: 'PENDING' }),
@@ -82,8 +82,8 @@ export async function buildDashboard(user) {
       headcount,
       attendanceRate: overview.summary.total ? Math.round(((overview.summary.present + overview.summary.late) / overview.summary.total) * 100) : 0,
       breakdown: {
-        present: overview.summary.present,
-        late: overview.summary.late,
+        present: overview.summary.present + (overview.summary.excused || 0), // on-duty counts as present
+        late: Math.max(0, overview.summary.late - (overview.summary.excused || 0)),
         absent: overview.summary.absent,
         onLeave: overview.summary.onLeave,
       },
