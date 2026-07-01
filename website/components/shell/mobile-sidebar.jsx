@@ -46,7 +46,7 @@ export function MobileSidebar({ user }) {
             <Brand />
           </Link>
 
-          <nav className="mt-6 flex flex-1 flex-col gap-1 overflow-y-auto pb-2">
+          <nav className="mt-6 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pb-2">
             {items.map((item) => {
               const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
               const Icon = item.icon;

@@ -17,7 +17,7 @@ export function AppSidebar({ user }) {
           <Brand />
         </Link>
 
-        <nav className="mt-7 flex flex-1 flex-col gap-1">
+        <nav className="mt-7 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pr-1">
           {items.map((item) => {
             const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
             const Icon = item.icon;
