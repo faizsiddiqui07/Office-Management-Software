@@ -8,6 +8,7 @@ import { Topbar } from './topbar';
 import { ForcePasswordChange } from '@/components/auth/force-password-change';
 import { LoadingState } from '@/components/glass/skeletons';
 import { AnnouncementPopup } from '@/components/announcements/announcement-popup';
+import { BirthdayPopup } from '@/components/calendar/birthday-popup';
 import { PwaRegister } from '@/components/pwa/pwa-register';
 import { DocumentTitle } from './document-title';
 
@@ -54,6 +55,7 @@ export function AppShell({ children }) {
           {children}
         </main>
       </div>
+      <BirthdayPopup />
       <AnnouncementPopup />
       <PwaRegister />
     </div>

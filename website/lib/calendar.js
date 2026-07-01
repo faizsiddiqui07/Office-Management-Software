@@ -2,12 +2,14 @@ export const EVENT_TYPES = {
   HOLIDAY: { label: 'Holiday', tone: 'destructive', dot: 'bg-destructive', chip: 'bg-destructive/12 text-destructive' },
   OPTIONAL_HOLIDAY: { label: 'Optional', tone: 'warning', dot: 'bg-warning', chip: 'bg-warning/15 text-amber-600 dark:text-amber-300' },
   EVENT: { label: 'Event', tone: 'info', dot: 'bg-info', chip: 'bg-info/12 text-info' },
+  BIRTHDAY: { label: 'Birthday', tone: 'primary', dot: 'bg-fuchsia-500', chip: 'bg-fuchsia-500/12 text-fuchsia-600 dark:text-fuchsia-300' },
 };
 
 export const EVENT_TYPE_OPTIONS = [
   { value: 'HOLIDAY', label: 'Holiday' },
   { value: 'OPTIONAL_HOLIDAY', label: 'Optional holiday' },
   { value: 'EVENT', label: 'Event' },
+  { value: 'BIRTHDAY', label: 'Birthday 🎂' },
 ];
 
 export function ymdOf(y, m, d) {
