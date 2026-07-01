@@ -141,6 +141,7 @@ export async function applyLeave(user, { type, startYMD, endYMD, halfDay, halfDa
     if (emails.length) {
       await sendLeaveRequestEmail(emails, {
         applicantName: user.name,
+        applicantEmail: user.email,
         type,
         startYMD,
         endYMD,

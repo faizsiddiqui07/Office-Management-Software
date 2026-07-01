@@ -69,7 +69,9 @@ export async function sendLeaveRequestEmail(to, d) {
 
   const text =
     `${d.applicantName} has applied for ${String(d.type || '').toLowerCase()} leave.\n` +
+    `Applicant email: ${d.applicantEmail || '—'}\n` +
     `Dates: ${dateLine}\nWorking days: ${d.workingDays}\nReason: ${d.reason || '—'}\n\n` +
+    `Reply to this email to reach ${d.applicantName} directly.\n` +
     `Review it in ${company}: ${d.link}`;
 
   const row = (label, value) =>
@@ -87,12 +89,20 @@ export async function sendLeaveRequestEmail(to, d) {
         <p style="margin:0 0 16px;font-size:15px;color:#1f2430;"><strong>${esc(d.applicantName)}</strong> has applied for leave and needs your approval.</p>
         <table style="width:100%;border-collapse:collapse;border-top:1px solid #eef0f3;">
           ${row('Type', d.type)}
+          ${
+            d.applicantEmail
+              ? `<tr><td style="padding:7px 0;color:#6b7280;font-size:13px;">Email</td>` +
+                `<td style="padding:7px 0;text-align:right;font-weight:600;font-size:14px;">` +
+                `<a href="mailto:${esc(d.applicantEmail)}" style="color:${accent};text-decoration:none;">${esc(d.applicantEmail)}</a></td></tr>`
+              : ''
+          }
           ${row('Dates', dateLine)}
           ${row('Working days', d.workingDays)}
           ${row('Reason', d.reason || '—')}
         </table>
         <a href="${esc(d.link)}" style="display:inline-block;margin-top:22px;background:${accent};color:#ffffff;text-decoration:none;padding:11px 20px;border-radius:9px;font-size:14px;font-weight:600;">Review request →</a>
-        <p style="margin:20px 0 0;font-size:12px;color:#9ca3af;">You’re receiving this because you approve leave for ${esc(company)}.</p>
+        <p style="margin:16px 0 0;font-size:13px;color:#4b5563;">Just <strong>reply</strong> to this email to respond to ${esc(d.applicantName)} directly.</p>
+        <p style="margin:12px 0 0;font-size:12px;color:#9ca3af;">You’re receiving this because you approve leave for ${esc(company)}.</p>
       </div>
     </div>
   </div>`;
@@ -102,6 +112,18 @@ export async function sendLeaveRequestEmail(to, d) {
     console.log('\n📧 Leave request email (SMTP not configured — logging instead):\n', text, '\n');
     return { delivered: false };
   }
-  await t.sendMail({ from: fromAddress(company), to: recipients, subject, text, html });
+  // Sent through the one authenticated SMTP account, but shown as the applicant:
+  //  • From display name = applicant → approvers see who it's from in their inbox
+  //  • Reply-To = applicant's email → hitting "Reply" reaches them directly
+  // (Gmail rewrites a foreign From back to the auth account, so From address stays
+  //  the company mailbox; Reply-To is what actually routes replies.)
+  await t.sendMail({
+    from: fromAddress(d.applicantName || company),
+    replyTo: d.applicantEmail || undefined,
+    to: recipients,
+    subject,
+    text,
+    html,
+  });
   return { delivered: true };
 }
