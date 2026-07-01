@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/select';
 import { LEADERSHIP, can } from '@/lib/permissions';
 import { useRoleOptions } from '@/lib/use-roles';
+import { EmploymentFields, DEFAULT_SCHEDULE } from './employment-fields';
 
 export function EditUserDialog({ user: target, open, onOpenChange }) {
   const { user: actor } = useAuth();
@@ -33,6 +34,8 @@ export function EditUserDialog({ user: target, open, onOpenChange }) {
   const [designation, setDesignation] = React.useState('');
   const [role, setRole] = React.useState('EMPLOYEE');
   const [isActive, setIsActive] = React.useState(true);
+  const [employmentType, setEmploymentType] = React.useState('FULL_TIME');
+  const [schedule, setSchedule] = React.useState({ ...DEFAULT_SCHEDULE });
 
   const canManage = can(actor, 'manageUsers');
   const [quota, setQuota] = React.useState('');
@@ -45,6 +48,12 @@ export function EditUserDialog({ user: target, open, onOpenChange }) {
     setDesignation(target.designation || '');
     setRole(target.role || 'EMPLOYEE');
     setIsActive(target.isActive !== false);
+    setEmploymentType(target.employmentType || 'FULL_TIME');
+    setSchedule({
+      workStart: target.schedule?.workStart || DEFAULT_SCHEDULE.workStart,
+      workEnd: target.schedule?.workEnd || DEFAULT_SCHEDULE.workEnd,
+      graceMinutes: target.schedule?.graceMinutes ?? 0,
+    });
   }, [open, target]);
 
   // Current fiscal-year leave balance (for the leadership override below).
@@ -62,7 +71,18 @@ export function EditUserDialog({ user: target, open, onOpenChange }) {
 
   const mut = useMutation({
     mutationFn: async () => {
-      await api.patch(`/users/${target.id}`, { name, department, designation, role, isActive });
+      if (employmentType === 'PART_TIME' && (!schedule.workStart || !schedule.workEnd)) {
+        throw new Error('Part-time needs a check-in and check-out time');
+      }
+      await api.patch(`/users/${target.id}`, {
+        name,
+        department,
+        designation,
+        role,
+        isActive,
+        employmentType,
+        schedule: employmentType === 'PART_TIME' ? schedule : undefined,
+      });
       if (canManage) {
         const payload = {};
         if (quota !== '') payload.totalQuota = Number(quota);
@@ -136,6 +156,13 @@ export function EditUserDialog({ user: target, open, onOpenChange }) {
           </div>
           <Switch id="eu-active" checked={isActive} onCheckedChange={setIsActive} disabled={isSelf} />
         </div>
+
+        <EmploymentFields
+          employmentType={employmentType}
+          schedule={schedule}
+          onTypeChange={setEmploymentType}
+          onScheduleChange={setSchedule}
+        />
 
         {canManage ? (
           <div className="space-y-3 rounded-xl bg-foreground/[0.04] p-3 ring-1 ring-border/50">

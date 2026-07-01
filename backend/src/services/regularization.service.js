@@ -5,6 +5,7 @@ import { User } from '../models/User.js';
 import { notify } from '../models/Notification.js';
 import { LEADERSHIP } from '../lib/permissions.js';
 import { companyDayFromYMD, companyDayInstantAt, isLateCheckIn, computeWork } from '../lib/time.js';
+import { effectiveSchedule } from '../lib/schedule.js';
 
 function httpError(status, code, message) {
   const e = new Error(message);
@@ -58,6 +59,8 @@ export async function listPending() {
 /** Apply an approved correction to the attendance record for that day. */
 async function applyToAttendance(reg) {
   const settings = await Setting.getSingleton();
+  const owner = await User.findById(reg.user).select('employmentType schedule');
+  const sched = effectiveSchedule(owner, settings); // part-time uses its own hours
   const day = companyDayFromYMD(reg.dateYMD);
   let record = await Attendance.findOne({ user: reg.user, date: day });
   if (!record) record = new Attendance({ user: reg.user, date: day });
@@ -65,13 +68,13 @@ async function applyToAttendance(reg) {
   if (reg.requestedCheckIn) {
     const inAt = companyDayInstantAt(day, reg.requestedCheckIn);
     record.checkInAt = inAt;
-    record.status = isLateCheckIn(inAt, day, settings.workStart, settings.graceMinutes) ? 'LATE' : 'PRESENT';
+    record.status = isLateCheckIn(inAt, day, sched.workStart, sched.graceMinutes) ? 'LATE' : 'PRESENT';
   }
   if (reg.requestedCheckOut) {
     record.checkOutAt = companyDayInstantAt(day, reg.requestedCheckOut);
   }
   if (record.checkInAt && record.checkOutAt) {
-    const { workedMinutes, overtimeMinutes } = computeWork(record.checkInAt, record.checkOutAt, day, settings.workEnd);
+    const { workedMinutes, overtimeMinutes } = computeWork(record.checkInAt, record.checkOutAt, day, sched.workEnd);
     record.workedMinutes = workedMinutes;
     record.overtimeMinutes = overtimeMinutes;
   }

@@ -35,7 +35,14 @@ function MemberCard({ u }) {
         </span>
       )}
       <div className="min-w-0 flex-1">
-        <p className="truncate font-semibold leading-tight">{u.name}</p>
+        <div className="flex items-center gap-2">
+          <p className="truncate font-semibold leading-tight">{u.name}</p>
+          {u.employmentType === 'PART_TIME' ? (
+            <span className="shrink-0 rounded-full bg-warning/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 ring-1 ring-warning/25 dark:text-amber-300">
+              Part-time
+            </span>
+          ) : null}
+        </div>
         <p className="mt-0.5 truncate text-sm font-medium text-primary">{u.designation || prettyRole(u.role)}</p>
         {u.department ? <p className="mt-0.5 truncate text-xs text-muted-foreground">{u.department}</p> : null}
         <div className="mt-2 space-y-1 text-xs text-muted-foreground">

@@ -1,4 +1,3 @@
-import { formatInTimeZone } from 'date-fns-tz';
 import { Attendance } from '../models/Attendance.js';
 import { Setting } from '../models/Setting.js';
 import { LeaveBalance } from '../models/LeaveBalance.js';
@@ -7,7 +6,6 @@ import { canViewEveryone, can } from '../lib/permissions.js';
 import { haversineMeters } from '../lib/geo.js';
 import { holidayYMDSet } from './holiday.service.js';
 import {
-  COMPANY_TZ,
   companyTzMidnight,
   companyDayFromYMD,
   companyDayInstantAt,
@@ -16,6 +14,8 @@ import {
   isLateCheckIn,
   computeWork,
 } from '../lib/time.js';
+import { effectiveSchedule } from '../lib/schedule.js';
+import { leaveYearOf } from '../lib/leaveYear.js';
 
 function httpError(status, code, message) {
   const e = new Error(message);
@@ -66,7 +66,8 @@ export async function checkIn(user, meta, coords, lateReason) {
   }
 
   const geoMeta = verifyGeofence(settings.gpsAttendance, coords);
-  const isLate = isLateCheckIn(now, day, settings.workStart, settings.graceMinutes);
+  const sched = effectiveSchedule(user, settings); // part-time uses its own hours
+  const isLate = isLateCheckIn(now, day, sched.workStart, sched.graceMinutes);
   const status = isLate ? 'LATE' : 'PRESENT';
   const reason = isLate ? cleanLateReason(lateReason) : null; // reason only meaningful when late
 
@@ -106,7 +107,8 @@ export async function checkOut(user, meta, coords) {
 
   const settings = await Setting.getSingleton();
   const geoMeta = verifyGeofence(settings.gpsAttendance, coords);
-  const { workedMinutes, overtimeMinutes } = computeWork(record.checkInAt, now, day, settings.workEnd);
+  const sched = effectiveSchedule(user, settings); // part-time overtime counts past its own end
+  const { workedMinutes, overtimeMinutes } = computeWork(record.checkInAt, now, day, sched.workEnd);
 
   record.checkOutAt = now;
   record.checkOutMeta = { ...meta, ...geoMeta };
@@ -116,7 +118,7 @@ export async function checkOut(user, meta, coords) {
 
   // Accrue overtime into the user's yearly leave balance.
   if (overtimeMinutes > 0) {
-    const year = Number(formatInTimeZone(day, COMPANY_TZ, 'yyyy'));
+    const year = leaveYearOf(ymdInTz(day)); // fiscal leave year — same balance as leave
     await LeaveBalance.findOneAndUpdate(
       { user: user._id, year },
       {
@@ -144,17 +146,19 @@ export async function getTodayPayload(user) {
   const record = await Attendance.findOne({ user: user._id, date: day });
   const dateYMD = ymdInTz(day);
   const isHoliday = (await holidayYMDSet(dateYMD, dateYMD)).has(dateYMD);
+  const sched = effectiveSchedule(user, settings); // part-time uses its own hours
 
   return {
     record: record ? record.toJSON() : null,
     serverNow: now.toISOString(),
     isHoliday,
-    workStartAt: companyDayInstantAt(day, settings.workStart).toISOString(),
-    workEndAt: companyDayInstantAt(day, settings.workEnd).toISOString(),
+    employmentType: user.employmentType || 'FULL_TIME',
+    workStartAt: companyDayInstantAt(day, sched.workStart).toISOString(),
+    workEndAt: companyDayInstantAt(day, sched.workEnd).toISOString(),
     settings: {
-      workStart: settings.workStart,
-      workEnd: settings.workEnd,
-      graceMinutes: settings.graceMinutes,
+      workStart: sched.workStart,
+      workEnd: sched.workEnd,
+      graceMinutes: sched.graceMinutes,
       timezone: settings.timezone,
     },
     gps: {

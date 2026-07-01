@@ -20,8 +20,17 @@ import {
 import { LEADERSHIP } from '@/lib/permissions';
 import { useRoleOptions } from '@/lib/use-roles';
 import { TempPasswordContent } from './temp-password-content';
+import { EmploymentFields, DEFAULT_SCHEDULE } from './employment-fields';
 
-const EMPTY = { name: '', email: '', role: 'EMPLOYEE', department: '', designation: '' };
+const EMPTY = {
+  name: '',
+  email: '',
+  role: 'EMPLOYEE',
+  department: '',
+  designation: '',
+  employmentType: 'FULL_TIME',
+  schedule: { ...DEFAULT_SCHEDULE },
+};
 
 export function CreateUserDialog() {
   const { user } = useAuth();
@@ -55,6 +64,9 @@ export function CreateUserDialog() {
   const submit = () => {
     if (!form.name.trim()) return toast.error('Add a name');
     if (!form.email.trim()) return toast.error('Add an email');
+    if (form.employmentType === 'PART_TIME' && (!form.schedule.workStart || !form.schedule.workEnd)) {
+      return toast.error('Part-time needs a check-in and check-out time');
+    }
     mut.mutate();
   };
 
@@ -121,6 +133,12 @@ export function CreateUserDialog() {
             <Label htmlFor="cu-desg">Designation</Label>
             <Input id="cu-desg" value={form.designation} onChange={set('designation')} placeholder="Software Engineer" className="bg-background/50" />
           </div>
+          <EmploymentFields
+            employmentType={form.employmentType}
+            schedule={form.schedule}
+            onTypeChange={(v) => setForm((f) => ({ ...f, employmentType: v }))}
+            onScheduleChange={(s) => setForm((f) => ({ ...f, schedule: s }))}
+          />
         </div>
       )}
     </AppDialog>

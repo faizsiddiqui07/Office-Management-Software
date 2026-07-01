@@ -7,6 +7,14 @@ const userSchema = new mongoose.Schema(
     employeeId: { type: String, required: true, unique: true },
     passwordHash: { type: String, required: true, select: false },
     role: { type: String, required: true, default: 'EMPLOYEE', index: true },
+    // Full-time follows the office hours; part-time uses its own `schedule` below.
+    employmentType: { type: String, enum: ['FULL_TIME', 'PART_TIME'], default: 'FULL_TIME' },
+    // Per-user work window — only used when employmentType === 'PART_TIME'.
+    schedule: {
+      workStart: { type: String, default: '' }, // 'HH:mm' company time
+      workEnd: { type: String, default: '' }, // 'HH:mm'
+      graceMinutes: { type: Number, default: 0 },
+    },
     department: { type: String, default: '' },
     designation: { type: String, default: '' },
     phone: { type: String, default: '' },

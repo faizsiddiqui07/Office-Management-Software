@@ -13,6 +13,18 @@ function httpError(status, code, message) {
   return e;
 }
 
+/** Keep a per-user schedule only for part-timers; full-timers store an empty one. */
+function normalizeSchedule(employmentType, schedule) {
+  if (employmentType === 'PART_TIME' && schedule) {
+    return {
+      workStart: schedule.workStart || '',
+      workEnd: schedule.workEnd || '',
+      graceMinutes: Number(schedule.graceMinutes) || 0,
+    };
+  }
+  return { workStart: '', workEnd: '', graceMinutes: 0 };
+}
+
 /**
  * Creates a new employee: unique employeeId, hashed temp password,
  * mustChangePassword=true, and a LeaveBalance for the current year.
@@ -26,6 +38,8 @@ export async function createEmployee({
   designation = '',
   phone = '',
   reportsTo = null,
+  employmentType = 'FULL_TIME',
+  schedule = null,
   temporaryPassword,
   createdBy = null,
 }) {
@@ -43,6 +57,8 @@ export async function createEmployee({
     employeeId,
     passwordHash,
     role,
+    employmentType: employmentType === 'PART_TIME' ? 'PART_TIME' : 'FULL_TIME',
+    schedule: normalizeSchedule(employmentType, schedule),
     department,
     designation,
     phone,
@@ -114,6 +130,14 @@ export async function updateUser(actor, id, data) {
     if (data[f] !== undefined) user[f] = data[f];
   }
   if (data.reportsTo !== undefined) user.reportsTo = data.reportsTo || null;
+
+  if (data.employmentType !== undefined) {
+    user.employmentType = data.employmentType === 'PART_TIME' ? 'PART_TIME' : 'FULL_TIME';
+  }
+  if (data.employmentType !== undefined || data.schedule !== undefined) {
+    // Re-normalize so switching to full-time clears any old custom hours.
+    user.schedule = normalizeSchedule(user.employmentType, data.schedule ?? user.schedule);
+  }
 
   await user.save();
   return user.toJSON();
