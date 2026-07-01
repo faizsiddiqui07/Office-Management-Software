@@ -30,6 +30,17 @@ export function logoFilePath(logoUrl) {
  */
 export function loadCompanyLogo(logoUrl) {
   try {
+    if (!logoUrl || typeof logoUrl !== 'string') return null;
+
+    // Current storage: a base64 data URL kept directly in settings (works on a
+    // read-only/Lambda filesystem). @react-pdf can embed png/jpg data URIs as-is.
+    if (logoUrl.startsWith('data:')) {
+      const m = /^data:image\/(png|jpe?g);base64,/i.exec(logoUrl);
+      if (!m) return null; // svg/webp aren't PDF-embeddable
+      return { format: /png/i.test(m[1]) ? 'png' : 'jpg', dataUri: logoUrl };
+    }
+
+    // Legacy: a file under website/public/brand (only present on a writable disk).
     const p = logoFilePath(logoUrl);
     if (!p || !fs.existsSync(p)) return null;
     const ext = path.extname(p).slice(1).toLowerCase();
@@ -67,24 +78,21 @@ export function clearCompanyLogo(variant) {
   }
 }
 
+// Max decoded image size kept in the DB. Base64 inflates ~33%, and up to four
+// images (2 logos + 2 backgrounds) live in the single settings doc, so this
+// keeps it comfortably under MongoDB's 16MB document limit. The frontend
+// downscales before upload, so this is mainly a safety net.
+const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
+
 /**
- * Save a media file (logo/background) variant from a data URL into the brand dir.
+ * Validate an uploaded image data URL and return it to store DIRECTLY in the
+ * settings document (base64). No filesystem or S3 needed — works on a read-only
+ * Lambda filesystem. The stored value is a "data:...;base64,..." string that the
+ * browser renders natively and @react-pdf embeds as-is.
  * @param {string} dataUrl  e.g. "data:image/png;base64,...."
- * @param {number|string} version  cache-busting token (e.g. Date.now())
- * @param {string} prefix  'logo' | 'bg'
- * @param {'light'|'dark'} variant  which theme this media is for
- * @returns {string} the public URL to store in settings
+ * @returns {string} the data URL to store in settings
  */
-function saveMedia(dataUrl, version, prefix, variant = 'dark') {
-  // AWS Lambda has a read-only filesystem (except /tmp, which is ephemeral) and
-  // the website's public folder isn't in the function bundle — so logo/background
-  // uploads can't persist there. Fail clearly instead of throwing EROFS.
-  if (process.env.AWS_LAMBDA_FUNCTION_NAME) {
-    const e = new Error('Image uploads need object storage (e.g. S3) on this server. Set the logo/background by hosting the backend with a writable disk, or wire up S3.');
-    e.status = 501;
-    e.code = 'UPLOAD_UNSUPPORTED';
-    throw e;
-  }
+function saveMedia(dataUrl) {
   const m = /^data:([^;,]+);base64,(.+)$/s.exec(String(dataUrl || ''));
   if (!m) {
     const e = new Error('Invalid image data');
@@ -92,27 +100,28 @@ function saveMedia(dataUrl, version, prefix, variant = 'dark') {
     e.code = 'BAD_IMAGE';
     throw e;
   }
-  const ext = EXT_BY_MIME[m[1].toLowerCase()];
-  if (!ext) {
+  if (!EXT_BY_MIME[m[1].toLowerCase()]) {
     const e = new Error('Unsupported image type — use PNG, JPG, WEBP or SVG');
     e.status = 400;
     e.code = 'BAD_IMAGE_TYPE';
     throw e;
   }
-  const buffer = Buffer.from(m[2], 'base64');
-  fs.mkdirSync(LOGO_DIR, { recursive: true });
-  const v = variant === 'light' ? 'light' : 'dark';
-  const name = `${prefix}-${v}-${version}.${ext}`;
-  fs.writeFileSync(path.join(LOGO_DIR, name), buffer);
-  return `/brand/${name}`;
+  const bytes = Math.floor((m[2].length * 3) / 4);
+  if (bytes > MAX_IMAGE_BYTES) {
+    const e = new Error('Image is too large — please use one under 3 MB (a smaller or more compressed image).');
+    e.status = 413;
+    e.code = 'IMAGE_TOO_LARGE';
+    throw e;
+  }
+  return dataUrl;
 }
 
-/** Save a company logo variant. */
-export function saveCompanyLogo(dataUrl, version, variant = 'dark') {
-  return saveMedia(dataUrl, version, 'logo', variant);
+/** Validate + return a company logo data URL for storage. */
+export function saveCompanyLogo(dataUrl) {
+  return saveMedia(dataUrl);
 }
 
-/** Save an app background variant. */
-export function saveBackground(dataUrl, version, variant = 'dark') {
-  return saveMedia(dataUrl, version, 'bg', variant);
+/** Validate + return an app background data URL for storage. */
+export function saveBackground(dataUrl) {
+  return saveMedia(dataUrl);
 }

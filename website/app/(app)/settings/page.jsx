@@ -8,6 +8,7 @@ import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can } from '@/lib/permissions';
 import { SETTINGS_KEY } from '@/lib/settings';
+import { downscaleImage } from '@/lib/image';
 import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/glass/page-header';
 import { GlassPanel } from '@/components/glass/glass-panel';
@@ -108,7 +109,7 @@ export default function SettingsPage() {
     );
   };
 
-  const uploadLogo = (variant) => (e) => {
+  const uploadLogo = (variant) => async (e) => {
     const input = e.target;
     const file = input.files?.[0];
     if (!file) return;
@@ -117,25 +118,19 @@ export default function SettingsPage() {
       input.value = '';
       return;
     }
-    const reader = new FileReader();
-    reader.onload = async () => {
-      setLogoBusy(variant);
-      try {
-        await api.post('/settings/logo', { dataUrl: reader.result, variant });
-        await queryClient.invalidateQueries({ queryKey: SETTINGS_KEY });
-        toast.success(`${variant === 'light' ? 'Light' : 'Dark'} logo updated`);
-      } catch (err) {
-        toast.error(err instanceof ApiError ? err.message : 'Could not upload logo');
-      } finally {
-        setLogoBusy('');
-        input.value = '';
-      }
-    };
-    reader.onerror = () => {
-      toast.error('Could not read that file');
+    setLogoBusy(variant);
+    try {
+      // Logos keep transparency → PNG; downscale so the stored image stays small.
+      const dataUrl = await downscaleImage(file, { maxDim: 800, mime: 'image/png' });
+      await api.post('/settings/logo', { dataUrl, variant });
+      await queryClient.invalidateQueries({ queryKey: SETTINGS_KEY });
+      toast.success(`${variant === 'light' ? 'Light' : 'Dark'} logo updated`);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : err?.message || 'Could not upload logo');
+    } finally {
+      setLogoBusy('');
       input.value = '';
-    };
-    reader.readAsDataURL(file);
+    }
   };
 
   const removeLogo = (variant) => async () => {
@@ -151,7 +146,7 @@ export default function SettingsPage() {
     }
   };
 
-  const uploadBg = (variant) => (e) => {
+  const uploadBg = (variant) => async (e) => {
     const input = e.target;
     const file = input.files?.[0];
     if (!file) return;
@@ -160,25 +155,19 @@ export default function SettingsPage() {
       input.value = '';
       return;
     }
-    const reader = new FileReader();
-    reader.onload = async () => {
-      setBgBusy(variant);
-      try {
-        await api.post('/settings/background', { dataUrl: reader.result, variant });
-        await queryClient.invalidateQueries({ queryKey: SETTINGS_KEY });
-        toast.success(`${variant === 'light' ? 'Light' : 'Dark'} background updated`);
-      } catch (err) {
-        toast.error(err instanceof ApiError ? err.message : 'Could not upload background');
-      } finally {
-        setBgBusy('');
-        input.value = '';
-      }
-    };
-    reader.onerror = () => {
-      toast.error('Could not read that file');
+    setBgBusy(variant);
+    try {
+      // Backgrounds are photos → JPEG, downscaled to keep the stored image small.
+      const dataUrl = await downscaleImage(file, { maxDim: 1920, mime: 'image/jpeg', quality: 0.82 });
+      await api.post('/settings/background', { dataUrl, variant });
+      await queryClient.invalidateQueries({ queryKey: SETTINGS_KEY });
+      toast.success(`${variant === 'light' ? 'Light' : 'Dark'} background updated`);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : err?.message || 'Could not upload background');
+    } finally {
+      setBgBusy('');
       input.value = '';
-    };
-    reader.readAsDataURL(file);
+    }
   };
 
   const removeBg = (variant) => async () => {
