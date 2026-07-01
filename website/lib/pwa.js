@@ -69,6 +69,39 @@ export async function enablePush() {
   return true;
 }
 
+/** Running as an installed app (standalone / added to home screen)? */
+export function isStandalone() {
+  if (typeof window === 'undefined') return false;
+  return window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true;
+}
+
+/**
+ * Make notifications "just work". If permission is already granted, silently
+ * (re)register the push subscription so alerts arrive as native notifications —
+ * even when the app is closed. If it's still undecided AND the app is installed,
+ * ask once. Best-effort: never throws.
+ */
+export async function ensurePushOnLaunch() {
+  if (!pushSupported()) return;
+  const perm = Notification.permission;
+  if (perm === 'denied') return;
+  try {
+    if (perm === 'granted') {
+      await enablePush();
+    } else if (isStandalone()) {
+      if (typeof localStorage !== 'undefined' && localStorage.getItem('om_push_asked')) return;
+      try {
+        localStorage.setItem('om_push_asked', '1');
+      } catch {
+        /* ignore */
+      }
+      await enablePush();
+    }
+  } catch {
+    /* best-effort — the user can still enable it from Settings/Profile */
+  }
+}
+
 export async function disablePush() {
   if (!pushSupported()) return;
   const reg = await navigator.serviceWorker.ready;

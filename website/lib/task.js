@@ -4,7 +4,7 @@ import { COMPANY_TZ } from '@/lib/time';
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
 export const PDF_SCOPES = [
-  { value: 'all', label: 'All tasks' },
+  { value: 'all', label: 'All Work' },
   { value: 'pending', label: 'Pending only' },
   { value: 'completed', label: 'Completed only' },
   { value: 'week', label: 'Last 7 days' },

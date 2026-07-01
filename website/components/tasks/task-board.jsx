@@ -8,7 +8,6 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
-import { StatCard } from '@/components/glass/stat-card';
 import { StatusBadge } from '@/components/glass/status-badge';
 import { EmptyState } from '@/components/glass/empty-state';
 import { LoadingState } from '@/components/glass/skeletons';
@@ -22,11 +21,38 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from '@/components/ui/select';
 import { TaskDialog } from './task-dialog';
 import { AssignDialog } from './assign-dialog';
 import { PDF_SCOPES, downloadTasksPdf, isOverdue } from '@/lib/task';
+
+const PERIODS = [
+  { value: 'all', label: 'All Time' },
+  { value: 'week', label: 'Last 7 days' },
+  { value: 'month', label: 'Last 30 days' },
+  { value: 'year', label: 'Last year' },
+];
+const PERIOD_LABELS = Object.fromEntries(PERIODS.map((p) => [p.value, p.label]));
+const PDF_LABELS = Object.fromEntries(PDF_SCOPES.map((s) => [s.value, s.label]));
+
+const STAT_TONE = {
+  warning: 'bg-warning/15 text-amber-600 ring-warning/25 dark:text-amber-300',
+  success: 'bg-success/12 text-success ring-success/25',
+  default: 'bg-primary/12 text-primary ring-primary/20',
+};
+
+/** Compact stat that fits three-across on a phone with a clearly visible icon. */
+function StatMini({ label, value, icon: Icon, tone = 'default' }) {
+  return (
+    <div className="glass glass-highlight rounded-2xl p-3 text-center sm:p-4">
+      <span className={cn('mx-auto flex size-9 items-center justify-center rounded-xl ring-1', STAT_TONE[tone])}>
+        <Icon className="size-[18px]" />
+      </span>
+      <p className="mt-2 text-2xl font-semibold tabular-nums">{value}</p>
+      <p className="text-xs text-muted-foreground">{label}</p>
+    </div>
+  );
+}
 
 function initials(name = '') {
   return (
@@ -273,9 +299,9 @@ export function TaskBoard() {
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-3 gap-3 sm:gap-4">
-        <StatCard label="Pending" value={m.pending} icon={ListTodo} tone={m.pending ? 'warning' : 'default'} />
-        <StatCard label="Completed" value={m.done} icon={CheckCircle2} tone="success" />
-        <StatCard label="Total" value={m.total} icon={ClipboardList} />
+        <StatMini label="Pending" value={m.pending} icon={ListTodo} tone={m.pending ? 'warning' : 'default'} />
+        <StatMini label="Completed" value={m.done} icon={CheckCircle2} tone="success" />
+        <StatMini label="Total" value={m.total} icon={ClipboardList} />
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -295,19 +321,20 @@ export function TaskBoard() {
         </div>
         <Select value={period} onValueChange={setPeriod}>
           <SelectTrigger className="h-9 w-full bg-background/50 sm:w-36">
-            <SelectValue />
+            <span className="line-clamp-1">{PERIOD_LABELS[period] ?? 'All Time'}</span>
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All time</SelectItem>
-            <SelectItem value="week">Last 7 days</SelectItem>
-            <SelectItem value="month">Last 30 days</SelectItem>
-            <SelectItem value="year">Last year</SelectItem>
+            {PERIODS.map((p) => (
+              <SelectItem key={p.value} value={p.value}>
+                {p.label}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
         <div className="flex w-full items-center gap-2 sm:ml-auto sm:w-auto">
           <Select value={pdfScope} onValueChange={setPdfScope}>
             <SelectTrigger className="h-9 flex-1 bg-background/50 sm:w-40">
-              <SelectValue />
+              <span className="line-clamp-1">{PDF_LABELS[pdfScope] ?? 'All Work'}</span>
             </SelectTrigger>
             <SelectContent>
               {PDF_SCOPES.map((s) => (
