@@ -5,6 +5,9 @@ import {
   getSettings,
   getBranding,
   updateSettings,
+  updateSmtp,
+  clearSmtp,
+  testSmtp,
   uploadLogo,
   removeLogo,
   uploadBackground,
@@ -23,6 +26,10 @@ settingsRouter.use(requireAuth);
 settingsRouter.get('/', getSettings);
 // Editable by leadership only.
 settingsRouter.put('/', requirePermission('manageSettings'), updateSettings);
+// Outgoing email (SMTP) account — leadership only; password is write-only + re-auth.
+settingsRouter.put('/smtp', requirePermission('manageSettings'), updateSmtp);
+settingsRouter.delete('/smtp', requirePermission('manageSettings'), clearSmtp);
+settingsRouter.post('/smtp/test', requirePermission('manageSettings'), testSmtp);
 settingsRouter.post('/logo', requirePermission('manageSettings'), uploadLogo);
 settingsRouter.delete('/logo', requirePermission('manageSettings'), removeLogo);
 settingsRouter.post('/background', requirePermission('manageSettings'), uploadBackground);

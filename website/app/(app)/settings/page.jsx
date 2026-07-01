@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { BellRing, Building2, Crosshair, ImageUp, Loader2, MapPin, Plus, Settings, ShieldAlert, Trash2, X } from 'lucide-react';
+import { BellRing, Building2, CheckCircle2, Crosshair, ImageUp, KeyRound, Loader2, Mail, MapPin, Plus, Send, Settings, ShieldAlert, Trash2, X } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can } from '@/lib/permissions';
@@ -42,6 +42,9 @@ export default function SettingsPage() {
   const [bgBusy, setBgBusy] = React.useState(''); // '' | 'light' | 'dark'
   const bgLightRef = React.useRef(null);
   const bgDarkRef = React.useRef(null);
+  const [smtp, setSmtp] = React.useState({ smtpUser: '', smtpPass: '', smtpHost: '', smtpPort: '', currentPassword: '' });
+  const [smtpSaving, setSmtpSaving] = React.useState(false);
+  const [smtpTesting, setSmtpTesting] = React.useState(false);
 
   React.useEffect(() => {
     if (data?.settings) {
@@ -68,6 +71,14 @@ export default function SettingsPage() {
           radiusMeters: s.gpsAttendance?.radiusMeters ?? 200,
         },
       });
+      // Email (SMTP): show the current sender/host/port; the password is
+      // write-only so it's never loaded back into the form.
+      setSmtp((prev) => ({
+        ...prev,
+        smtpUser: s.smtpUser ?? '',
+        smtpHost: s.smtpHost ?? '',
+        smtpPort: s.smtpPort ? String(s.smtpPort) : '',
+      }));
     }
   }, [data]);
 
@@ -217,6 +228,43 @@ export default function SettingsPage() {
       toast.error(err instanceof ApiError ? err.message : 'Could not save settings');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const setS = (k, v) => setSmtp((f) => ({ ...f, [k]: v }));
+
+  const saveSmtp = async () => {
+    if (!smtp.smtpUser.trim()) return toast.error('Enter the sender email');
+    if (!data?.settings?.smtpConfigured && !smtp.smtpPass) return toast.error('Enter the app password');
+    if (!smtp.currentPassword) return toast.error('Enter your account password to confirm');
+    setSmtpSaving(true);
+    try {
+      await api.put('/settings/smtp', {
+        smtpUser: smtp.smtpUser.trim(),
+        smtpPass: smtp.smtpPass || undefined,
+        smtpHost: smtp.smtpHost.trim() || undefined,
+        smtpPort: smtp.smtpPort ? Number(smtp.smtpPort) : undefined,
+        currentPassword: smtp.currentPassword,
+      });
+      await queryClient.invalidateQueries({ queryKey: SETTINGS_KEY });
+      setSmtp((f) => ({ ...f, smtpPass: '', currentPassword: '' }));
+      toast.success('Email settings saved');
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Could not save email settings');
+    } finally {
+      setSmtpSaving(false);
+    }
+  };
+
+  const testEmail = async () => {
+    setSmtpTesting(true);
+    try {
+      const res = await api.post('/settings/smtp/test', {});
+      toast.success(`Test email sent to ${res?.to || 'your address'} — check your inbox (and spam)`);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Could not send the test email');
+    } finally {
+      setSmtpTesting(false);
     }
   };
 
@@ -527,6 +575,75 @@ export default function SettingsPage() {
               <Button type="button" variant="outline" onClick={addCategory} className="shrink-0">
                 <Plus className="size-4" /> Add
               </Button>
+            </div>
+          </GlassPanel>
+
+          <GlassPanel className="space-y-5 p-6">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-sm font-semibold">
+                <Mail className="size-4 text-primary" /> Email (SMTP)
+              </div>
+              {data?.settings?.smtpConfigured ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/12 px-2.5 py-1 text-xs font-medium text-emerald-600 ring-1 ring-emerald-500/25 dark:text-emerald-300">
+                  <CheckCircle2 className="size-3.5" /> Configured
+                </span>
+              ) : (
+                <span className="rounded-full bg-muted/50 px-2.5 py-1 text-xs font-medium text-muted-foreground ring-1 ring-border">
+                  Using server default
+                </span>
+              )}
+            </div>
+            <p className="text-sm text-muted-foreground">
+              The account used to send password-reset and system emails. For Gmail, use a{' '}
+              <a
+                href="https://myaccount.google.com/apppasswords"
+                target="_blank"
+                rel="noreferrer"
+                className="text-primary underline underline-offset-2"
+              >
+                16-character App Password
+              </a>{' '}
+              — not your normal Gmail password.
+            </p>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="smtp-user">Sender email</Label>
+                <Input id="smtp-user" type="email" autoComplete="off" placeholder="you@gmail.com" value={smtp.smtpUser} onChange={(e) => setS('smtpUser', e.target.value)} className="bg-background/50" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="smtp-pass">App password</Label>
+                <Input
+                  id="smtp-pass"
+                  type="password"
+                  autoComplete="new-password"
+                  placeholder={data?.settings?.smtpConfigured ? '•••••••• (leave blank to keep)' : '16-char app password'}
+                  value={smtp.smtpPass}
+                  onChange={(e) => setS('smtpPass', e.target.value)}
+                  className="bg-background/50"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="smtp-host">SMTP host <span className="font-normal text-muted-foreground">(optional)</span></Label>
+                <Input id="smtp-host" autoComplete="off" placeholder="smtp.gmail.com" value={smtp.smtpHost} onChange={(e) => setS('smtpHost', e.target.value)} className="bg-background/50" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="smtp-port">Port <span className="font-normal text-muted-foreground">(optional)</span></Label>
+                <Input id="smtp-port" type="number" placeholder="587" value={smtp.smtpPort} onChange={(e) => setS('smtpPort', e.target.value)} className="bg-background/50" />
+              </div>
+            </div>
+            <div className="space-y-1.5 rounded-xl bg-amber-500/[0.06] p-3 ring-1 ring-amber-500/20">
+              <Label htmlFor="smtp-confirm" className="flex items-center gap-1.5"><KeyRound className="size-3.5" /> Confirm with your account password</Label>
+              <Input id="smtp-confirm" type="password" autoComplete="current-password" placeholder="Your login password" value={smtp.currentPassword} onChange={(e) => setS('currentPassword', e.target.value)} className="max-w-xs bg-background/50" />
+              <p className="text-xs text-muted-foreground">Required to change email settings. The app password is stored encrypted and never shown again.</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button type="button" onClick={saveSmtp} disabled={smtpSaving}>
+                {smtpSaving ? <Loader2 className="size-4 animate-spin" /> : null} Save email settings
+              </Button>
+              <Button type="button" variant="outline" onClick={testEmail} disabled={smtpTesting}>
+                {smtpTesting ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />} Send test email
+              </Button>
+              <span className="text-xs text-muted-foreground">Test goes to {user?.email || 'your address'}</span>
             </div>
           </GlassPanel>
 

@@ -42,3 +42,19 @@ export const updateSettingsSchema = z.object({
     })
     .optional(),
 });
+
+/**
+ * Configure the outgoing email account. `smtpPass` is optional — when blank the
+ * server keeps the currently stored (encrypted) password. `currentPassword` is
+ * the caller's own account password, required to re-authorise the change.
+ */
+export const updateSmtpSchema = z.object({
+  smtpUser: z.string().trim().email('Enter a valid sender email').max(200),
+  smtpPass: z.string().max(200).optional(),
+  smtpHost: z.string().trim().max(200).optional(),
+  smtpPort: z.preprocess(
+    (v) => (v === '' || v == null ? undefined : v),
+    z.coerce.number().int().min(1).max(65535).optional(),
+  ),
+  currentPassword: z.string().min(1, 'Enter your account password'),
+});

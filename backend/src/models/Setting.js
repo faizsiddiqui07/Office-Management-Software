@@ -28,6 +28,14 @@ const settingSchema = new mongoose.Schema(
       type: [String],
       default: ['Visitors', 'Finance'],
     },
+    // Outgoing email (SMTP) account, configurable from Settings. The app-password
+    // is stored ENCRYPTED (see lib/secretBox.js) and is NEVER sent to the client
+    // — the toJSON transform below strips it and exposes only `smtpConfigured`.
+    // Blank user/pass → the server falls back to the SMTP_* environment variables.
+    smtpUser: { type: String, default: '' }, // sender email (e.g. a Gmail address)
+    smtpPassEnc: { type: String, default: '' }, // encrypted app-password (write-only)
+    smtpHost: { type: String, default: '' }, // blank → smtp.gmail.com
+    smtpPort: { type: Number, default: 0 }, // 0 → 587
     // Bumped by one-time role/permission data migrations (see lib/roles.js).
     rolesSchemaVersion: { type: Number, default: 1 },
     // In-app alert to leadership when an employee checks in.
@@ -47,7 +55,16 @@ const settingSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-settingSchema.set('toJSON', { virtuals: true, versionKey: false });
+settingSchema.set('toJSON', {
+  virtuals: true,
+  versionKey: false,
+  transform: (_doc, ret) => {
+    // The SMTP app-password is write-only: expose a boolean, never the secret.
+    ret.smtpConfigured = !!(ret.smtpUser && ret.smtpPassEnc);
+    delete ret.smtpPassEnc;
+    return ret;
+  },
+});
 
 settingSchema.statics.getSingleton = async function getSingleton() {
   let doc = await this.findOne({ key: 'global' });
