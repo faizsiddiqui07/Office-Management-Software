@@ -7,6 +7,7 @@ import {
   FileText,
   HandCoins,
   LayoutDashboard,
+  ListTodo,
   Megaphone,
   Settings,
   ShieldCheck,
@@ -56,6 +57,7 @@ const ALIAS = { viewUserData: 'viewEveryone' };
 
 export const NAV_ITEMS = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+  { label: 'To-Do', href: '/todo', icon: ListTodo },
   { label: 'Attendance', href: '/attendance', icon: CalendarClock },
   { label: 'Leaves', href: '/leaves', icon: CalendarDays },
   { label: 'Dues', href: '/dues', icon: HandCoins },
@@ -122,6 +124,7 @@ function canFallback(role, perm) {
     case 'approveRegularization':
     case 'manageRoles':
     case 'manageVisitors':
+    case 'assignTasks':
       return LEADERSHIP.includes(role);
     default:
       return false;

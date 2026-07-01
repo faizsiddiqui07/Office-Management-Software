@@ -68,6 +68,10 @@ export const PERMISSION_CATALOG = [
     permissions: [{ key: 'manageVisitors', label: 'Visitor register — log, view & export entries' }],
   },
   {
+    module: 'Tasks',
+    permissions: [{ key: 'assignTasks', label: 'Assign tasks to team members (below in the hierarchy)' }],
+  },
+  {
     module: 'Admin',
     permissions: [
       { key: 'manageSettings', label: 'Company settings' },
