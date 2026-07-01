@@ -5,6 +5,8 @@ import { User } from '../models/User.js';
 import { Setting } from '../models/Setting.js';
 import { notify } from '../models/Notification.js';
 import { can } from '../lib/permissions.js';
+import { sendLeaveRequestEmail } from '../lib/mailer.js';
+import { rolesWithPermission } from '../lib/roles.js';
 import { companyDayFromYMD } from '../lib/time.js';
 import { leaveYearOf, currentLeaveYear } from '../lib/leaveYear.js';
 import { computeWorkingDays } from './workingDays.service.js';
@@ -112,8 +114,15 @@ export async function applyLeave(user, { type, startYMD, endYMD, halfDay, halfDa
     appliedAt: new Date(),
   });
 
-  // Notify approvers.
-  const approvers = await User.find({ isActive: true, role: { $in: ['CEO', 'DIRECTOR', 'MANAGER'] } }).select('_id');
+  // Notify + email whoever approves leave (CEO & President). Target by the
+  // approveLeave permission — not hardcoded role keys — so it works with custom roles.
+  const approverRoles = rolesWithPermission('approveLeave');
+  const approvers = await User.find({
+    isActive: true,
+    role: { $in: approverRoles.length ? approverRoles : ['CEO', 'DIRECTOR'] },
+    _id: { $ne: user._id },
+  }).select('name email');
+
   await Promise.all(
     approvers.map((a) =>
       notify({
@@ -125,6 +134,27 @@ export async function applyLeave(user, { type, startYMD, endYMD, halfDay, halfDa
       }),
     ),
   );
+
+  // Ready-made email to the approvers (failure never blocks the application).
+  try {
+    const emails = approvers.map((a) => a.email).filter(Boolean);
+    if (emails.length) {
+      await sendLeaveRequestEmail(emails, {
+        applicantName: user.name,
+        type,
+        startYMD,
+        endYMD,
+        workingDays,
+        halfDay: !!halfDay,
+        reason,
+        companyName: settings.companyName,
+        brandColor: settings.brandColor,
+        link: `${process.env.APP_URL || 'https://team.architectusbureau.com'}/leaves`,
+      });
+    }
+  } catch (e) {
+    console.error('leave request email failed:', e?.message);
+  }
 
   return request.toJSON();
 }
