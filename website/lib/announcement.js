@@ -20,11 +20,11 @@ export function formatDateTime(iso) {
     day: '2-digit',
     month: 'short',
   }).format(d);
-  const time = new Intl.DateTimeFormat('en-US', {
+  const time = new Intl.DateTimeFormat('en-GB', {
     timeZone: COMPANY_TZ,
-    hour: 'numeric',
+    hour: '2-digit',
     minute: '2-digit',
-    hour12: true,
+    hour12: false,
   }).format(d);
   return `${date}, ${time}`;
 }

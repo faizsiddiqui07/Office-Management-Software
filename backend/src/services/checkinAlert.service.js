@@ -19,7 +19,7 @@ export async function notifyCheckIn(actor, record) {
     if (cfg.onlyLate === true && record.status !== 'LATE') return;
 
     const time = record.checkInAt
-      ? formatInTimeZone(new Date(record.checkInAt), COMPANY_TZ, 'hh:mm a')
+      ? formatInTimeZone(new Date(record.checkInAt), COMPANY_TZ, 'HH:mm')
       : '';
     const late = record.status === 'LATE';
     const title = `${actor.name} checked in${late ? ' (late)' : ''}`;

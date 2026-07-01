@@ -20,7 +20,7 @@ const LIMIT = 30;
 function fmtWhen(iso) {
   const d = new Date(iso);
   const date = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
   return `${date}, ${time}`;
 }
 

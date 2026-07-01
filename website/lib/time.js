@@ -19,15 +19,15 @@ function fmt(date, opts, locale = 'en-GB') {
   return new Intl.DateTimeFormat(locale, { timeZone: COMPANY_TZ, ...opts }).format(new Date(date));
 }
 
-/** 12-hour time with AM/PM in company time (e.g. "9:05 PM"), or "—" when missing. */
+/** 24-hour time in company time (e.g. "21:05"), or "—" when missing. */
 export function formatTime(date) {
   if (!date) return '—';
-  return fmt(date, { hour: 'numeric', minute: '2-digit', hour12: true }, 'en-US');
+  return fmt(date, { hour: '2-digit', minute: '2-digit', hour12: false }, 'en-GB');
 }
 
-/** 12-hour live clock with seconds in company time (e.g. "9:05:03 PM"). */
+/** 24-hour live clock with seconds in company time (e.g. "21:05:03"). */
 export function formatClock(date) {
-  return fmt(date, { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true }, 'en-US');
+  return fmt(date, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }, 'en-GB');
 }
 
 /** "Fri, 20 Jun" style. */

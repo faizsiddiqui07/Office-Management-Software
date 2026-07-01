@@ -67,6 +67,8 @@ export function DataTable({
         </div>
       ) : null}
 
+      {/* Desktop / tablet: the real table (scrolls horizontally only if very wide) */}
+      <div className="hidden sm:block">
       <Table>
         <TableHeader>
           {table.getHeaderGroups().map((hg) => (
@@ -127,6 +129,45 @@ export function DataTable({
           )}
         </TableBody>
       </Table>
+      </div>
+
+      {/* Mobile: each row as a stacked card — a multi-column table can't fit a phone */}
+      <div className="space-y-2.5 p-3 sm:hidden">
+        {rows.length ? (
+          rows.map((row) => (
+            <div
+              key={row.id}
+              onClick={onRowClick ? () => onRowClick(row.original) : undefined}
+              className={cn(
+                'rounded-xl bg-foreground/[0.03] p-3 ring-1 ring-border/50',
+                onRowClick && 'cursor-pointer active:bg-foreground/[0.07]',
+              )}
+            >
+              {row.getVisibleCells().map((cell) => {
+                const h = cell.column.columnDef.header;
+                const label = typeof h === 'string' ? h : '';
+                return (
+                  <div
+                    key={cell.id}
+                    className="flex items-center justify-between gap-3 border-b border-border/40 py-1.5 last:border-0 last:pb-0 first:pt-0"
+                  >
+                    {label ? (
+                      <span className="shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</span>
+                    ) : (
+                      <span />
+                    )}
+                    <div className="min-w-0 text-right text-sm">
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ))
+        ) : (
+          <p className="py-10 text-center text-sm text-muted-foreground">{emptyMessage}</p>
+        )}
+      </div>
 
       {table.getPageCount() > 1 ? (
         <div className="flex items-center justify-between gap-2 border-t border-border/60 p-3">

@@ -272,8 +272,8 @@ export async function buildSelfReport({ user, type, dateYMD }) {
     let overtimeMinutes = 0;
     if (rec) {
       status = rec.status === 'LATE' && rec.excused ? 'ON_DUTY' : rec.status;
-      if (rec.checkInAt) checkIn = formatCompany(rec.checkInAt, 'hh:mm a');
-      if (rec.checkOutAt) checkOut = formatCompany(rec.checkOutAt, 'hh:mm a');
+      if (rec.checkInAt) checkIn = formatCompany(rec.checkInAt, 'HH:mm');
+      if (rec.checkOutAt) checkOut = formatCompany(rec.checkOutAt, 'HH:mm');
       workedHours = round1((rec.workedMinutes || 0) / 60);
       overtimeMinutes = rec.overtimeMinutes || 0;
     } else if (holidaySet.has(ymd)) {
