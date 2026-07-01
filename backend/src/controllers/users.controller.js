@@ -2,6 +2,7 @@ import { ok, fail } from '../lib/apiResponse.js';
 import { canAssignRole } from '../lib/permissions.js';
 import { User } from '../models/User.js';
 import { createEmployee, resetUserCredentials, updateUser as updateUserService } from '../services/user.service.js';
+import { getBalanceForUser, setLeaveBalance } from '../services/leave.service.js';
 import { audit } from '../models/AuditLog.js';
 
 function sendServiceError(res, err, next) {
@@ -62,6 +63,27 @@ export async function updateUser(req, res, next) {
     const user = await updateUserService(req.user, req.params.id, req.body);
     await audit({ actor: req.user._id, action: 'user.update', entityType: 'User', entityId: req.params.id, meta: req.body });
     return res.json(ok({ user }));
+  } catch (err) {
+    return sendServiceError(res, err, next);
+  }
+}
+
+/** Current fiscal-year leave balance for an employee (for the edit dialog). */
+export async function getLeaveBalance(req, res, next) {
+  try {
+    const balance = await getBalanceForUser(req.params.id);
+    return res.json(ok({ balance }));
+  } catch (err) {
+    return sendServiceError(res, err, next);
+  }
+}
+
+/** Leadership override of an employee's quota / already-used leave days. */
+export async function updateLeaveBalance(req, res, next) {
+  try {
+    const balance = await setLeaveBalance(req.params.id, req.body || {});
+    await audit({ actor: req.user._id, action: 'user.leave_balance', entityType: 'User', entityId: req.params.id, meta: req.body });
+    return res.json(ok({ balance }));
   } catch (err) {
     return sendServiceError(res, err, next);
   }

@@ -13,6 +13,7 @@ import { StatCard } from '@/components/glass/stat-card';
 import { StatusBadge, STATUS_TONES } from '@/components/glass/status-badge';
 import { TableSkeleton } from '@/components/glass/skeletons';
 import { AppDialog } from '@/components/glass/app-dialog';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -76,12 +77,22 @@ function Field({ label, value }) {
   );
 }
 
+/** A stat card that also acts as a filter toggle for the roster below. */
+function FilterStat({ onClick, children }) {
+  return (
+    <button type="button" onClick={onClick} className="w-full rounded-2xl text-left transition focus:outline-none">
+      {children}
+    </button>
+  );
+}
+
 export function EveryoneTab() {
   const { user } = useAuth();
   const qc = useQueryClient();
   const canExcuse = !!user && can(user, 'approveRegularization');
   const [date, setDate] = React.useState(todayYMD());
   const [selected, setSelected] = React.useState(null);
+  const [statusFilter, setStatusFilter] = React.useState(null); // null | 'present' | 'late' | 'absent'
 
   const { data, isLoading } = useQuery({
     queryKey: ['attendance', 'overview', date],
@@ -98,9 +109,20 @@ export function EveryoneTab() {
     onError: (e) => toast.error(e?.message || 'Could not update'),
   });
 
-  const rows = data?.rows ?? [];
+  const rows = React.useMemo(() => data?.rows ?? [], [data]);
   const summary = data?.summary;
   const unexcusedLate = Math.max(0, (summary?.late ?? 0) - (summary?.excused ?? 0));
+
+  const toggleFilter = (key) => setStatusFilter((f) => (f === key ? null : key));
+  const filteredRows = React.useMemo(() => {
+    if (!statusFilter) return rows;
+    return rows.filter((r) => {
+      if (statusFilter === 'present') return r.status === 'PRESENT' || r.status === 'LATE'; // everyone who showed up
+      if (statusFilter === 'late') return r.status === 'LATE' && !r.attendance?.excused; // excused = on-duty, not late
+      if (statusFilter === 'absent') return r.status === 'ABSENT';
+      return true;
+    });
+  }, [rows, statusFilter]);
 
   const sel = selected;
   const a = sel?.attendance;
@@ -112,15 +134,36 @@ export function EveryoneTab() {
   return (
     <div className="space-y-4">
       <div className="grid gap-4 grid-cols-2 sm:grid-cols-4">
-        <StatCard label="Total staff" value={summary?.total ?? '—'} icon={Users} />
-        <StatCard label="Present" value={(summary?.present ?? 0) + (summary?.late ?? 0)} icon={UserCheck} tone="success" />
-        <StatCard
-          label={summary?.excused ? `Late (${summary.excused} on-duty)` : 'Late'}
-          value={unexcusedLate}
-          icon={TriangleAlert}
-          tone="warning"
-        />
-        <StatCard label="Absent" value={summary?.absent ?? 0} icon={UserX} tone="destructive" />
+        <FilterStat onClick={() => setStatusFilter(null)}>
+          <StatCard label="Total staff" value={summary?.total ?? '—'} icon={Users} className="h-full" />
+        </FilterStat>
+        <FilterStat onClick={() => toggleFilter('present')}>
+          <StatCard
+            label="Present"
+            value={(summary?.present ?? 0) + (summary?.late ?? 0)}
+            icon={UserCheck}
+            tone="success"
+            className={cn('h-full', statusFilter === 'present' && 'ring-2 ring-primary')}
+          />
+        </FilterStat>
+        <FilterStat onClick={() => toggleFilter('late')}>
+          <StatCard
+            label={summary?.excused ? `Late (${summary.excused} on-duty)` : 'Late'}
+            value={unexcusedLate}
+            icon={TriangleAlert}
+            tone="warning"
+            className={cn('h-full', statusFilter === 'late' && 'ring-2 ring-primary')}
+          />
+        </FilterStat>
+        <FilterStat onClick={() => toggleFilter('absent')}>
+          <StatCard
+            label="Absent"
+            value={summary?.absent ?? 0}
+            icon={UserX}
+            tone="destructive"
+            className={cn('h-full', statusFilter === 'absent' && 'ring-2 ring-primary')}
+          />
+        </FilterStat>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -139,17 +182,19 @@ export function EveryoneTab() {
         </div>
       </div>
 
-      <p className="text-xs text-muted-foreground">Tip: tap any row for full details{canExcuse ? ' and to excuse a late' : ''}.</p>
+      <p className="text-xs text-muted-foreground">
+        Tip: tap a card to filter{statusFilter ? ` (showing ${statusFilter})` : ''}, tap a row for full details{canExcuse ? ' or to excuse a late' : ''}.
+      </p>
 
       {isLoading ? (
         <TableSkeleton rows={6} cols={7} />
       ) : (
         <DataTable
           columns={columns}
-          data={rows}
+          data={filteredRows}
           searchPlaceholder="Search staff…"
           pageSize={10}
-          emptyMessage="No staff found."
+          emptyMessage={statusFilter ? `No ${statusFilter} staff for this day.` : 'No staff found.'}
           onRowClick={setSelected}
         />
       )}

@@ -41,7 +41,9 @@ function sectionAccess(user) {
     attendance: all || can(user, 'viewEveryone'),
     leaves: all || can(user, 'viewEveryone'),
     roster: all || can(user, 'viewEveryone'),
-    expenses: all || can(user, 'viewExpenses'),
+    // Expenses require the specific permission, never the blanket downloadReports
+    // grant — no expense access ⇒ no expense section.
+    expenses: can(user, 'viewExpenses'),
     dues: all || can(user, 'manageDues'),
   };
 }

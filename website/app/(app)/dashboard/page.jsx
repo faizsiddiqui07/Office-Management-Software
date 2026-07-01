@@ -128,6 +128,7 @@ export default function DashboardPage() {
   const ts = todayStat(today);
   const isApprover = can(user, 'approveLeave');
   const canAudit = can(user, 'viewAudit'); // Recent activity = the audit feed
+  const selfTracks = can(user, 'markAttendance') || can(user, 'applyLeave'); // leadership doesn't self-track
 
   return (
     <div className="space-y-8">
@@ -139,10 +140,14 @@ export default function DashboardPage() {
 
       {/* Quick actions */}
       <div className="flex flex-wrap gap-2.5">
-        <QuickAction href="/attendance" icon={Clock} primary>
-          {today?.record?.checkInAt && !today?.record?.checkOutAt ? 'Check out' : 'Check in'}
-        </QuickAction>
-        <QuickAction href="/leaves" icon={CalendarPlus}>Apply leave</QuickAction>
+        {can(user, 'markAttendance') ? (
+          <QuickAction href="/attendance" icon={Clock} primary>
+            {today?.record?.checkInAt && !today?.record?.checkOutAt ? 'Check out' : 'Check in'}
+          </QuickAction>
+        ) : null}
+        {can(user, 'applyLeave') ? (
+          <QuickAction href="/leaves" icon={CalendarPlus}>Apply leave</QuickAction>
+        ) : null}
         {isApprover ? (
           <QuickAction href="/leaves" icon={UserCheck}>Approvals</QuickAction>
         ) : null}
@@ -160,7 +165,8 @@ export default function DashboardPage() {
         ) : null}
       </div>
 
-      {/* Personal stats — everyone */}
+      {/* Personal stats — only for roles that self-track attendance/leave */}
+      {selfTracks ? (
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Today" value={ts.value} icon={UserCheck} tone={ts.tone} hint={ts.hint} />
         <StatCard
@@ -185,6 +191,7 @@ export default function DashboardPage() {
           hint="this year"
         />
       </div>
+      ) : null}
 
       {/* Team snapshot — managers & above */}
       {team ? (

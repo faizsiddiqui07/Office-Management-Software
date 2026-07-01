@@ -6,6 +6,7 @@ import { Setting } from '../models/Setting.js';
 import { notify } from '../models/Notification.js';
 import { can } from '../lib/permissions.js';
 import { companyDayFromYMD } from '../lib/time.js';
+import { leaveYearOf, currentLeaveYear } from '../lib/leaveYear.js';
 import { computeWorkingDays } from './workingDays.service.js';
 import { holidayYMDSet } from './holiday.service.js';
 import { runTransaction } from '../lib/transaction.js';
@@ -43,8 +44,27 @@ export async function getOrCreateBalance(userId, year, session = null) {
 }
 
 export async function getBalanceForUser(userId) {
-  const year = new Date().getFullYear();
+  const year = currentLeaveYear();
   const bal = await getOrCreateBalance(userId, year);
+  return bal.toJSON();
+}
+
+/**
+ * Leadership override (Users page): set an employee's leave quota and/or the
+ * days they've already used for the CURRENT fiscal year. Used for mid-year
+ * onboarding where leaves were taken before the system went live. `remaining`
+ * is always recomputed from quota − used.
+ */
+export async function setLeaveBalance(userId, { totalQuota, used }) {
+  const user = await User.findById(userId);
+  if (!user) throw httpError(404, 'NOT_FOUND', 'User not found');
+
+  const year = currentLeaveYear();
+  const bal = await getOrCreateBalance(userId, year);
+  if (totalQuota !== undefined && totalQuota !== null) bal.totalQuota = Math.max(0, Math.round(totalQuota));
+  if (used !== undefined && used !== null) bal.used = Math.max(0, Math.round(used));
+  bal.remaining = bal.totalQuota - bal.used;
+  await bal.save();
   return bal.toJSON();
 }
 
@@ -65,7 +85,7 @@ export async function applyLeave(user, { type, startYMD, endYMD, halfDay, halfDa
   });
   if (workingDays <= 0) throw httpError(400, 'NO_WORKING_DAYS', 'The selected dates contain no working days');
 
-  const year = Number(startYMD.slice(0, 4));
+  const year = leaveYearOf(startYMD);
   if (isPaid(type)) {
     const bal = await getOrCreateBalance(user._id, year);
     if (workingDays > bal.remaining) {
@@ -170,7 +190,7 @@ export async function decideLeave(approver, id, decision, note) {
     if (fresh.status !== 'PENDING') {
       throw httpError(409, 'ALREADY_DECIDED', `Already ${fresh.status.toLowerCase()}`);
     }
-    const year = Number(fresh.startYMD.slice(0, 4));
+    const year = leaveYearOf(fresh.startYMD);
 
     if (isPaid(fresh.type)) {
       const bal = await getOrCreateBalance(fresh.user, year, session);
@@ -232,7 +252,7 @@ export async function cancelLeave(viewer, id) {
   const holidays = await holidayYMDSet(request.startYMD, request.endYMD);
   const result = await runTransaction(async (session) => {
     const fresh = await LeaveRequest.findById(id).session(session);
-    const year = Number(fresh.startYMD.slice(0, 4));
+    const year = leaveYearOf(fresh.startYMD);
 
     if (isPaid(fresh.type)) {
       const bal = await getOrCreateBalance(fresh.user, year, session);
@@ -286,7 +306,7 @@ export async function listLeaves(viewer, { status, userId, from, to, queue }) {
     .populate('decidedBy', 'name');
 
   // Attach each requester's current remaining (for the inline queue display).
-  const year = new Date().getFullYear();
+  const year = currentLeaveYear();
   const userIds = [...new Set(requests.map((r) => String(r.user?._id ?? r.user)))];
   const balances = await LeaveBalance.find({ user: { $in: userIds }, year });
   const balByUser = new Map(balances.map((b) => [String(b.user), b]));

@@ -15,6 +15,15 @@ export const createUserSchema = z.object({
   temporaryPassword: z.string().min(8, 'Temporary password must be at least 8 characters').optional(),
 });
 
+export const leaveBalanceSchema = z
+  .object({
+    totalQuota: z.coerce.number().int().min(0).max(365).optional(),
+    used: z.coerce.number().int().min(0).max(365).optional(),
+  })
+  .refine((v) => v.totalQuota !== undefined || v.used !== undefined, {
+    message: 'Provide quota and/or used days',
+  });
+
 export const updateUserSchema = z.object({
   name: z.string().min(1).optional(),
   department: z.string().optional(),

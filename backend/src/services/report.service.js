@@ -5,6 +5,7 @@ import { Expense } from '../models/Expense.js';
 import { User } from '../models/User.js';
 import { Setting } from '../models/Setting.js';
 import { companyDayFromYMD, ymdInTz, formatCompany } from '../lib/time.js';
+import { leaveYearOf } from '../lib/leaveYear.js';
 import { holidayYMDSet } from './holiday.service.js';
 import { expenseSummary } from './expense.service.js';
 import { ledgerFor, overview as duesOverview } from './dues.service.js';
@@ -79,7 +80,7 @@ export async function buildReport(type, dateYMD) {
     Attendance.find({ date: { $gte: fromDay, $lte: toDay } }),
     LeaveRequest.find({ status: 'APPROVED', startYMD: { $lte: to }, endYMD: { $gte: from } }).populate('user', 'name employeeId'),
     LeaveRequest.find({ status: 'PENDING' }).populate('user', 'name employeeId').sort({ appliedAt: -1 }),
-    LeaveBalance.find({ year: Number(from.slice(0, 4)) }).populate('user', 'name employeeId'),
+    LeaveBalance.find({ year: leaveYearOf(from) }).populate('user', 'name employeeId'),
     Expense.find({ dateYMD: { $gte: from, $lte: to } }).sort({ dateYMD: -1 }).limit(300).populate('addedBy', 'name'),
     expenseSummary({ from, to }),
     duesOverview(),
@@ -246,7 +247,7 @@ export async function buildSelfReport({ user, type, dateYMD }) {
     Attendance.find({ user: user._id, date: { $gte: fromDay, $lte: toDay } }),
     LeaveRequest.find({ user: user._id, status: 'APPROVED', startYMD: { $lte: to }, endYMD: { $gte: from } }).sort({ startYMD: -1 }),
     LeaveRequest.find({ user: user._id, status: 'PENDING' }).sort({ appliedAt: -1 }),
-    LeaveBalance.findOne({ user: user._id, year: Number(from.slice(0, 4)) }),
+    LeaveBalance.findOne({ user: user._id, year: leaveYearOf(from) }),
     ledgerFor(user._id),
   ]);
 

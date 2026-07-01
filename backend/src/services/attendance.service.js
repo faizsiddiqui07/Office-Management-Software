@@ -3,7 +3,7 @@ import { Attendance } from '../models/Attendance.js';
 import { Setting } from '../models/Setting.js';
 import { LeaveBalance } from '../models/LeaveBalance.js';
 import { User } from '../models/User.js';
-import { canViewEveryone } from '../lib/permissions.js';
+import { canViewEveryone, can } from '../lib/permissions.js';
 import { haversineMeters } from '../lib/geo.js';
 import { holidayYMDSet } from './holiday.service.js';
 import {
@@ -213,10 +213,15 @@ export async function attendanceOverview(ymd) {
   const dateYMD = ymdInTz(day);
   const isHoliday = (await holidayYMDSet(dateYMD, dateYMD)).has(dateYMD);
 
-  const [users, records] = await Promise.all([
+  const [allUsers, records] = await Promise.all([
     User.find({ isActive: true }).select('name email role employeeId department').sort({ name: 1 }),
     Attendance.find({ date: day }),
   ]);
+
+  // Only people who actually mark attendance belong in the roster. Roles without
+  // `markAttendance` (e.g. CEO/leadership who don't self-track) are never counted
+  // present/absent — they simply aren't part of the daily attendance view.
+  const users = allUsers.filter((u) => can({ role: u.role }, 'markAttendance'));
 
   const byUser = new Map(records.map((r) => [String(r.user), r]));
   const rows = users.map((u) => {

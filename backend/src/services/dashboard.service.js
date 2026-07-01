@@ -7,6 +7,7 @@ import { Holiday } from '../models/Holiday.js';
 import { AuditLog } from '../models/AuditLog.js';
 import { can } from '../lib/permissions.js';
 import { companyDayFromYMD, ymdInTz } from '../lib/time.js';
+import { leaveYearOf } from '../lib/leaveYear.js';
 import { getTodayPayload, attendanceOverview } from './attendance.service.js';
 import { getOrCreateBalance } from './leave.service.js';
 import { listVisible } from './announcement.service.js';
@@ -17,7 +18,7 @@ export async function buildDashboard(user) {
   const settings = await Setting.getSingleton();
   const now = new Date();
   const todayYMD = ymdInTz(now);
-  const year = Number(todayYMD.slice(0, 4));
+  const year = leaveYearOf(todayYMD); // fiscal leave year (Apr 1 – Mar 31)
   const role = user.role;
 
   const out = { role, generatedAt: now.toISOString(), company: { name: settings.companyName, currency: settings.currency } };

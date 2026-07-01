@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -17,7 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { LEADERSHIP } from '@/lib/permissions';
+import { LEADERSHIP, can } from '@/lib/permissions';
 import { useRoleOptions } from '@/lib/use-roles';
 
 export function EditUserDialog({ user: target, open, onOpenChange }) {
@@ -34,6 +34,10 @@ export function EditUserDialog({ user: target, open, onOpenChange }) {
   const [role, setRole] = React.useState('EMPLOYEE');
   const [isActive, setIsActive] = React.useState(true);
 
+  const canManage = can(actor, 'manageUsers');
+  const [quota, setQuota] = React.useState('');
+  const [used, setUsed] = React.useState('');
+
   React.useEffect(() => {
     if (!open) return;
     setName(target.name || '');
@@ -43,11 +47,35 @@ export function EditUserDialog({ user: target, open, onOpenChange }) {
     setIsActive(target.isActive !== false);
   }, [open, target]);
 
+  // Current fiscal-year leave balance (for the leadership override below).
+  const { data: balData } = useQuery({
+    queryKey: ['user-leave-balance', target.id],
+    queryFn: () => api.get(`/users/${target.id}/leave-balance`),
+    enabled: open && canManage,
+  });
+  React.useEffect(() => {
+    if (balData?.balance) {
+      setQuota(String(balData.balance.totalQuota ?? ''));
+      setUsed(String(balData.balance.used ?? ''));
+    }
+  }, [balData]);
+
   const mut = useMutation({
-    mutationFn: () => api.patch(`/users/${target.id}`, { name, department, designation, role, isActive }),
+    mutationFn: async () => {
+      await api.patch(`/users/${target.id}`, { name, department, designation, role, isActive });
+      if (canManage) {
+        const payload = {};
+        if (quota !== '') payload.totalQuota = Number(quota);
+        if (used !== '') payload.used = Number(used);
+        if (payload.totalQuota !== undefined || payload.used !== undefined) {
+          await api.patch(`/users/${target.id}/leave-balance`, payload);
+        }
+      }
+    },
     onSuccess: () => {
       toast.success('User updated');
       qc.invalidateQueries({ queryKey: ['users'] });
+      qc.invalidateQueries({ queryKey: ['user-leave-balance', target.id] });
       onOpenChange(false);
     },
     onError: (e) => toast.error(e?.message || 'Could not update user'),
@@ -108,6 +136,30 @@ export function EditUserDialog({ user: target, open, onOpenChange }) {
           </div>
           <Switch id="eu-active" checked={isActive} onCheckedChange={setIsActive} disabled={isSelf} />
         </div>
+
+        {canManage ? (
+          <div className="space-y-3 rounded-xl bg-foreground/[0.04] p-3 ring-1 ring-border/50">
+            <div>
+              <p className="text-sm font-medium">Leave balance</p>
+              <p className="text-xs text-muted-foreground">
+                Current fiscal year (Apr–Mar). Set the quota, or adjust already-taken days when onboarding mid-year.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="eu-quota">Total quota</Label>
+                <Input id="eu-quota" type="number" min="0" value={quota} onChange={(e) => setQuota(e.target.value)} className="bg-background/50" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="eu-used">Used (taken)</Label>
+                <Input id="eu-used" type="number" min="0" value={used} onChange={(e) => setUsed(e.target.value)} className="bg-background/50" />
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Remaining: <span className="font-medium tabular-nums text-foreground">{(Number(quota) || 0) - (Number(used) || 0)}</span> days
+            </p>
+          </div>
+        ) : null}
       </div>
     </AppDialog>
   );
