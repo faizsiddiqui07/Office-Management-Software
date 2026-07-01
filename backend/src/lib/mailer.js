@@ -2,6 +2,17 @@ import nodemailer from 'nodemailer';
 
 let transporter = null;
 
+/**
+ * The From address. Uses the authenticated SMTP account (e.g. the Gmail user) so
+ * SPF/DKIM pass and the mail lands in the inbox — a fake domain like
+ * no-reply@example.com gets flagged as spam or rewritten.
+ */
+function fromAddress(name) {
+  const user = process.env.SMTP_USER;
+  if (user) return `${name || 'Office Management'} <${user}>`;
+  return process.env.SMTP_FROM || 'Office Management <no-reply@example.com>';
+}
+
 function getTransporter() {
   if (transporter) return transporter;
   const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS } = process.env;
@@ -28,7 +39,7 @@ export async function sendPasswordResetEmail(to, resetUrl) {
     return { delivered: false };
   }
   await t.sendMail({
-    from: process.env.SMTP_FROM || 'Office Management <no-reply@example.com>',
+    from: fromAddress(),
     to,
     subject: 'Reset your Office Management password',
     text: `Reset your password using this link (valid ~30 minutes): ${resetUrl}`,
@@ -91,6 +102,6 @@ export async function sendLeaveRequestEmail(to, d) {
     console.log('\n📧 Leave request email (SMTP not configured — logging instead):\n', text, '\n');
     return { delivered: false };
   }
-  await t.sendMail({ from: process.env.SMTP_FROM || 'Office Management <no-reply@example.com>', to: recipients, subject, text, html });
+  await t.sendMail({ from: fromAddress(company), to: recipients, subject, text, html });
   return { delivered: true };
 }
