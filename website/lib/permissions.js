@@ -60,7 +60,7 @@ export const NAV_ITEMS = [
   { label: 'Dues', href: '/dues', icon: HandCoins },
   { label: 'Announcements', href: '/announcements', icon: Megaphone },
   { label: 'Calendar', href: '/calendar', icon: CalendarRange },
-  { label: 'Team', href: '/attendance?tab=everyone', icon: Users, permission: 'viewEveryone' },
+  { label: 'Team', href: '/team', icon: Users, permission: 'viewEveryone' },
   { label: 'Expenses', href: '/expenses', icon: Wallet, permission: 'viewExpenses' },
   { label: 'Users', href: '/users', icon: UserPlus, permission: 'createUsers' },
   { label: 'Reports', href: '/reports', icon: FileText },
