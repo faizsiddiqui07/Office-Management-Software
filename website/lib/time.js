@@ -1,5 +1,20 @@
 export const COMPANY_TZ = process.env.NEXT_PUBLIC_COMPANY_TZ || 'Asia/Kolkata';
 
+/**
+ * Guard against an invalid/free-text timezone (e.g. someone typed "IST | INDIA"
+ * in Settings). Intl.DateTimeFormat throws a RangeError on an unknown zone, which
+ * would crash any component that formats with it — so fall back to COMPANY_TZ.
+ */
+export function safeTimeZone(tz) {
+  if (!tz) return COMPANY_TZ;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: tz });
+    return tz;
+  } catch {
+    return COMPANY_TZ;
+  }
+}
+
 function fmt(date, opts, locale = 'en-GB') {
   return new Intl.DateTimeFormat(locale, { timeZone: COMPANY_TZ, ...opts }).format(new Date(date));
 }

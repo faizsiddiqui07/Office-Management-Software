@@ -3,11 +3,12 @@
 import * as React from 'react';
 import { Clock } from 'lucide-react';
 import { useSettings } from '@/lib/settings';
+import { safeTimeZone } from '@/lib/time';
 
 /** Live company-time clock for the (otherwise empty) left of the topbar. */
 export function TopbarClock() {
   const { data: settings } = useSettings();
-  const tz = settings?.timezone || 'Asia/Kolkata';
+  const tz = safeTimeZone(settings?.timezone); // never crash on a bad/free-text zone
   const [now, setNow] = React.useState(null);
 
   React.useEffect(() => {

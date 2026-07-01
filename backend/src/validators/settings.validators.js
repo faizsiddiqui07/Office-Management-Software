@@ -2,11 +2,24 @@ import { z } from 'zod';
 
 const hm = z.string().regex(/^\d{2}:\d{2}$/, 'Expected HH:mm');
 
+/** A valid IANA time zone (rejects free text like "IST | INDIA" that would crash date formatting). */
+const timeZone = z.string().min(1).refine(
+  (tz) => {
+    try {
+      new Intl.DateTimeFormat('en-US', { timeZone: tz });
+      return true;
+    } catch {
+      return false;
+    }
+  },
+  { message: 'Enter a valid IANA time zone, e.g. Asia/Kolkata' },
+);
+
 export const updateSettingsSchema = z.object({
   companyName: z.string().min(1).max(120).optional(),
   logoUrl: z.string().max(500).optional(),
   brandColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Expected #RRGGBB').optional(),
-  timezone: z.string().min(1).optional(),
+  timezone: timeZone.optional(),
   workStart: hm.optional(),
   workEnd: hm.optional(),
   graceMinutes: z.coerce.number().int().min(0).max(180).optional(),
