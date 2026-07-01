@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { User } from '../models/User.js';
+import { Setting } from '../models/Setting.js';
 import { PasswordResetToken } from '../models/PasswordResetToken.js';
 import { hashPassword, verifyPassword } from '../lib/password.js';
 import { signToken } from '../lib/jwt.js';
@@ -95,7 +96,8 @@ export async function forgotPassword(req, res, next) {
 
       const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
       const resetUrl = `${clientUrl}/reset-password/${rawToken}`;
-      await sendPasswordResetEmail(user.email, resetUrl);
+      const settings = await Setting.getSingleton().catch(() => null);
+      await sendPasswordResetEmail(user.email, resetUrl, settings?.companyName);
       await audit({ actor: user._id, action: 'auth.forgot_password', entityType: 'User', entityId: user._id.toString() });
     }
 

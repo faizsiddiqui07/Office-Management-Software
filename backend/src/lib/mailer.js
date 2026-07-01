@@ -30,7 +30,8 @@ function getTransporter() {
  * Sends the password-reset link. If SMTP isn't configured, logs the link to the
  * server console instead (documented in the README) so dev still works.
  */
-export async function sendPasswordResetEmail(to, resetUrl) {
+export async function sendPasswordResetEmail(to, resetUrl, companyName) {
+  const company = companyName || 'Office Management';
   const t = getTransporter();
   if (!t) {
     console.log('\n🔗 Password reset link (SMTP not configured — logging instead of emailing):');
@@ -39,9 +40,9 @@ export async function sendPasswordResetEmail(to, resetUrl) {
     return { delivered: false };
   }
   await t.sendMail({
-    from: fromAddress(),
+    from: fromAddress(company),
     to,
-    subject: 'Reset your Office Management password',
+    subject: `Reset your ${company} password`,
     text: `Reset your password using this link (valid ~30 minutes): ${resetUrl}`,
     html: `<p>Reset your password using this link (valid ~30 minutes):</p><p><a href="${resetUrl}">${resetUrl}</a></p>`,
   });
