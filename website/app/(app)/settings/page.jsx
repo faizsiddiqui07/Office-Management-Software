@@ -48,7 +48,7 @@ export default function SettingsPage() {
       setForm({
         companyName: s.companyName ?? '',
         brandColor: s.brandColor ?? '#4f46e5',
-        timezone: s.timezone ?? 'Asia/Kolkata',
+        timezone: 'Asia/Kolkata', // fixed to IST — not user-editable
         workStart: s.workStart ?? '10:00',
         workEnd: s.workEnd ?? '18:00',
         graceMinutes: s.graceMinutes ?? 0,
@@ -381,7 +381,8 @@ export default function SettingsPage() {
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="s-tz">Timezone</Label>
-                <Input id="s-tz" value={form.timezone} onChange={(e) => set('timezone', e.target.value)} className="bg-background/50" />
+                <Input id="s-tz" value="IST" disabled readOnly className="bg-background/50 cursor-not-allowed opacity-80" />
+                <p className="text-xs text-muted-foreground">Fixed to India Standard Time (Asia/Kolkata).</p>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="s-cur">Currency</Label>
