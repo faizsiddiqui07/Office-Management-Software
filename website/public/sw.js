@@ -22,8 +22,8 @@ self.addEventListener('push', (event) => {
   const title = data.title || 'Office Management';
   const options = {
     body: data.body || '',
-    icon: '/icon.svg',
-    badge: '/icon.svg',
+    // No custom icon/badge — the installed app's own icon is shown, so we don't
+    // display the extra placeholder graphic alongside it.
     tag: data.type || 'office-management',
     data: { link: data.link || '/dashboard' },
   };
