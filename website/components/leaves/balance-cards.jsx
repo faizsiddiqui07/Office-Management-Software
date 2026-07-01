@@ -41,7 +41,7 @@ export function BalanceCards() {
             strokeDashoffset={offset}
           />
         </svg>
-        <div>
+        <div className="min-w-0">
           <p className="text-sm text-muted-foreground">Remaining leaves</p>
           <p className="text-4xl font-semibold tabular-nums">
             {remaining}

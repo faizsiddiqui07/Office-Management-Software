@@ -98,11 +98,11 @@ function PersonDetail({ personId, onAddDue, onAddPay }) {
   return (
     <GlassCard className="p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <span className="flex size-11 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">{initials(person.name)}</span>
-          <div>
-            <p className="font-semibold">{person.name}</p>
-            <p className="text-xs text-muted-foreground">{prettyRole(person.role)} · {person.employeeId}</p>
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">{initials(person.name)}</span>
+          <div className="min-w-0">
+            <p className="truncate font-semibold">{person.name}</p>
+            <p className="truncate text-xs text-muted-foreground">{prettyRole(person.role)} · {person.employeeId}</p>
           </div>
         </div>
         <div className="text-right">

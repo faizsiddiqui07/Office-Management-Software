@@ -127,6 +127,7 @@ export default function DashboardPage() {
   const { today, balance, announcements, upcomingHolidays, myPendingLeaves, team, expenses, analytics } = data;
   const ts = todayStat(today);
   const isApprover = can(user, 'approveLeave');
+  const canAudit = can(user, 'viewAudit'); // Recent activity = the audit feed
 
   return (
     <div className="space-y-8">
@@ -265,7 +266,7 @@ export default function DashboardPage() {
             </GlassCard>
           </div>
 
-          <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+          <div className={cn('grid grid-cols-1 gap-6', canAudit ? 'xl:grid-cols-3' : 'md:grid-cols-2')}>
             <GlassCard className="p-5">
               <p className="mb-3 text-sm font-medium">Overtime leaders</p>
               <OvertimeLeaders leaders={analytics.overtimeLeaders} />
@@ -295,12 +296,13 @@ export default function DashboardPage() {
               )}
             </GlassCard>
 
+            {canAudit ? (
             <GlassCard className="p-5">
               <div className="mb-3 flex items-center justify-between">
                 <p className="text-sm font-medium">Recent activity</p>
                 <Link href="/activity" className="text-xs font-medium text-primary hover:underline">All →</Link>
               </div>
-              {analytics.recentActivity.length ? (
+              {analytics.recentActivity?.length ? (
                 <ul className="space-y-3">
                   {analytics.recentActivity.slice(0, 6).map((a, i) => (
                     <li key={i} className="flex items-start gap-2.5 text-sm">
@@ -319,6 +321,7 @@ export default function DashboardPage() {
                 <p className="py-6 text-center text-sm text-muted-foreground">No recent activity.</p>
               )}
             </GlassCard>
+            ) : null}
           </div>
         </section>
       ) : null}

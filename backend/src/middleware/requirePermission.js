@@ -12,7 +12,7 @@ export function requirePermission(action) {
       return;
     }
     if (!can(req.user, action)) {
-      res.status(403).json(fail('FORBIDDEN', 'You do not have permission to do that'));
+      res.status(403).json(fail('FORBIDDEN', `You do not have permission to do that (requires “${action}”)`));
       return;
     }
     next();

@@ -107,7 +107,7 @@ export function RoleEditorDialog({ role, catalog, base = [], open, onClose }) {
               : 'Rename the role or fine-tune any single permission.'
         }
         footer={
-          <div className="flex w-full items-center justify-between gap-2">
+          <div className="flex w-full flex-wrap items-center justify-between gap-2">
             {!isNew && !isSystem ? (
               <Button variant="ghost" className="text-destructive hover:text-destructive" onClick={() => setConfirmDelete(true)}>
                 <Trash2 /> Delete

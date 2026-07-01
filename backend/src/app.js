@@ -9,7 +9,7 @@ import path from 'node:path';
 import { connectDB } from './config/db.js';
 import { apiRouter } from './routes/index.js';
 import { errorHandler, notFoundHandler } from './middleware/error.js';
-import { ensureSystemRoles, runRoleMigrations, loadRoles } from './lib/roles.js';
+import { ensureSystemRoles, runRoleMigrations, ensureRoleManagerExists, loadRoles } from './lib/roles.js';
 
 /**
  * The Express app is built here and shared by BOTH entry points:
@@ -58,6 +58,8 @@ async function runInit() {
   await ensureSystemRoles();
   const migrated = await runRoleMigrations();
   if (migrated) console.log('🔁 Applied role permission migration (v2)');
+  const repaired = await ensureRoleManagerExists();
+  if (repaired) console.log('🛟 Restored role-management access (admin-lockout failsafe)');
   const n = await loadRoles();
   console.log(`🔐 Loaded ${n} roles into the permission cache`);
 }

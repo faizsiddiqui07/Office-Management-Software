@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 
 function Field({ label, value, className }) {
   return (
-    <div className={className}>
+    <div className={`min-w-0 ${className ?? ''}`}>
       <p className="text-xs text-muted-foreground">{label}</p>
       <p className="truncate text-sm font-medium">{value}</p>
     </div>
@@ -40,7 +40,7 @@ export function TempPasswordContent({ user, temporaryPassword }) {
         <div>
           <p className="mb-1 text-xs text-muted-foreground">Temporary password</p>
           <div className="flex items-center gap-2">
-            <code className="flex-1 truncate rounded-lg bg-background/60 px-3 py-2 font-mono text-sm">{temporaryPassword}</code>
+            <code className="min-w-0 flex-1 truncate rounded-lg bg-background/60 px-3 py-2 font-mono text-sm">{temporaryPassword}</code>
             <Button type="button" variant="outline" size="sm" onClick={copy}>
               {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
               {copied ? 'Copied' : 'Copy'}

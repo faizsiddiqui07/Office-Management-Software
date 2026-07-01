@@ -87,8 +87,8 @@ export async function resetUserCredentials(userId) {
 
 /**
  * Leadership-only profile / role / status update.
- * Guards: can't change your own role, can't deactivate yourself, and only
- * CEO/BOSS may assign CEO/BOSS (via canAssignRole).
+ * Guards: can't change your own role, can't deactivate yourself, and you may
+ * only assign a role at your own tier or below it (rank-based, via canAssignRole).
  */
 export async function updateUser(actor, id, data) {
   const user = await User.findById(id);

@@ -72,7 +72,10 @@ export async function buildDashboard(user) {
       LeaveBalance.find({ year }),
       expenseSummary({ from: `${year}-01-01`, to: `${year}-12-31` }),
       LeaveRequest.find({ status: 'PENDING' }).sort({ appliedAt: -1 }).limit(6).populate('user', 'name employeeId'),
-      AuditLog.find().sort({ createdAt: -1 }).limit(10).populate('actor', 'name'),
+      // Recent activity is the audit feed — only fetch it for users who may view the activity log.
+      can(user, 'viewAudit')
+        ? AuditLog.find().sort({ createdAt: -1 }).limit(10).populate('actor', 'name')
+        : Promise.resolve([]),
     ]);
 
     const otUsers = await User.find({ _id: { $in: otAgg.map((o) => o._id) } }).select('name');
@@ -101,12 +104,17 @@ export async function buildDashboard(user) {
         endYMD: l.endYMD,
         days: l.workingDays,
       })),
-      recentActivity: recent.map((a) => ({
-        action: a.action,
-        actor: a.actor?.name ?? 'System',
-        entityType: a.entityType,
-        createdAt: a.createdAt,
-      })),
+      // Only present when the user may view the activity log (see fetch above).
+      ...(can(user, 'viewAudit')
+        ? {
+            recentActivity: recent.map((a) => ({
+              action: a.action,
+              actor: a.actor?.name ?? 'System',
+              entityType: a.entityType,
+              createdAt: a.createdAt,
+            })),
+          }
+        : {}),
     };
   }
 

@@ -440,7 +440,7 @@ export default function SettingsPage() {
               Notify leadership in the notification bell when an employee checks in.
             </p>
             <div className="flex items-center justify-between gap-4 rounded-xl bg-muted/30 px-4 py-3 ring-1 ring-border">
-              <div className="space-y-0.5">
+              <div className="min-w-0 space-y-0.5">
                 <p className="text-sm font-medium">Enable check-in alerts</p>
                 <p className="text-xs text-muted-foreground">Boss / CEO get an in-app alert each time someone checks in.</p>
               </div>
@@ -455,7 +455,7 @@ export default function SettingsPage() {
                 !form.checkinAlerts.enabled && 'pointer-events-none opacity-50',
               )}
             >
-              <div className="space-y-0.5">
+              <div className="min-w-0 space-y-0.5">
                 <p className="text-sm font-medium">Only late arrivals</p>
                 <p className="text-xs text-muted-foreground">Alert only when someone is late — avoids a ping for every check-in.</p>
               </div>
@@ -474,7 +474,7 @@ export default function SettingsPage() {
               When on, employees can only check in/out within {form.gpsAttendance.radiusMeters}m of the office.
             </p>
             <div className="flex items-center justify-between gap-4 rounded-xl bg-muted/30 px-4 py-3 ring-1 ring-border">
-              <div className="space-y-0.5">
+              <div className="min-w-0 space-y-0.5">
                 <p className="text-sm font-medium">Require location at the office</p>
                 <p className="text-xs text-muted-foreground">Strict — check-in is blocked outside the office radius.</p>
               </div>
@@ -534,7 +534,7 @@ export default function SettingsPage() {
                 placeholder="Add a category…"
                 className="max-w-xs bg-background/50"
               />
-              <Button type="button" variant="outline" onClick={addCategory}>
+              <Button type="button" variant="outline" onClick={addCategory} className="shrink-0">
                 <Plus className="size-4" /> Add
               </Button>
             </div>

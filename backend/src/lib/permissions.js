@@ -4,7 +4,7 @@
  * the hardcoded groups below are the seed defaults + a safe fallback used until
  * the role cache is loaded.
  */
-import { getRolePermissionSet } from './roles.js';
+import { getRolePermissionSet, getRoleRank } from './roles.js';
 
 export const ROLES = [
   'CEO',
@@ -115,8 +115,19 @@ function canHardcoded(role, perm) {
   }
 }
 
-/** Only CEO/Director may create or assign CEO/Director accounts; admins handle the rest. */
+/**
+ * Anti-escalation guard for creating users / changing a user's role: you may
+ * assign any role at your own tier or BELOW it, never one more senior than you.
+ * Rank-driven off the DB role cache (lower rank number = more authority), so it
+ * works for custom roles too — e.g. a rank-1 owner role (CEO_PRESIDENT) can
+ * create any role including another rank-1 role. Falls back to the original
+ * hardcoded CEO/Director rules only if ranks aren't cached yet (cold start).
+ */
 export function canAssignRole(creatorRole, targetRole) {
+  const cRank = getRoleRank(creatorRole);
+  const tRank = getRoleRank(targetRole);
+  if (cRank != null && tRank != null) return tRank >= cRank;
+
   if (LEADERSHIP.includes(targetRole)) return LEADERSHIP.includes(creatorRole);
   return ADMINS.includes(creatorRole);
 }

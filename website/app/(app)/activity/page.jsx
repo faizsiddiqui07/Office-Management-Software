@@ -119,7 +119,7 @@ export default function ActivityPage() {
               ))}
             </div>
           </div>
-          <div className="flex items-center justify-between border-t border-border/50 px-5 py-3 text-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/50 px-5 py-3 text-sm">
             <span className="text-muted-foreground">Page {page} of {pages}{isFetching ? ' · updating…' : ''}</span>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
