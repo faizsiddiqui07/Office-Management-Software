@@ -23,6 +23,11 @@ const settingSchema = new mongoose.Schema(
       type: [String],
       default: ['OFFICE_SUPPLIES', 'UTILITIES', 'TRAVEL', 'FOOD', 'MAINTENANCE', 'SALARY', 'MISC'],
     },
+    // Visitor-entry categories (leadership can add more). Plain labels.
+    visitorCategories: {
+      type: [String],
+      default: ['Visitors', 'Finance'],
+    },
     // Bumped by one-time role/permission data migrations (see lib/roles.js).
     rolesSchemaVersion: { type: Number, default: 1 },
     // In-app alert to leadership when an employee checks in.

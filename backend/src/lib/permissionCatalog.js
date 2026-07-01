@@ -64,6 +64,10 @@ export const PERMISSION_CATALOG = [
     permissions: [{ key: 'leadershipDashboard', label: 'Leadership dashboard & analytics' }],
   },
   {
+    module: 'Visitors',
+    permissions: [{ key: 'manageVisitors', label: 'Visitor register — log, view & export entries' }],
+  },
+  {
     module: 'Admin',
     permissions: [
       { key: 'manageSettings', label: 'Company settings' },

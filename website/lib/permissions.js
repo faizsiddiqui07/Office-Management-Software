@@ -3,6 +3,7 @@ import {
   CalendarClock,
   CalendarDays,
   CalendarRange,
+  DoorOpen,
   FileText,
   HandCoins,
   LayoutDashboard,
@@ -62,6 +63,7 @@ export const NAV_ITEMS = [
   { label: 'Calendar', href: '/calendar', icon: CalendarRange },
   { label: 'Team', href: '/team', icon: Users, permission: 'viewEveryone' },
   { label: 'Expenses', href: '/expenses', icon: Wallet, permission: 'viewExpenses' },
+  { label: 'Visitors', href: '/visitors', icon: DoorOpen, permission: 'manageVisitors' },
   { label: 'Users', href: '/users', icon: UserPlus, permission: 'createUsers' },
   { label: 'Reports', href: '/reports', icon: FileText },
   { label: 'Activity', href: '/activity', icon: Activity, permission: 'viewAudit' },
@@ -119,6 +121,7 @@ function canFallback(role, perm) {
     case 'viewAudit':
     case 'approveRegularization':
     case 'manageRoles':
+    case 'manageVisitors':
       return LEADERSHIP.includes(role);
     default:
       return false;

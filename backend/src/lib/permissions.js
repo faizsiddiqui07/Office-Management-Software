@@ -109,6 +109,7 @@ function canHardcoded(role, perm) {
     case 'viewAudit':
     case 'approveRegularization':
     case 'manageRoles':
+    case 'manageVisitors':
       return LEADERSHIP.includes(role);
     default:
       return false;

@@ -16,6 +16,7 @@ import { duesRouter } from './dues.routes.js';
 import { pushRouter } from './push.routes.js';
 import { regularizationRouter } from './regularization.routes.js';
 import { rolesRouter } from './roles.routes.js';
+import { visitorsRouter } from './visitors.routes.js';
 
 /**
  * Root API router, mounted at /api in index.js.
@@ -49,6 +50,7 @@ apiRouter.use('/dues', duesRouter);
 apiRouter.use('/push', pushRouter);
 apiRouter.use('/regularizations', regularizationRouter);
 apiRouter.use('/roles', rolesRouter);
+apiRouter.use('/visitors', visitorsRouter);
 
 // ── Feature routers (added in later phases) ───────────────
 // apiRouter.use('/leaves', leavesRouter);
