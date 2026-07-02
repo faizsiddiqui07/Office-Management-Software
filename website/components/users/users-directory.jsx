@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Ellipsis, KeyRound, Pencil, Power } from 'lucide-react';
@@ -85,10 +86,10 @@ export function UsersDirectory() {
         header: 'Name',
         accessorFn: (r) => `${r.name} ${r.email} ${r.employeeId}`,
         cell: ({ row }) => (
-          <div>
-            <p className="font-medium">{row.original.name}</p>
+          <Link href={`/users/${row.original.id}`} className="group block">
+            <p className="font-medium group-hover:text-primary group-hover:underline">{row.original.name}</p>
             <p className="text-xs text-muted-foreground">{row.original.email}</p>
-          </div>
+          </Link>
         ),
       },
       { id: 'employeeId', header: 'ID', cell: ({ row }) => <span className="text-sm tabular-nums text-muted-foreground">{row.original.employeeId}</span> },

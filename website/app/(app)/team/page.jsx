@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { Users, Mail, Phone, Hash } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -25,7 +26,8 @@ function initials(name = '') {
 
 function MemberCard({ u }) {
   return (
-    <GlassCard className="flex items-start gap-3 p-4">
+    <Link href={`/users/${u.id}`} className="block transition hover:opacity-95">
+      <GlassCard className="flex items-start gap-3 p-4 transition hover:shadow-glow">
       {u.avatarUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={u.avatarUrl} alt="" className="size-12 shrink-0 rounded-full object-cover ring-1 ring-border/50" />
@@ -64,7 +66,8 @@ function MemberCard({ u }) {
           ) : null}
         </div>
       </div>
-    </GlassCard>
+      </GlassCard>
+    </Link>
   );
 }
 

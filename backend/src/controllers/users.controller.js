@@ -3,6 +3,7 @@ import { canAssignRole } from '../lib/permissions.js';
 import { User } from '../models/User.js';
 import { createEmployee, resetUserCredentials, updateUser as updateUserService } from '../services/user.service.js';
 import { getBalanceForUser, setLeaveBalance } from '../services/leave.service.js';
+import { getUserDossier } from '../services/dossier.service.js';
 import { audit } from '../models/AuditLog.js';
 
 function sendServiceError(res, err, next) {
@@ -63,6 +64,19 @@ export async function updateUser(req, res, next) {
     const user = await updateUserService(req.user, req.params.id, req.body);
     await audit({ actor: req.user._id, action: 'user.update', entityType: 'User', entityId: req.params.id, meta: req.body });
     return res.json(ok({ user }));
+  } catch (err) {
+    return sendServiceError(res, err, next);
+  }
+}
+
+/** Full per-user dossier (attendance + leaves + tasks + activity) for a date range. */
+export async function userDossier(req, res, next) {
+  try {
+    const { from, to } = req.query;
+    if (!from || !to) return res.status(400).json(fail('BAD_RANGE', 'from and to dates are required'));
+    if (to < from) return res.status(400).json(fail('BAD_RANGE', 'End date is before the start date'));
+    const data = await getUserDossier(req.params.id, { from, to });
+    return res.json(ok(data));
   } catch (err) {
     return sendServiceError(res, err, next);
   }
