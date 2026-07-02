@@ -43,6 +43,12 @@ export const leaveBalanceSchema = z
     message: 'Provide quota and/or used days',
   });
 
+/** Per-person task-delegation access (set by leadership in Users → Edit). */
+const taskAssignSchema = z.object({
+  mode: z.enum(['NONE', 'ALL', 'SELECTED']),
+  users: z.array(z.string()).optional().default([]),
+});
+
 export const updateUserSchema = z
   .object({
     name: z.string().min(1).optional(),
@@ -54,5 +60,6 @@ export const updateUserSchema = z
     isActive: z.boolean().optional(),
     employmentType: employmentType.optional(),
     schedule: scheduleSchema.optional(),
+    taskAssign: taskAssignSchema.optional(),
   })
   .superRefine(requirePartTimeHours);

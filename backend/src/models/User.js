@@ -15,6 +15,12 @@ const userSchema = new mongoose.Schema(
       workEnd: { type: String, default: '' }, // 'HH:mm'
       graceMinutes: { type: Number, default: 0 },
     },
+    // Task delegation access — set per person by leadership (Users → Edit).
+    // NONE: can't assign work. ALL: can assign to anyone. SELECTED: only to `users`.
+    taskAssign: {
+      mode: { type: String, enum: ['NONE', 'ALL', 'SELECTED'], default: 'NONE' },
+      users: { type: [mongoose.Schema.Types.ObjectId], ref: 'User', default: [] },
+    },
     department: { type: String, default: '' },
     designation: { type: String, default: '' },
     phone: { type: String, default: '' },

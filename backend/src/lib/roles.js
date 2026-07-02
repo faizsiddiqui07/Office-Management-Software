@@ -9,8 +9,6 @@ let cache = new Map();
 let labels = new Map();
 // roleKey -> rank (lower = more authority). Used for role-assignment hierarchy.
 let ranks = new Map();
-// roleKey -> [roleKeys] this role may delegate tasks to ([] = rank-hierarchy default).
-let assignTargets = new Map();
 
 /**
  * Seed the built-in roles — but ONLY when the roles collection is completely
@@ -76,26 +74,15 @@ export async function loadRoles() {
   const map = new Map();
   const lbl = new Map();
   const rnk = new Map();
-  const tgt = new Map();
   for (const r of docs) {
     map.set(r.key, new Set(r.permissions));
     lbl.set(r.key, r.label);
     rnk.set(r.key, typeof r.rank === 'number' ? r.rank : 100);
-    tgt.set(r.key, Array.isArray(r.taskAssignRoles) ? [...r.taskAssignRoles] : []);
   }
   cache = map;
   labels = lbl;
   ranks = rnk;
-  assignTargets = tgt;
   return cache.size;
-}
-
-/**
- * Role keys this role may delegate tasks to. An EMPTY array means "not
- * configured" → callers fall back to the rank hierarchy (anyone strictly below).
- */
-export function getTaskAssignRoles(roleKey) {
-  return assignTargets.get(roleKey) || [];
 }
 
 export function getRolePermissionSet(roleKey) {

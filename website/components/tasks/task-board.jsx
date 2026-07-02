@@ -3,12 +3,12 @@
 import * as React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Check, CheckCircle2, ClipboardList, Download, FolderOpen, ListTodo, Pencil, Search, Trash2, Users } from 'lucide-react';
+import { Check, CheckCircle2, ClipboardList, Download, FolderOpen, ListTodo, Pencil, Search, Trash2, Undo2, UserRound, Users } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { can } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
 import { EmptyState } from '@/components/glass/empty-state';
+import { StatusBadge } from '@/components/glass/status-badge';
 import { LoadingState } from '@/components/glass/skeletons';
 import { ConfirmDialog } from '@/components/glass/confirm-dialog';
 import { AppDialog } from '@/components/glass/app-dialog';
@@ -77,17 +77,23 @@ function fmtDate(d) {
   });
 }
 
-/** Personal / history task row with a click-to-complete circle. */
-function TaskRow({ task, canToggle, onToggle, onEdit, onDelete }) {
+/** Personal / history task row — tap the row for full details, the circle to complete. */
+function TaskRow({ task, canToggle, onToggle, onEdit, onDelete, onOpen }) {
   const done = task.status === 'DONE';
   const overdue = !done && isOverdue(task.dueYMD);
   return (
-    <div className="flex items-start gap-3 rounded-xl bg-foreground/[0.03] p-3 ring-1 ring-border/50">
+    <div
+      onClick={() => onOpen(task)}
+      className="flex cursor-pointer items-start gap-3 rounded-xl bg-foreground/[0.03] p-3 ring-1 ring-border/50 transition-colors hover:bg-foreground/[0.06]"
+    >
       {/* 40px touch target; the visual 20px circle sits inside (negative margins keep layout). */}
       <button
         type="button"
         disabled={!canToggle}
-        onClick={() => canToggle && onToggle(task)}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (canToggle) onToggle(task);
+        }}
         aria-label={done ? 'Mark as not done' : 'Mark as done'}
         className={cn('group/tgl -m-2.5 -mt-2 flex size-10 shrink-0 items-center justify-center', !canToggle && 'cursor-default')}
       >
@@ -116,12 +122,12 @@ function TaskRow({ task, canToggle, onToggle, onEdit, onDelete }) {
         </div>
       </div>
       <div className="flex shrink-0 items-center">
-        <Button variant="ghost" size="icon" className="size-10 sm:size-8" onClick={() => onEdit(task)} aria-label="Edit">
+        <Button variant="ghost" size="icon" className="size-10 sm:size-8" onClick={(e) => { e.stopPropagation(); onEdit(task); }} aria-label="Edit">
           <Pencil className="size-4" />
         </Button>
         {/* Delegated tasks can't be deleted by the assignee — only by the assigner. */}
         {task.assignedBy ? null : (
-          <Button variant="ghost" size="icon" className="size-10 text-destructive sm:size-8" onClick={() => onDelete(task)} aria-label="Delete">
+          <Button variant="ghost" size="icon" className="size-10 text-destructive sm:size-8" onClick={(e) => { e.stopPropagation(); onDelete(task); }} aria-label="Delete">
             <Trash2 className="size-4" />
           </Button>
         )}
@@ -131,7 +137,7 @@ function TaskRow({ task, canToggle, onToggle, onEdit, onDelete }) {
 }
 
 /** A date-grouped list of a person's tasks (inside the folder dialog). */
-function DatedTaskList({ tasks, dateKey, ascending = false, onEdit, onDelete }) {
+function DatedTaskList({ tasks, dateKey, ascending = false, onEdit, onDelete, onOpen }) {
   const groups = React.useMemo(() => {
     const map = new Map();
     for (const t of tasks) {
@@ -164,7 +170,11 @@ function DatedTaskList({ tasks, dateKey, ascending = false, onEdit, onDelete }) 
             const done = t.status === 'DONE';
             const overdue = !done && isOverdue(t.dueYMD);
             return (
-              <div key={t.id} className="flex items-start gap-2.5 rounded-lg bg-foreground/[0.03] p-2.5 ring-1 ring-border/50">
+              <div
+                key={t.id}
+                onClick={() => onOpen(t)}
+                className="flex cursor-pointer items-start gap-2.5 rounded-lg bg-foreground/[0.03] p-2.5 ring-1 ring-border/50 transition-colors hover:bg-foreground/[0.06]"
+              >
                 <span className={cn('mt-1 size-1.5 shrink-0 rounded-full', done ? 'bg-success' : 'bg-warning')} />
                 <div className="min-w-0 flex-1">
                   <p className={cn('text-sm font-medium', done && 'text-muted-foreground line-through')}>{t.title}</p>
@@ -174,10 +184,10 @@ function DatedTaskList({ tasks, dateKey, ascending = false, onEdit, onDelete }) 
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center">
-                  <Button variant="ghost" size="icon" className="size-10 sm:size-7" onClick={() => onEdit(t)} aria-label="Edit">
+                  <Button variant="ghost" size="icon" className="size-10 sm:size-7" onClick={(e) => { e.stopPropagation(); onEdit(t); }} aria-label="Edit">
                     <Pencil className="size-3.5" />
                   </Button>
-                  <Button variant="ghost" size="icon" className="size-10 text-destructive sm:size-7" onClick={() => onDelete(t)} aria-label="Delete">
+                  <Button variant="ghost" size="icon" className="size-10 text-destructive sm:size-7" onClick={(e) => { e.stopPropagation(); onDelete(t); }} aria-label="Delete">
                     <Trash2 className="size-3.5" />
                   </Button>
                 </div>
@@ -191,7 +201,7 @@ function DatedTaskList({ tasks, dateKey, ascending = false, onEdit, onDelete }) 
 }
 
 /** A person "folder": name, progress, and (on click) their pending/completed tasks date-wise. */
-function PersonFolder({ folder, onEdit, onDelete }) {
+function PersonFolder({ folder, onEdit, onDelete, onOpen }) {
   const [open, setOpen] = React.useState(false);
   const pct = folder.total ? Math.round((folder.done / folder.total) * 100) : 0;
   return (
@@ -232,13 +242,13 @@ function PersonFolder({ folder, onEdit, onDelete }) {
             <h3 className="flex items-center gap-2 text-sm font-semibold">
               <ListTodo className="size-4 text-warning" /> Pending ({folder.pending})
             </h3>
-            <DatedTaskList tasks={folder.pendingTasks} dateKey={(t) => t.dueYMD || t.createdAt} ascending onEdit={onEdit} onDelete={onDelete} />
+            <DatedTaskList tasks={folder.pendingTasks} dateKey={(t) => t.dueYMD || t.createdAt} ascending onEdit={onEdit} onDelete={onDelete} onOpen={onOpen} />
           </section>
           <section className="space-y-2">
             <h3 className="flex items-center gap-2 text-sm font-semibold">
               <CheckCircle2 className="size-4 text-success" /> Completed ({folder.done})
             </h3>
-            <DatedTaskList tasks={folder.doneTasks} dateKey={(t) => t.completedAt || t.createdAt} onEdit={onEdit} onDelete={onDelete} />
+            <DatedTaskList tasks={folder.doneTasks} dateKey={(t) => t.completedAt || t.createdAt} onEdit={onEdit} onDelete={onDelete} onOpen={onOpen} />
           </section>
         </div>
       </AppDialog>
@@ -246,10 +256,104 @@ function PersonFolder({ folder, onEdit, onDelete }) {
   );
 }
 
+/** Full task details — opened by tapping any task row. */
+function TaskDetailDialog({ view, onClose, onToggle, onEdit, onDelete }) {
+  const task = view?.task;
+  const done = task?.status === 'DONE';
+  const overdue = task && !done && isOverdue(task.dueYMD);
+
+  const Row = ({ label, children }) => (
+    <div className="flex items-start justify-between gap-4 py-2">
+      <span className="shrink-0 text-xs uppercase tracking-wide text-muted-foreground">{label}</span>
+      <span className="min-w-0 text-right text-sm font-medium">{children}</span>
+    </div>
+  );
+
+  return (
+    <AppDialog
+      open={!!view}
+      onOpenChange={(o) => (!o ? onClose() : null)}
+      title="Task details"
+      footer={
+        task ? (
+          <div className="flex w-full flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-1">
+              <Button variant="outline" onClick={() => onEdit(task)}>
+                <Pencil className="size-4" /> Edit
+              </Button>
+              {view.allowDelete ? (
+                <Button variant="ghost" className="text-destructive" onClick={() => onDelete(task)}>
+                  <Trash2 className="size-4" /> Delete
+                </Button>
+              ) : null}
+            </div>
+            {view.canToggle ? (
+              <Button variant={done ? 'outline' : 'default'} onClick={() => onToggle(task)}>
+                {done ? (
+                  <>
+                    <Undo2 className="size-4" /> Mark not done
+                  </>
+                ) : (
+                  <>
+                    <Check className="size-4" /> Mark as done
+                  </>
+                )}
+              </Button>
+            ) : (
+              <Button variant="outline" onClick={onClose}>
+                Close
+              </Button>
+            )}
+          </div>
+        ) : null
+      }
+    >
+      {task ? (
+        <div className="space-y-4 py-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusBadge tone={done ? 'success' : 'warning'}>{done ? 'Done' : 'Pending'}</StatusBadge>
+            {overdue ? <StatusBadge tone="destructive">Overdue</StatusBadge> : null}
+          </div>
+
+          <div>
+            <p className={cn('text-lg font-semibold leading-snug break-words', done && 'text-muted-foreground line-through')}>{task.title}</p>
+            {task.notes ? (
+              <p className="mt-2 whitespace-pre-wrap break-words rounded-xl bg-foreground/[0.04] p-3 text-sm text-muted-foreground ring-1 ring-border/50">
+                {task.notes}
+              </p>
+            ) : null}
+          </div>
+
+          <div className="divide-y divide-border/50 rounded-xl bg-foreground/[0.03] px-3 ring-1 ring-border/50">
+            <Row label="Type">
+              {task.assignedBy?.name ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <UserRound className="size-3.5 text-primary" /> Assigned by {task.assignedBy.name}
+                </span>
+              ) : task.owner?.name && view.assignerView ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <UserRound className="size-3.5 text-primary" /> Assigned to {task.owner.name}
+                </span>
+              ) : (
+                'Personal task'
+              )}
+            </Row>
+            <Row label="Due date">{task.dueYMD ? fmtDate(task.dueYMD) : '—'}</Row>
+            <Row label="Created">{fmtDate(task.createdAt)}</Row>
+            {done ? <Row label="Completed">{task.completedAt ? fmtDate(task.completedAt) : '—'}</Row> : null}
+          </div>
+        </div>
+      ) : null}
+    </AppDialog>
+  );
+}
+
 export function TaskBoard() {
   const { user } = useAuth();
   const qc = useQueryClient();
-  const canAssign = !!user && can(user, 'assignTasks');
+  // Per-person delegation access — set by leadership in Users → Edit.
+  const ta = user?.taskAssign || {};
+  const canAssign = ta.mode === 'ALL' || (ta.mode === 'SELECTED' && (ta.users || []).length > 0);
 
   const [tab, setTab] = React.useState('mine');
   const [search, setSearch] = React.useState('');
@@ -265,6 +369,7 @@ export function TaskBoard() {
   const [pdfBusy, setPdfBusy] = React.useState(false);
   const [deleting, setDeleting] = React.useState(null);
   const [editing, setEditing] = React.useState(null);
+  const [viewing, setViewing] = React.useState(null); // { task, canToggle, allowDelete, assignerView }
 
   const isAssigned = tab === 'assigned';
 
@@ -415,7 +520,13 @@ export function TaskBoard() {
             folders.length ? (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {folders.map((f) => (
-                  <PersonFolder key={f.id} folder={f} onEdit={(x) => setEditing(x)} onDelete={(x) => setDeleting(x)} />
+                  <PersonFolder
+                    key={f.id}
+                    folder={f}
+                    onEdit={(x) => setEditing(x)}
+                    onDelete={(x) => setDeleting(x)}
+                    onOpen={(x) => setViewing({ task: x, canToggle: false, allowDelete: true, assignerView: true })}
+                  />
                 ))}
               </div>
             ) : (
@@ -426,7 +537,15 @@ export function TaskBoard() {
           ) : (
             <div className="space-y-2.5">
               {sortedTasks.map((t) => (
-                <TaskRow key={t.id} task={t} canToggle onToggle={(x) => toggleMut.mutate(x)} onEdit={(x) => setEditing(x)} onDelete={(x) => setDeleting(x)} />
+                <TaskRow
+                  key={t.id}
+                  task={t}
+                  canToggle
+                  onToggle={(x) => toggleMut.mutate(x)}
+                  onEdit={(x) => setEditing(x)}
+                  onDelete={(x) => setDeleting(x)}
+                  onOpen={(x) => setViewing({ task: x, canToggle: true, allowDelete: !x.assignedBy, assignerView: false })}
+                />
               ))}
             </div>
           )}
@@ -436,6 +555,23 @@ export function TaskBoard() {
       {editing ? (
         <TaskDialog task={editing} open={!!editing} onOpenChange={(o) => (!o ? setEditing(null) : null)} />
       ) : null}
+
+      <TaskDetailDialog
+        view={viewing}
+        onClose={() => setViewing(null)}
+        onToggle={(t) => {
+          toggleMut.mutate(t);
+          setViewing(null);
+        }}
+        onEdit={(t) => {
+          setViewing(null);
+          setEditing(t);
+        }}
+        onDelete={(t) => {
+          setViewing(null);
+          setDeleting(t);
+        }}
+      />
 
       <ConfirmDialog
         open={!!deleting}

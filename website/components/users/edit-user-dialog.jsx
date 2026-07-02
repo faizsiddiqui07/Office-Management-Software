@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { ListTodo } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { AppDialog } from '@/components/glass/app-dialog';
@@ -41,6 +42,16 @@ export function EditUserDialog({ user: target, open, onOpenChange }) {
   const [quota, setQuota] = React.useState('');
   const [used, setUsed] = React.useState('');
 
+  // Task delegation access (per person): NONE | ALL | SELECTED + chosen people.
+  const [assignMode, setAssignMode] = React.useState('NONE');
+  const [assignUsers, setAssignUsers] = React.useState(() => new Set());
+  const { data: usersData } = useQuery({
+    queryKey: ['users'],
+    queryFn: () => api.get('/users'),
+    enabled: open && canManage,
+  });
+  const peopleOptions = (usersData?.users ?? []).filter((u) => u.isActive !== false && u.id !== target.id);
+
   React.useEffect(() => {
     if (!open) return;
     setName(target.name || '');
@@ -54,6 +65,8 @@ export function EditUserDialog({ user: target, open, onOpenChange }) {
       workEnd: target.schedule?.workEnd || DEFAULT_SCHEDULE.workEnd,
       graceMinutes: target.schedule?.graceMinutes ?? 0,
     });
+    setAssignMode(target.taskAssign?.mode || 'NONE');
+    setAssignUsers(new Set((target.taskAssign?.users || []).map(String)));
   }, [open, target]);
 
   // Current fiscal-year leave balance (for the leadership override below).
@@ -82,6 +95,7 @@ export function EditUserDialog({ user: target, open, onOpenChange }) {
         isActive,
         employmentType,
         schedule: employmentType === 'PART_TIME' ? schedule : undefined,
+        taskAssign: { mode: assignMode, users: assignMode === 'SELECTED' ? [...assignUsers] : [] },
       });
       if (canManage) {
         const payload = {};
@@ -163,6 +177,74 @@ export function EditUserDialog({ user: target, open, onOpenChange }) {
           onTypeChange={setEmploymentType}
           onScheduleChange={setSchedule}
         />
+
+        {canManage ? (
+          <div className="space-y-3 rounded-xl bg-primary/[0.05] p-3 ring-1 ring-primary/15">
+            <div className="flex items-center gap-2">
+              <ListTodo className="size-4 text-primary" />
+              <p className="text-sm font-medium">Task assignment access</p>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Who can {target.name?.split(' ')[0] || 'this person'} give work to? This is the only place that controls it.
+            </p>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { v: 'NONE', label: 'No one' },
+                { v: 'ALL', label: 'Everyone' },
+                { v: 'SELECTED', label: 'Selected' },
+              ].map((o) => (
+                <button
+                  key={o.v}
+                  type="button"
+                  onClick={() => setAssignMode(o.v)}
+                  className={`rounded-lg px-2 py-2 text-sm font-medium ring-1 transition-colors ${
+                    assignMode === o.v
+                      ? 'bg-primary text-primary-foreground ring-primary'
+                      : 'bg-background/50 text-muted-foreground ring-border hover:text-foreground'
+                  }`}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+            {assignMode === 'SELECTED' ? (
+              <div className="max-h-44 space-y-0.5 overflow-y-auto rounded-lg bg-background/40 p-1.5 ring-1 ring-border/50">
+                {peopleOptions.length ? (
+                  peopleOptions.map((u) => (
+                    <label
+                      key={u.id}
+                      htmlFor={`ta-${u.id}`}
+                      className="flex cursor-pointer items-center justify-between gap-3 rounded-md px-2 py-1.5 transition-colors hover:bg-foreground/[0.04]"
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-medium">{u.name}</span>
+                        <span className="block truncate text-xs text-muted-foreground">{u.designation || u.department || u.employeeId}</span>
+                      </span>
+                      <Switch
+                        id={`ta-${u.id}`}
+                        checked={assignUsers.has(u.id)}
+                        onCheckedChange={() =>
+                          setAssignUsers((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(u.id)) next.delete(u.id);
+                            else next.add(u.id);
+                            return next;
+                          })
+                        }
+                      />
+                    </label>
+                  ))
+                ) : (
+                  <p className="px-2 py-2 text-xs text-muted-foreground">No other active users.</p>
+                )}
+              </div>
+            ) : assignMode === 'ALL' ? (
+              <p className="text-xs text-muted-foreground">Can assign work to every active user.</p>
+            ) : (
+              <p className="text-xs text-muted-foreground">The Assign button won’t appear for them.</p>
+            )}
+          </div>
+        ) : null}
 
         {canManage ? (
           <div className="space-y-3 rounded-xl bg-foreground/[0.04] p-3 ring-1 ring-border/50">

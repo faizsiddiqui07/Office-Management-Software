@@ -1,8 +1,6 @@
 import { Task } from '../models/Task.js';
 import { User } from '../models/User.js';
 import { notify } from '../models/Notification.js';
-import { can } from '../lib/permissions.js';
-import { getRoleRank, getTaskAssignRoles } from '../lib/roles.js';
 
 function httpError(status, code, message) {
   const e = new Error(message);
@@ -15,21 +13,22 @@ function escapeRegex(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-// Lower rank number = more authority. Unknown roles sit at the bottom (100).
-const rankOf = (role) => {
-  const r = getRoleRank(role);
-  return typeof r === 'number' ? r : 100;
-};
-
 /**
- * Can `actor` delegate a task to `target`? If the actor's role has an explicit
- * "can assign to" role list configured (role editor), that list is the rule.
- * Otherwise the default applies: only someone strictly below in the hierarchy.
+ * Can `actor` delegate a task to `target`? Purely per-person: leadership sets
+ * each user's taskAssign access (Users → Edit) — NONE / ALL / SELECTED people.
  */
 export function canAssignTo(actor, target) {
-  const configured = getTaskAssignRoles(actor.role);
-  if (configured.length) return configured.includes(target.role);
-  return rankOf(actor.role) < rankOf(target.role);
+  if (String(actor._id) === String(target._id)) return false;
+  const ta = actor.taskAssign || {};
+  if (ta.mode === 'ALL') return true;
+  if (ta.mode === 'SELECTED') return (ta.users || []).some((id) => String(id) === String(target._id));
+  return false;
+}
+
+/** Whether the actor can assign work to anyone at all (drives the UI button). */
+export function canAssignAny(actor) {
+  const ta = actor.taskAssign || {};
+  return ta.mode === 'ALL' || (ta.mode === 'SELECTED' && (ta.users || []).length > 0);
 }
 
 /** Active users the actor may assign tasks to (per canAssignTo above). */
@@ -45,10 +44,11 @@ export async function createTask(actor, data) {
   let assignedBy = null;
 
   if (data.assignTo && String(data.assignTo) !== String(actor._id)) {
-    if (!can(actor, 'assignTasks')) throw httpError(403, 'FORBIDDEN', 'You are not allowed to assign tasks');
     const target = await User.findById(data.assignTo);
     if (!target || !target.isActive) throw httpError(404, 'NOT_FOUND', 'That user was not found');
-    if (!canAssignTo(actor, target)) throw httpError(403, 'HIERARCHY', 'You can only assign work to people below you in the hierarchy');
+    if (!canAssignTo(actor, target)) {
+      throw httpError(403, 'FORBIDDEN', 'You don’t have access to assign work to this person — ask leadership to grant it');
+    }
     owner = target._id;
     assignedBy = actor._id;
   }

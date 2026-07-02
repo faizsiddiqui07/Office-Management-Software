@@ -131,6 +131,18 @@ export async function updateUser(actor, id, data) {
   }
   if (data.reportsTo !== undefined) user.reportsTo = data.reportsTo || null;
 
+  if (data.taskAssign !== undefined) {
+    const mode = ['NONE', 'ALL', 'SELECTED'].includes(data.taskAssign.mode) ? data.taskAssign.mode : 'NONE';
+    let targets = [];
+    if (mode === 'SELECTED') {
+      // Keep only real, other users (drops self / typos / deleted accounts).
+      const ids = (data.taskAssign.users || []).filter((x) => String(x) !== String(id));
+      const found = await User.find({ _id: { $in: ids } }).select('_id');
+      targets = found.map((u) => u._id);
+    }
+    user.taskAssign = { mode, users: targets };
+  }
+
   if (data.employmentType !== undefined) {
     user.employmentType = data.employmentType === 'PART_TIME' ? 'PART_TIME' : 'FULL_TIME';
   }

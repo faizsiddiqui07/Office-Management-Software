@@ -67,10 +67,7 @@ export const PERMISSION_CATALOG = [
     module: 'Visitors',
     permissions: [{ key: 'manageVisitors', label: 'Visitor register — log, view & export entries' }],
   },
-  {
-    module: 'Tasks',
-    permissions: [{ key: 'assignTasks', label: 'Assign tasks to team members (below in the hierarchy)' }],
-  },
+  // (Task delegation is per-person — User.taskAssign, set in Users → Edit — not a role permission.)
   {
     module: 'Admin',
     permissions: [

@@ -7,9 +7,6 @@ const roleSchema = new mongoose.Schema(
     permissions: { type: [String], default: [] },
     isSystem: { type: Boolean, default: false }, // built-in roles can't be deleted
     rank: { type: Number, default: 100 }, // display order
-    // Task delegation targets: role keys this role may assign work to. EMPTY
-    // means the default rule (anyone strictly below in the rank hierarchy).
-    taskAssignRoles: { type: [String], default: [] },
   },
   { timestamps: true },
 );
