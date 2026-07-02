@@ -3,8 +3,9 @@
 import * as React from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { CheckCheck, Lock, Trash2 } from 'lucide-react';
+import { CheckCheck, ListTodo, Lock, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { useRoleOptions } from '@/lib/use-roles';
 import { AppDialog } from '@/components/glass/app-dialog';
 import { ConfirmDialog } from '@/components/glass/confirm-dialog';
 import { Button } from '@/components/ui/button';
@@ -29,7 +30,11 @@ export function RoleEditorDialog({ role, catalog, base = [], open, onClose }) {
 
   const [label, setLabel] = React.useState(role?.label ?? '');
   const [selected, setSelected] = React.useState(() => new Set(role?.permissions ?? []));
+  const [assignTargets, setAssignTargets] = React.useState(() => new Set(role?.taskAssignRoles ?? []));
   const [confirmDelete, setConfirmDelete] = React.useState(false);
+  const { data: roleOptions = [] } = useRoleOptions();
+  // Other roles this one could delegate to (a role never assigns to itself).
+  const targetOptions = roleOptions.filter((r) => r.key !== role?.key);
 
   const grantedCount = selected.size;
   const totalCount = catalog.reduce((n, g) => n + g.permissions.length, 0);
@@ -42,8 +47,9 @@ export function RoleEditorDialog({ role, catalog, base = [], open, onClose }) {
   const save = useMutation({
     mutationFn: () => {
       const permissions = [...selected];
-      if (isNew) return api.post('/roles', { label: label.trim(), permissions });
-      const body = { permissions };
+      const taskAssignRoles = selected.has('assignTasks') ? [...assignTargets] : [];
+      if (isNew) return api.post('/roles', { label: label.trim(), permissions, taskAssignRoles });
+      const body = { permissions, taskAssignRoles };
       if (!isSystem) body.label = label.trim();
       return api.put(`/roles/${role.id}`, body);
     },
@@ -167,6 +173,42 @@ export function RoleEditorDialog({ role, catalog, base = [], open, onClose }) {
               </span>
               .
             </p>
+          ) : null}
+
+          {/* Task delegation targets — who this role can assign work to. */}
+          {selected.has('assignTasks') ? (
+            <div className="rounded-xl bg-primary/[0.05] p-3 ring-1 ring-primary/15">
+              <div className="mb-1 flex items-center gap-2">
+                <ListTodo className="size-4 text-primary" />
+                <p className="text-sm font-semibold">Can assign work to</p>
+              </div>
+              <p className="mb-2 text-xs text-muted-foreground">
+                Pick which roles this role may delegate tasks to. Leave everything off for the default — anyone below it in the hierarchy.
+              </p>
+              <div className="space-y-1">
+                {targetOptions.map((r) => (
+                  <label
+                    key={r.key}
+                    htmlFor={`tgt-${r.key}`}
+                    className="flex cursor-pointer items-center justify-between gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-foreground/[0.04]"
+                  >
+                    <span className="text-sm font-medium">{r.label}</span>
+                    <Switch
+                      id={`tgt-${r.key}`}
+                      checked={assignTargets.has(r.key)}
+                      onCheckedChange={() =>
+                        setAssignTargets((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(r.key)) next.delete(r.key);
+                          else next.add(r.key);
+                          return next;
+                        })
+                      }
+                    />
+                  </label>
+                ))}
+              </div>
+            </div>
           ) : null}
 
           {/* Permission groups */}

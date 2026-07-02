@@ -18,11 +18,21 @@ function slugify(label) {
 const createSchema = z.object({
   label: z.string().min(1).max(40),
   permissions: z.array(z.string()).optional().default([]),
+  taskAssignRoles: z.array(z.string()).optional().default([]),
 });
 const updateSchema = z.object({
   label: z.string().min(1).max(40).optional(),
   permissions: z.array(z.string()).optional(),
+  taskAssignRoles: z.array(z.string()).optional(),
 });
+
+/** Keep only role keys that actually exist (drops typos / deleted roles). */
+async function sanitizeAssignRoles(keys) {
+  if (!Array.isArray(keys) || !keys.length) return [];
+  const existing = await Role.find({ key: { $in: keys } }).select('key');
+  const valid = new Set(existing.map((r) => r.key));
+  return [...new Set(keys.filter((k) => valid.has(k)))];
+}
 
 /** The permission catalog (for the editor UI). */
 export function catalog(_req, res) {
@@ -62,6 +72,7 @@ export async function create(req, res, next) {
       key,
       label: body.label.trim(),
       permissions: sanitizePermissions(body.permissions),
+      taskAssignRoles: await sanitizeAssignRoles(body.taskAssignRoles),
       isSystem: false,
       rank: 100,
     });
@@ -89,6 +100,7 @@ export async function update(req, res, next) {
       role.permissions = next;
     }
     if (body.label !== undefined && !role.isSystem) role.label = body.label.trim();
+    if (body.taskAssignRoles !== undefined) role.taskAssignRoles = await sanitizeAssignRoles(body.taskAssignRoles);
 
     await role.save();
     await loadRoles();

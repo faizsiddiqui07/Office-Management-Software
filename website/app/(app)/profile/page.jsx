@@ -3,10 +3,11 @@
 import * as React from 'react';
 import { useTheme } from 'next-themes';
 import { toast } from 'sonner';
-import { CircleUser, KeyRound, Loader2, Monitor, Moon, Sun, UserCog } from 'lucide-react';
+import { Camera, CircleUser, KeyRound, Loader2, Monitor, Moon, Sun, Trash2, UserCog } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { prettyRole } from '@/lib/permissions';
+import { downscaleImage } from '@/lib/image';
 import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/glass/page-header';
 import { GlassPanel } from '@/components/glass/glass-panel';
@@ -27,6 +28,8 @@ export default function ProfilePage() {
 
   const [form, setForm] = React.useState({ name: '', phone: '', avatarUrl: '' });
   const [savingProfile, setSavingProfile] = React.useState(false);
+  const [photoBusy, setPhotoBusy] = React.useState(false);
+  const photoRef = React.useRef(null);
   const [pwd, setPwd] = React.useState({ currentPassword: '', newPassword: '', confirm: '' });
   const [savingPwd, setSavingPwd] = React.useState(false);
 
@@ -47,6 +50,45 @@ export default function ProfilePage() {
       toast.error(err instanceof ApiError ? err.message : 'Could not update profile');
     } finally {
       setSavingProfile(false);
+    }
+  };
+
+  const pickPhoto = async (e) => {
+    const input = e.target;
+    const file = input.files?.[0];
+    if (!file) return;
+    if (file.size > 8 * 1024 * 1024) {
+      toast.error('Photo must be under 8 MB');
+      input.value = '';
+      return;
+    }
+    setPhotoBusy(true);
+    try {
+      // Downscale to a small square-ish avatar and store as a data-URL.
+      const dataUrl = await downscaleImage(file, { maxDim: 256, mime: 'image/jpeg', quality: 0.85 });
+      await api.patch('/auth/profile', { avatarUrl: dataUrl });
+      setForm((f) => ({ ...f, avatarUrl: dataUrl }));
+      await refresh();
+      toast.success('Photo updated');
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Could not update the photo');
+    } finally {
+      setPhotoBusy(false);
+      input.value = '';
+    }
+  };
+
+  const removePhoto = async () => {
+    setPhotoBusy(true);
+    try {
+      await api.patch('/auth/profile', { avatarUrl: '' });
+      setForm((f) => ({ ...f, avatarUrl: '' }));
+      await refresh();
+      toast.success('Photo removed');
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Could not remove the photo');
+    } finally {
+      setPhotoBusy(false);
     }
   };
 
@@ -86,14 +128,37 @@ export default function ProfilePage() {
             <CircleUser className="size-4 text-primary" /> Your profile
           </div>
           <form onSubmit={saveProfile} className="space-y-5">
-            <div className="flex items-center gap-4">
-              <Avatar className="size-16">
-                {form.avatarUrl ? <AvatarImage src={form.avatarUrl} alt={form.name} /> : null}
-                <AvatarFallback className="text-lg">{initialsOf(form.name || user.name)}</AvatarFallback>
-              </Avatar>
-              <div className="text-sm">
+            <div className="flex flex-wrap items-center gap-4">
+              {/* Tap the photo to change it. */}
+              <button
+                type="button"
+                onClick={() => photoRef.current?.click()}
+                disabled={photoBusy}
+                className="group relative shrink-0 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-label="Change photo"
+              >
+                <Avatar className="size-16">
+                  {form.avatarUrl ? <AvatarImage src={form.avatarUrl} alt={form.name} /> : null}
+                  <AvatarFallback className="text-lg">{initialsOf(form.name || user.name)}</AvatarFallback>
+                </Avatar>
+                <span className="absolute -bottom-0.5 -right-0.5 flex size-6 items-center justify-center rounded-full bg-primary text-primary-foreground ring-2 ring-background">
+                  {photoBusy ? <Loader2 className="size-3.5 animate-spin" /> : <Camera className="size-3.5" />}
+                </span>
+              </button>
+              <input ref={photoRef} type="file" accept="image/*" onChange={pickPhoto} className="hidden" />
+              <div className="min-w-0 text-sm">
                 <p className="font-medium">{user.name}</p>
                 <p className="text-muted-foreground">{prettyRole(user.role)} · {user.employeeId}</p>
+                <div className="mt-1 flex flex-wrap gap-2">
+                  <Button type="button" size="sm" variant="outline" onClick={() => photoRef.current?.click()} disabled={photoBusy}>
+                    <Camera className="size-3.5" /> {form.avatarUrl ? 'Change photo' : 'Add photo'}
+                  </Button>
+                  {form.avatarUrl ? (
+                    <Button type="button" size="sm" variant="ghost" className="text-destructive" onClick={removePhoto} disabled={photoBusy}>
+                      <Trash2 className="size-3.5" /> Remove
+                    </Button>
+                  ) : null}
+                </div>
               </div>
             </div>
 
@@ -109,10 +174,6 @@ export default function ProfilePage() {
               <div className="space-y-1.5">
                 <Label htmlFor="p-phone">Phone</Label>
                 <Input id="p-phone" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} placeholder="+91 …" className="bg-background/50" />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="p-avatar">Avatar URL</Label>
-                <Input id="p-avatar" value={form.avatarUrl} onChange={(e) => setForm((f) => ({ ...f, avatarUrl: e.target.value }))} placeholder="https://…" className="bg-background/50" />
               </div>
             </div>
 

@@ -46,10 +46,12 @@ export default function SettingsPage() {
   const [smtpSaving, setSmtpSaving] = React.useState(false);
   const [smtpTesting, setSmtpTesting] = React.useState(false);
 
+  const [baseline, setBaseline] = React.useState(null); // last-saved snapshot for dirty detection
+
   React.useEffect(() => {
     if (data?.settings) {
       const s = data.settings;
-      setForm({
+      const next = {
         companyName: s.companyName ?? '',
         brandColor: s.brandColor ?? '#4f46e5',
         timezone: 'Asia/Kolkata', // fixed to IST — not user-editable
@@ -70,7 +72,9 @@ export default function SettingsPage() {
           longitude: s.gpsAttendance?.longitude ?? null,
           radiusMeters: s.gpsAttendance?.radiusMeters ?? 200,
         },
-      });
+      };
+      setForm(next);
+      setBaseline(next);
       // Email (SMTP): show the current sender/host/port; the password is
       // write-only so it's never loaded back into the form.
       setSmtp((prev) => ({
@@ -93,6 +97,7 @@ export default function SettingsPage() {
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const setGps = (k, v) => setForm((f) => ({ ...f, gpsAttendance: { ...f.gpsAttendance, [k]: v } }));
+  const dirty = !!form && !!baseline && JSON.stringify(form) !== JSON.stringify(baseline);
 
   const captureLocation = () => {
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
@@ -222,6 +227,7 @@ export default function SettingsPage() {
           radiusMeters: Number(form.gpsAttendance.radiusMeters) || 200,
         },
       });
+      setBaseline(form); // saved — the bar hides immediately
       await queryClient.invalidateQueries({ queryKey: SETTINGS_KEY });
       toast.success('Settings saved — applied across the app');
     } catch (err) {
@@ -647,11 +653,22 @@ export default function SettingsPage() {
             </div>
           </GlassPanel>
 
-          <div className="flex justify-end">
-            <Button onClick={save} disabled={saving} className="h-10">
-              {saving ? <Loader2 className="size-4 animate-spin" /> : null} Save settings
-            </Button>
-          </div>
+          {/* Sticky save bar — appears only when something changed, always in reach on mobile. */}
+          {dirty ? (
+            <div className="sticky bottom-3 z-30 pb-[env(safe-area-inset-bottom)]">
+              <div className="flex items-center justify-between gap-3 rounded-2xl border border-border/60 bg-card/90 p-3 shadow-glass ring-1 ring-white/10 backdrop-blur-2xl">
+                <p className="min-w-0 truncate text-sm text-muted-foreground">Unsaved changes</p>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Button variant="outline" onClick={() => setForm(baseline)} disabled={saving}>
+                    Discard
+                  </Button>
+                  <Button onClick={save} disabled={saving} className="h-10">
+                    {saving ? <Loader2 className="size-4 animate-spin" /> : null} Save settings
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ) : null}
         </>
       )}
     </div>

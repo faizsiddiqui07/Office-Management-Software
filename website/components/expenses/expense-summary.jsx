@@ -8,7 +8,7 @@ import { StatCardSkeleton } from '@/components/glass/skeletons';
 import { formatMoney, categoryLabel, currentYearRange, currentMonthKey } from '@/lib/expense';
 
 export function ExpenseSummary() {
-  const { from, to } = currentYearRange();
+  const { from, to, label } = currentYearRange();
   const { data, isLoading } = useQuery({
     queryKey: ['expenses', 'summary', from, to],
     queryFn: () => api.get(`/expenses/summary?from=${from}&to=${to}`),
@@ -30,7 +30,7 @@ export function ExpenseSummary() {
   return (
     <div className="grid gap-4 sm:grid-cols-3">
       <StatCard label="This month" value={formatMoney(thisMonth)} icon={Wallet} tone="default" />
-      <StatCard label="This year" value={formatMoney(data?.total ?? 0)} icon={CalendarRange} tone="info" hint={`${data?.count ?? 0} entries`} />
+      <StatCard label={label} value={formatMoney(data?.total ?? 0)} icon={CalendarRange} tone="info" hint={`${data?.count ?? 0} entries · Apr–Mar`} />
       <StatCard
         label="Top category"
         value={topCat ? categoryLabel(topCat.category) : '—'}

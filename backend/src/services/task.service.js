@@ -2,7 +2,7 @@ import { Task } from '../models/Task.js';
 import { User } from '../models/User.js';
 import { notify } from '../models/Notification.js';
 import { can } from '../lib/permissions.js';
-import { getRoleRank } from '../lib/roles.js';
+import { getRoleRank, getTaskAssignRoles } from '../lib/roles.js';
 
 function httpError(status, code, message) {
   const e = new Error(message);
@@ -21,17 +21,22 @@ const rankOf = (role) => {
   return typeof r === 'number' ? r : 100;
 };
 
-/** Can `actor` delegate a task to `target`? Only to someone strictly below them. */
+/**
+ * Can `actor` delegate a task to `target`? If the actor's role has an explicit
+ * "can assign to" role list configured (role editor), that list is the rule.
+ * Otherwise the default applies: only someone strictly below in the hierarchy.
+ */
 export function canAssignTo(actor, target) {
+  const configured = getTaskAssignRoles(actor.role);
+  if (configured.length) return configured.includes(target.role);
   return rankOf(actor.role) < rankOf(target.role);
 }
 
-/** Active users the actor may assign tasks to (strictly below in the hierarchy). */
+/** Active users the actor may assign tasks to (per canAssignTo above). */
 export async function assignableUsers(actor) {
-  const myRank = rankOf(actor.role);
   const users = await User.find({ isActive: true, _id: { $ne: actor._id } }).select('name designation role').sort({ name: 1 });
   return users
-    .filter((u) => rankOf(u.role) > myRank)
+    .filter((u) => canAssignTo(actor, u))
     .map((u) => ({ id: u.id, name: u.name, designation: u.designation || '', role: u.role }));
 }
 

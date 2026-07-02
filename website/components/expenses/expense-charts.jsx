@@ -31,7 +31,7 @@ function Empty() {
 }
 
 export function ExpenseCharts() {
-  const { from, to, year } = currentYearRange();
+  const { from, to, label } = currentYearRange();
   const { data } = useQuery({
     queryKey: ['expenses', 'summary', from, to],
     queryFn: () => api.get(`/expenses/summary?from=${from}&to=${to}`),
@@ -73,7 +73,7 @@ export function ExpenseCharts() {
       </GlassCard>
 
       <GlassCard className="p-5">
-        <h3 className="text-sm font-semibold">Monthly · {year}</h3>
+        <h3 className="text-sm font-semibold">Monthly · {label}</h3>
         <div className="mt-2 h-64 text-muted-foreground">
           {byMonth.length ? (
             <ResponsiveContainer width="100%" height="100%">

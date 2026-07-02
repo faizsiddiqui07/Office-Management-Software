@@ -105,3 +105,44 @@ export async function overview(req, res, next) {
     handleErr(res, err, next);
   }
 }
+
+/** Month payroll sheet: employee × day matrix + totals, as CSV. */
+export async function matrixCsv(req, res, next) {
+  try {
+    const month = String(req.query.month || '');
+    if (!/^\d{4}-\d{2}$/.test(month)) return res.status(400).json(fail('BAD_MONTH', 'Expected month=YYYY-MM'));
+    const { days, rows } = await svc.attendanceMatrix(month);
+
+    const header = [
+      'Employee',
+      'Employee ID',
+      ...days.map((d) => d.slice(8)), // day-of-month columns
+      'Present',
+      'Late',
+      'Absent',
+      'On leave',
+      'Worked (h)',
+      'Overtime (h)',
+    ];
+    const body = rows.map((r) => [
+      r.user.name,
+      r.user.employeeId,
+      ...r.cells,
+      r.totals.present,
+      r.totals.late,
+      r.totals.absent,
+      r.totals.onLeave,
+      (r.totals.workedMinutes / 60).toFixed(1),
+      (r.totals.overtimeMinutes / 60).toFixed(1),
+    ]);
+    // Legend row at the bottom so the sheet is self-explanatory.
+    body.push([]);
+    body.push(['Legend:', 'P present · L late · A absent · OL on leave · H weekend/holiday']);
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="attendance-${month}.csv"`);
+    res.send(toCsv(header, body));
+  } catch (err) {
+    handleErr(res, err, next);
+  }
+}

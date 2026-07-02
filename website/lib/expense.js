@@ -32,9 +32,19 @@ export function paiseToRupees(paise) {
   return ((paise || 0) / 100).toFixed(2);
 }
 
+/**
+ * The company FISCAL year (Apr 1 – Mar 31, matching the leave year). `year` is
+ * the starting calendar year; `label` reads like "FY 2026–27".
+ */
 export function currentYearRange() {
-  const y = new Date().getFullYear();
-  return { from: `${y}-01-01`, to: `${y}-12-31`, year: y };
+  const now = new Date();
+  const y = now.getMonth() + 1 >= 4 ? now.getFullYear() : now.getFullYear() - 1;
+  return {
+    from: `${y}-04-01`,
+    to: `${y + 1}-03-31`,
+    year: y,
+    label: `FY ${y}–${String(y + 1).slice(2)}`,
+  };
 }
 
 export function currentMonthKey() {

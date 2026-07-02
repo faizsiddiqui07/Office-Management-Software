@@ -207,6 +207,62 @@ export async function listAttendance(viewer, { userId, all, from, to, page = 1, 
 }
 
 /**
+ * Month payroll matrix: every attendance-tracking employee × every day of the
+ * month, with per-employee totals. Cell codes: P present, L late (unexcused —
+ * excused counts as P), A absent, OL on leave, H weekend/holiday, '' future.
+ */
+export async function attendanceMatrix(monthKey) {
+  const [y, m] = monthKey.split('-').map(Number);
+  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const from = `${monthKey}-01`;
+  const to = `${monthKey}-${String(lastDay).padStart(2, '0')}`;
+
+  const settings = await Setting.getSingleton();
+  const holidays = await holidayYMDSet(from, to);
+  const today = ymdInTz(new Date());
+
+  const allUsers = await User.find({ isActive: true }).select('name employeeId role').sort({ name: 1 });
+  const users = allUsers.filter((u) => can({ role: u.role }, 'markAttendance'));
+  const records = await Attendance.find({
+    date: { $gte: companyDayFromYMD(from), $lte: companyDayFromYMD(to) },
+  });
+  const byUserDay = new Map(records.map((r) => [`${r.user}|${ymdInTz(r.date)}`, r]));
+
+  const days = [];
+  for (let d = 1; d <= lastDay; d += 1) days.push(`${monthKey}-${String(d).padStart(2, '0')}`);
+
+  const rows = users.map((u) => {
+    const t = { present: 0, late: 0, absent: 0, onLeave: 0, workedMinutes: 0, overtimeMinutes: 0 };
+    const cells = days.map((ymd) => {
+      const rec = byUserDay.get(`${u._id}|${ymd}`);
+      const dow = dayOfWeekInTz(companyDayFromYMD(ymd));
+      const isOff = settings.weekendDays.includes(dow) || holidays.has(ymd);
+      if (rec?.checkInAt) {
+        t.workedMinutes += rec.workedMinutes || 0;
+        t.overtimeMinutes += rec.overtimeMinutes || 0;
+        t.present += 1;
+        if (rec.status === 'LATE' && !rec.excused) {
+          t.late += 1;
+          return 'L';
+        }
+        return 'P';
+      }
+      if (rec?.status === 'ON_LEAVE') {
+        t.onLeave += 1;
+        return 'OL';
+      }
+      if (isOff) return 'H';
+      if (ymd > today) return '';
+      t.absent += 1;
+      return 'A';
+    });
+    return { user: u.toJSON(), cells, totals: t };
+  });
+
+  return { monthKey, days, rows };
+}
+
+/**
  * "Everyone for a date" — every active user with their record (or ABSENT/HOLIDAY
  * when none). ON_LEAVE / holiday-calendar sources wire in once Phases 4 & 6 land.
  */

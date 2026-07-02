@@ -3,8 +3,8 @@
 import * as React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Check, Clock, TriangleAlert, UserCheck, Users, UserX } from 'lucide-react';
-import { api } from '@/lib/api';
+import { Check, Clock, Download, TriangleAlert, UserCheck, Users, UserX } from 'lucide-react';
+import { api, getAuthToken } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can, prettyRole } from '@/lib/permissions';
 import { effectiveStatus, attendanceStatusLabel } from '@/lib/attendance';
@@ -89,6 +89,23 @@ function Field({ label, value }) {
   );
 }
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+
+/** Authenticated CSV download (day roster or month payroll matrix). */
+async function downloadCsv(path, filename) {
+  const res = await fetch(`${API_BASE}/api${path}`, { headers: { Authorization: `Bearer ${getAuthToken()}` } });
+  if (!res.ok) throw new Error('Could not download');
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 /** A stat card that also acts as a filter toggle for the roster below. */
 function FilterStat({ onClick, children }) {
   return (
@@ -105,6 +122,32 @@ export function EveryoneTab() {
   const [date, setDate] = React.useState(todayYMD());
   const [selected, setSelected] = React.useState(null);
   const [statusFilter, setStatusFilter] = React.useState(null); // null | 'present' | 'late' | 'absent'
+  const [exporting, setExporting] = React.useState(''); // '' | 'day' | 'month'
+
+  const exportDay = async () => {
+    setExporting('day');
+    try {
+      await downloadCsv(`/attendance/export.csv?all=true&from=${date}&to=${date}`, `attendance-${date}.csv`);
+      toast.success('Day sheet downloaded');
+    } catch (e) {
+      toast.error(e?.message || 'Could not download');
+    } finally {
+      setExporting('');
+    }
+  };
+
+  const exportMonth = async () => {
+    const month = date.slice(0, 7);
+    setExporting('month');
+    try {
+      await downloadCsv(`/attendance/matrix.csv?month=${month}`, `attendance-${month}.csv`);
+      toast.success('Month sheet downloaded');
+    } catch (e) {
+      toast.error(e?.message || 'Could not download');
+    } finally {
+      setExporting('');
+    }
+  };
 
   const { data, isLoading } = useQuery({
     queryKey: ['attendance', 'overview', date],
@@ -193,7 +236,7 @@ export function EveryoneTab() {
         <h3 className="text-sm font-medium text-muted-foreground">
           Everyone · {new Date(`${data?.date ?? date}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
         </h3>
-        <div className="flex w-full items-center gap-2 sm:w-auto">
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
           <Label htmlFor="ov-date" className="text-sm text-muted-foreground">
             Date
           </Label>
@@ -205,6 +248,14 @@ export function EveryoneTab() {
             onChange={(e) => setDate(e.target.value)}
             className="w-full bg-background/50 sm:w-44"
           />
+          <div className="flex w-full gap-2 sm:w-auto">
+            <Button variant="outline" onClick={exportDay} disabled={!!exporting} className="h-10 flex-1 sm:h-8 sm:flex-none">
+              <Download className="size-4" /> {exporting === 'day' ? '…' : 'Day CSV'}
+            </Button>
+            <Button variant="outline" onClick={exportMonth} disabled={!!exporting} className="h-10 flex-1 sm:h-8 sm:flex-none">
+              <Download className="size-4" /> {exporting === 'month' ? '…' : 'Month sheet'}
+            </Button>
+          </div>
         </div>
       </div>
 

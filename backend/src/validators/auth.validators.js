@@ -22,5 +22,7 @@ export const resetPasswordSchema = z.object({
 export const updateProfileSchema = z.object({
   name: z.string().min(1).max(120).optional(),
   phone: z.string().max(40).optional().or(z.literal('')),
-  avatarUrl: z.string().max(500).optional().or(z.literal('')),
+  // Accepts a normal URL or a small base64 data-URL (photos are downscaled
+  // client-side to ~256px, same store-in-Mongo pattern as the company logos).
+  avatarUrl: z.string().max(200000).optional().or(z.literal('')),
 });
