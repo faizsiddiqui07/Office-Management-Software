@@ -115,6 +115,11 @@ export async function deleteTask(actor, id) {
   if (!task) throw httpError(404, 'NOT_FOUND', 'Task not found');
   const isOwner = String(task.owner) === String(actor._id);
   const isAssigner = task.assignedBy && String(task.assignedBy) === String(actor._id);
+  // Delegated tasks can only be deleted by the person who assigned them — the
+  // assignee must complete it (or ask the assigner), not make it disappear.
+  if (task.assignedBy && !isAssigner) {
+    throw httpError(403, 'ASSIGNED_TASK', 'This task was assigned to you — only the person who assigned it can delete it');
+  }
   if (!isOwner && !isAssigner) throw httpError(403, 'FORBIDDEN', 'You cannot delete this task');
   await task.deleteOne();
   return { success: true };

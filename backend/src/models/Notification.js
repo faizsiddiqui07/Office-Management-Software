@@ -12,6 +12,10 @@ const notificationSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
+// Notifications are ephemeral — MongoDB's TTL monitor auto-deletes anything
+// older than 60 days, so the collection never grows unbounded.
+notificationSchema.index({ createdAt: 1 }, { expireAfterSeconds: 60 * 24 * 60 * 60 });
+
 notificationSchema.set('toJSON', { virtuals: true, versionKey: false });
 
 export const Notification =

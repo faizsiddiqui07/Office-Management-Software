@@ -103,9 +103,12 @@ function TaskRow({ task, canToggle, onToggle, onDelete }) {
           {done && task.completedAt ? <span className="text-success">Done {fmtDate(task.completedAt)}</span> : null}
         </div>
       </div>
-      <Button variant="ghost" size="icon" className="shrink-0 text-destructive" onClick={() => onDelete(task)} aria-label="Delete">
-        <Trash2 className="size-4" />
-      </Button>
+      {/* Delegated tasks can't be deleted by the assignee — only by the assigner. */}
+      {task.assignedBy ? null : (
+        <Button variant="ghost" size="icon" className="shrink-0 text-destructive" onClick={() => onDelete(task)} aria-label="Delete">
+          <Trash2 className="size-4" />
+        </Button>
+      )}
     </div>
   );
 }

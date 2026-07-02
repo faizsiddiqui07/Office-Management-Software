@@ -11,6 +11,10 @@ const schema = new mongoose.Schema(
   { timestamps: { createdAt: true, updatedAt: false } },
 );
 
+// Activity history is kept for 180 days, then MongoDB's TTL monitor auto-deletes
+// it — bounded storage with a generous audit window.
+schema.index({ createdAt: 1 }, { expireAfterSeconds: 180 * 24 * 60 * 60 });
+
 export const AuditLog = mongoose.models.AuditLog || mongoose.model('AuditLog', schema);
 
 /** Fire-and-forget audit helper — never blocks the request on a logging failure. */
