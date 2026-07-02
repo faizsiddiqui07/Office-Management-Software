@@ -100,13 +100,15 @@ export function CreateUserDialog() {
         <TempPasswordContent user={result.user} temporaryPassword={result.temporaryPassword} />
       ) : (
         <div className="max-h-[70vh] space-y-4 overflow-y-auto py-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="cu-name">Full name</Label>
-            <Input id="cu-name" value={form.name} onChange={set('name')} placeholder="Neha Gupta" className="bg-background/50" />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="cu-email">Email</Label>
-            <Input id="cu-email" type="email" value={form.email} onChange={set('email')} placeholder="name@company.com" className="bg-background/50" />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="cu-name">Full name</Label>
+              <Input id="cu-name" value={form.name} onChange={set('name')} placeholder="Neha Gupta" className="bg-background/50" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="cu-email">Email</Label>
+              <Input id="cu-email" type="email" value={form.email} onChange={set('email')} placeholder="name@company.com" className="bg-background/50" />
+            </div>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
