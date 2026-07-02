@@ -63,7 +63,11 @@ function SelectContent({
   sideOffset = 4,
   align = "center",
   alignOffset = 0,
-  alignItemWithTrigger = true,
+  // Anchor the popup below the trigger (constrained to the trigger width) instead
+  // of aligning the selected item over the trigger. The item-align mode flashes
+  // full-width at the screen edge before settling — especially inside a modal on
+  // mobile — so we default to a plain anchored dropdown everywhere.
+  alignItemWithTrigger = false,
   ...props
 }) {
   return (
