@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Check, TriangleAlert, UserCheck, Users, UserX } from 'lucide-react';
+import { Check, Clock, TriangleAlert, UserCheck, Users, UserX } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can, prettyRole } from '@/lib/permissions';
@@ -124,6 +124,10 @@ export function EveryoneTab() {
   const rows = React.useMemo(() => data?.rows ?? [], [data]);
   const summary = data?.summary;
   const unexcusedLate = Math.max(0, (summary?.late ?? 0) - (summary?.excused ?? 0));
+  const totalOvertime = React.useMemo(
+    () => rows.reduce((sum, r) => sum + (r.attendance?.overtimeMinutes || 0), 0),
+    [rows],
+  );
 
   const toggleFilter = (key) => setStatusFilter((f) => (f === key ? null : key));
   const filteredRows = React.useMemo(() => {
@@ -145,7 +149,7 @@ export function EveryoneTab() {
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-4 grid-cols-2 sm:grid-cols-4">
+      <div className="grid gap-4 grid-cols-2 sm:grid-cols-5">
         <FilterStat onClick={() => setStatusFilter(null)}>
           <StatCard label="Total staff" value={summary?.total ?? '—'} icon={Users} className="h-full" />
         </FilterStat>
@@ -176,6 +180,13 @@ export function EveryoneTab() {
             className={cn('h-full', statusFilter === 'absent' && 'ring-2 ring-primary')}
           />
         </FilterStat>
+        <StatCard
+          label="Total overtime"
+          value={totalOvertime ? formatDuration(totalOvertime) : '0m'}
+          icon={Clock}
+          tone="success"
+          className="col-span-2 h-full sm:col-span-1"
+        />
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
