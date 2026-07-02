@@ -105,7 +105,7 @@ export function BirthdayPopup() {
             <span className="break-words">{names}</span>
           </p>
           <p className="mt-2 text-sm text-muted-foreground">
-            Take a moment to wish {many ? 'them' : 'them'} a wonderful day! 🎂🎈
+            Take a moment to wish {many ? 'them all' : 'them'} a wonderful day! 🎂🎈
           </p>
         </div>
 

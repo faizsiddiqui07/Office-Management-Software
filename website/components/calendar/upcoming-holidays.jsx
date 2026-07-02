@@ -9,13 +9,17 @@ import { EVENT_TYPES, todayYMDLocal } from '@/lib/calendar';
 import { formatRange } from '@/lib/leave';
 
 export function UpcomingHolidays() {
-  const year = new Date().getFullYear();
+  // Rolling 90-day window (not calendar-year) so January's holidays show in December.
+  const today = todayYMDLocal();
+  const horizon = new Date(`${today}T00:00:00`);
+  horizon.setDate(horizon.getDate() + 90);
+  const to = `${horizon.getFullYear()}-${String(horizon.getMonth() + 1).padStart(2, '0')}-${String(horizon.getDate()).padStart(2, '0')}`;
+
   const { data } = useQuery({
-    queryKey: ['holidays', 'year', year],
-    queryFn: () => api.get(`/holidays?year=${year}`),
+    queryKey: ['holidays', 'upcoming', today],
+    queryFn: () => api.get(`/holidays?from=${today}&to=${to}`),
   });
 
-  const today = todayYMDLocal();
   const upcoming = (data?.holidays ?? [])
     .filter((h) => h.endYMD >= today)
     .sort((a, b) => a.startYMD.localeCompare(b.startYMD))
@@ -43,7 +47,7 @@ export function UpcomingHolidays() {
           })}
         </ul>
       ) : (
-        <p className="mt-3 text-sm text-muted-foreground">No upcoming holidays this year.</p>
+        <p className="mt-3 text-sm text-muted-foreground">Nothing in the next 90 days.</p>
       )}
     </GlassCard>
   );

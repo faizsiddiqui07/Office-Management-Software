@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { AppDialog } from '@/components/glass/app-dialog';
+import { ConfirmDialog } from '@/components/glass/confirm-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -27,6 +28,7 @@ export function HolidayDialog({ open, onOpenChange, holiday, defaultStartYMD }) 
   const [start, setStart] = React.useState('');
   const [end, setEnd] = React.useState('');
   const [desc, setDesc] = React.useState('');
+  const [confirmingDelete, setConfirmingDelete] = React.useState(false);
 
   React.useEffect(() => {
     if (!open) return;
@@ -74,7 +76,7 @@ export function HolidayDialog({ open, onOpenChange, holiday, defaultStartYMD }) 
       footer={
         <>
           {isEdit ? (
-            <Button variant="ghost" className="mr-auto text-destructive" onClick={() => delMut.mutate()} disabled={delMut.isPending}>
+            <Button variant="ghost" className="mr-auto text-destructive" onClick={() => setConfirmingDelete(true)} disabled={delMut.isPending}>
               <Trash2 className="size-4" /> Delete
             </Button>
           ) : null}
@@ -131,6 +133,17 @@ export function HolidayDialog({ open, onOpenChange, holiday, defaultStartYMD }) 
           <Textarea id="h-desc" value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Optional details…" className="bg-background/50" />
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmingDelete}
+        onOpenChange={setConfirmingDelete}
+        title="Delete this calendar entry?"
+        description={holiday ? `“${holiday.title}” will be removed for everyone.` : ''}
+        tone="destructive"
+        confirmLabel="Delete"
+        loading={delMut.isPending}
+        onConfirm={() => delMut.mutate()}
+      />
     </AppDialog>
   );
 }

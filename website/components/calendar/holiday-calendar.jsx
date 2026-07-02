@@ -9,12 +9,17 @@ import { useAuth } from '@/lib/auth';
 import { can } from '@/lib/permissions';
 import { GlassPanel } from '@/components/glass/glass-panel';
 import { EmptyState } from '@/components/glass/empty-state';
+import { AppDialog } from '@/components/glass/app-dialog';
 import { Button } from '@/components/ui/button';
 import { EVENT_TYPES, buildMonthGrid, expandEventDates, monthLabel, todayYMDLocal } from '@/lib/calendar';
 import { formatRange } from '@/lib/leave';
 import { HolidayDialog } from './holiday-dialog';
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function fmtDay(ymd) {
+  return new Date(`${ymd}T00:00:00`).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+}
 
 export function HolidayCalendar() {
   const { user } = useAuth();
@@ -24,6 +29,7 @@ export function HolidayCalendar() {
   const [month, setMonth] = React.useState(today.getMonth());
   const [mode, setMode] = React.useState('month');
   const [dialog, setDialog] = React.useState(null);
+  const [dayView, setDayView] = React.useState(null); // ymd — tap a day to see its events (everyone)
 
   const { data } = useQuery({
     queryKey: ['holidays', year, month],
@@ -114,35 +120,39 @@ export function HolidayCalendar() {
               const dayEvents = byDate.get(cell.ymd) ?? [];
               const isToday = cell.ymd === todayYMD;
               return (
-                <div
+                // Tapping a day opens its events for EVERYONE (bottom sheet on mobile).
+                <button
+                  type="button"
                   key={cell.ymd}
-                  onClick={() => (isAdmin ? setDialog({ mode: 'create', startYMD: cell.ymd }) : undefined)}
+                  onClick={() => setDayView(cell.ymd)}
                   className={cn(
-                    'min-h-[84px] rounded-xl border border-border/40 p-1.5 transition-colors',
+                    'min-h-[56px] rounded-xl border border-border/40 p-1 text-left transition-colors hover:bg-foreground/5 sm:min-h-[84px] sm:p-1.5',
                     cell.inMonth ? 'bg-background/30' : 'bg-transparent text-muted-foreground/40',
-                    isAdmin && 'cursor-pointer hover:bg-foreground/5',
                   )}
                 >
                   <div className={cn('flex size-6 items-center justify-center rounded-full text-xs', isToday && 'bg-primary font-semibold text-primary-foreground')}>
                     {cell.date.getDate()}
                   </div>
-                  <div className="mt-1 space-y-1">
+                  {/* Mobile: colour dots (titles are unreadable at ~44px cells). */}
+                  <div className="mt-1 flex flex-wrap gap-1 sm:hidden">
+                    {dayEvents.slice(0, 4).map((ev) => (
+                      <span key={`${ev.id}-${cell.ymd}-dot`} className={cn('size-1.5 rounded-full', EVENT_TYPES[ev.type]?.dot)} />
+                    ))}
+                    {dayEvents.length > 4 ? <span className="text-[9px] leading-none text-muted-foreground">+{dayEvents.length - 4}</span> : null}
+                  </div>
+                  {/* sm+: readable title chips. */}
+                  <div className="mt-1 hidden space-y-1 sm:block">
                     {dayEvents.slice(0, 3).map((ev) => (
-                      <button
+                      <span
                         key={`${ev.id}-${cell.ymd}`}
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (isAdmin) setDialog({ mode: 'edit', holiday: ev });
-                        }}
                         className={cn('block w-full truncate rounded-md px-1.5 py-0.5 text-left text-[10px] font-medium', EVENT_TYPES[ev.type]?.chip)}
                       >
                         {ev.title}
-                      </button>
+                      </span>
                     ))}
                     {dayEvents.length > 3 ? <p className="px-1 text-[10px] text-muted-foreground">+{dayEvents.length - 3} more</p> : null}
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>
@@ -176,10 +186,79 @@ export function HolidayCalendar() {
                 })}
             </ul>
           ) : (
-            <EmptyState title="No entries this month" description="Use the month view's Add button to create holidays and events." />
+            <EmptyState
+              title="No entries this month"
+              description={isAdmin ? "Use the Add button to create holidays and events." : 'Holidays and events will appear here.'}
+            />
           )}
         </div>
       )}
+
+      {/* Day view — full event details for everyone; admins can edit/add from here. */}
+      <AppDialog
+        open={!!dayView}
+        onOpenChange={(o) => (!o ? setDayView(null) : null)}
+        title={dayView ? fmtDay(dayView) : ''}
+        footer={
+          isAdmin ? (
+            <Button
+              onClick={() => {
+                const d = dayView;
+                setDayView(null);
+                setDialog({ mode: 'create', startYMD: d });
+              }}
+            >
+              <Plus className="size-4" /> Add on this day
+            </Button>
+          ) : (
+            <Button variant="outline" onClick={() => setDayView(null)}>Close</Button>
+          )
+        }
+      >
+        {dayView ? (
+          (byDate.get(dayView) ?? []).length ? (
+            <ul className="divide-y divide-border/50 py-1">
+              {(byDate.get(dayView) ?? []).map((ev) => {
+                const t = EVENT_TYPES[ev.type] ?? EVENT_TYPES.EVENT;
+                const inner = (
+                  <>
+                    <span className={cn('mt-1.5 size-2.5 shrink-0 rounded-full', t.dot)} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium break-words">{ev.title}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {formatRange(ev.startYMD, ev.endYMD)} · {t.label}
+                      </p>
+                      {ev.description ? (
+                        <p className="mt-1 whitespace-pre-wrap break-words text-sm text-muted-foreground">{ev.description}</p>
+                      ) : null}
+                    </div>
+                  </>
+                );
+                return (
+                  <li key={ev.id}>
+                    {isAdmin ? (
+                      <button
+                        type="button"
+                        className="flex w-full items-start gap-3 py-3 text-left transition-opacity hover:opacity-80"
+                        onClick={() => {
+                          setDayView(null);
+                          setDialog({ mode: 'edit', holiday: ev });
+                        }}
+                      >
+                        {inner}
+                      </button>
+                    ) : (
+                      <div className="flex items-start gap-3 py-3">{inner}</div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="py-3 text-sm text-muted-foreground">Nothing on this day.</p>
+          )
+        ) : null}
+      </AppDialog>
 
       {dialog ? (
         <HolidayDialog

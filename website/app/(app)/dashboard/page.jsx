@@ -25,6 +25,8 @@ import { can, prettyRole } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
 import { formatMoney, categoryLabel } from '@/lib/expense';
 import { formatDuration } from '@/lib/time';
+import { LEAVE_TYPE_LABELS } from '@/lib/leave';
+import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/glass/page-header';
 import { GlassCard } from '@/components/glass/glass-card';
 import { GlassPanel } from '@/components/glass/glass-panel';
@@ -46,17 +48,19 @@ function firstName(name = '') {
 }
 
 function fmtDate(iso) {
-  return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+  // Accept both YMD strings and full ISO datetimes without a timezone shift.
+  const v = String(iso).length <= 10 ? `${iso}T00:00:00` : iso;
+  return new Date(v).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 }
 
 function timeAgo(iso) {
   const diff = Date.now() - new Date(iso).getTime();
-  const m = Math.round(diff / 60000);
+  const m = Math.floor(diff / 60000);
   if (m < 1) return 'just now';
   if (m < 60) return `${m}m ago`;
-  const h = Math.round(m / 60);
+  const h = Math.floor(m / 60);
   if (h < 24) return `${h}h ago`;
-  return `${Math.round(h / 24)}d ago`;
+  return `${Math.floor(h / 24)}d ago`;
 }
 
 function humanizeAction(a) {
@@ -77,7 +81,7 @@ function QuickAction({ href, icon: Icon, children, primary }) {
     <Link
       href={href}
       className={cn(
-        'inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-medium ring-1 transition-colors',
+        'inline-flex min-h-10 items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-medium ring-1 transition-colors',
         primary
           ? 'bg-primary text-primary-foreground ring-primary/30 hover:bg-primary/90'
           : 'glass ring-border hover:bg-muted/40',
@@ -92,15 +96,19 @@ function QuickAction({ href, icon: Icon, children, primary }) {
 /** Derives the "today" status card content from the attendance payload. */
 function todayStat(today) {
   const rec = today?.record;
+  // A real check-in wins over the holiday flag (someone working an OT holiday
+  // should see their status, not "enjoy your day off").
+  if (rec?.checkInAt) {
+    if (rec.checkOutAt)
+      return { value: 'Checked out', tone: 'success', hint: `${formatDuration(rec.workedMinutes || 0)} worked` };
+    return {
+      value: 'Checked in',
+      tone: rec.status === 'LATE' ? 'warning' : 'success',
+      hint: rec.status === 'LATE' ? 'Marked late' : 'Have a great day',
+    };
+  }
   if (today?.isHoliday) return { value: 'Holiday', tone: 'info', hint: 'Enjoy your day off' };
-  if (!rec || !rec.checkInAt) return { value: 'Not in', tone: 'warning', hint: 'You haven’t checked in' };
-  if (rec.checkOutAt)
-    return { value: 'Checked out', tone: 'success', hint: `${formatDuration(rec.workedMinutes || 0)} worked` };
-  return {
-    value: 'Checked in',
-    tone: rec.status === 'LATE' ? 'warning' : 'success',
-    hint: rec.status === 'LATE' ? 'Marked late' : 'Have a great day',
-  };
+  return { value: 'Not in', tone: 'warning', hint: 'You haven’t checked in' };
 }
 
 export default function DashboardPage() {
@@ -116,7 +124,12 @@ export default function DashboardPage() {
       <div className="space-y-8">
         <PageHeader eyebrow="Overview" title={`${greeting()}${user ? `, ${firstName(user.name)}` : ''}`} />
         {isError ? (
-          <EmptyState icon={Activity} title="Couldn’t load your dashboard" description="Please refresh in a moment." />
+          <EmptyState
+            icon={Activity}
+            title="Couldn’t load your dashboard"
+            description="Please check your connection and try again."
+            action={<Button onClick={() => window.location.reload()}>Try again</Button>}
+          />
         ) : (
           <LoadingState label="Building your dashboard…" />
         )}
@@ -208,7 +221,7 @@ export default function DashboardPage() {
             Team today
           </SectionTitle>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard label="Present" value={`${team.present}/${team.total}`} icon={Users} tone="success" hint="incl. late check-ins" />
+            <StatCard label="Present" value={`${team.present}/${team.total}`} icon={Users} tone="success" hint={team.late ? `${team.late} late today` : 'incl. late check-ins'} />
             <StatCard label="On leave" value={team.onLeave} icon={Plane} tone="info" />
             <StatCard label="Absent" value={team.absent} icon={CalendarDays} tone={team.absent ? 'destructive' : 'default'} />
             <StatCard label="Team overtime" value={formatDuration(team.overtimeMinutes || 0)} icon={TimerReset} tone="default" hint="this month" />
@@ -251,7 +264,13 @@ export default function DashboardPage() {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <StatCard label="Headcount" value={analytics.headcount} icon={Users} tone="default" hint="active employees" />
             <StatCard label="Attendance rate" value={`${analytics.attendanceRate}%`} icon={TrendingUp} tone="success" hint="present today" />
-            <StatCard label="Pending approvals" value={analytics.pendingApprovals.length} icon={Inbox} tone={analytics.pendingApprovals.length ? 'warning' : 'default'} hint="leave requests" />
+            <StatCard
+              label="Pending approvals"
+              value={analytics.pendingApprovalsCount ?? analytics.pendingApprovals.length}
+              icon={Inbox}
+              tone={(analytics.pendingApprovalsCount ?? analytics.pendingApprovals.length) ? 'warning' : 'default'}
+              hint="leave requests"
+            />
             <StatCard
               label="Leave utilization"
               value={`${analytics.leaveUtilization.total ? Math.round((analytics.leaveUtilization.used / analytics.leaveUtilization.total) * 100) : 0}%`}
@@ -268,7 +287,7 @@ export default function DashboardPage() {
             </GlassCard>
 
             <GlassCard className="p-5 xl:col-span-2">
-              <p className="mb-2 text-sm font-medium">Monthly spend ({new Date().getFullYear()})</p>
+              <p className="mb-2 text-sm font-medium">Monthly spend ({analytics.monthlyExpenseTrendYear ?? new Date().getFullYear()})</p>
               <ExpenseTrendChart data={analytics.monthlyExpenseTrend} />
             </GlassCard>
           </div>
@@ -290,10 +309,10 @@ export default function DashboardPage() {
                     <li key={p.id} className="flex items-center justify-between gap-2 text-sm">
                       <div className="min-w-0">
                         <p className="truncate font-medium">{p.name}</p>
-                        <p className="text-xs text-muted-foreground">{p.startYMD} → {p.endYMD} · {p.days}d</p>
+                        <p className="text-xs text-muted-foreground">{fmtDate(p.startYMD)} → {fmtDate(p.endYMD)} · {p.days}d</p>
                       </div>
                       <StatusBadge tone={STATUS_TONES[p.type] ?? 'neutral'} dot={false} className="shrink-0">
-                        {p.type}
+                        {LEAVE_TYPE_LABELS[p.type] ?? p.type}
                       </StatusBadge>
                     </li>
                   ))}
@@ -383,10 +402,10 @@ export default function DashboardPage() {
                 myPendingLeaves.map((l) => (
                   <div key={l.id} className="flex items-center justify-between gap-3 p-3">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{l.type}</p>
-                      <p className="text-xs text-muted-foreground">{l.startYMD} → {l.endYMD} · {l.workingDays}d</p>
+                      <p className="truncate text-sm font-medium">{LEAVE_TYPE_LABELS[l.type] ?? l.type}</p>
+                      <p className="text-xs text-muted-foreground">{fmtDate(l.startYMD)} → {fmtDate(l.endYMD)} · {l.workingDays}d</p>
                     </div>
-                    <StatusBadge tone={STATUS_TONES[l.status] ?? 'warning'} className="shrink-0">{l.status}</StatusBadge>
+                    <StatusBadge tone={STATUS_TONES[l.status] ?? 'warning'} className="shrink-0">Pending</StatusBadge>
                   </div>
                 ))
               ) : (

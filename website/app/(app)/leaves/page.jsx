@@ -29,7 +29,7 @@ export default function LeavesPage() {
   const isApprover = !!user && can(user, 'approveLeave');
 
   const description = canApply
-    ? 'Apply for leave and track your balance — 18 paid leaves per year, auto-deducted on approval.'
+    ? 'Apply for leave and track your balance — your yearly quota (Apr–Mar) is deducted automatically on approval.'
     : 'Review and approve your team’s leave requests.';
 
   return (

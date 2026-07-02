@@ -17,12 +17,12 @@ export function ymdOf(y, m, d) {
 }
 
 export function todayYMDLocal() {
-  const d = new Date();
-  return ymdOf(d.getFullYear(), d.getMonth(), d.getDate());
+  // Company-timezone "today" (en-CA gives YYYY-MM-DD) so devices abroad don't shift the day.
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
 }
 
 export function monthLabel(year, month) {
-  return new Date(year, month, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  return new Date(year, month, 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
 }
 
 /** 6-week grid of cells { date, ymd, inMonth } for a month. */

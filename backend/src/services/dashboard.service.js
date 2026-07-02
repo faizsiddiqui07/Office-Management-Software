@@ -62,7 +62,10 @@ export async function buildDashboard(user) {
   // ── Leadership: rich analytics ────────────────────────────
   if (can(user, 'leadershipDashboard')) {
     const overview = await attendanceOverview(todayYMD);
-    const [headcount, otAgg, balances, yearExpenses, pendingApprovals, recent] = await Promise.all([
+    // Expenses run on the CALENDAR year (the chart is titled with it) — the
+    // fiscal `year` above is only for leave balances.
+    const calendarYear = Number(todayYMD.slice(0, 4));
+    const [headcount, otAgg, balances, yearExpenses, pendingApprovals, pendingApprovalsCount, recent] = await Promise.all([
       User.countDocuments({ isActive: true }),
       Attendance.aggregate([
         { $match: { date: { $gte: monthStart, $lte: monthEnd }, overtimeMinutes: { $gt: 0 } } },
@@ -71,8 +74,9 @@ export async function buildDashboard(user) {
         { $limit: 5 },
       ]),
       LeaveBalance.find({ year }),
-      expenseSummary({ from: `${year}-01-01`, to: `${year}-12-31` }),
+      expenseSummary({ from: `${calendarYear}-01-01`, to: `${calendarYear}-12-31` }),
       LeaveRequest.find({ status: 'PENDING' }).sort({ appliedAt: -1 }).limit(6).populate('user', 'name employeeId'),
+      LeaveRequest.countDocuments({ status: 'PENDING' }),
       // Recent activity is the audit feed — only fetch it for users who may view the activity log.
       can(user, 'viewAudit')
         ? AuditLog.find().sort({ createdAt: -1 }).limit(10).populate('actor', 'name')
@@ -97,6 +101,8 @@ export async function buildDashboard(user) {
         total: balances.reduce((s, b) => s + b.totalQuota, 0),
       },
       monthlyExpenseTrend: yearExpenses.byMonth,
+      monthlyExpenseTrendYear: calendarYear, // the UI titles the chart from this
+      pendingApprovalsCount, // real total (the list below is capped at 6 for preview)
       pendingApprovals: pendingApprovals.map((l) => ({
         id: l.id,
         name: l.user?.name ?? '—',
