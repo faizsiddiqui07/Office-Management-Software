@@ -6,7 +6,46 @@ import { Select as SelectPrimitive } from "@base-ui/react/select"
 import { cn } from "@/lib/utils"
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from "lucide-react"
 
-const Select = SelectPrimitive.Root
+/**
+ * Walk the Select's children and build a { value: label } map from every
+ * <SelectItem> (including ones produced by .map()). Base UI uses this `items`
+ * prop to make <SelectValue> render the LABEL of the selected option instead of
+ * its raw value (e.g. "All roles" instead of "ALL", "Team" instead of "TEAM").
+ */
+function collectSelectItems(children, acc) {
+  React.Children.forEach(children, (child) => {
+    if (!React.isValidElement(child)) return;
+    if (child.type === SelectItem && child.props?.value != null) {
+      acc[String(child.props.value)] = child.props.children;
+    } else if (child.props?.children != null) {
+      collectSelectItems(child.props.children, acc);
+    }
+  });
+  return acc;
+}
+
+/**
+ * Drop-in Select.Root that auto-derives `items` from its <SelectItem> children
+ * so the trigger shows a meaningful label site-wide. Falls back to the native
+ * behaviour (raw value) if nothing could be collected — never worse than before.
+ * Pass an explicit `items` to override the auto-collection.
+ */
+function Select({ items, children, ...props }) {
+  const derived = React.useMemo(() => {
+    if (items) return items;
+    try {
+      const map = collectSelectItems(children, {});
+      return Object.keys(map).length ? map : undefined;
+    } catch {
+      return undefined;
+    }
+  }, [items, children]);
+  return (
+    <SelectPrimitive.Root {...(derived ? { items: derived } : {})} {...props}>
+      {children}
+    </SelectPrimitive.Root>
+  );
+}
 
 function SelectGroup({
   className,

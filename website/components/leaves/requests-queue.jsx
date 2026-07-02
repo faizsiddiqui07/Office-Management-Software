@@ -115,7 +115,7 @@ export function RequestsQueue() {
             <SelectItem value="APPROVED">Approved</SelectItem>
             <SelectItem value="REJECTED">Rejected</SelectItem>
             <SelectItem value="CANCELLED">Cancelled</SelectItem>
-            <SelectItem value="ALL">All</SelectItem>
+            <SelectItem value="ALL">All statuses</SelectItem>
           </SelectContent>
         </Select>
       </div>
