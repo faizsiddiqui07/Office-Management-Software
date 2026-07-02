@@ -68,6 +68,15 @@ export function RequestsQueue() {
       { id: 'range', header: 'Dates', cell: ({ row }) => formatRange(row.original.startYMD, row.original.endYMD) },
       { id: 'days', header: 'Days', cell: ({ row }) => <span className="tabular-nums">{row.original.workingDays}</span> },
       {
+        id: 'reason',
+        header: 'Reason',
+        cell: ({ row }) => (
+          <span className="block max-w-[220px] text-sm text-muted-foreground line-clamp-2 break-words" title={row.original.reason || ''}>
+            {row.original.reason || '—'}
+          </span>
+        ),
+      },
+      {
         id: 'status',
         header: 'Status',
         cell: ({ row }) => (
@@ -142,15 +151,35 @@ export function RequestsQueue() {
           </>
         }
       >
-        <div className="space-y-2 py-2">
-          <Label htmlFor="dec-note">Note (optional)</Label>
-          <Textarea
-            id="dec-note"
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="Add a note for the employee…"
-            className="bg-background/50"
-          />
+        <div className="space-y-4 py-2">
+          {/* The full request — so approvers never decide blind. */}
+          {decision ? (
+            <div className="space-y-1.5 rounded-xl bg-foreground/[0.04] p-3 text-sm ring-1 ring-border/50">
+              <p>
+                <span className="text-muted-foreground">Dates: </span>
+                {formatRange(decision.request.startYMD, decision.request.endYMD)}
+                {decision.request.halfDay ? ' (half day)' : ''}
+              </p>
+              <p>
+                <span className="text-muted-foreground">Balance: </span>
+                {decision.request.requesterRemaining ?? '—'} of {decision.request.requesterQuota ?? '—'} left
+              </p>
+              <p className="whitespace-pre-wrap break-words">
+                <span className="text-muted-foreground">Reason: </span>
+                {decision.request.reason || <span className="italic text-muted-foreground">No reason given</span>}
+              </p>
+            </div>
+          ) : null}
+          <div className="space-y-2">
+            <Label htmlFor="dec-note">Note (optional)</Label>
+            <Textarea
+              id="dec-note"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Add a note for the employee…"
+              className="bg-background/50"
+            />
+          </div>
         </div>
       </AppDialog>
     </div>

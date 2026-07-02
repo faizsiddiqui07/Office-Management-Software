@@ -49,14 +49,31 @@ const columns = [
   {
     id: 'reason',
     header: 'Reason',
-    cell: ({ row }) => <span className="text-muted-foreground">{row.original.reason || '—'}</span>,
+    cell: ({ row }) => (
+      <span className="block max-w-[220px] text-muted-foreground line-clamp-2 break-words" title={row.original.reason || ''}>
+        {row.original.reason || '—'}
+      </span>
+    ),
   },
   {
     id: 'status',
     header: 'Status',
-    cell: ({ row }) => (
-      <StatusBadge tone={STATUS_TONES[row.original.status] ?? 'neutral'}>{row.original.status}</StatusBadge>
-    ),
+    cell: ({ row }) => {
+      const r = row.original;
+      const decided = r.status !== 'PENDING' && (r.decidedBy?.name || r.decisionNote);
+      return (
+        <div className="space-y-1">
+          <StatusBadge tone={STATUS_TONES[r.status] ?? 'neutral'}>{r.status}</StatusBadge>
+          {/* Show who decided + their note, so a rejection is never unexplained. */}
+          {decided ? (
+            <p className="max-w-[220px] text-xs text-muted-foreground line-clamp-2 break-words" title={r.decisionNote || ''}>
+              {r.decidedBy?.name ? `By ${r.decidedBy.name}` : ''}
+              {r.decisionNote ? `${r.decidedBy?.name ? ' — ' : ''}“${r.decisionNote}”` : ''}
+            </p>
+          ) : null}
+        </div>
+      );
+    },
   },
   {
     id: 'actions',

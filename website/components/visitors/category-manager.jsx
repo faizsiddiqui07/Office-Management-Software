@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { Tags, Plus, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import { AppDialog } from '@/components/glass/app-dialog';
+import { ConfirmDialog } from '@/components/glass/confirm-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -13,6 +14,7 @@ export function CategoryManager() {
   const qc = useQueryClient();
   const [open, setOpen] = React.useState(false);
   const [label, setLabel] = React.useState('');
+  const [removing, setRemoving] = React.useState(null); // category pending delete confirm
 
   const { data: meta } = useQuery({ queryKey: ['visitors', 'meta'], queryFn: () => api.get('/visitors/meta') });
   const categories = meta?.categories ?? [];
@@ -31,6 +33,7 @@ export function CategoryManager() {
     mutationFn: (name) => api.delete(`/visitors/categories?name=${encodeURIComponent(name)}`),
     onSuccess: () => {
       toast.success('Category removed');
+      setRemoving(null);
       qc.invalidateQueries({ queryKey: ['visitors', 'meta'] });
     },
     onError: (e) => toast.error(e?.message || 'Could not remove category'),
@@ -75,8 +78,8 @@ export function CategoryManager() {
               {categories.length > 1 ? (
                 <button
                   type="button"
-                  onClick={() => delMut.mutate(c)}
-                  className="rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-destructive/15 hover:text-destructive"
+                  onClick={() => setRemoving(c)}
+                  className="-m-1.5 rounded-full p-2 text-muted-foreground transition-colors hover:bg-destructive/15 hover:text-destructive"
                   aria-label={`Remove ${c}`}
                 >
                   <X className="size-3.5" />
@@ -86,6 +89,17 @@ export function CategoryManager() {
           ))}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={!!removing}
+        onOpenChange={(o) => (!o ? setRemoving(null) : null)}
+        title={`Remove "${removing}"?`}
+        description="Existing entries keep the label; new entries just won't offer it."
+        tone="destructive"
+        confirmLabel="Remove"
+        loading={delMut.isPending}
+        onConfirm={() => removing && delMut.mutate(removing)}
+      />
     </AppDialog>
   );
 }

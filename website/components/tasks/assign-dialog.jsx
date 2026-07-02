@@ -102,8 +102,8 @@ export function AssignDialog() {
           <Input id="a-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What should they do?" className="bg-background/50" />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="a-due">Last date</Label>
-          <Input id="a-due" type="date" value={dueYMD} onChange={(e) => setDueYMD(e.target.value)} className="bg-background/50" />
+          <Label htmlFor="a-due">Due date (optional)</Label>
+          <Input id="a-due" type="date" value={dueYMD} min={new Date().toISOString().slice(0, 10)} onChange={(e) => setDueYMD(e.target.value)} className="bg-background/50" />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="a-notes">Notes (optional)</Label>

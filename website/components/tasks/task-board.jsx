@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Check, CheckCircle2, ClipboardList, Download, FolderOpen, ListTodo, Search, Trash2, Users } from 'lucide-react';
+import { Check, CheckCircle2, ClipboardList, Download, FolderOpen, ListTodo, Pencil, Search, Trash2, Users } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can } from '@/lib/permissions';
@@ -67,11 +67,18 @@ function initials(name = '') {
 
 function fmtDate(d) {
   if (!d) return '';
-  return new Date(String(d).length <= 10 ? `${d}T00:00:00` : d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  const isYMD = String(d).length <= 10;
+  // Datetimes (e.g. completedAt) are pinned to the company timezone so the day never shifts.
+  return new Date(isYMD ? `${d}T00:00:00` : d).toLocaleDateString('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    ...(isYMD ? {} : { timeZone: 'Asia/Kolkata' }),
+  });
 }
 
 /** Personal / history task row with a click-to-complete circle. */
-function TaskRow({ task, canToggle, onToggle, onDelete }) {
+function TaskRow({ task, canToggle, onToggle, onEdit, onDelete }) {
   const done = task.status === 'DONE';
   const overdue = !done && isOverdue(task.dueYMD);
   return (
@@ -108,18 +115,23 @@ function TaskRow({ task, canToggle, onToggle, onDelete }) {
           {done && task.completedAt ? <span className="text-success">Done {fmtDate(task.completedAt)}</span> : null}
         </div>
       </div>
-      {/* Delegated tasks can't be deleted by the assignee — only by the assigner. */}
-      {task.assignedBy ? null : (
-        <Button variant="ghost" size="icon" className="size-10 shrink-0 text-destructive sm:size-8" onClick={() => onDelete(task)} aria-label="Delete">
-          <Trash2 className="size-4" />
+      <div className="flex shrink-0 items-center">
+        <Button variant="ghost" size="icon" className="size-10 sm:size-8" onClick={() => onEdit(task)} aria-label="Edit">
+          <Pencil className="size-4" />
         </Button>
-      )}
+        {/* Delegated tasks can't be deleted by the assignee — only by the assigner. */}
+        {task.assignedBy ? null : (
+          <Button variant="ghost" size="icon" className="size-10 text-destructive sm:size-8" onClick={() => onDelete(task)} aria-label="Delete">
+            <Trash2 className="size-4" />
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
 
 /** A date-grouped list of a person's tasks (inside the folder dialog). */
-function DatedTaskList({ tasks, dateKey, onDelete }) {
+function DatedTaskList({ tasks, dateKey, ascending = false, onEdit, onDelete }) {
   const groups = React.useMemo(() => {
     const map = new Map();
     for (const t of tasks) {
@@ -128,11 +140,18 @@ function DatedTaskList({ tasks, dateKey, onDelete }) {
       if (!map.has(key)) map.set(key, []);
       map.get(key).push(t);
     }
-    // Sort dates: real dates descending, "no date" bucket last.
+    // Sort dates (ascending = earliest due first for pending work); "no date" bucket last.
     return [...map.entries()]
-      .sort((a, b) => (a[0] && b[0] ? (a[0] < b[0] ? 1 : -1) : a[0] ? -1 : 1))
+      .sort((a, b) => {
+        if (a[0] && b[0]) {
+          if (a[0] === b[0]) return 0;
+          const earlier = a[0] < b[0] ? -1 : 1;
+          return ascending ? earlier : -earlier;
+        }
+        return a[0] ? -1 : 1;
+      })
       .map(([date, items]) => ({ date, items }));
-  }, [tasks, dateKey]);
+  }, [tasks, dateKey, ascending]);
 
   if (!tasks.length) return <p className="px-1 py-3 text-sm text-muted-foreground">Nothing here.</p>;
 
@@ -154,9 +173,14 @@ function DatedTaskList({ tasks, dateKey, onDelete }) {
                     {done && t.completedAt ? <span className="text-success">Done {fmtDate(t.completedAt)}</span> : null}
                   </div>
                 </div>
-                <Button variant="ghost" size="icon" className="size-10 shrink-0 text-destructive sm:size-7" onClick={() => onDelete(t)} aria-label="Delete">
-                  <Trash2 className="size-3.5" />
-                </Button>
+                <div className="flex shrink-0 items-center">
+                  <Button variant="ghost" size="icon" className="size-10 sm:size-7" onClick={() => onEdit(t)} aria-label="Edit">
+                    <Pencil className="size-3.5" />
+                  </Button>
+                  <Button variant="ghost" size="icon" className="size-10 text-destructive sm:size-7" onClick={() => onDelete(t)} aria-label="Delete">
+                    <Trash2 className="size-3.5" />
+                  </Button>
+                </div>
               </div>
             );
           })}
@@ -167,7 +191,7 @@ function DatedTaskList({ tasks, dateKey, onDelete }) {
 }
 
 /** A person "folder": name, progress, and (on click) their pending/completed tasks date-wise. */
-function PersonFolder({ folder, onDelete }) {
+function PersonFolder({ folder, onEdit, onDelete }) {
   const [open, setOpen] = React.useState(false);
   const pct = folder.total ? Math.round((folder.done / folder.total) * 100) : 0;
   return (
@@ -208,13 +232,13 @@ function PersonFolder({ folder, onDelete }) {
             <h3 className="flex items-center gap-2 text-sm font-semibold">
               <ListTodo className="size-4 text-warning" /> Pending ({folder.pending})
             </h3>
-            <DatedTaskList tasks={folder.pendingTasks} dateKey={(t) => t.dueYMD || t.createdAt} onDelete={onDelete} />
+            <DatedTaskList tasks={folder.pendingTasks} dateKey={(t) => t.dueYMD || t.createdAt} ascending onEdit={onEdit} onDelete={onDelete} />
           </section>
           <section className="space-y-2">
             <h3 className="flex items-center gap-2 text-sm font-semibold">
               <CheckCircle2 className="size-4 text-success" /> Completed ({folder.done})
             </h3>
-            <DatedTaskList tasks={folder.doneTasks} dateKey={(t) => t.completedAt || t.createdAt} onDelete={onDelete} />
+            <DatedTaskList tasks={folder.doneTasks} dateKey={(t) => t.completedAt || t.createdAt} onEdit={onEdit} onDelete={onDelete} />
           </section>
         </div>
       </AppDialog>
@@ -229,10 +253,18 @@ export function TaskBoard() {
 
   const [tab, setTab] = React.useState('mine');
   const [search, setSearch] = React.useState('');
+  const [debouncedSearch, setDebouncedSearch] = React.useState('');
+
+  // Debounce the server-side task search so typing doesn't refetch per keystroke.
+  React.useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
   const [period, setPeriod] = React.useState('all');
   const [pdfScope, setPdfScope] = React.useState('all');
   const [pdfBusy, setPdfBusy] = React.useState(false);
   const [deleting, setDeleting] = React.useState(null);
+  const [editing, setEditing] = React.useState(null);
 
   const isAssigned = tab === 'assigned';
 
@@ -246,16 +278,28 @@ export function TaskBoard() {
   const status = tab === 'mine' ? 'PENDING' : tab === 'history' ? 'DONE' : '';
 
   const { data, isLoading } = useQuery({
-    queryKey: ['tasks', 'list', scope, status, isAssigned ? '' : search, period],
+    queryKey: ['tasks', 'list', scope, status, isAssigned ? '' : debouncedSearch, period],
     queryFn: () => {
       const p = new URLSearchParams({ scope, limit: '1000' });
       if (status) p.set('status', status);
-      if (!isAssigned && search) p.set('search', search); // assigned tab searches by person, client-side
+      if (!isAssigned && debouncedSearch) p.set('search', debouncedSearch); // assigned tab searches by person, client-side
       if (period && period !== 'all') p.set('period', period);
       return api.get(`/tasks?${p.toString()}`);
     },
+    placeholderData: (prev) => prev, // keep rows visible while a new search loads
   });
   const tasks = React.useMemo(() => data?.tasks ?? [], [data]);
+
+  // Earliest due date first (undated work sinks to the bottom, newest of those first).
+  const sortedTasks = React.useMemo(() => {
+    if (tab !== 'mine') return tasks;
+    return [...tasks].sort((a, b) => {
+      if (a.dueYMD && b.dueYMD && a.dueYMD !== b.dueYMD) return a.dueYMD < b.dueYMD ? -1 : 1;
+      if (a.dueYMD && !b.dueYMD) return -1;
+      if (!a.dueYMD && b.dueYMD) return 1;
+      return new Date(b.createdAt) - new Date(a.createdAt);
+    });
+  }, [tasks, tab]);
 
   // Group assigned tasks into per-person folders (filtered by the name search).
   const folders = React.useMemo(() => {
@@ -371,7 +415,7 @@ export function TaskBoard() {
             folders.length ? (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {folders.map((f) => (
-                  <PersonFolder key={f.id} folder={f} onDelete={(x) => setDeleting(x)} />
+                  <PersonFolder key={f.id} folder={f} onEdit={(x) => setEditing(x)} onDelete={(x) => setDeleting(x)} />
                 ))}
               </div>
             ) : (
@@ -381,13 +425,17 @@ export function TaskBoard() {
             <EmptyState icon={ListTodo} title={tab === 'history' ? 'Nothing completed yet' : 'No pending tasks'} description={tab === 'mine' ? 'Add your first task above.' : ''} />
           ) : (
             <div className="space-y-2.5">
-              {tasks.map((t) => (
-                <TaskRow key={t.id} task={t} canToggle onToggle={(x) => toggleMut.mutate(x)} onDelete={(x) => setDeleting(x)} />
+              {sortedTasks.map((t) => (
+                <TaskRow key={t.id} task={t} canToggle onToggle={(x) => toggleMut.mutate(x)} onEdit={(x) => setEditing(x)} onDelete={(x) => setDeleting(x)} />
               ))}
             </div>
           )}
         </TabsContent>
       </Tabs>
+
+      {editing ? (
+        <TaskDialog task={editing} open={!!editing} onOpenChange={(o) => (!o ? setEditing(null) : null)} />
+      ) : null}
 
       <ConfirmDialog
         open={!!deleting}

@@ -64,6 +64,9 @@ export function VisitorDialog({ visitor, open: openProp, onOpenChange }) {
   const submit = () => {
     if (!form.name?.trim()) return toast.error('Add the visitor’s name');
     if (!form.category) return toast.error('Pick a category');
+    if (form.checkInTime && form.checkOutTime && form.checkOutTime <= form.checkInTime) {
+      return toast.error('Check-out time must be after check-in');
+    }
     mut.mutate();
   };
 
@@ -98,7 +101,7 @@ export function VisitorDialog({ visitor, open: openProp, onOpenChange }) {
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="v-phone">Phone</Label>
-            <Input id="v-phone" value={form.phone || ''} onChange={set('phone')} placeholder="Optional" className="bg-background/50" />
+            <Input id="v-phone" type="tel" inputMode="tel" value={form.phone || ''} onChange={set('phone')} placeholder="Optional" className="bg-background/50" />
           </div>
         </div>
 
@@ -144,7 +147,7 @@ export function VisitorDialog({ visitor, open: openProp, onOpenChange }) {
         <div className="grid gap-4 sm:grid-cols-3">
           <div className="space-y-1.5">
             <Label htmlFor="v-date">Date</Label>
-            <Input id="v-date" type="date" value={form.dateYMD || ''} onChange={set('dateYMD')} className="bg-background/50" />
+            <Input id="v-date" type="date" value={form.dateYMD || ''} max={todayYMD()} onChange={set('dateYMD')} className="bg-background/50" />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="v-in">Check-in</Label>

@@ -74,7 +74,7 @@ export function TaskDialog({ task, open: openProp, onOpenChange }) {
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="t-due">Due date (optional)</Label>
-          <Input id="t-due" type="date" value={dueYMD} onChange={(e) => setDueYMD(e.target.value)} className="bg-background/50" />
+          <Input id="t-due" type="date" value={dueYMD} min={dueYMD || new Date().toISOString().slice(0, 10)} onChange={(e) => setDueYMD(e.target.value)} className="bg-background/50" />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="t-notes">Notes (optional)</Label>
