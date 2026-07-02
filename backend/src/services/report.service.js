@@ -32,7 +32,7 @@ export function computePeriod(type, dateYMD) {
     const toMonday = dow === 0 ? -6 : 1 - dow;
     const mon = new Date(d.getTime() + toMonday * 86400000);
     const sun = new Date(mon.getTime() + 6 * 86400000);
-    return { from: ymdOf(mon), to: ymdOf(sun), label: `Week of ${niceDate(ymdOf(mon))}` };
+    return { from: ymdOf(mon), to: ymdOf(sun), label: `${niceDate(ymdOf(mon))} – ${niceDate(ymdOf(sun))}` };
   }
   if (type === 'monthly') {
     const y = d.getUTCFullYear();
@@ -44,8 +44,10 @@ export function computePeriod(type, dateYMD) {
       label: new Date(Date.UTC(y, m, 1)).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }),
     };
   }
-  const y = d.getUTCFullYear();
-  return { from: `${y}-01-01`, to: `${y}-12-31`, label: String(y) };
+  // Yearly = the company FISCAL year (Apr 1 – Mar 31), matching leave + expenses.
+  const y0 = d.getUTCFullYear();
+  const fy = d.getUTCMonth() + 1 >= 4 ? y0 : y0 - 1;
+  return { from: `${fy}-04-01`, to: `${fy + 1}-03-31`, label: `FY ${fy}–${String(fy + 1).slice(2)} (Apr–Mar)` };
 }
 
 function countWorkingDays(fromYMD, toYMD, weekendDays, holidaySet) {
@@ -109,7 +111,9 @@ export async function buildReport(type, dateYMD) {
       name: u.name,
       employeeId: u.employeeId,
       role: u.role,
-      present: m.present,
+      // A late employee still showed up — Present counts every attended day;
+      // `late` is the "of which came late" indicator, not a separate bucket.
+      present: showed,
       late: m.late,
       absent,
       onLeave: m.onLeave,
@@ -132,7 +136,8 @@ export async function buildReport(type, dateYMD) {
   );
   totals.workedHours = round1(totals.workedHours);
   const denom = activeUsers.length * workingDays;
-  totals.attendanceRate = denom > 0 ? Math.round(((totals.present + totals.late) / denom) * 100) : 0;
+  // `present` already includes late arrivals (they attended).
+  totals.attendanceRate = denom > 0 ? Math.round((totals.present / denom) * 100) : 0;
 
   // ── Leaves ────────────────────────────────────────────────
   const leaves = {
@@ -220,7 +225,7 @@ export async function buildReport(type, dateYMD) {
 
 const STATUS_LABEL = {
   PRESENT: 'Present',
-  LATE: 'Late',
+  LATE: 'Present (late)',
   ON_DUTY: 'On-duty',
   ABSENT: 'Absent',
   ON_LEAVE: 'On leave',
@@ -290,12 +295,14 @@ export async function buildSelfReport({ user, type, dateYMD }) {
   }
 
   const tally = (s) => days.filter((d) => d.status === s).length;
-  const present = tally('PRESENT');
   const late = tally('LATE');
   const onDuty = tally('ON_DUTY');
+  // A late day is still an attended day — Present counts every day they showed
+  // up; `late` stays as the "of which came late" indicator.
+  const present = tally('PRESENT') + late + onDuty;
   const absent = tally('ABSENT');
   const onLeave = tally('ON_LEAVE');
-  const workingDays = present + late + onDuty + absent + onLeave;
+  const workingDays = present + absent + onLeave;
   const attTotals = {
     present,
     late,
@@ -307,7 +314,7 @@ export async function buildSelfReport({ user, type, dateYMD }) {
     workingDays,
     workedHours: round1(days.reduce((s, d) => s + d.workedHours, 0)),
     overtimeMinutes: days.reduce((s, d) => s + d.overtimeMinutes, 0),
-    attendanceRate: workingDays > 0 ? Math.round(((present + late + onDuty) / workingDays) * 100) : 0,
+    attendanceRate: workingDays > 0 ? Math.round((present / workingDays) * 100) : 0,
   };
 
   // ── Leaves ────────────────────────────────────────────────

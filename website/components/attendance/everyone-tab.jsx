@@ -7,10 +7,10 @@ import { Check, Clock, Download, TriangleAlert, UserCheck, Users, UserX } from '
 import { api, getAuthToken } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can, prettyRole } from '@/lib/permissions';
-import { effectiveStatus, attendanceStatusLabel } from '@/lib/attendance';
+import { effectiveStatus } from '@/lib/attendance';
+import { AttendanceStatusBadge, attendanceStatusText } from './attendance-status-badge';
 import { DataTable } from '@/components/glass/data-table';
 import { StatCard } from '@/components/glass/stat-card';
-import { StatusBadge, STATUS_TONES } from '@/components/glass/status-badge';
 import { TableSkeleton } from '@/components/glass/skeletons';
 import { AppDialog } from '@/components/glass/app-dialog';
 import { cn } from '@/lib/utils';
@@ -60,11 +60,8 @@ const columns = [
   {
     id: 'status',
     header: 'Status',
-    accessorFn: (r) => attendanceStatusLabel(effectiveStatus(r.attendance, r.status)),
-    cell: ({ row }) => {
-      const s = effectiveStatus(row.original.attendance, row.original.status);
-      return <StatusBadge tone={STATUS_TONES[s] ?? 'neutral'}>{attendanceStatusLabel(s)}</StatusBadge>;
-    },
+    accessorFn: (r) => attendanceStatusText(r.attendance, r.status),
+    cell: ({ row }) => <AttendanceStatusBadge attendance={row.original.attendance} fallback={row.original.status} />,
   },
   {
     id: 'reason',
@@ -306,9 +303,7 @@ export function EveryoneTab() {
         {sel ? (
           <div className="space-y-4 py-1">
             <div className="flex flex-wrap items-center gap-2">
-              {selStatus ? (
-                <StatusBadge tone={STATUS_TONES[selStatus] ?? 'neutral'}>{attendanceStatusLabel(selStatus)}</StatusBadge>
-              ) : null}
+              {selStatus ? <AttendanceStatusBadge attendance={a} fallback={sel.status} /> : null}
               <span className="text-xs text-muted-foreground">{data?.date ?? date}</span>
             </div>
 

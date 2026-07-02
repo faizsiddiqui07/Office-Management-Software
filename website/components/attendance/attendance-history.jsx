@@ -6,7 +6,7 @@ import { CalendarDays, Clock, TriangleAlert } from 'lucide-react';
 import { api } from '@/lib/api';
 import { DataTable } from '@/components/glass/data-table';
 import { StatCard } from '@/components/glass/stat-card';
-import { StatusBadge, STATUS_TONES } from '@/components/glass/status-badge';
+import { AttendanceStatusBadge, attendanceStatusText } from './attendance-status-badge';
 import { TableSkeleton } from '@/components/glass/skeletons';
 import {
   Select,
@@ -16,7 +16,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { formatTime, formatDuration, formatDayLabel, recentMonths } from '@/lib/time';
-import { effectiveStatus, attendanceStatusLabel } from '@/lib/attendance';
 
 const columns = [
   { accessorKey: 'date', header: 'Date', cell: ({ row }) => formatDayLabel(row.original.date) },
@@ -35,14 +34,9 @@ const columns = [
   {
     id: 'status',
     header: 'Status',
-    // Sort/search by the label actually shown (On-duty etc.), not the raw enum.
-    accessorFn: (r) => attendanceStatusLabel(effectiveStatus(r)),
-    cell: ({ row }) => {
-      const s = effectiveStatus(row.original);
-      return (
-        <StatusBadge tone={STATUS_TONES[s] ?? 'neutral'}>{attendanceStatusLabel(s)}</StatusBadge>
-      );
-    },
+    // Sort/search by the text actually shown ("Present (late)" etc.), not the raw enum.
+    accessorFn: (r) => attendanceStatusText(r),
+    cell: ({ row }) => <AttendanceStatusBadge attendance={row.original} />,
   },
 ];
 

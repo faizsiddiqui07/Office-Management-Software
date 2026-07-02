@@ -10,23 +10,16 @@ import { GlassPanel } from '@/components/glass/glass-panel';
 import { EmptyState } from '@/components/glass/empty-state';
 import { LoadingState } from '@/components/glass/skeletons';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { ReportPreview } from '@/components/reports/report-preview';
-import { REPORT_TYPES, REPORT_SECTIONS } from '@/lib/report';
+import { PeriodPicker } from '@/components/reports/period-picker';
+import { REPORT_SECTIONS } from '@/lib/report';
 import { todayYMD } from '@/lib/expense';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
 export function CompanyReportBuilder() {
-  const [type, setType] = React.useState('monthly');
+  const [type, setType] = React.useState('daily'); // opens on today's report
   const [date, setDate] = React.useState(todayYMD());
   const [sections, setSections] = React.useState(null); // null until allowed sections load
   const [downloading, setDownloading] = React.useState(false);
@@ -89,25 +82,7 @@ export function CompanyReportBuilder() {
 
       <GlassPanel className="p-5">
         <div className="flex flex-wrap items-end gap-4">
-          <div className="w-full space-y-1.5 sm:w-auto">
-            <Label htmlFor="cr-type">Report</Label>
-            <Select value={type} onValueChange={setType}>
-              <SelectTrigger id="cr-type" className="w-full bg-background/50 sm:w-40">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {REPORT_TYPES.map((x) => (
-                  <SelectItem key={x.value} value={x.value}>
-                    {x.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="w-full space-y-1.5 sm:w-auto">
-            <Label htmlFor="cr-date">Date in period</Label>
-            <Input id="cr-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full bg-background/50 sm:w-44" />
-          </div>
+          <PeriodPicker idPrefix="cr" type={type} onTypeChange={setType} date={date} onDateChange={setDate} />
           <div className="w-full space-y-1.5 sm:w-auto">
             <Label>Sections</Label>
             <div className="flex flex-wrap gap-1.5">

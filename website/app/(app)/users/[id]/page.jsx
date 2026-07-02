@@ -19,7 +19,7 @@ import {
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can, prettyRole } from '@/lib/permissions';
-import { attendanceStatusLabel } from '@/lib/attendance';
+import { AttendanceStatusBadge, attendanceStatusText } from '@/components/attendance/attendance-status-badge';
 import { formatTime, formatDuration } from '@/lib/time';
 import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/glass/page-header';
@@ -111,7 +111,7 @@ export default function UserDossierPage() {
     {
       id: 'date',
       header: 'Date',
-      accessorFn: (r) => `${r.dateYMD} ${fmtDate(r.dateYMD)} ${r.excused && r.status === 'LATE' ? 'On-duty' : attendanceStatusLabel(r.status)}`,
+      accessorFn: (r) => `${r.dateYMD} ${fmtDate(r.dateYMD)} ${attendanceStatusText(r, r.status)}`,
       cell: ({ row }) => <span className="whitespace-nowrap text-sm">{fmtDate(row.original.dateYMD)}</span>,
     },
     { id: 'in', header: 'In', cell: ({ row }) => formatTime(row.original.checkInAt) },
@@ -130,10 +130,8 @@ export default function UserDossierPage() {
     {
       id: 'status',
       header: 'Status',
-      cell: ({ row }) => {
-        const s = row.original.excused && row.original.status === 'LATE' ? 'PRESENT' : row.original.status;
-        return <StatusBadge tone={STATUS_TONES[s] ?? 'neutral'}>{row.original.excused && row.original.status === 'LATE' ? 'On-duty' : attendanceStatusLabel(row.original.status)}</StatusBadge>;
-      },
+      accessorFn: (r) => attendanceStatusText(r, r.status),
+      cell: ({ row }) => <AttendanceStatusBadge attendance={row.original} fallback={row.original.status} />,
     },
   ];
 

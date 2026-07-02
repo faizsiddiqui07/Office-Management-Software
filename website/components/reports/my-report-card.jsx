@@ -8,16 +8,9 @@ import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { GlassPanel } from '@/components/glass/glass-panel';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { REPORT_TYPES, SELF_REPORT_SECTIONS } from '@/lib/report';
+import { PeriodPicker } from './period-picker';
+import { SELF_REPORT_SECTIONS } from '@/lib/report';
 import { todayYMD, formatMoney } from '@/lib/expense';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
@@ -33,7 +26,7 @@ function Mini({ label, value, hint }) {
 }
 
 export function MyReportCard() {
-  const [type, setType] = React.useState('monthly');
+  const [type, setType] = React.useState('daily'); // opens on today's report
   const [date, setDate] = React.useState(todayYMD());
   const [sections, setSections] = React.useState(['attendance', 'leaves', 'dues']);
   const [downloading, setDownloading] = React.useState(false);
@@ -87,25 +80,7 @@ export function MyReportCard() {
       </div>
 
       <div className="flex flex-wrap items-end gap-4">
-        <div className="w-full space-y-1.5 sm:w-auto">
-          <Label htmlFor="mr-type">Period</Label>
-          <Select value={type} onValueChange={setType}>
-            <SelectTrigger id="mr-type" className="w-full bg-background/50 sm:w-40">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {REPORT_TYPES.map((x) => (
-                <SelectItem key={x.value} value={x.value}>
-                  {x.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="w-full space-y-1.5 sm:w-auto">
-          <Label htmlFor="mr-date">Date in period</Label>
-          <Input id="mr-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full bg-background/50 sm:w-44" />
-        </div>
+        <PeriodPicker idPrefix="mr" type={type} onTypeChange={setType} date={date} onDateChange={setDate} />
         <div className="w-full space-y-1.5 sm:w-auto">
           <Label>Include</Label>
           <div className="flex flex-wrap gap-1.5">
@@ -134,11 +109,20 @@ export function MyReportCard() {
       </div>
 
       {data ? (
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Mini label="Attendance" value={`${t.attendanceRate}%`} hint={`${t.present} present · ${t.late} late · ${t.absent} absent`} />
-          <Mini label="Leave balance" value={`${bal.remaining} left`} hint={`${bal.used} used of ${bal.total}`} />
-          <Mini label="Dues" value={duesValue} hint={data.period.label} />
-        </div>
+        <>
+          <p className="text-sm text-muted-foreground">
+            Period: <span className="font-medium text-foreground">{data.period.label}</span>
+          </p>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Mini
+              label="Attendance"
+              value={`${t.attendanceRate}%`}
+              hint={`${t.present} present${t.late ? ` (${t.late} late)` : ''} · ${t.absent} absent`}
+            />
+            <Mini label="Leave balance" value={`${bal.remaining} left`} hint={`${bal.used} used of ${bal.total}`} />
+            <Mini label="Dues" value={duesValue} hint={data.period.label} />
+          </div>
+        </>
       ) : null}
     </GlassPanel>
   );
