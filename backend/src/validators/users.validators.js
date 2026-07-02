@@ -9,6 +9,7 @@ const scheduleSchema = z.object({
   workStart: hm.optional(),
   workEnd: hm.optional(),
   graceMinutes: z.coerce.number().int().min(0).max(180).optional(),
+  workDays: z.array(z.coerce.number().int().min(0).max(6)).optional(),
 });
 
 /** Part-timers must specify their check-in and check-out times. */

@@ -10,6 +10,7 @@ import { companyDayFromYMD } from '../lib/time.js';
 import { leaveYearOf, currentLeaveYear } from '../lib/leaveYear.js';
 import { computeWorkingDays } from './workingDays.service.js';
 import { holidayYMDSet } from './holiday.service.js';
+import { userWeekendDays } from '../lib/schedule.js';
 import { runTransaction } from '../lib/transaction.js';
 
 const PAID_TYPES = ['CASUAL', 'SICK', 'PAID'];
@@ -81,7 +82,7 @@ export async function applyLeave(user, { type, startYMD, endYMD, halfDay, halfDa
     fromYMD: startYMD,
     toYMD: endYMD,
     halfDay,
-    weekendDays: settings.weekendDays,
+    weekendDays: userWeekendDays(user, settings),
     holidays,
   });
   if (workingDays <= 0) throw httpError(400, 'NO_WORKING_DAYS', 'The selected dates contain no working days');
@@ -161,7 +162,7 @@ export async function updateLeave(user, id, { type, startYMD, endYMD, halfDay, h
     fromYMD: startYMD,
     toYMD: endYMD,
     halfDay,
-    weekendDays: settings.weekendDays,
+    weekendDays: userWeekendDays(user, settings),
     holidays,
   });
   if (workingDays <= 0) throw httpError(400, 'NO_WORKING_DAYS', 'The selected dates contain no working days');
@@ -247,6 +248,9 @@ export async function decideLeave(approver, id, decision, note) {
 
   const settings = await Setting.getSingleton();
   const holidays = await holidayYMDSet(request.startYMD, request.endYMD);
+  // The leave owner's own working days (a part-timer's off-days aren't "on leave").
+  const owner = await User.findById(request.user).select('employmentType schedule');
+  const ownerWeekends = userWeekendDays(owner, settings);
   const result = await runTransaction(async (session) => {
     const fresh = await LeaveRequest.findById(id).session(session);
     if (fresh.status !== 'PENDING') {
@@ -268,7 +272,7 @@ export async function decideLeave(approver, id, decision, note) {
       await bal.save({ session });
     }
 
-    await markAttendanceOnLeave(fresh.user, fresh.startYMD, fresh.endYMD, fresh.halfDay, settings.weekendDays, holidays, session);
+    await markAttendanceOnLeave(fresh.user, fresh.startYMD, fresh.endYMD, fresh.halfDay, ownerWeekends, holidays, session);
 
     fresh.status = 'APPROVED';
     fresh.decidedBy = approver._id;
@@ -312,6 +316,8 @@ export async function cancelLeave(viewer, id) {
 
   const settings = await Setting.getSingleton();
   const holidays = await holidayYMDSet(request.startYMD, request.endYMD);
+  const owner = await User.findById(request.user).select('employmentType schedule');
+  const ownerWeekends = userWeekendDays(owner, settings);
   const result = await runTransaction(async (session) => {
     const fresh = await LeaveRequest.findById(id).session(session);
     const year = leaveYearOf(fresh.startYMD);
@@ -323,7 +329,7 @@ export async function cancelLeave(viewer, id) {
       await bal.save({ session });
     }
 
-    await revertAttendanceOnLeave(fresh.user, fresh.startYMD, fresh.endYMD, fresh.halfDay, settings.weekendDays, holidays, session);
+    await revertAttendanceOnLeave(fresh.user, fresh.startYMD, fresh.endYMD, fresh.halfDay, ownerWeekends, holidays, session);
 
     fresh.status = 'CANCELLED';
     fresh.decidedBy = viewer._id;

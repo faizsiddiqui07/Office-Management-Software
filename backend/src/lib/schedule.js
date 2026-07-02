@@ -28,3 +28,18 @@ export function effectiveSchedule(user, settings) {
     partTime: false,
   };
 }
+
+/**
+ * The day-of-week numbers (0=Sun … 6=Sat) a user does NOT work — i.e. their
+ * "weekends", for absent/working-day math. A part-timer with an explicit
+ * `schedule.workDays` list works only those days; everyone else (and part-timers
+ * who left it blank) follows the company-wide weekend config in Settings.
+ */
+export function userWeekendDays(user, settings) {
+  const wd = user?.schedule?.workDays;
+  if (user?.employmentType === 'PART_TIME' && Array.isArray(wd) && wd.length) {
+    const works = new Set(wd);
+    return [0, 1, 2, 3, 4, 5, 6].filter((d) => !works.has(d));
+  }
+  return settings.weekendDays;
+}

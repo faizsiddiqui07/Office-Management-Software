@@ -14,6 +14,9 @@ const userSchema = new mongoose.Schema(
       workStart: { type: String, default: '' }, // 'HH:mm' company time
       workEnd: { type: String, default: '' }, // 'HH:mm'
       graceMinutes: { type: Number, default: 0 },
+      // Day-of-week numbers (0=Sun…6=Sat) a part-timer works. Empty = follow the
+      // company weekend config; non-empty = works ONLY these days.
+      workDays: { type: [Number], default: [] },
     },
     // Task delegation access — set per person by leadership (Users → Edit).
     // NONE: can't assign work. ALL: can assign to anyone. SELECTED: only to `users`.

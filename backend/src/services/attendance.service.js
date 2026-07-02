@@ -14,7 +14,7 @@ import {
   isLateCheckIn,
   computeWork,
 } from '../lib/time.js';
-import { effectiveSchedule } from '../lib/schedule.js';
+import { effectiveSchedule, userWeekendDays } from '../lib/schedule.js';
 import { leaveYearOf } from '../lib/leaveYear.js';
 
 function httpError(status, code, message) {
@@ -221,7 +221,7 @@ export async function attendanceMatrix(monthKey) {
   const holidays = await holidayYMDSet(from, to);
   const today = ymdInTz(new Date());
 
-  const allUsers = await User.find({ isActive: true }).select('name employeeId role').sort({ name: 1 });
+  const allUsers = await User.find({ isActive: true }).select('name employeeId role employmentType schedule').sort({ name: 1 });
   const users = allUsers.filter((u) => can({ role: u.role }, 'markAttendance'));
   const records = await Attendance.find({
     date: { $gte: companyDayFromYMD(from), $lte: companyDayFromYMD(to) },
@@ -230,13 +230,14 @@ export async function attendanceMatrix(monthKey) {
 
   const days = [];
   for (let d = 1; d <= lastDay; d += 1) days.push(`${monthKey}-${String(d).padStart(2, '0')}`);
+  const dowOf = new Map(days.map((ymd) => [ymd, dayOfWeekInTz(companyDayFromYMD(ymd))]));
 
   const rows = users.map((u) => {
+    const offDays = userWeekendDays(u, settings); // this employee's non-working weekdays
     const t = { present: 0, late: 0, absent: 0, onLeave: 0, workedMinutes: 0, overtimeMinutes: 0 };
     const cells = days.map((ymd) => {
       const rec = byUserDay.get(`${u._id}|${ymd}`);
-      const dow = dayOfWeekInTz(companyDayFromYMD(ymd));
-      const isOff = settings.weekendDays.includes(dow) || holidays.has(ymd);
+      const isOff = offDays.includes(dowOf.get(ymd)) || holidays.has(ymd);
       if (rec?.checkInAt) {
         t.workedMinutes += rec.workedMinutes || 0;
         t.overtimeMinutes += rec.overtimeMinutes || 0;
@@ -269,12 +270,13 @@ export async function attendanceMatrix(monthKey) {
 export async function attendanceOverview(ymd) {
   const day = ymd ? companyDayFromYMD(ymd) : companyTzMidnight(new Date());
   const settings = await Setting.getSingleton();
-  const isWeekend = settings.weekendDays.includes(dayOfWeekInTz(day));
+  const dow = dayOfWeekInTz(day);
+  const isWeekend = settings.weekendDays.includes(dow);
   const dateYMD = ymdInTz(day);
   const isHoliday = (await holidayYMDSet(dateYMD, dateYMD)).has(dateYMD);
 
   const [allUsers, records] = await Promise.all([
-    User.find({ isActive: true }).select('name email role employeeId department').sort({ name: 1 }),
+    User.find({ isActive: true }).select('name email role employeeId department employmentType schedule').sort({ name: 1 }),
     Attendance.find({ date: day }),
   ]);
 
@@ -287,7 +289,11 @@ export async function attendanceOverview(ymd) {
   const rows = users.map((u) => {
     const rec = byUser.get(String(u._id)) || null;
     let status = rec?.status;
-    if (!status) status = isWeekend || isHoliday ? 'HOLIDAY' : 'ABSENT';
+    if (!status) {
+      // A part-timer's own off-day counts as a day off, not an absence.
+      const off = isHoliday || userWeekendDays(u, settings).includes(dow);
+      status = off ? 'HOLIDAY' : 'ABSENT';
+    }
     return { user: u.toJSON(), attendance: rec ? rec.toJSON() : null, status };
   });
 

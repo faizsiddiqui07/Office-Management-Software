@@ -6,6 +6,7 @@ import { User } from '../models/User.js';
 import { Setting } from '../models/Setting.js';
 import { companyDayFromYMD, ymdInTz } from '../lib/time.js';
 import { can } from '../lib/permissions.js';
+import { userWeekendDays } from '../lib/schedule.js';
 import { computeWorkingDays } from './workingDays.service.js';
 import { holidayYMDSet } from './holiday.service.js';
 import { leaveYearOf } from '../lib/leaveYear.js';
@@ -88,7 +89,7 @@ export async function getUserDossier(userId, { from, to }) {
     ({ workingDates } = computeWorkingDays({
       fromYMD: from,
       toYMD: cappedTo,
-      weekendDays: settings.weekendDays,
+      weekendDays: userWeekendDays(user, settings), // part-timer's off-days aren't absences
       holidays,
     }));
   }
