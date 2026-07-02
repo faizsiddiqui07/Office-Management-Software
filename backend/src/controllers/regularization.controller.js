@@ -24,6 +24,24 @@ export async function pending(req, res, next) {
   }
 }
 
+export async function history(req, res, next) {
+  try {
+    res.json(ok({ requests: await svc.listHistory() }));
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function remove(req, res, next) {
+  try {
+    await svc.remove(req.params.id);
+    await audit({ actor: req.user._id, action: 'regularization.delete', entityType: 'Regularization', entityId: req.params.id });
+    res.json(ok({ deleted: true }));
+  } catch (err) {
+    handleErr(res, err, next);
+  }
+}
+
 export async function create(req, res, next) {
   try {
     const body = createRegSchema.parse(req.body);

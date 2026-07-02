@@ -56,6 +56,27 @@ export async function listPending() {
   return regs.map((r) => r.toJSON());
 }
 
+/** Decided (approved/rejected) corrections — the review history for leadership. */
+export async function listHistory() {
+  const regs = await Regularization.find({ status: { $in: ['APPROVED', 'REJECTED'] } })
+    .sort({ decidedAt: -1 })
+    .limit(100)
+    .populate('user', 'name employeeId role')
+    .populate('decidedBy', 'name');
+  return regs.map((r) => r.toJSON());
+}
+
+/**
+ * Delete a correction record (e.g. a mistaken or duplicate entry). This removes
+ * only the request/history row — it does NOT revert any attendance time that an
+ * approval already applied.
+ */
+export async function remove(id) {
+  const reg = await Regularization.findByIdAndDelete(id);
+  if (!reg) throw httpError(404, 'NOT_FOUND', 'Request not found');
+  return { id };
+}
+
 /** Apply an approved correction to the attendance record for that day. */
 async function applyToAttendance(reg) {
   const settings = await Setting.getSingleton();
