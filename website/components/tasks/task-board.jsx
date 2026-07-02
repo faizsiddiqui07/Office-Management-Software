@@ -8,7 +8,6 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
-import { StatusBadge } from '@/components/glass/status-badge';
 import { EmptyState } from '@/components/glass/empty-state';
 import { LoadingState } from '@/components/glass/skeletons';
 import { ConfirmDialog } from '@/components/glass/confirm-dialog';
@@ -77,18 +76,24 @@ function TaskRow({ task, canToggle, onToggle, onDelete }) {
   const overdue = !done && isOverdue(task.dueYMD);
   return (
     <div className="flex items-start gap-3 rounded-xl bg-foreground/[0.03] p-3 ring-1 ring-border/50">
+      {/* 40px touch target; the visual 20px circle sits inside (negative margins keep layout). */}
       <button
         type="button"
         disabled={!canToggle}
         onClick={() => canToggle && onToggle(task)}
         aria-label={done ? 'Mark as not done' : 'Mark as done'}
-        className={cn(
-          'mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full ring-1 transition-colors',
-          done ? 'bg-success text-white ring-success' : 'ring-border hover:ring-primary',
-          !canToggle && 'cursor-default opacity-70',
-        )}
+        className={cn('group/tgl -m-2.5 -mt-2 flex size-10 shrink-0 items-center justify-center', !canToggle && 'cursor-default')}
       >
-        {done ? <Check className="size-3.5" /> : null}
+        <span
+          className={cn(
+            'flex size-5 items-center justify-center rounded-full ring-1 transition-colors',
+            done ? 'bg-success text-white ring-success' : 'ring-border',
+            canToggle && !done && 'group-hover/tgl:ring-primary',
+            !canToggle && 'opacity-70',
+          )}
+        >
+          {done ? <Check className="size-3.5" /> : null}
+        </span>
       </button>
       <div className="min-w-0 flex-1">
         <p className={cn('font-medium leading-snug', done && 'text-muted-foreground line-through')}>{task.title}</p>
@@ -105,7 +110,7 @@ function TaskRow({ task, canToggle, onToggle, onDelete }) {
       </div>
       {/* Delegated tasks can't be deleted by the assignee — only by the assigner. */}
       {task.assignedBy ? null : (
-        <Button variant="ghost" size="icon" className="shrink-0 text-destructive" onClick={() => onDelete(task)} aria-label="Delete">
+        <Button variant="ghost" size="icon" className="size-10 shrink-0 text-destructive sm:size-8" onClick={() => onDelete(task)} aria-label="Delete">
           <Trash2 className="size-4" />
         </Button>
       )}
@@ -149,7 +154,7 @@ function DatedTaskList({ tasks, dateKey, onDelete }) {
                     {done && t.completedAt ? <span className="text-success">Done {fmtDate(t.completedAt)}</span> : null}
                   </div>
                 </div>
-                <Button variant="ghost" size="icon" className="size-7 shrink-0 text-destructive" onClick={() => onDelete(t)} aria-label="Delete">
+                <Button variant="ghost" size="icon" className="size-10 shrink-0 text-destructive sm:size-7" onClick={() => onDelete(t)} aria-label="Delete">
                   <Trash2 className="size-3.5" />
                 </Button>
               </div>

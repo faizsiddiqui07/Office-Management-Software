@@ -1,28 +1,44 @@
 'use client';
 
+import * as React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { DataTable } from '@/components/glass/data-table';
 import { StatusBadge, STATUS_TONES } from '@/components/glass/status-badge';
 import { TableSkeleton } from '@/components/glass/skeletons';
+import { ConfirmDialog } from '@/components/glass/confirm-dialog';
 import { Button } from '@/components/ui/button';
 import { LEAVE_TYPE_LABELS, formatRange } from '@/lib/leave';
 
 function CancelButton({ id }) {
   const qc = useQueryClient();
+  const [confirming, setConfirming] = React.useState(false);
   const mut = useMutation({
     mutationFn: () => api.post(`/leaves/${id}/cancel`),
     onSuccess: () => {
       toast.success('Request cancelled');
+      setConfirming(false);
       qc.invalidateQueries({ queryKey: ['leaves'] });
     },
     onError: (e) => toast.error(e?.message || 'Could not cancel'),
   });
   return (
-    <Button variant="ghost" size="sm" className="text-destructive" onClick={() => mut.mutate()} disabled={mut.isPending}>
-      Cancel
-    </Button>
+    <>
+      <Button variant="ghost" className="h-10 text-destructive sm:h-8" onClick={() => setConfirming(true)} disabled={mut.isPending}>
+        Cancel
+      </Button>
+      <ConfirmDialog
+        open={confirming}
+        onOpenChange={setConfirming}
+        title="Cancel this leave request?"
+        description="The request will be withdrawn — you can apply again later if needed."
+        tone="destructive"
+        confirmLabel="Cancel request"
+        loading={mut.isPending}
+        onConfirm={() => mut.mutate()}
+      />
+    </>
   );
 }
 

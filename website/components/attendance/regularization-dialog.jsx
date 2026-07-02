@@ -41,6 +41,7 @@ export function RegularizationDialog() {
 
   const submit = () => {
     if (!checkIn && !checkOut) return toast.error('Enter a check-in and/or check-out time');
+    if (checkIn && checkOut && checkOut <= checkIn) return toast.error('Check-out time must be after check-in');
     if (reason.trim().length < 3) return toast.error('Add a short reason');
     return mut.mutate();
   };
@@ -85,7 +86,7 @@ export function RegularizationDialog() {
         <p className="text-xs text-muted-foreground">Leave a time blank if it’s already correct.</p>
         <div className="space-y-1.5">
           <Label htmlFor="r-reason">Reason</Label>
-          <Textarea id="r-reason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Forgot to check out — left at 6 PM" className="bg-background/50" />
+          <Textarea id="r-reason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Forgot to check out — left at 18:00" className="bg-background/50" />
         </div>
       </div>
     </AppDialog>

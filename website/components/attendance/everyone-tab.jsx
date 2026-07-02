@@ -190,7 +190,9 @@ export function EveryoneTab() {
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h3 className="text-sm font-medium text-muted-foreground">Everyone · {data?.date ?? date}</h3>
+        <h3 className="text-sm font-medium text-muted-foreground">
+          Everyone · {new Date(`${data?.date ?? date}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+        </h3>
         <div className="flex w-full items-center gap-2 sm:w-auto">
           <Label htmlFor="ov-date" className="text-sm text-muted-foreground">
             Date
@@ -199,6 +201,7 @@ export function EveryoneTab() {
             id="ov-date"
             type="date"
             value={date}
+            max={todayYMD()}
             onChange={(e) => setDate(e.target.value)}
             className="w-full bg-background/50 sm:w-44"
           />

@@ -50,7 +50,7 @@ export default function ForgotPasswordPage() {
                   sent a reset link. It expires in about 30 minutes.
                 </p>
                 <p className="mt-3 text-xs text-muted-foreground">
-                  No SMTP configured in dev? The link is printed to the backend console.
+                  Didn&apos;t get it? Check your spam folder, or try again in a few minutes.
                 </p>
               </>
             ) : (

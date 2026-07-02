@@ -3,9 +3,10 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
-import { Users, Mail, Phone, Hash } from 'lucide-react';
+import { Users, Mail, Phone, Hash, ShieldAlert } from 'lucide-react';
 import { api } from '@/lib/api';
-import { prettyRole } from '@/lib/permissions';
+import { useAuth } from '@/lib/auth';
+import { can, prettyRole } from '@/lib/permissions';
 import { useRoleOptions } from '@/lib/use-roles';
 import { PageHeader } from '@/components/glass/page-header';
 import { GlassCard } from '@/components/glass/glass-card';
@@ -72,7 +73,9 @@ function MemberCard({ u }) {
 }
 
 export default function TeamPage() {
-  const { data, isLoading, isError } = useQuery({ queryKey: ['users'], queryFn: () => api.get('/users') });
+  const { user } = useAuth();
+  const allowed = !!user && can(user, 'viewEveryone');
+  const { data, isLoading, isError } = useQuery({ queryKey: ['users'], queryFn: () => api.get('/users'), enabled: allowed });
   const { data: roleOptions = [] } = useRoleOptions();
 
   const users = React.useMemo(() => (data?.users ?? []).filter((u) => u.isActive !== false), [data]);
@@ -105,7 +108,9 @@ export default function TeamPage() {
         description={`Everyone on the team${users.length ? ` · ${users.length} members` : ''}, grouped by role.`}
       />
 
-      {isLoading ? (
+      {!allowed ? (
+        <EmptyState icon={ShieldAlert} title="No access" description="You don’t have permission to view the team directory." />
+      ) : isLoading ? (
         <LoadingState label="Loading the team…" />
       ) : isError ? (
         <EmptyState icon={Users} title="Couldn’t load the team" description="Please refresh in a moment." />

@@ -79,11 +79,11 @@ export function RequestsQueue() {
         header: '',
         cell: ({ row }) =>
           row.original.status === 'PENDING' ? (
-            <div className="flex gap-1.5">
-              <Button size="sm" onClick={() => { setDecision({ request: row.original, action: 'APPROVE' }); setNote(''); }}>
+            <div className="flex flex-wrap gap-2">
+              <Button className="h-10 sm:h-8" onClick={() => { setDecision({ request: row.original, action: 'APPROVE' }); setNote(''); }}>
                 <Check className="size-4" /> Approve
               </Button>
-              <Button size="sm" variant="outline" onClick={() => { setDecision({ request: row.original, action: 'REJECT' }); setNote(''); }}>
+              <Button variant="outline" className="h-10 sm:h-8" onClick={() => { setDecision({ request: row.original, action: 'REJECT' }); setNote(''); }}>
                 <X className="size-4" /> Reject
               </Button>
             </div>

@@ -6,8 +6,8 @@ import { toast } from 'sonner';
 import { Check, History, Trash2, Wrench, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import { prettyRole } from '@/lib/permissions';
-import { cn } from '@/lib/utils';
 import { GlassCard } from '@/components/glass/glass-card';
+import { StatusBadge } from '@/components/glass/status-badge';
 import { EmptyState } from '@/components/glass/empty-state';
 import { LoadingState } from '@/components/glass/skeletons';
 import { Button } from '@/components/ui/button';
@@ -20,12 +20,7 @@ function fmtWhen(d) {
   if (!d) return '';
   return new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }
-function to12(hm) {
-  if (!hm) return '';
-  const [h, m] = hm.split(':').map(Number);
-  const ap = h < 12 ? 'AM' : 'PM';
-  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${ap}`;
-}
+// Requested times are 24h "HH:mm" strings — shown as-is (24h everywhere).
 
 /** Two-step (click → confirm) delete so a record isn't removed by accident. */
 function DeleteButton({ id }) {
@@ -42,18 +37,18 @@ function DeleteButton({ id }) {
 
   if (!confirming) {
     return (
-      <Button size="sm" variant="ghost" className="text-destructive" onClick={() => setConfirming(true)}>
+      <Button variant="ghost" className="h-10 text-destructive sm:h-8" onClick={() => setConfirming(true)}>
         <Trash2 className="size-4" /> Delete
       </Button>
     );
   }
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex flex-wrap items-center gap-2">
       <span className="text-xs text-muted-foreground">Delete?</span>
-      <Button size="sm" variant="ghost" onClick={() => setConfirming(false)} disabled={del.isPending}>
+      <Button variant="ghost" className="h-10 sm:h-8" onClick={() => setConfirming(false)} disabled={del.isPending}>
         Cancel
       </Button>
-      <Button size="sm" variant="destructive" onClick={() => del.mutate()} disabled={del.isPending}>
+      <Button variant="destructive" className="h-10 sm:h-8" onClick={() => del.mutate()} disabled={del.isPending}>
         <Trash2 className="size-4" /> Delete
       </Button>
     </div>
@@ -68,28 +63,12 @@ function RequestDetails({ r }) {
       </p>
       <p className="text-sm">
         {fmtDate(r.dateYMD)} —{' '}
-        {[r.requestedCheckIn && `In ${to12(r.requestedCheckIn)}`, r.requestedCheckOut && `Out ${to12(r.requestedCheckOut)}`]
+        {[r.requestedCheckIn && `In ${r.requestedCheckIn}`, r.requestedCheckOut && `Out ${r.requestedCheckOut}`]
           .filter(Boolean)
           .join(' · ')}
       </p>
       <p className="text-xs text-muted-foreground">{r.reason}</p>
     </div>
-  );
-}
-
-function StatusBadge({ status }) {
-  const approved = status === 'APPROVED';
-  return (
-    <span
-      className={cn(
-        'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ring-1',
-        approved
-          ? 'bg-emerald-500/12 text-emerald-600 ring-emerald-500/25 dark:text-emerald-300'
-          : 'bg-destructive/10 text-destructive ring-destructive/25',
-      )}
-    >
-      {approved ? 'Approved' : 'Rejected'}
-    </span>
   );
 }
 
@@ -117,11 +96,11 @@ function PendingList() {
       {requests.map((r) => (
         <GlassCard key={r.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
           <RequestDetails r={r} />
-          <div className="flex shrink-0 flex-wrap items-center gap-2">
-            <Button size="sm" variant="outline" onClick={() => decide.mutate({ id: r.id, decision: 'REJECTED' })} disabled={decide.isPending}>
+          <div className="flex shrink-0 flex-wrap items-center gap-3 sm:gap-2">
+            <Button variant="outline" className="h-10 sm:h-8" onClick={() => decide.mutate({ id: r.id, decision: 'REJECTED' })} disabled={decide.isPending}>
               <X className="size-4" /> Reject
             </Button>
-            <Button size="sm" onClick={() => decide.mutate({ id: r.id, decision: 'APPROVED' })} disabled={decide.isPending}>
+            <Button className="h-10 sm:h-8" onClick={() => decide.mutate({ id: r.id, decision: 'APPROVED' })} disabled={decide.isPending}>
               <Check className="size-4" /> Approve
             </Button>
             <DeleteButton id={r.id} />
@@ -146,7 +125,9 @@ function HistoryList() {
         <GlassCard key={r.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0 space-y-1">
             <div className="flex flex-wrap items-center gap-2">
-              <StatusBadge status={r.status} />
+              <StatusBadge tone={r.status === 'APPROVED' ? 'success' : 'destructive'}>
+                {r.status === 'APPROVED' ? 'Approved' : 'Rejected'}
+              </StatusBadge>
               <span className="text-sm font-medium">{r.user?.name}</span>
               <span className="text-xs text-muted-foreground">· {prettyRole(r.user?.role)}</span>
             </div>

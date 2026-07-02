@@ -117,7 +117,7 @@ export default function LoginPage() {
           </div>
 
           <div className="relative flex items-center justify-between text-xs text-white/60">
-            <span>© 2026 {companyName}</span>
+            <span>© {new Date().getFullYear()} {companyName}</span>
             <span className="inline-flex items-center gap-1.5">
               <ShieldCheck className="size-4" /> Secure &amp; private
             </span>
@@ -172,11 +172,7 @@ export default function LoginPage() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between pt-0.5">
-                <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
-                  <input type="checkbox" className="size-4 rounded border-border accent-primary" />
-                  Remember me
-                </label>
+              <div className="flex items-center justify-end pt-0.5">
                 <Link href="/forgot-password" className="text-sm font-medium text-primary hover:underline">
                   Forgot password?
                 </Link>

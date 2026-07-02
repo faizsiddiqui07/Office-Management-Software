@@ -59,11 +59,13 @@ export function UsersDirectory() {
   const [editing, setEditing] = React.useState(null);
   const [resetResult, setResetResult] = React.useState(null);
   const [toggling, setToggling] = React.useState(null);
+  const [resetting, setResetting] = React.useState(null); // user pending reset confirmation
 
   const resetMut = useMutation({
     mutationFn: (id) => api.post(`/users/${id}/reset-credentials`),
     onSuccess: (res) => {
       setResetResult(res);
+      setResetting(null);
       qc.invalidateQueries({ queryKey: ['users'] });
     },
     onError: (e) => toast.error(e?.message || 'Could not reset credentials'),
@@ -118,7 +120,7 @@ export function UsersDirectory() {
           canManage || canReset ? (
             <div className="flex justify-end">
               <DropdownMenu>
-                <DropdownMenuTrigger className="inline-flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground">
+                <DropdownMenuTrigger aria-label="More actions" className="inline-flex size-10 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground sm:size-8">
                   <Ellipsis className="size-4" />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="border-border/60 bg-card/90 ring-1 ring-white/10 backdrop-blur-2xl">
@@ -128,7 +130,7 @@ export function UsersDirectory() {
                     </DropdownMenuItem>
                   ) : null}
                   {canReset ? (
-                    <DropdownMenuItem onClick={() => resetMut.mutate(row.original.id)}>
+                    <DropdownMenuItem onClick={() => setResetting(row.original)}>
                       <KeyRound /> Reset credentials
                     </DropdownMenuItem>
                   ) : null}
@@ -146,7 +148,7 @@ export function UsersDirectory() {
           ) : null,
       },
     ],
-    [canManage, canReset, resetMut, user],
+    [canManage, canReset, user],
   );
 
   return (
@@ -208,6 +210,19 @@ export function UsersDirectory() {
       >
         {resetResult ? <TempPasswordContent user={resetResult.user} temporaryPassword={resetResult.temporaryPassword} /> : null}
       </AppDialog>
+
+      <ConfirmDialog
+        open={!!resetting}
+        onOpenChange={(o) => {
+          if (!o) setResetting(null);
+        }}
+        title={`Reset credentials for ${resetting?.name || 'this user'}?`}
+        description="Their current password stops working immediately — they'll need the new temporary password to sign in."
+        tone="destructive"
+        confirmLabel="Reset credentials"
+        loading={resetMut.isPending}
+        onConfirm={() => resetting && resetMut.mutate(resetting.id)}
+      />
 
       <ConfirmDialog
         open={!!toggling}
