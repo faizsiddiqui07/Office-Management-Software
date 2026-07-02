@@ -43,6 +43,18 @@ const columns = [
   { id: 'out', header: 'Out', cell: ({ row }) => formatTime(row.original.attendance?.checkOutAt) },
   { id: 'worked', header: 'Worked', cell: ({ row }) => formatDuration(row.original.attendance?.workedMinutes) },
   {
+    id: 'overtime',
+    header: 'Overtime',
+    cell: ({ row }) => {
+      const ot = row.original.attendance?.overtimeMinutes;
+      return ot ? (
+        <span className="font-medium tabular-nums text-emerald-600 dark:text-emerald-300">+{formatDuration(ot)}</span>
+      ) : (
+        <span className="text-xs text-muted-foreground">—</span>
+      );
+    },
+  },
+  {
     id: 'status',
     header: 'Status',
     cell: ({ row }) => {
@@ -187,7 +199,7 @@ export function EveryoneTab() {
       </p>
 
       {isLoading ? (
-        <TableSkeleton rows={6} cols={7} />
+        <TableSkeleton rows={6} cols={8} />
       ) : (
         <DataTable
           columns={columns}
@@ -235,6 +247,7 @@ export function EveryoneTab() {
               <Field label="Check-in" value={formatTime(a?.checkInAt)} />
               <Field label="Check-out" value={formatTime(a?.checkOutAt)} />
               <Field label="Worked" value={formatDuration(a?.workedMinutes)} />
+              <Field label="Overtime" value={a?.overtimeMinutes ? `+${formatDuration(a.overtimeMinutes)}` : '—'} />
             </div>
 
             {isLateRow ? (
