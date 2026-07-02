@@ -8,7 +8,6 @@ import { api } from '@/lib/api';
 import { DataTable } from '@/components/glass/data-table';
 import { StatusBadge, STATUS_TONES } from '@/components/glass/status-badge';
 import { TableSkeleton } from '@/components/glass/skeletons';
-import { AppDialog } from '@/components/glass/app-dialog';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
@@ -20,11 +19,12 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { LEAVE_TYPE_LABELS, formatRange } from '@/lib/leave';
+import { LeaveDetailDialog } from './leave-detail-dialog';
 
 export function RequestsQueue() {
   const qc = useQueryClient();
   const [statusFilter, setStatusFilter] = React.useState('PENDING');
-  const [decision, setDecision] = React.useState(null); // { request, action }
+  const [viewing, setViewing] = React.useState(null); // row-click detail
   const [note, setNote] = React.useState('');
 
   const { data, isLoading } = useQuery({
@@ -34,27 +34,28 @@ export function RequestsQueue() {
   });
   const requests = data?.requests ?? [];
 
-  const close = () => {
-    setDecision(null);
-    setNote('');
-  };
-
   const mut = useMutation({
     mutationFn: ({ id, action, note: n }) => api.post(`/leaves/${id}/decision`, { decision: action, note: n }),
     onSuccess: (_d, vars) => {
       toast.success(`Leave ${vars.action === 'APPROVE' ? 'approved' : 'rejected'}`);
       qc.invalidateQueries({ queryKey: ['leaves'] });
-      close();
+      setViewing(null);
+      setNote('');
     },
     onError: (e) => toast.error(e?.message || 'Could not submit decision'),
   });
+
+  const open = (row) => {
+    setNote('');
+    setViewing(row);
+  };
 
   const columns = React.useMemo(
     () => [
       {
         id: 'requester',
         header: 'Requester',
-        accessorFn: (r) => r.user?.name ?? '',
+        accessorFn: (r) => `${r.user?.name ?? ''} ${r.user?.employeeId ?? ''}`,
         cell: ({ row }) => (
           <div>
             <p className="font-medium">{row.original.user?.name}</p>
@@ -64,9 +65,9 @@ export function RequestsQueue() {
           </div>
         ),
       },
-      { id: 'type', header: 'Type', cell: ({ row }) => LEAVE_TYPE_LABELS[row.original.type] ?? row.original.type },
-      { id: 'range', header: 'Dates', cell: ({ row }) => formatRange(row.original.startYMD, row.original.endYMD) },
-      { id: 'days', header: 'Days', cell: ({ row }) => <span className="tabular-nums">{row.original.workingDays}</span> },
+      { id: 'type', header: 'Type', accessorFn: (r) => LEAVE_TYPE_LABELS[r.type] ?? r.type, cell: ({ row }) => LEAVE_TYPE_LABELS[row.original.type] ?? row.original.type },
+      { id: 'range', header: 'Dates', accessorFn: (r) => r.startYMD, cell: ({ row }) => formatRange(row.original.startYMD, row.original.endYMD) },
+      { id: 'days', header: 'Days', accessorFn: (r) => r.workingDays, cell: ({ row }) => <span className="tabular-nums">{row.original.workingDays}</span> },
       {
         id: 'reason',
         header: 'Reason',
@@ -79,33 +80,21 @@ export function RequestsQueue() {
       {
         id: 'status',
         header: 'Status',
+        accessorFn: (r) => r.status,
         cell: ({ row }) => (
           <StatusBadge tone={STATUS_TONES[row.original.status] ?? 'neutral'}>{row.original.status}</StatusBadge>
         ),
-      },
-      {
-        id: 'actions',
-        header: '',
-        cell: ({ row }) =>
-          row.original.status === 'PENDING' ? (
-            <div className="flex flex-wrap gap-2">
-              <Button className="h-10 sm:h-8" onClick={() => { setDecision({ request: row.original, action: 'APPROVE' }); setNote(''); }}>
-                <Check className="size-4" /> Approve
-              </Button>
-              <Button variant="outline" className="h-10 sm:h-8" onClick={() => { setDecision({ request: row.original, action: 'REJECT' }); setNote(''); }}>
-                <X className="size-4" /> Reject
-              </Button>
-            </div>
-          ) : null,
       },
     ],
     [],
   );
 
+  const isPending = viewing?.status === 'PENDING';
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h3 className="text-sm font-medium text-muted-foreground">Approval queue</h3>
+        <h3 className="text-sm font-medium text-muted-foreground">Approval queue · tap a row to review</h3>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="w-full sm:w-40 bg-background/50">
             <SelectValue />
@@ -123,66 +112,43 @@ export function RequestsQueue() {
       {isLoading ? (
         <TableSkeleton rows={5} cols={6} />
       ) : (
-        <DataTable columns={columns} data={requests} searchPlaceholder="Search requester…" pageSize={10} emptyMessage="Nothing in the queue." />
+        <DataTable columns={columns} data={requests} searchPlaceholder="Search requester…" pageSize={10} emptyMessage="Nothing in the queue." onRowClick={open} />
       )}
 
-      <AppDialog
-        open={!!decision}
-        onOpenChange={(o) => {
-          if (!o) close();
-        }}
-        title={decision?.action === 'APPROVE' ? 'Approve leave' : 'Reject leave'}
-        description={
-          decision
-            ? `${decision.request.user?.name} · ${decision.request.workingDays} day(s) · ${LEAVE_TYPE_LABELS[decision.request.type]}`
-            : ''
-        }
+      {/* Detail — tap any row. Pending requests can be approved/rejected here. */}
+      <LeaveDetailDialog
+        leave={viewing}
+        open={!!viewing}
+        onOpenChange={(o) => (!o ? (setViewing(null), setNote('')) : null)}
+        showApplicant
         footer={
-          <>
-            <Button variant="outline" onClick={close}>
-              Cancel
-            </Button>
-            <Button
-              variant={decision?.action === 'REJECT' ? 'destructive' : 'default'}
-              onClick={() => decision && mut.mutate({ id: decision.request.id, action: decision.action, note })}
-              disabled={mut.isPending}
-            >
-              {mut.isPending ? 'Saving…' : decision?.action === 'APPROVE' ? 'Approve' : 'Reject'}
-            </Button>
-          </>
+          isPending ? (
+            <div className="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button variant="outline" onClick={() => mut.mutate({ id: viewing.id, action: 'REJECT', note })} disabled={mut.isPending}>
+                <X className="size-4" /> Reject
+              </Button>
+              <Button onClick={() => mut.mutate({ id: viewing.id, action: 'APPROVE', note })} disabled={mut.isPending}>
+                <Check className="size-4" /> Approve
+              </Button>
+            </div>
+          ) : (
+            <Button variant="outline" onClick={() => setViewing(null)}>Close</Button>
+          )
         }
       >
-        <div className="space-y-4 py-2">
-          {/* The full request — so approvers never decide blind. */}
-          {decision ? (
-            <div className="space-y-1.5 rounded-xl bg-foreground/[0.04] p-3 text-sm ring-1 ring-border/50">
-              <p>
-                <span className="text-muted-foreground">Dates: </span>
-                {formatRange(decision.request.startYMD, decision.request.endYMD)}
-                {decision.request.halfDay ? ' (half day)' : ''}
-              </p>
-              <p>
-                <span className="text-muted-foreground">Balance: </span>
-                {decision.request.requesterRemaining ?? '—'} of {decision.request.requesterQuota ?? '—'} left
-              </p>
-              <p className="whitespace-pre-wrap break-words">
-                <span className="text-muted-foreground">Reason: </span>
-                {decision.request.reason || <span className="italic text-muted-foreground">No reason given</span>}
-              </p>
-            </div>
-          ) : null}
+        {isPending ? (
           <div className="space-y-2">
-            <Label htmlFor="dec-note">Note (optional)</Label>
+            <Label htmlFor="dec-note">Note for the employee (optional)</Label>
             <Textarea
               id="dec-note"
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              placeholder="Add a note for the employee…"
+              placeholder="e.g. Approved — enjoy! / Rejected because…"
               className="bg-background/50"
             />
           </div>
-        </div>
-      </AppDialog>
+        ) : null}
+      </LeaveDetailDialog>
     </div>
   );
 }

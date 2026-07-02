@@ -137,6 +137,60 @@ export async function applyLeave(user, { type, startYMD, endYMD, halfDay, halfDa
   return request.toJSON();
 }
 
+/**
+ * Edit a PENDING leave request (the applicant fixing a mistake). Only the owner
+ * may edit, and only while it's still pending — once decided, the balance and
+ * attendance are already applied, so it can't be edited (cancel + re-apply).
+ * Re-validates dates, working days and balance exactly like applyLeave.
+ */
+export async function updateLeave(user, id, { type, startYMD, endYMD, halfDay, halfDayPart, reason }) {
+  const request = await LeaveRequest.findById(id);
+  if (!request) throw httpError(404, 'NOT_FOUND', 'Leave request not found');
+  if (String(request.user) !== String(user._id)) {
+    throw httpError(403, 'FORBIDDEN', 'You can only edit your own leave request');
+  }
+  if (request.status !== 'PENDING') {
+    throw httpError(409, 'NOT_EDITABLE', `This request is already ${request.status.toLowerCase()} and can no longer be edited`);
+  }
+  if (endYMD < startYMD) throw httpError(400, 'BAD_RANGE', 'End date is before the start date');
+  if (halfDay && startYMD !== endYMD) throw httpError(400, 'BAD_HALF_DAY', 'Half-day applies to a single date only');
+
+  const settings = await Setting.getSingleton();
+  const holidays = await holidayYMDSet(startYMD, endYMD);
+  const { count: workingDays } = computeWorkingDays({
+    fromYMD: startYMD,
+    toYMD: endYMD,
+    halfDay,
+    weekendDays: settings.weekendDays,
+    holidays,
+  });
+  if (workingDays <= 0) throw httpError(400, 'NO_WORKING_DAYS', 'The selected dates contain no working days');
+
+  // Pending requests haven't consumed balance yet, so the full remaining applies.
+  if (isPaid(type)) {
+    const bal = await getOrCreateBalance(user._id, leaveYearOf(startYMD));
+    if (workingDays > bal.remaining) {
+      throw httpError(
+        400,
+        'INSUFFICIENT_BALANCE',
+        `Not enough leave balance (remaining ${bal.remaining}, requested ${workingDays}). Apply as Unpaid (LOP) instead.`,
+      );
+    }
+  }
+
+  request.type = type;
+  request.startDate = companyDayFromYMD(startYMD);
+  request.endDate = companyDayFromYMD(endYMD);
+  request.startYMD = startYMD;
+  request.endYMD = endYMD;
+  request.halfDay = !!halfDay;
+  request.halfDayPart = halfDay ? halfDayPart || 'FIRST' : null;
+  request.workingDays = workingDays;
+  request.reason = reason || '';
+  await request.save();
+  return request.toJSON();
+}
+
 async function markAttendanceOnLeave(userId, fromYMD, toYMD, halfDay, weekendDays, holidays, session) {
   const { workingDates } = computeWorkingDays({ fromYMD, toYMD, halfDay, weekendDays, holidays });
   for (const ymd of workingDates) {

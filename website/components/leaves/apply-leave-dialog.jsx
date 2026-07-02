@@ -21,14 +21,33 @@ import {
 } from '@/components/ui/select';
 import { LEAVE_TYPES, isPaidType, computeWorkingDaysClient } from '@/lib/leave';
 
-export function ApplyLeaveDialog() {
+/**
+ * Apply for leave, or (when `leave` is passed) edit a still-PENDING request.
+ * Controlled via `open`/`onOpenChange` in edit mode; renders its own trigger
+ * button otherwise.
+ */
+export function ApplyLeaveDialog({ leave, open: openProp, onOpenChange }) {
+  const isEdit = !!leave;
   const qc = useQueryClient();
-  const [open, setOpen] = React.useState(false);
+  const [openInternal, setOpenInternal] = React.useState(false);
+  const open = openProp !== undefined ? openProp : openInternal;
+  const setOpen = onOpenChange || setOpenInternal;
+
   const [type, setType] = React.useState('CASUAL');
   const [start, setStart] = React.useState('');
   const [end, setEnd] = React.useState('');
   const [halfDay, setHalfDay] = React.useState(false);
   const [reason, setReason] = React.useState('');
+
+  // Pre-fill when opening (fresh for a new request, existing values for an edit).
+  React.useEffect(() => {
+    if (!open) return;
+    setType(leave?.type || 'CASUAL');
+    setStart(leave?.startYMD || '');
+    setEnd(leave?.endYMD || '');
+    setHalfDay(!!leave?.halfDay);
+    setReason(leave?.reason || '');
+  }, [open, leave]);
 
   const sameDay = !!start && start === end;
 
@@ -43,30 +62,17 @@ export function ApplyLeaveDialog() {
   );
   const days = computeWorkingDaysClient(start, end, halfDay && sameDay, [0], holidaySet);
 
-  const reset = () => {
-    setType('CASUAL');
-    setStart('');
-    setEnd('');
-    setHalfDay(false);
-    setReason('');
-  };
-
   const mut = useMutation({
-    mutationFn: () =>
-      api.post('/leaves', {
-        type,
-        startYMD: start,
-        endYMD: end,
-        halfDay: halfDay && sameDay,
-        reason,
-      }),
+    mutationFn: () => {
+      const body = { type, startYMD: start, endYMD: end, halfDay: halfDay && sameDay, reason };
+      return isEdit ? api.patch(`/leaves/${leave.id}`, body) : api.post('/leaves', body);
+    },
     onSuccess: () => {
-      toast.success('Leave request submitted');
+      toast.success(isEdit ? 'Leave request updated' : 'Leave request submitted');
       qc.invalidateQueries({ queryKey: ['leaves'] });
-      reset();
       setOpen(false);
     },
-    onError: (e) => toast.error(e?.message || 'Could not submit request'),
+    onError: (e) => toast.error(e?.message || 'Could not save the request'),
   });
 
   const submit = () => {
@@ -81,19 +87,25 @@ export function ApplyLeaveDialog() {
       open={open}
       onOpenChange={setOpen}
       trigger={
-        <Button>
-          <Plus /> Apply for leave
-        </Button>
+        isEdit ? undefined : (
+          <Button>
+            <Plus /> Apply for leave
+          </Button>
+        )
       }
-      title="Apply for leave"
-      description="Pick your dates and type — we'll compute the working days deducted."
+      title={isEdit ? 'Edit leave request' : 'Apply for leave'}
+      description={
+        isEdit
+          ? 'Update the details of your pending request.'
+          : "Pick your dates and type — we'll compute the working days deducted."
+      }
       footer={
         <>
           <Button variant="outline" onClick={() => setOpen(false)}>
             Cancel
           </Button>
           <Button onClick={submit} disabled={mut.isPending || days <= 0}>
-            {mut.isPending ? 'Submitting…' : `Submit · ${days} day${days === 1 ? '' : 's'}`}
+            {mut.isPending ? 'Saving…' : `${isEdit ? 'Save' : 'Submit'} · ${days} day${days === 1 ? '' : 's'}`}
           </Button>
         </>
       }

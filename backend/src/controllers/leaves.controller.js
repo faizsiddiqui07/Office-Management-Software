@@ -36,6 +36,23 @@ export async function apply(req, res, next) {
   }
 }
 
+export async function update(req, res, next) {
+  try {
+    const body = applyLeaveSchema.parse(req.body);
+    const request = await svc.updateLeave(req.user, req.params.id, body);
+    await audit({
+      actor: req.user._id,
+      action: 'leave.edit',
+      entityType: 'LeaveRequest',
+      entityId: req.params.id,
+      meta: { type: request.type, days: request.workingDays },
+    });
+    res.json(ok({ request }));
+  } catch (err) {
+    handleErr(res, err, next);
+  }
+}
+
 export async function list(req, res, next) {
   try {
     const q = listLeavesQuerySchema.parse(req.query);
