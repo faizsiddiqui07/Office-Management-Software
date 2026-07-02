@@ -133,7 +133,7 @@ function HistoryList() {
             </div>
             <p className="text-sm">
               {fmtDate(r.dateYMD)} —{' '}
-              {[r.requestedCheckIn && `In ${to12(r.requestedCheckIn)}`, r.requestedCheckOut && `Out ${to12(r.requestedCheckOut)}`]
+              {[r.requestedCheckIn && `In ${r.requestedCheckIn}`, r.requestedCheckOut && `Out ${r.requestedCheckOut}`]
                 .filter(Boolean)
                 .join(' · ')}
             </p>

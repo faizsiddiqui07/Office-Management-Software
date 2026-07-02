@@ -113,7 +113,8 @@ export function VisitorTable({ canManageCategories = false }) {
 
   const columns = React.useMemo(
     () => [
-      { id: 'date', header: 'Date', accessorFn: (r) => r.dateYMD, cell: ({ row }) => formatYMD(row.original.dateYMD) },
+      // Sort key includes the check-in time so same-day entries order sensibly.
+      { id: 'date', header: 'Date', accessorFn: (r) => `${r.dateYMD} ${r.checkInTime || ''}`, cell: ({ row }) => formatYMD(row.original.dateYMD) },
       {
         id: 'time',
         header: 'In / Out',
@@ -131,7 +132,8 @@ export function VisitorTable({ canManageCategories = false }) {
       {
         id: 'name',
         header: 'Visitor',
-        accessorFn: (r) => `${r.name} ${r.phone} ${r.company}`,
+        accessorFn: (r) => r.name, // header sort orders by the visible name
+
         cell: ({ row }) => (
           <div className="min-w-0">
             <p className="truncate font-medium">{row.original.name}</p>
@@ -222,14 +224,21 @@ export function VisitorTable({ canManageCategories = false }) {
       {isLoading ? (
         <TableSkeleton rows={6} cols={7} />
       ) : (
-        <DataTable
-          columns={columns}
-          data={visitors}
-          searchable={false}
-          pageSize={15}
-          emptyMessage="No visitor entries yet — log the first one."
-          onRowClick={setSelected}
-        />
+        <>
+          <DataTable
+            columns={columns}
+            data={visitors}
+            searchable={false}
+            pageSize={15}
+            emptyMessage="No visitor entries yet — log the first one."
+            onRowClick={setSelected}
+          />
+          {(data?.total ?? 0) > visitors.length ? (
+            <p className="px-1 text-xs text-muted-foreground">
+              Showing {visitors.length} of {data.total} — narrow the dates or search to see the rest.
+            </p>
+          ) : null}
+        </>
       )}
 
       {/* Row-click detail — every field, including the purpose/notes. */}

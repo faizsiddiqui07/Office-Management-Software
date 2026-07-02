@@ -16,7 +16,7 @@ function AttendanceSection({ data }) {
     {
       id: 'name',
       header: 'Employee',
-      accessorFn: (r) => `${r.name} ${r.employeeId}`,
+      accessorFn: (r) => `${r.name} ${r.employeeId} ${prettyRole(r.role)}`,
       cell: ({ row }) => (
         <div>
           <p className="font-medium">{row.original.name}</p>
@@ -26,12 +26,12 @@ function AttendanceSection({ data }) {
         </div>
       ),
     },
-    { id: 'present', header: 'Present', cell: ({ row }) => <span className="tabular-nums">{row.original.present}</span> },
-    { id: 'late', header: 'Late', cell: ({ row }) => <span className="tabular-nums">{row.original.late}</span> },
-    { id: 'absent', header: 'Absent', cell: ({ row }) => <span className="tabular-nums">{row.original.absent}</span> },
-    { id: 'onLeave', header: 'On leave', cell: ({ row }) => <span className="tabular-nums">{row.original.onLeave}</span> },
-    { id: 'worked', header: 'Worked', cell: ({ row }) => <span className="tabular-nums">{row.original.workedHours}h</span> },
-    { id: 'ot', header: 'OT', cell: ({ row }) => <span className="tabular-nums">{formatDuration(row.original.overtimeMinutes)}</span> },
+    { id: 'present', header: 'Present', accessorFn: (r) => r.present, cell: ({ row }) => <span className="tabular-nums">{row.original.present}</span> },
+    { id: 'late', header: 'Late', accessorFn: (r) => r.late, cell: ({ row }) => <span className="tabular-nums">{row.original.late}</span> },
+    { id: 'absent', header: 'Absent', accessorFn: (r) => r.absent, cell: ({ row }) => <span className="tabular-nums">{row.original.absent}</span> },
+    { id: 'onLeave', header: 'On leave', accessorFn: (r) => r.onLeave, cell: ({ row }) => <span className="tabular-nums">{row.original.onLeave}</span> },
+    { id: 'worked', header: 'Worked', accessorFn: (r) => r.workedHours, cell: ({ row }) => <span className="tabular-nums">{row.original.workedHours}h</span> },
+    { id: 'ot', header: 'OT', accessorFn: (r) => r.overtimeMinutes, cell: ({ row }) => <span className="tabular-nums">{formatDuration(row.original.overtimeMinutes)}</span> },
   ];
   return (
     <section className="space-y-4">
@@ -50,15 +50,15 @@ function AttendanceSection({ data }) {
 function LeavesSection({ data }) {
   const takenCols = [
     { id: 'name', header: 'Employee', accessorFn: (r) => r.name, cell: ({ row }) => <span className="font-medium">{row.original.name}</span> },
-    { id: 'type', header: 'Type', cell: ({ row }) => row.original.type },
-    { id: 'dates', header: 'Dates', cell: ({ row }) => formatRange(row.original.startYMD, row.original.endYMD) },
-    { id: 'days', header: 'Days', cell: ({ row }) => <span className="tabular-nums">{row.original.days}</span> },
+    { id: 'type', header: 'Type', accessorFn: (r) => r.type, cell: ({ row }) => row.original.type },
+    { id: 'dates', header: 'Dates', accessorFn: (r) => r.startYMD, cell: ({ row }) => formatRange(row.original.startYMD, row.original.endYMD) },
+    { id: 'days', header: 'Days', accessorFn: (r) => r.days, cell: ({ row }) => <span className="tabular-nums">{row.original.days}</span> },
   ];
   const balCols = [
     { id: 'name', header: 'Employee', accessorFn: (r) => r.name, cell: ({ row }) => <span className="font-medium">{row.original.name}</span> },
-    { id: 'used', header: 'Used', cell: ({ row }) => <span className="tabular-nums">{row.original.used}</span> },
-    { id: 'remaining', header: 'Remaining', cell: ({ row }) => <span className="tabular-nums">{row.original.remaining}</span> },
-    { id: 'total', header: 'Quota', cell: ({ row }) => <span className="tabular-nums">{row.original.total}</span> },
+    { id: 'used', header: 'Used', accessorFn: (r) => r.used, cell: ({ row }) => <span className="tabular-nums">{row.original.used}</span> },
+    { id: 'remaining', header: 'Remaining', accessorFn: (r) => r.remaining, cell: ({ row }) => <span className="tabular-nums">{row.original.remaining}</span> },
+    { id: 'total', header: 'Quota', accessorFn: (r) => r.total, cell: ({ row }) => <span className="tabular-nums">{row.original.total}</span> },
   ];
   return (
     <section className="space-y-4">
@@ -86,7 +86,7 @@ function ExpensesSection({ data }) {
     {
       id: 'title',
       header: 'Title',
-      accessorFn: (r) => `${r.title} ${r.vendor}`,
+      accessorFn: (r) => `${r.title} ${r.vendor || ''} ${categoryLabel(r.category)}`,
       cell: ({ row }) => (
         <div>
           <p className="font-medium">{row.original.title}</p>
@@ -94,8 +94,8 @@ function ExpensesSection({ data }) {
         </div>
       ),
     },
-    { id: 'cat', header: 'Category', cell: ({ row }) => <StatusBadge tone="primary" dot={false}>{categoryLabel(row.original.category)}</StatusBadge> },
-    { id: 'amount', header: 'Amount', cell: ({ row }) => <span className="font-medium tabular-nums">{formatMoney(row.original.amount)}</span> },
+    { id: 'cat', header: 'Category', accessorFn: (r) => categoryLabel(r.category), cell: ({ row }) => <StatusBadge tone="primary" dot={false}>{categoryLabel(row.original.category)}</StatusBadge> },
+    { id: 'amount', header: 'Amount', accessorFn: (r) => r.amount, cell: ({ row }) => <span className="font-medium tabular-nums">{formatMoney(row.original.amount)}</span> },
   ];
   return (
     <section className="space-y-4">
@@ -124,10 +124,10 @@ function ExpensesSection({ data }) {
 
 function RosterSection({ data }) {
   const cols = [
-    { id: 'name', header: 'Name', accessorFn: (r) => `${r.name} ${r.employeeId}`, cell: ({ row }) => <span className="font-medium">{row.original.name}</span> },
-    { id: 'id', header: 'ID', cell: ({ row }) => <span className="text-sm tabular-nums text-muted-foreground">{row.original.employeeId}</span> },
-    { id: 'role', header: 'Role', cell: ({ row }) => <StatusBadge tone="primary" dot={false}>{prettyRole(row.original.role)}</StatusBadge> },
-    { id: 'dept', header: 'Department', cell: ({ row }) => <span className="text-sm text-muted-foreground">{row.original.department || '—'}</span> },
+    { id: 'name', header: 'Name', accessorFn: (r) => `${r.name} ${r.employeeId} ${prettyRole(r.role)} ${r.department || ''}`, cell: ({ row }) => <span className="font-medium">{row.original.name}</span> },
+    { id: 'id', header: 'ID', accessorFn: (r) => r.employeeId, cell: ({ row }) => <span className="text-sm tabular-nums text-muted-foreground">{row.original.employeeId}</span> },
+    { id: 'role', header: 'Role', accessorFn: (r) => prettyRole(r.role), cell: ({ row }) => <StatusBadge tone="primary" dot={false}>{prettyRole(row.original.role)}</StatusBadge> },
+    { id: 'dept', header: 'Department', accessorFn: (r) => r.department || '', cell: ({ row }) => <span className="text-sm text-muted-foreground">{row.original.department || '—'}</span> },
   ];
   return (
     <section className="space-y-4">
@@ -149,11 +149,11 @@ function RosterSection({ data }) {
 function DuesSection({ data }) {
   const d = data.dues;
   const cols = [
-    { id: 'name', header: 'Person', accessorFn: (r) => `${r.name} ${r.employeeId}`, cell: ({ row }) => <span className="font-medium">{row.original.name}</span> },
-    { id: 'id', header: 'ID', cell: ({ row }) => <span className="text-sm tabular-nums text-muted-foreground">{row.original.employeeId}</span> },
-    { id: 'role', header: 'Role', cell: ({ row }) => <StatusBadge tone="primary" dot={false}>{prettyRole(row.original.role)}</StatusBadge> },
-    { id: 'pending', header: 'Pending', cell: ({ row }) => <span className="font-medium tabular-nums text-destructive">{row.original.pending ? formatMoney(row.original.pending) : '—'}</span> },
-    { id: 'advance', header: 'Advance', cell: ({ row }) => <span className="tabular-nums text-muted-foreground">{row.original.advance ? formatMoney(row.original.advance) : '—'}</span> },
+    { id: 'name', header: 'Person', accessorFn: (r) => `${r.name} ${r.employeeId} ${prettyRole(r.role)}`, cell: ({ row }) => <span className="font-medium">{row.original.name}</span> },
+    { id: 'id', header: 'ID', accessorFn: (r) => r.employeeId, cell: ({ row }) => <span className="text-sm tabular-nums text-muted-foreground">{row.original.employeeId}</span> },
+    { id: 'role', header: 'Role', accessorFn: (r) => prettyRole(r.role), cell: ({ row }) => <StatusBadge tone="primary" dot={false}>{prettyRole(row.original.role)}</StatusBadge> },
+    { id: 'pending', header: 'Pending', accessorFn: (r) => r.pending ?? 0, cell: ({ row }) => <span className="font-medium tabular-nums text-destructive">{row.original.pending ? formatMoney(row.original.pending) : '—'}</span> },
+    { id: 'advance', header: 'Advance', accessorFn: (r) => r.advance ?? 0, cell: ({ row }) => <span className="tabular-nums text-muted-foreground">{row.original.advance ? formatMoney(row.original.advance) : '—'}</span> },
   ];
   return (
     <section className="space-y-4">

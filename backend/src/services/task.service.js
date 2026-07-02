@@ -130,15 +130,16 @@ export async function deleteTask(actor, id) {
   return { success: true };
 }
 
-function periodMatch(period) {
+function periodMatch(period, field = 'createdAt') {
   const days = period === 'week' ? 7 : period === 'month' ? 30 : period === 'year' ? 365 : 0;
-  return days ? { createdAt: { $gte: new Date(Date.now() - days * 86400000) } } : {};
+  return days ? { [field]: { $gte: new Date(Date.now() - days * 86400000) } } : {};
 }
 
 export async function listTasks(actor, { scope = 'mine', status, search, period, page = 1, limit = 200 }) {
   const filter = scope === 'assigned' ? { assignedBy: actor._id } : { owner: actor._id };
   if (status && ['PENDING', 'DONE'].includes(status)) filter.status = status;
-  Object.assign(filter, periodMatch(period));
+  // "Last 7 days" on completed work should mean completed-in-window, not created.
+  Object.assign(filter, periodMatch(period, status === 'DONE' ? 'completedAt' : 'createdAt'));
   if (search) {
     const rx = new RegExp(escapeRegex(search), 'i');
     filter.$or = [{ title: rx }, { notes: rx }];

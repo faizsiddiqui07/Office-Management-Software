@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { ok } from '../lib/apiResponse.js';
 import { AuditLog } from '../models/AuditLog.js';
+import { companyDayFromYMD } from '../lib/time.js';
 
 const querySchema = z.object({
   action: z.string().optional(),
@@ -18,9 +19,11 @@ export async function listAudit(req, res, next) {
     if (q.action) filter.action = new RegExp(`^${q.action.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i');
     if (q.entityType) filter.entityType = q.entityType;
     if (q.from || q.to) {
+      // Company-timezone day boundaries (server-local Date parsing would shift
+      // the window on UTC Lambda); `to` is inclusive of the whole day.
       filter.createdAt = {};
-      if (q.from) filter.createdAt.$gte = new Date(`${q.from}T00:00:00`);
-      if (q.to) filter.createdAt.$lte = new Date(`${q.to}T23:59:59`);
+      if (q.from) filter.createdAt.$gte = companyDayFromYMD(q.from);
+      if (q.to) filter.createdAt.$lt = new Date(companyDayFromYMD(q.to).getTime() + 24 * 60 * 60 * 1000);
     }
 
     const page = q.page || 1;

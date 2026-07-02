@@ -27,23 +27,31 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 export function ExpenseTable({ canManage = true }) {
   const qc = useQueryClient();
   const [search, setSearch] = React.useState('');
+  const [debouncedSearch, setDebouncedSearch] = React.useState('');
   const [category, setCategory] = React.useState('ALL');
   const [payment, setPayment] = React.useState('ALL');
   const [editing, setEditing] = React.useState(null);
   const [deleting, setDeleting] = React.useState(null);
 
+  // Debounce so the table doesn't refetch (and flash) on every keystroke.
+  React.useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
   const { data: meta } = useQuery({ queryKey: ['expenses', 'meta'], queryFn: () => api.get('/expenses/meta') });
   const categories = meta?.categories ?? [];
 
   const { data, isLoading } = useQuery({
-    queryKey: ['expenses', 'list', search, category, payment],
+    queryKey: ['expenses', 'list', debouncedSearch, category, payment],
     queryFn: () => {
       const params = new URLSearchParams({ limit: '100' });
-      if (search) params.set('search', search);
+      if (debouncedSearch) params.set('search', debouncedSearch);
       if (category !== 'ALL') params.set('category', category);
       if (payment !== 'ALL') params.set('paymentMethod', payment);
       return api.get(`/expenses?${params.toString()}`);
     },
+    placeholderData: (prev) => prev, // keep rows visible while refetching
   });
   const expenses = data?.expenses ?? [];
 
@@ -63,7 +71,7 @@ export function ExpenseTable({ canManage = true }) {
       {
         id: 'title',
         header: 'Title',
-        accessorFn: (r) => `${r.title} ${r.vendor}`,
+        accessorFn: (r) => `${r.title} ${r.vendor || ''}`,
         cell: ({ row }) => (
           <div>
             <p className="font-medium">{row.original.title}</p>
@@ -74,6 +82,7 @@ export function ExpenseTable({ canManage = true }) {
       {
         id: 'category',
         header: 'Category',
+        accessorFn: (r) => categoryLabel(r.category),
         cell: ({ row }) => (
           <StatusBadge tone="primary" dot={false}>
             {categoryLabel(row.original.category)}
@@ -83,9 +92,10 @@ export function ExpenseTable({ canManage = true }) {
       {
         id: 'payment',
         header: 'Method',
+        accessorFn: (r) => PAYMENT_LABELS[r.paymentMethod] ?? r.paymentMethod,
         cell: ({ row }) => <span className="text-sm text-muted-foreground">{PAYMENT_LABELS[row.original.paymentMethod] ?? row.original.paymentMethod}</span>,
       },
-      { id: 'amount', header: 'Amount', cell: ({ row }) => <span className="font-medium tabular-nums">{formatMoney(row.original.amount)}</span> },
+      { id: 'amount', header: 'Amount', accessorFn: (r) => r.amount, cell: ({ row }) => <span className="font-medium tabular-nums">{formatMoney(row.original.amount)}</span> },
       {
         id: 'actions',
         header: '',
@@ -162,7 +172,14 @@ export function ExpenseTable({ canManage = true }) {
       {isLoading ? (
         <TableSkeleton rows={6} cols={6} />
       ) : (
-        <DataTable columns={columns} data={expenses} searchable={false} pageSize={12} emptyMessage="No expenses found." />
+        <>
+          <DataTable columns={columns} data={expenses} searchable={false} pageSize={12} emptyMessage="No expenses found." />
+          {(data?.total ?? 0) > expenses.length ? (
+            <p className="px-1 text-xs text-muted-foreground">
+              Showing {expenses.length} of {data.total} — narrow the search or filters to see the rest.
+            </p>
+          ) : null}
+        </>
       )}
 
       {editing ? (

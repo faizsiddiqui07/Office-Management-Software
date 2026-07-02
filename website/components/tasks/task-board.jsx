@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Check, CheckCircle2, ClipboardList, Download, FolderOpen, ListTodo, Pencil, Search, Trash2, Undo2, UserRound, Users } from 'lucide-react';
@@ -355,7 +356,12 @@ export function TaskBoard() {
   const ta = user?.taskAssign || {};
   const canAssign = ta.mode === 'ALL' || (ta.mode === 'SELECTED' && (ta.users || []).length > 0);
 
-  const [tab, setTab] = React.useState('mine');
+  // Honour deep links like /todo?tab=assigned (used by task notifications).
+  const params = useSearchParams();
+  const requestedTab = params.get('tab');
+  const [tab, setTab] = React.useState(() =>
+    ['mine', 'history', 'assigned'].includes(requestedTab) ? requestedTab : 'mine',
+  );
   const [search, setSearch] = React.useState('');
   const [debouncedSearch, setDebouncedSearch] = React.useState('');
 
@@ -547,6 +553,11 @@ export function TaskBoard() {
                   onOpen={(x) => setViewing({ task: x, canToggle: true, allowDelete: !x.assignedBy, assignerView: false })}
                 />
               ))}
+              {(data?.total ?? 0) > tasks.length ? (
+                <p className="px-1 text-xs text-muted-foreground">
+                  Showing {tasks.length} of {data.total} — narrow the search or period to see the rest.
+                </p>
+              ) : null}
             </div>
           )}
         </TabsContent>

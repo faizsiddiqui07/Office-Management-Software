@@ -45,15 +45,21 @@ export function UsersDirectory() {
   const canCreate = !!user && can(user, 'createUsers');
 
   const { data, isLoading } = useQuery({ queryKey: ['users'], queryFn: () => api.get('/users') });
-  const users = data?.users ?? [];
+  const users = React.useMemo(() => data?.users ?? [], [data]);
   const { data: roleOptions = [] } = useRoleOptions();
 
   const [roleFilter, setRoleFilter] = React.useState('ALL');
   const [statusFilter, setStatusFilter] = React.useState('ALL');
-  const filtered = users.filter(
-    (u) =>
-      (roleFilter === 'ALL' || u.role === roleFilter) &&
-      (statusFilter === 'ALL' || (statusFilter === 'ACTIVE' ? u.isActive : !u.isActive)),
+  // Memoised so the table doesn't see a "new" array every render (which would
+  // reset its pagination page on unrelated re-renders).
+  const filtered = React.useMemo(
+    () =>
+      users.filter(
+        (u) =>
+          (roleFilter === 'ALL' || u.role === roleFilter) &&
+          (statusFilter === 'ALL' || (statusFilter === 'ACTIVE' ? u.isActive : !u.isActive)),
+      ),
+    [users, roleFilter, statusFilter],
   );
 
   const [editing, setEditing] = React.useState(null);
@@ -94,25 +100,28 @@ export function UsersDirectory() {
           </Link>
         ),
       },
-      { id: 'employeeId', header: 'ID', cell: ({ row }) => <span className="text-sm tabular-nums text-muted-foreground">{row.original.employeeId}</span> },
+      { id: 'employeeId', header: 'ID', accessorFn: (r) => r.employeeId, cell: ({ row }) => <span className="text-sm tabular-nums text-muted-foreground">{row.original.employeeId}</span> },
       {
         id: 'role',
         header: 'Role',
+        // Pretty label so search + sort match the displayed text.
+        accessorFn: (r) => prettyRole(r.role),
         cell: ({ row }) => (
           <StatusBadge tone="primary" dot={false}>
             {prettyRole(row.original.role)}
           </StatusBadge>
         ),
       },
-      { id: 'department', header: 'Department', cell: ({ row }) => <span className="text-sm text-muted-foreground">{row.original.department || '—'}</span> },
+      { id: 'department', header: 'Department', accessorFn: (r) => r.department || '', cell: ({ row }) => <span className="text-sm text-muted-foreground">{row.original.department || '—'}</span> },
       {
         id: 'status',
         header: 'Status',
+        accessorFn: (r) => (r.isActive ? 'Active' : 'Inactive'),
         cell: ({ row }) => (
           <StatusBadge tone={row.original.isActive ? 'success' : 'neutral'}>{row.original.isActive ? 'Active' : 'Inactive'}</StatusBadge>
         ),
       },
-      { id: 'joined', header: 'Joined', cell: ({ row }) => <span className="text-sm text-muted-foreground">{formatJoined(row.original.dateOfJoining)}</span> },
+      { id: 'joined', header: 'Joined', accessorFn: (r) => r.dateOfJoining || '', cell: ({ row }) => <span className="text-sm text-muted-foreground">{formatJoined(row.original.dateOfJoining)}</span> },
       {
         id: 'actions',
         header: '',

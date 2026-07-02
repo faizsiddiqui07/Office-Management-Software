@@ -23,7 +23,8 @@ const columns = [
   {
     id: 'employee',
     header: 'Employee',
-    accessorFn: (r) => `${r.user.name} ${r.user.employeeId}`,
+    // Search matches everything the cell displays (name, ID, department).
+    accessorFn: (r) => `${r.user.name} ${r.user.employeeId} ${r.user.department || ''}`,
     cell: ({ row }) => (
       <div className="min-w-0">
         <p className="truncate font-medium">{row.original.user.name}</p>
@@ -36,15 +37,17 @@ const columns = [
   {
     id: 'role',
     header: 'Role',
-    accessorFn: (r) => r.user.role,
+    // Pretty label so searching/sorting matches what's displayed ("HR Manager", not HR_MANAGER).
+    accessorFn: (r) => prettyRole(r.user.role),
     cell: ({ row }) => <span className="text-sm text-muted-foreground">{prettyRole(row.original.user.role)}</span>,
   },
-  { id: 'in', header: 'In', cell: ({ row }) => formatTime(row.original.attendance?.checkInAt) },
-  { id: 'out', header: 'Out', cell: ({ row }) => formatTime(row.original.attendance?.checkOutAt) },
-  { id: 'worked', header: 'Worked', cell: ({ row }) => formatDuration(row.original.attendance?.workedMinutes) },
+  { id: 'in', header: 'In', accessorFn: (r) => r.attendance?.checkInAt ?? '', cell: ({ row }) => formatTime(row.original.attendance?.checkInAt) },
+  { id: 'out', header: 'Out', accessorFn: (r) => r.attendance?.checkOutAt ?? '', cell: ({ row }) => formatTime(row.original.attendance?.checkOutAt) },
+  { id: 'worked', header: 'Worked', accessorFn: (r) => r.attendance?.workedMinutes ?? -1, cell: ({ row }) => formatDuration(row.original.attendance?.workedMinutes) },
   {
     id: 'overtime',
     header: 'Overtime',
+    accessorFn: (r) => r.attendance?.overtimeMinutes ?? -1,
     cell: ({ row }) => {
       const ot = row.original.attendance?.overtimeMinutes;
       return ot ? (
@@ -57,6 +60,7 @@ const columns = [
   {
     id: 'status',
     header: 'Status',
+    accessorFn: (r) => attendanceStatusLabel(effectiveStatus(r.attendance, r.status)),
     cell: ({ row }) => {
       const s = effectiveStatus(row.original.attendance, row.original.status);
       return <StatusBadge tone={STATUS_TONES[s] ?? 'neutral'}>{attendanceStatusLabel(s)}</StatusBadge>;
@@ -245,7 +249,7 @@ export function EveryoneTab() {
             type="date"
             value={date}
             max={todayYMD()}
-            onChange={(e) => setDate(e.target.value)}
+            onChange={(e) => setDate(e.target.value || todayYMD())}
             className="w-full bg-background/50 sm:w-44"
           />
           <div className="flex w-full gap-2 sm:w-auto">

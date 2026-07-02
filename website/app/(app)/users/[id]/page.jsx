@@ -107,7 +107,13 @@ export default function UserDossierPage() {
   const activity = data?.activity ?? [];
 
   const attColumns = [
-    { id: 'date', header: 'Date', accessorFn: (r) => r.dateYMD, cell: ({ row }) => <span className="whitespace-nowrap text-sm">{fmtDate(row.original.dateYMD)}</span> },
+    // Search matches both typed forms ("2026-07-01" and "1 Jul") plus the status label.
+    {
+      id: 'date',
+      header: 'Date',
+      accessorFn: (r) => `${r.dateYMD} ${fmtDate(r.dateYMD)} ${r.excused && r.status === 'LATE' ? 'On-duty' : attendanceStatusLabel(r.status)}`,
+      cell: ({ row }) => <span className="whitespace-nowrap text-sm">{fmtDate(row.original.dateYMD)}</span>,
+    },
     { id: 'in', header: 'In', cell: ({ row }) => formatTime(row.original.checkInAt) },
     { id: 'out', header: 'Out', cell: ({ row }) => formatTime(row.original.checkOutAt) },
     { id: 'worked', header: 'Worked', cell: ({ row }) => formatDuration(row.original.workedMinutes) },
@@ -181,7 +187,9 @@ export default function UserDossierPage() {
         </div>
       </GlassPanel>
 
-      {isError ? (
+      {from && to && to < from ? (
+        <EmptyState icon={CalendarClock} title="Invalid date range" description="The end date is before the start date — fix the From/To dates above." />
+      ) : isError ? (
         <EmptyState icon={UserCircle} title="Couldn’t load this user" description="Please try again in a moment." />
       ) : isLoading || !data ? (
         <LoadingState label="Loading details…" />

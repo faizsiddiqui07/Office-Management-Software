@@ -111,9 +111,12 @@ export async function getUserDossier(userId, { from, to }) {
   };
 
   // ---------------- Leaves ----------------
+  // Overlap semantics: a leave that merely TOUCHES the window counts (e.g. one
+  // starting before `from` but ending inside it) — not just leaves that start inside.
   const leaveReqs = await LeaveRequest.find({
     user: user._id,
-    startYMD: { $gte: from, $lte: to },
+    startYMD: { $lte: to },
+    endYMD: { $gte: from },
   }).sort({ startYMD: -1 });
 
   const approvedDays = leaveReqs

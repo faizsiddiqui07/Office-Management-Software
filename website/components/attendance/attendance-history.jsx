@@ -33,8 +33,10 @@ const columns = [
     ),
   },
   {
-    accessorKey: 'status',
+    id: 'status',
     header: 'Status',
+    // Sort/search by the label actually shown (On-duty etc.), not the raw enum.
+    accessorFn: (r) => attendanceStatusLabel(effectiveStatus(r)),
     cell: ({ row }) => {
       const s = effectiveStatus(row.original);
       return (

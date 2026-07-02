@@ -17,7 +17,11 @@ function escapeRegex(s) {
 /* ── Categories (leadership-managed) ─────────────────────── */
 export async function listCategories() {
   const s = await Setting.getSingleton();
-  return s.visitorCategories?.length ? s.visitorCategories : ['Visitors', 'Finance'];
+  const configured = s.visitorCategories?.length ? s.visitorCategories : ['Visitors', 'Finance'];
+  // Union with categories still present on old entries, so a deleted label's
+  // records stay reachable through the filter.
+  const used = await Visitor.distinct('category');
+  return [...new Set([...configured, ...used.filter(Boolean)])];
 }
 
 export async function addCategory(label) {
