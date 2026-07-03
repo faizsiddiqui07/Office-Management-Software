@@ -212,6 +212,7 @@ export function EveryoneTab() {
       toast.success(editMode === 'leave' ? 'Marked on leave' : editMode === 'absent' ? 'Marked absent' : 'Attendance updated');
       qc.invalidateQueries({ queryKey: ['attendance'] });
       qc.invalidateQueries({ queryKey: ['leaves'] });
+      setEditing(false); // reset BEFORE closing so the footer doesn't deref a null row
       setSelected(null);
     },
     onError: (e) => toast.error(e?.message || 'Could not update'),
@@ -343,7 +344,7 @@ export function EveryoneTab() {
                 <Button variant="outline" onClick={() => setEditing(false)} disabled={saveEditMut.isPending}>
                   Cancel
                 </Button>
-                {sel.status !== 'ON_LEAVE' ? (
+                {sel?.status !== 'ON_LEAVE' ? (
                   <Button onClick={() => saveEditMut.mutate()} disabled={saveEditMut.isPending}>
                     {saveEditMut.isPending ? 'Saving…' : 'Save'}
                   </Button>
