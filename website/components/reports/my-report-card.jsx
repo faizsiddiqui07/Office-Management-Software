@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Download, FileText } from 'lucide-react';
-import { api } from '@/lib/api';
+import { api, downloadFile } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { GlassPanel } from '@/components/glass/glass-panel';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import { useAuth } from '@/lib/auth';
 import { can } from '@/lib/permissions';
 import { PeriodPicker } from './period-picker';
+import { OngoingNotice } from './report-preview';
 import { SELF_REPORT_SECTIONS } from '@/lib/report';
 import { todayYMD, formatMoney } from '@/lib/expense';
 
@@ -51,17 +52,7 @@ export function MyReportCard() {
     setDownloading(true);
     try {
       const url = `${API_BASE}/api/reports/me?type=${type}&date=${date}&sections=${sections.join(',')}`;
-      const res = await fetch(url, { credentials: 'include' });
-      if (!res.ok) throw new Error('Could not generate the report');
-      const blob = await res.blob();
-      const objUrl = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = objUrl;
-      a.download = `my-${type}-report-${date}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(objUrl);
+      await downloadFile(url, `my-${type}-report-${date}.pdf`);
       toast.success('Report downloaded');
     } catch (e) {
       toast.error(e?.message || 'Could not download');
@@ -122,6 +113,7 @@ export function MyReportCard() {
 
       {data ? (
         <>
+          <OngoingNotice data={data} workingDays={data.attendance?.totals?.workingDays} />
           <p className="text-sm text-muted-foreground">
             Period: <span className="font-medium text-foreground">{data.period.label}</span>
           </p>

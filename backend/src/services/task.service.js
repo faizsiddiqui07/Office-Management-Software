@@ -107,7 +107,13 @@ export async function updateTask(actor, id, data) {
   if (!task) throw httpError(404, 'NOT_FOUND', 'Task not found');
   const isOwner = String(task.owner) === String(actor._id);
   const isAssigner = task.assignedBy && String(task.assignedBy) === String(actor._id);
-  if (!isOwner && !isAssigner) throw httpError(403, 'FORBIDDEN', 'You cannot edit this task');
+  // A delegated task can only be edited by the person who assigned it — the
+  // assignee completes it (or asks), but can't change what was asked of them.
+  if (task.assignedBy) {
+    if (!isAssigner) throw httpError(403, 'ASSIGNED_TASK', 'This task was assigned to you — only the person who assigned it can edit it');
+  } else if (!isOwner) {
+    throw httpError(403, 'FORBIDDEN', 'You cannot edit this task');
+  }
 
   for (const f of ['title', 'notes', 'dueYMD']) if (data[f] !== undefined) task[f] = data[f];
   await task.save();

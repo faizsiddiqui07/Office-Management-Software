@@ -131,14 +131,17 @@ function TaskRow({ task, canToggle, onToggle, onEdit, onDelete, onOpen }) {
         </div>
       </div>
       <div className="flex shrink-0 items-center">
-        <Button variant="ghost" size="icon" className="size-10 sm:size-8" onClick={(e) => { e.stopPropagation(); onEdit(task); }} aria-label="Edit">
-          <Pencil className="size-4" />
-        </Button>
-        {/* Delegated tasks can't be deleted by the assignee — only by the assigner. */}
+        {/* A delegated task belongs to the assigner: the assignee can only complete
+            it — not edit or delete. Both actions show only on personal tasks. */}
         {task.assignedBy ? null : (
-          <Button variant="ghost" size="icon" className="size-10 text-destructive sm:size-8" onClick={(e) => { e.stopPropagation(); onDelete(task); }} aria-label="Delete">
-            <Trash2 className="size-4" />
-          </Button>
+          <>
+            <Button variant="ghost" size="icon" className="size-10 sm:size-8" onClick={(e) => { e.stopPropagation(); onEdit(task); }} aria-label="Edit">
+              <Pencil className="size-4" />
+            </Button>
+            <Button variant="ghost" size="icon" className="size-10 text-destructive sm:size-8" onClick={(e) => { e.stopPropagation(); onDelete(task); }} aria-label="Delete">
+              <Trash2 className="size-4" />
+            </Button>
+          </>
         )}
       </div>
     </div>
@@ -146,7 +149,7 @@ function TaskRow({ task, canToggle, onToggle, onEdit, onDelete, onOpen }) {
 }
 
 /** A date-grouped list of a person's tasks (inside the folder dialog). */
-function DatedTaskList({ tasks, dateKey, ascending = false, onEdit, onDelete, onOpen, onToggle, canToggle = false, allowDelete = () => true }) {
+function DatedTaskList({ tasks, dateKey, ascending = false, onEdit, onDelete, onOpen, onToggle, canToggle = false, allowEdit = () => true, allowDelete = () => true }) {
   const groups = React.useMemo(() => {
     const map = new Map();
     for (const t of tasks) {
@@ -215,9 +218,11 @@ function DatedTaskList({ tasks, dateKey, ascending = false, onEdit, onDelete, on
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center">
-                  <Button variant="ghost" size="icon" className="size-10 sm:size-7" onClick={(e) => { e.stopPropagation(); onEdit(t); }} aria-label="Edit">
-                    <Pencil className="size-3.5" />
-                  </Button>
+                  {allowEdit(t) ? (
+                    <Button variant="ghost" size="icon" className="size-10 sm:size-7" onClick={(e) => { e.stopPropagation(); onEdit(t); }} aria-label="Edit">
+                      <Pencil className="size-3.5" />
+                    </Button>
+                  ) : null}
                   {allowDelete(t) ? (
                     <Button variant="ghost" size="icon" className="size-10 text-destructive sm:size-7" onClick={(e) => { e.stopPropagation(); onDelete(t); }} aria-label="Delete">
                       <Trash2 className="size-3.5" />
@@ -234,7 +239,7 @@ function DatedTaskList({ tasks, dateKey, ascending = false, onEdit, onDelete, on
 }
 
 /** A person "folder": name, progress, and (on click) their pending/completed tasks date-wise. */
-function PersonFolder({ folder, onEdit, onDelete, onOpen, onToggle, canToggle = false, allowDelete = () => true }) {
+function PersonFolder({ folder, onEdit, onDelete, onOpen, onToggle, canToggle = false, allowEdit = () => true, allowDelete = () => true }) {
   const [open, setOpen] = React.useState(false);
   const pct = folder.total ? Math.round((folder.done / folder.total) * 100) : 0;
   return (
@@ -275,13 +280,13 @@ function PersonFolder({ folder, onEdit, onDelete, onOpen, onToggle, canToggle = 
             <h3 className="flex items-center gap-2 text-sm font-semibold">
               <ListTodo className="size-4 text-warning" /> Pending ({folder.pending})
             </h3>
-            <DatedTaskList tasks={folder.pendingTasks} dateKey={(t) => t.dueYMD || t.createdAt} ascending onEdit={onEdit} onDelete={onDelete} onOpen={onOpen} onToggle={onToggle} canToggle={canToggle} allowDelete={allowDelete} />
+            <DatedTaskList tasks={folder.pendingTasks} dateKey={(t) => t.dueYMD || t.createdAt} ascending onEdit={onEdit} onDelete={onDelete} onOpen={onOpen} onToggle={onToggle} canToggle={canToggle} allowEdit={allowEdit} allowDelete={allowDelete} />
           </section>
           <section className="space-y-2">
             <h3 className="flex items-center gap-2 text-sm font-semibold">
               <CheckCircle2 className="size-4 text-success" /> Completed ({folder.done})
             </h3>
-            <DatedTaskList tasks={folder.doneTasks} dateKey={(t) => t.completedAt || t.createdAt} onEdit={onEdit} onDelete={onDelete} onOpen={onOpen} onToggle={onToggle} canToggle={canToggle} allowDelete={allowDelete} />
+            <DatedTaskList tasks={folder.doneTasks} dateKey={(t) => t.completedAt || t.createdAt} onEdit={onEdit} onDelete={onDelete} onOpen={onOpen} onToggle={onToggle} canToggle={canToggle} allowEdit={allowEdit} allowDelete={allowDelete} />
           </section>
         </div>
       </AppDialog>
@@ -311,9 +316,11 @@ function TaskDetailDialog({ view, onClose, onToggle, onEdit, onDelete }) {
         task ? (
           <div className="flex w-full flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-1">
-              <Button variant="outline" onClick={() => onEdit(task)}>
-                <Pencil className="size-4" /> Edit
-              </Button>
+              {view.allowEdit ? (
+                <Button variant="outline" onClick={() => onEdit(task)}>
+                  <Pencil className="size-4" /> Edit
+                </Button>
+              ) : null}
               {view.allowDelete ? (
                 <Button variant="ghost" className="text-destructive" onClick={() => onDelete(task)}>
                   <Trash2 className="size-4" /> Delete
@@ -614,7 +621,7 @@ export function TaskBoard() {
                     folder={f}
                     onEdit={(x) => setEditing(x)}
                     onDelete={(x) => setDeleting(x)}
-                    onOpen={(x) => setViewing({ task: x, canToggle: false, allowDelete: true, assignerView: true })}
+                    onOpen={(x) => setViewing({ task: x, canToggle: false, allowEdit: true, allowDelete: true, assignerView: true })}
                   />
                 ))}
               </div>
@@ -647,7 +654,7 @@ export function TaskBoard() {
                         onToggle={(x) => toggleMut.mutate(x)}
                         onEdit={(x) => setEditing(x)}
                         onDelete={(x) => setDeleting(x)}
-                        onOpen={(x) => setViewing({ task: x, canToggle: true, allowDelete: !x.assignedBy, assignerView: false })}
+                        onOpen={(x) => setViewing({ task: x, canToggle: true, allowEdit: !x.assignedBy, allowDelete: !x.assignedBy, assignerView: false })}
                       />
                     ))}
                   </div>
@@ -667,11 +674,12 @@ export function TaskBoard() {
                           key={f.id}
                           folder={f}
                           canToggle
+                          allowEdit={() => false}
                           allowDelete={() => false}
                           onToggle={(x) => toggleMut.mutate(x)}
                           onEdit={(x) => setEditing(x)}
                           onDelete={(x) => setDeleting(x)}
-                          onOpen={(x) => setViewing({ task: x, canToggle: true, allowDelete: false, assignerView: false })}
+                          onOpen={(x) => setViewing({ task: x, canToggle: true, allowEdit: false, allowDelete: false, assignerView: false })}
                         />
                       ))}
                     </div>
@@ -697,7 +705,7 @@ export function TaskBoard() {
                   onToggle={(x) => toggleMut.mutate(x)}
                   onEdit={(x) => setEditing(x)}
                   onDelete={(x) => setDeleting(x)}
-                  onOpen={(x) => setViewing({ task: x, canToggle: true, allowDelete: !x.assignedBy, assignerView: false })}
+                  onOpen={(x) => setViewing({ task: x, canToggle: true, allowEdit: !x.assignedBy, allowDelete: !x.assignedBy, assignerView: false })}
                 />
               ))}
               {(data?.total ?? 0) > tasks.length ? (

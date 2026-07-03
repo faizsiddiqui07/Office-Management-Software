@@ -215,6 +215,10 @@ export async function buildReport(type, dateYMD) {
     type,
     date: dateYMD,
     period,
+    // When the period hasn't finished yet, everything above only counts days up
+    // to `asOfYMD` (today) — upcoming days are NOT counted as absent.
+    ongoing: to > todayYMD,
+    asOfYMD: elapsedTo,
     generatedAt: new Date().toISOString(),
     company: { name: settings.companyName, currency: settings.currency, timezone: settings.timezone, brandColor: settings.brandColor, logoUrl: settings.logoUrl, logoLight: settings.logoLight, logoDark: settings.logoDark },
     workingDays,
@@ -352,6 +356,10 @@ export async function buildSelfReport({ user, type, dateYMD }) {
     type,
     date: dateYMD,
     period,
+    // Ongoing period: day-by-day marks future days as "Upcoming" (not absent);
+    // the totals above only cover days up to `asOfYMD` (today).
+    ongoing: to > todayYMD,
+    asOfYMD: to < todayYMD ? to : todayYMD,
     generatedAt: new Date().toISOString(),
     company: { name: settings.companyName, currency: settings.currency, timezone: settings.timezone, brandColor: settings.brandColor, logoUrl: settings.logoUrl, logoLight: settings.logoLight, logoDark: settings.logoDark },
     subject: { name: user.name, employeeId: user.employeeId, role: user.role, roleLabel: roleLabel(user.role), department: user.department || '' },

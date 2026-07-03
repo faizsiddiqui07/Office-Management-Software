@@ -15,7 +15,7 @@ import {
   Trash2,
   Users,
 } from 'lucide-react';
-import { api } from '@/lib/api';
+import { api, downloadFile } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { formatMoney } from '@/lib/expense';
 import { cn } from '@/lib/utils';
@@ -260,17 +260,7 @@ export function DuesAdmin() {
 
   const exportCsv = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/dues/export.csv`, { credentials: 'include' });
-      if (!res.ok) throw new Error('Export failed');
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'dues.csv';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      await downloadFile(`${API_BASE}/api/dues/export.csv`, 'dues.csv');
     } catch (e) {
       toast.error(e?.message || 'Could not export');
     }

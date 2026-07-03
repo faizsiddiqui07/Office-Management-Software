@@ -103,4 +103,37 @@ export const api = {
   delete: (path, options) => request(path, { ...options, method: 'DELETE' }),
 };
 
+/**
+ * Download an authenticated file (PDF/CSV) and save it to disk.
+ *
+ * Uses the SAME Bearer-token auth as the JSON client — never cookies. The API
+ * runs cross-domain behind `cors()` (reflects any origin, no credentials), so a
+ * `credentials: 'include'` request is rejected by the browser with a bare
+ * "Failed to fetch". Sending the Bearer token instead keeps CORS simple and works.
+ *
+ * @param {string} url  Absolute URL, or an "/api"-relative path (e.g. "/reports/me?…").
+ * @param {string} filename  Suggested download filename.
+ */
+export async function downloadFile(url, filename) {
+  const fullUrl = /^https?:\/\//i.test(url) ? url : `${BASE_URL}/api${url}`;
+  let res;
+  try {
+    res = await fetch(fullUrl, { headers: authToken ? { Authorization: `Bearer ${authToken}` } : {} });
+  } catch (err) {
+    throw new ApiError(0, 'NETWORK_ERROR', 'Could not reach the server. Is it running?', err);
+  }
+  if (!res.ok) {
+    throw new ApiError(res.status, 'HTTP_ERROR', 'Could not download the file');
+  }
+  const blob = await res.blob();
+  const objUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = objUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(objUrl);
+}
+
 export const getHealth = () => api.get('/health');

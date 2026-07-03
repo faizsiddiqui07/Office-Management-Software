@@ -179,6 +179,32 @@ function DuesSection({ data }) {
   );
 }
 
+/**
+ * Shown when the selected period hasn't finished yet (e.g. a yearly report taken
+ * mid-year). Makes clear the numbers only cover elapsed days, so nobody reads the
+ * uncounted future as "absent". Reused by the company preview and the self report.
+ */
+export function OngoingNotice({ data, workingDays }) {
+  if (!data?.ongoing) return null;
+  return (
+    <div className="flex items-start gap-2.5 rounded-xl bg-warning/10 p-3 text-sm ring-1 ring-warning/25">
+      <Clock className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+      <p className="text-muted-foreground">
+        <span className="font-medium text-foreground">{data.period.label}</span> is still in progress — figures cover{' '}
+        <span className="font-medium text-foreground">
+          {formatYMD(data.period.from)} – {formatYMD(data.asOfYMD)}
+        </span>
+        {workingDays != null ? (
+          <>
+            {' '}(<span className="font-medium text-foreground">{workingDays}</span> working days so far)
+          </>
+        ) : null}
+        . Upcoming days aren’t counted as absent.
+      </p>
+    </div>
+  );
+}
+
 export function ReportPreview({ data, sections }) {
   // Warm the role-label cache so the roster's per-role count chips (bare keys)
   // render edited names, and re-render once labels arrive.
@@ -186,6 +212,7 @@ export function ReportPreview({ data, sections }) {
   const has = (s) => sections.includes(s);
   return (
     <div className="space-y-10">
+      <OngoingNotice data={data} workingDays={data.workingDays} />
       {has('attendance') && data.attendance ? <AttendanceSection data={data} /> : null}
       {has('leaves') && data.leaves ? <LeavesSection data={data} /> : null}
       {has('expenses') && data.expenses ? <ExpensesSection data={data} /> : null}

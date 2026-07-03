@@ -156,11 +156,26 @@ function header(data, logo, accent, titleLabel) {
 
 function metaLine(data) {
   const generatedOn = new Date(data.generatedAt).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
+  const wd = data.workingDays ?? data.attendance?.totals?.workingDays;
+  const wdText = wd != null ? ` (${wd} working days so far)` : '';
   return E(
     View,
-    { style: styles.metaRow },
-    E(Text, { style: styles.meta }, `Period: ${data.period.from} to ${data.period.to}`),
-    E(Text, { style: styles.meta }, `Generated: ${generatedOn}`),
+    {},
+    E(
+      View,
+      { style: styles.metaRow },
+      E(Text, { style: styles.meta }, `Period: ${data.period.from} to ${data.period.to}`),
+      E(Text, { style: styles.meta }, `Generated: ${generatedOn}`),
+    ),
+    // Ongoing period: spell out that only elapsed days are counted, so the
+    // uncounted future isn't misread as everyone being absent.
+    data.ongoing
+      ? E(
+          Text,
+          { style: { fontSize: 8, color: '#b45309', marginTop: 4 } },
+          `Period in progress — figures cover ${data.period.from} to ${data.asOfYMD}${wdText}. Upcoming days are not counted.`,
+        )
+      : null,
   );
 }
 
