@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { Camera, CircleUser, KeyRound, Loader2, Monitor, Moon, Sun, Trash2, UserCog } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { prettyRole } from '@/lib/permissions';
+import { roleName } from '@/lib/permissions';
 import { downscaleImage } from '@/lib/image';
 import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/glass/page-header';
@@ -148,7 +148,7 @@ export default function ProfilePage() {
               <input ref={photoRef} type="file" accept="image/*" onChange={pickPhoto} className="hidden" />
               <div className="min-w-0 text-sm">
                 <p className="font-medium">{user.name}</p>
-                <p className="text-muted-foreground">{prettyRole(user.role)} · {user.employeeId}</p>
+                <p className="text-muted-foreground">{roleName(user)} · {user.employeeId}</p>
                 <div className="mt-1 flex flex-wrap gap-2">
                   <Button type="button" size="sm" variant="outline" onClick={() => photoRef.current?.click()} disabled={photoBusy}>
                     <Camera className="size-3.5" /> {form.avatarUrl ? 'Change photo' : 'Add photo'}

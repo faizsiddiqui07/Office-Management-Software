@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { roleLabel } from '../lib/roles.js';
 
 const userSchema = new mongoose.Schema(
   {
@@ -45,6 +46,9 @@ userSchema.set('toJSON', {
     ret.id = ret._id;
     delete ret._id;
     delete ret.passwordHash;
+    // The role's editable display name travels with every user, so the UI shows
+    // the current label (e.g. "Nucleus Team") everywhere — not the fixed key.
+    ret.roleLabel = roleLabel(ret.role);
     return ret;
   },
 });

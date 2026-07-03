@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { prettyRole } from '@/lib/permissions';
+import { roleName } from '@/lib/permissions';
 import { rupeesToPaise, todayYMD } from '@/lib/expense';
 
 /** Shared dialog for logging a DUE (something brought for someone) or a PAYMENT. */
@@ -93,7 +93,7 @@ export function DuesEntryDialog({ mode = 'due', people = [], presetPerson = null
             <SelectContent>
               {people.map((p) => (
                 <SelectItem key={p.person.id} value={p.person.id}>
-                  {p.person.name} · {prettyRole(p.person.role)}
+                  {p.person.name} · {roleName(p.person)}
                 </SelectItem>
               ))}
             </SelectContent>

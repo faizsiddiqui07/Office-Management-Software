@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { Check, Clock, Download, Pencil, TriangleAlert, UserCheck, Users, UserX } from 'lucide-react';
 import { api, getAuthToken } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { can, prettyRole } from '@/lib/permissions';
+import { can, roleName } from '@/lib/permissions';
 import { effectiveStatus } from '@/lib/attendance';
 import { AttendanceStatusBadge, attendanceStatusText } from './attendance-status-badge';
 import { DataTable } from '@/components/glass/data-table';
@@ -45,9 +45,9 @@ const columns = [
   {
     id: 'role',
     header: 'Role',
-    // Pretty label so searching/sorting matches what's displayed ("HR Manager", not HR_MANAGER).
-    accessorFn: (r) => prettyRole(r.user.role),
-    cell: ({ row }) => <span className="text-sm text-muted-foreground">{prettyRole(row.original.user.role)}</span>,
+    // Editable label so searching/sorting matches what's displayed ("Nucleus Team", not TEAM).
+    accessorFn: (r) => roleName(r.user),
+    cell: ({ row }) => <span className="text-sm text-muted-foreground">{roleName(row.original.user)}</span>,
   },
   { id: 'in', header: 'In', accessorFn: (r) => r.attendance?.checkInAt ?? '', cell: ({ row }) => formatTime(row.original.attendance?.checkInAt) },
   { id: 'out', header: 'Out', accessorFn: (r) => r.attendance?.checkOutAt ?? '', cell: ({ row }) => formatTime(row.original.attendance?.checkOutAt) },
@@ -335,7 +335,7 @@ export function EveryoneTab() {
         onOpenChange={(o) => (!o ? setSelected(null) : null)}
         title={sel?.user?.name}
         description={
-          sel ? `${sel.user.employeeId} · ${prettyRole(sel.user.role)}${sel.user.department ? ` · ${sel.user.department}` : ''}` : undefined
+          sel ? `${sel.user.employeeId} · ${roleName(sel.user)}${sel.user.department ? ` · ${sel.user.department}` : ''}` : undefined
         }
         footer={
           canExcuse ? (

@@ -1,6 +1,7 @@
 import { Task } from '../models/Task.js';
 import { User } from '../models/User.js';
 import { notify } from '../models/Notification.js';
+import { roleLabel } from '../lib/roles.js';
 
 function httpError(status, code, message) {
   const e = new Error(message);
@@ -36,7 +37,7 @@ export async function assignableUsers(actor) {
   const users = await User.find({ isActive: true, _id: { $ne: actor._id } }).select('name designation role').sort({ name: 1 });
   return users
     .filter((u) => canAssignTo(actor, u))
-    .map((u) => ({ id: u.id, name: u.name, designation: u.designation || '', role: u.role }));
+    .map((u) => ({ id: u.id, name: u.name, designation: u.designation || '', role: u.role, roleLabel: roleLabel(u.role) }));
 }
 
 export async function createTask(actor, data) {

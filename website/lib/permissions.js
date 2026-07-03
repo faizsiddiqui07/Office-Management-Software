@@ -33,14 +33,38 @@ export const ROLE_LABELS = {
   SECURITY: 'Security Guard',
 };
 
-/** Human label for any role key (built-in or custom). */
+// Live, editable role labels from the server (e.g. "TEAM" renamed to "Nucleus
+// Team"). Populated by `registerRoleLabels` when the roles list loads, so a
+// bare-key `prettyRole` reflects the current name anywhere in the app.
+const CUSTOM_LABELS = new Map();
+
+/** Cache the current {key,label} pairs so `prettyRole` shows edited names. */
+export function registerRoleLabels(list) {
+  if (!Array.isArray(list)) return;
+  for (const r of list) {
+    if (r && r.key && r.label) CUSTOM_LABELS.set(r.key, r.label);
+  }
+}
+
+/** Human label for any role key. Edited label wins over the built-in default. */
 export function prettyRole(key) {
   if (!key) return '';
+  if (CUSTOM_LABELS.has(key)) return CUSTOM_LABELS.get(key);
   if (ROLE_LABELS[key]) return ROLE_LABELS[key];
   return key
     .split('_')
     .map((w) => (w ? w[0] + w.slice(1).toLowerCase() : w))
     .join(' ');
+}
+
+/**
+ * Display name for a role-bearing entity. Prefers the server-provided,
+ * per-object `roleLabel` (always current, reactive with the query data); falls
+ * back to prettifying the key. Pass a user/member object, or a bare role key.
+ */
+export function roleName(entity) {
+  if (entity && typeof entity === 'object') return entity.roleLabel || prettyRole(entity.role);
+  return prettyRole(entity);
 }
 
 // Built-in role groups — only used as a fallback before /auth/me loads permissions.

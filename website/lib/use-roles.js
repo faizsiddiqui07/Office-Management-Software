@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { registerRoleLabels } from '@/lib/permissions';
 
 /** Lightweight {key,label} list of all roles — for user role dropdowns. */
 export function useRoleOptions() {
@@ -9,7 +10,13 @@ export function useRoleOptions() {
     queryKey: ['role-options'],
     queryFn: () => api.get('/roles/options'),
     staleTime: 5 * 60 * 1000,
-    select: (res) => res.roles ?? [],
+    select: (res) => {
+      const roles = res.roles ?? [];
+      // Keep the app-wide label cache current so bare-key `prettyRole` calls
+      // (activity feed, report role counts) show edited names too.
+      registerRoleLabels(roles);
+      return roles;
+    },
   });
 }
 

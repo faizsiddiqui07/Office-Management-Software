@@ -19,7 +19,7 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { formatMoney } from '@/lib/expense';
 import { cn } from '@/lib/utils';
-import { prettyRole } from '@/lib/permissions';
+import { roleName } from '@/lib/permissions';
 import { PageHeader } from '@/components/glass/page-header';
 import { GlassCard } from '@/components/glass/glass-card';
 import { StatCard } from '@/components/glass/stat-card';
@@ -102,7 +102,7 @@ function PersonDetail({ personId, onAddDue, onAddPay }) {
           <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">{initials(person.name)}</span>
           <div className="min-w-0">
             <p className="truncate font-semibold">{person.name}</p>
-            <p className="truncate text-xs text-muted-foreground">{prettyRole(person.role)} · {person.employeeId}</p>
+            <p className="truncate text-xs text-muted-foreground">{roleName(person)} · {person.employeeId}</p>
           </div>
         </div>
         <div className="text-right">
@@ -332,7 +332,7 @@ export function DuesAdmin() {
                         <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">{initials(p.person.name)}</span>
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-medium">{p.person.name}</p>
-                          <p className="truncate text-xs text-muted-foreground">{prettyRole(p.person.role)}</p>
+                          <p className="truncate text-xs text-muted-foreground">{roleName(p.person)}</p>
                         </div>
                         <BalanceChip p={p} />
                       </button>

@@ -5,6 +5,7 @@ import { Expense } from '../models/Expense.js';
 import { User } from '../models/User.js';
 import { Setting } from '../models/Setting.js';
 import { companyDayFromYMD, ymdInTz, formatCompany } from '../lib/time.js';
+import { roleLabel } from '../lib/roles.js';
 import { leaveYearOf } from '../lib/leaveYear.js';
 import { holidayYMDSet } from './holiday.service.js';
 import { expenseSummary } from './expense.service.js';
@@ -111,6 +112,7 @@ export async function buildReport(type, dateYMD) {
       name: u.name,
       employeeId: u.employeeId,
       role: u.role,
+      roleLabel: roleLabel(u.role),
       // A late employee still showed up — Present counts every attended day;
       // `late` is the "of which came late" indicator, not a separate bucket.
       present: showed,
@@ -187,7 +189,7 @@ export async function buildReport(type, dateYMD) {
   const roster = {
     headcount: activeUsers.length,
     byRole,
-    members: activeUsers.map((u) => ({ name: u.name, employeeId: u.employeeId, role: u.role, department: u.department })),
+    members: activeUsers.map((u) => ({ name: u.name, employeeId: u.employeeId, role: u.role, roleLabel: roleLabel(u.role), department: u.department })),
   };
 
   // ── Dues ledger (company-wide) ────────────────────────────
@@ -202,6 +204,7 @@ export async function buildReport(type, dateYMD) {
         name: p.person.name,
         employeeId: p.person.employeeId,
         role: p.person.role,
+        roleLabel: roleLabel(p.person.role),
         pending: p.pending,
         advance: p.advance,
       })),
@@ -351,7 +354,7 @@ export async function buildSelfReport({ user, type, dateYMD }) {
     period,
     generatedAt: new Date().toISOString(),
     company: { name: settings.companyName, currency: settings.currency, timezone: settings.timezone, brandColor: settings.brandColor, logoUrl: settings.logoUrl, logoLight: settings.logoLight, logoDark: settings.logoDark },
-    subject: { name: user.name, employeeId: user.employeeId, role: user.role, department: user.department || '' },
+    subject: { name: user.name, employeeId: user.employeeId, role: user.role, roleLabel: roleLabel(user.role), department: user.department || '' },
     attendance: { days, totals: attTotals },
     leaves,
     dues,

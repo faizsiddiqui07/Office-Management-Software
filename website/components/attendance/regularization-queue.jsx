@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Check, History, Trash2, Wrench, X } from 'lucide-react';
 import { api } from '@/lib/api';
-import { prettyRole } from '@/lib/permissions';
+import { roleName } from '@/lib/permissions';
 import { GlassCard } from '@/components/glass/glass-card';
 import { StatusBadge } from '@/components/glass/status-badge';
 import { EmptyState } from '@/components/glass/empty-state';
@@ -59,7 +59,7 @@ function RequestDetails({ r }) {
   return (
     <div className="min-w-0 space-y-0.5">
       <p className="text-sm font-medium">
-        {r.user?.name} <span className="text-xs font-normal text-muted-foreground">· {prettyRole(r.user?.role)}</span>
+        {r.user?.name} <span className="text-xs font-normal text-muted-foreground">· {roleName(r.user)}</span>
       </p>
       <p className="text-sm">
         {fmtDate(r.dateYMD)} —{' '}
@@ -129,7 +129,7 @@ function HistoryList() {
                 {r.status === 'APPROVED' ? 'Approved' : 'Rejected'}
               </StatusBadge>
               <span className="text-sm font-medium">{r.user?.name}</span>
-              <span className="text-xs text-muted-foreground">· {prettyRole(r.user?.role)}</span>
+              <span className="text-xs text-muted-foreground">· {roleName(r.user)}</span>
             </div>
             <p className="text-sm">
               {fmtDate(r.dateYMD)} —{' '}

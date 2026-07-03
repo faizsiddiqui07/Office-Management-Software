@@ -10,7 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { prettyRole, can } from '@/lib/permissions';
+import { roleName, can } from '@/lib/permissions';
 import { useAuth } from '@/lib/auth';
 
 export function UserMenu({ user }) {
@@ -41,7 +41,7 @@ export function UserMenu({ user }) {
         </Avatar>
         <div className="hidden text-left sm:block">
           <p className="text-sm font-medium leading-none">{user.name}</p>
-          <p className="text-xs text-muted-foreground">{prettyRole(user.role)}</p>
+          <p className="text-xs text-muted-foreground">{roleName(user)}</p>
         </div>
       </DropdownMenuTrigger>
       <DropdownMenuContent

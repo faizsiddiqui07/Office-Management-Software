@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 import { Ellipsis, KeyRound, Pencil, Power, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { can, prettyRole } from '@/lib/permissions';
+import { can, roleName } from '@/lib/permissions';
 import { useRoleOptions } from '@/lib/use-roles';
 import { DataTable } from '@/components/glass/data-table';
 import { StatusBadge } from '@/components/glass/status-badge';
@@ -115,11 +115,11 @@ export function UsersDirectory() {
       {
         id: 'role',
         header: 'Role',
-        // Pretty label so search + sort match the displayed text.
-        accessorFn: (r) => prettyRole(r.role),
+        // Editable label so search + sort match the displayed text.
+        accessorFn: (r) => roleName(r),
         cell: ({ row }) => (
           <StatusBadge tone="primary" dot={false}>
-            {prettyRole(row.original.role)}
+            {roleName(row.original)}
           </StatusBadge>
         ),
       },

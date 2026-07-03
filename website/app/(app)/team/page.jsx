@@ -6,7 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Users, Mail, Phone, Hash, ShieldAlert } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { can, prettyRole } from '@/lib/permissions';
+import { can, prettyRole, roleName } from '@/lib/permissions';
 import { useRoleOptions } from '@/lib/use-roles';
 import { PageHeader } from '@/components/glass/page-header';
 import { GlassCard } from '@/components/glass/glass-card';
@@ -46,7 +46,7 @@ function MemberCard({ u }) {
             </span>
           ) : null}
         </div>
-        <p className="mt-0.5 truncate text-sm font-medium text-primary">{u.designation || prettyRole(u.role)}</p>
+        <p className="mt-0.5 truncate text-sm font-medium text-primary">{u.designation || roleName(u)}</p>
         {u.department ? <p className="mt-0.5 truncate text-xs text-muted-foreground">{u.department}</p> : null}
         <div className="mt-2 space-y-1 text-xs text-muted-foreground">
           <div className="flex items-center gap-1.5">

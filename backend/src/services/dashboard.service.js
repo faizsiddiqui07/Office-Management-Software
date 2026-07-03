@@ -6,6 +6,7 @@ import { Setting } from '../models/Setting.js';
 import { Holiday } from '../models/Holiday.js';
 import { AuditLog } from '../models/AuditLog.js';
 import { can } from '../lib/permissions.js';
+import { roleLabel } from '../lib/roles.js';
 import { companyDayFromYMD, ymdInTz } from '../lib/time.js';
 import { leaveYearOf } from '../lib/leaveYear.js';
 import { getTodayPayload, attendanceOverview } from './attendance.service.js';
@@ -21,7 +22,7 @@ export async function buildDashboard(user) {
   const year = leaveYearOf(todayYMD); // fiscal leave year (Apr 1 – Mar 31)
   const role = user.role;
 
-  const out = { role, generatedAt: now.toISOString(), company: { name: settings.companyName, currency: settings.currency } };
+  const out = { role, roleLabel: roleLabel(role), generatedAt: now.toISOString(), company: { name: settings.companyName, currency: settings.currency } };
 
   // ── Common (everyone) ─────────────────────────────────────
   out.today = await getTodayPayload(user);

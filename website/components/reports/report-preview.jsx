@@ -8,7 +8,8 @@ import { StatusBadge } from '@/components/glass/status-badge';
 import { formatDuration } from '@/lib/time';
 import { formatMoney, categoryLabel } from '@/lib/expense';
 import { formatRange, formatYMD } from '@/lib/leave';
-import { prettyRole } from '@/lib/permissions';
+import { prettyRole, roleName } from '@/lib/permissions';
+import { useRoleOptions } from '@/lib/use-roles';
 
 function AttendanceSection({ data }) {
   const t = data.attendance.totals;
@@ -16,12 +17,12 @@ function AttendanceSection({ data }) {
     {
       id: 'name',
       header: 'Employee',
-      accessorFn: (r) => `${r.name} ${r.employeeId} ${prettyRole(r.role)}`,
+      accessorFn: (r) => `${r.name} ${r.employeeId} ${roleName(r)}`,
       cell: ({ row }) => (
         <div>
           <p className="font-medium">{row.original.name}</p>
           <p className="text-xs text-muted-foreground">
-            {row.original.employeeId} · {prettyRole(row.original.role)}
+            {row.original.employeeId} · {roleName(row.original)}
           </p>
         </div>
       ),
@@ -130,9 +131,9 @@ function ExpensesSection({ data }) {
 
 function RosterSection({ data }) {
   const cols = [
-    { id: 'name', header: 'Name', accessorFn: (r) => `${r.name} ${r.employeeId} ${prettyRole(r.role)} ${r.department || ''}`, cell: ({ row }) => <span className="font-medium">{row.original.name}</span> },
+    { id: 'name', header: 'Name', accessorFn: (r) => `${r.name} ${r.employeeId} ${roleName(r)} ${r.department || ''}`, cell: ({ row }) => <span className="font-medium">{row.original.name}</span> },
     { id: 'id', header: 'ID', accessorFn: (r) => r.employeeId, cell: ({ row }) => <span className="text-sm tabular-nums text-muted-foreground">{row.original.employeeId}</span> },
-    { id: 'role', header: 'Role', accessorFn: (r) => prettyRole(r.role), cell: ({ row }) => <StatusBadge tone="primary" dot={false}>{prettyRole(row.original.role)}</StatusBadge> },
+    { id: 'role', header: 'Role', accessorFn: (r) => roleName(r), cell: ({ row }) => <StatusBadge tone="primary" dot={false}>{roleName(row.original)}</StatusBadge> },
     { id: 'dept', header: 'Department', accessorFn: (r) => r.department || '', cell: ({ row }) => <span className="text-sm text-muted-foreground">{row.original.department || '—'}</span> },
   ];
   return (
@@ -155,9 +156,9 @@ function RosterSection({ data }) {
 function DuesSection({ data }) {
   const d = data.dues;
   const cols = [
-    { id: 'name', header: 'Person', accessorFn: (r) => `${r.name} ${r.employeeId} ${prettyRole(r.role)}`, cell: ({ row }) => <span className="font-medium">{row.original.name}</span> },
+    { id: 'name', header: 'Person', accessorFn: (r) => `${r.name} ${r.employeeId} ${roleName(r)}`, cell: ({ row }) => <span className="font-medium">{row.original.name}</span> },
     { id: 'id', header: 'ID', accessorFn: (r) => r.employeeId, cell: ({ row }) => <span className="text-sm tabular-nums text-muted-foreground">{row.original.employeeId}</span> },
-    { id: 'role', header: 'Role', accessorFn: (r) => prettyRole(r.role), cell: ({ row }) => <StatusBadge tone="primary" dot={false}>{prettyRole(row.original.role)}</StatusBadge> },
+    { id: 'role', header: 'Role', accessorFn: (r) => roleName(r), cell: ({ row }) => <StatusBadge tone="primary" dot={false}>{roleName(row.original)}</StatusBadge> },
     { id: 'pending', header: 'Pending', accessorFn: (r) => r.pending ?? 0, cell: ({ row }) => <span className="font-medium tabular-nums text-destructive">{row.original.pending ? formatMoney(row.original.pending) : '—'}</span> },
     { id: 'advance', header: 'Advance', accessorFn: (r) => r.advance ?? 0, cell: ({ row }) => <span className="tabular-nums text-muted-foreground">{row.original.advance ? formatMoney(row.original.advance) : '—'}</span> },
   ];
@@ -179,6 +180,9 @@ function DuesSection({ data }) {
 }
 
 export function ReportPreview({ data, sections }) {
+  // Warm the role-label cache so the roster's per-role count chips (bare keys)
+  // render edited names, and re-render once labels arrive.
+  useRoleOptions();
   const has = (s) => sections.includes(s);
   return (
     <div className="space-y-10">

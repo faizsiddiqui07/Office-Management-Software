@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { can, prettyRole } from '@/lib/permissions';
+import { can, roleName } from '@/lib/permissions';
 import { AttendanceStatusBadge, attendanceStatusText } from '@/components/attendance/attendance-status-badge';
 import { formatTime, formatDuration } from '@/lib/time';
 import { cn } from '@/lib/utils';
@@ -147,7 +147,7 @@ export default function UserDossierPage() {
           icon={UserCircle}
           description={
             u
-              ? [prettyRole(u.role), u.designation, u.department, u.employeeId && `ID ${u.employeeId}`]
+              ? [roleName(u), u.designation, u.department, u.employeeId && `ID ${u.employeeId}`]
                   .filter(Boolean)
                   .join(' · ')
               : undefined

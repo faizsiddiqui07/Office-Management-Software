@@ -6,6 +6,7 @@ import { Activity, ChevronLeft, ChevronRight, ShieldAlert } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can, prettyRole } from '@/lib/permissions';
+import { useRoleOptions } from '@/lib/use-roles';
 import { PageHeader } from '@/components/glass/page-header';
 import { GlassPanel } from '@/components/glass/glass-panel';
 import { EmptyState } from '@/components/glass/empty-state';
@@ -31,6 +32,9 @@ function humanize(a) {
 export default function ActivityPage() {
   const { user } = useAuth();
   const allowed = !!user && can(user, 'viewAudit');
+  // The audit feed stores role keys; warm the label cache so `prettyRole`
+  // renders edited names next to each actor.
+  useRoleOptions();
 
   const [action, setAction] = React.useState('');
   const [from, setFrom] = React.useState('');

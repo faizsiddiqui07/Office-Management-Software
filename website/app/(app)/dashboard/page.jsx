@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { can, prettyRole } from '@/lib/permissions';
+import { can, roleName } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
 import { formatMoney, categoryLabel } from '@/lib/expense';
 import { formatDuration } from '@/lib/time';
@@ -146,7 +146,7 @@ export default function DashboardPage() {
   return (
     <div className="space-y-8">
       <PageHeader
-        eyebrow={prettyRole(data.role) || 'Overview'}
+        eyebrow={roleName(data) || 'Overview'}
         title={`${greeting()}, ${firstName(user?.name)}`}
         description={`Here’s your snapshot for ${new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}.`}
       />
