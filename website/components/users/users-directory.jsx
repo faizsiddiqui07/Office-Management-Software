@@ -4,7 +4,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Ellipsis, KeyRound, Pencil, Power } from 'lucide-react';
+import { Ellipsis, KeyRound, Pencil, Power, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can, prettyRole } from '@/lib/permissions';
@@ -66,6 +66,7 @@ export function UsersDirectory() {
   const [resetResult, setResetResult] = React.useState(null);
   const [toggling, setToggling] = React.useState(null);
   const [resetting, setResetting] = React.useState(null); // user pending reset confirmation
+  const [deleting, setDeleting] = React.useState(null); // deactivated user pending delete confirmation
 
   const resetMut = useMutation({
     mutationFn: (id) => api.post(`/users/${id}/reset-credentials`),
@@ -85,6 +86,16 @@ export function UsersDirectory() {
       setToggling(null);
     },
     onError: (e) => toast.error(e?.message || 'Could not update'),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (id) => api.delete(`/users/${id}`),
+    onSuccess: () => {
+      toast.success('User deleted');
+      qc.invalidateQueries({ queryKey: ['users'] });
+      setDeleting(null);
+    },
+    onError: (e) => toast.error(e?.message || 'Could not delete user'),
   });
 
   const columns = React.useMemo(
@@ -149,6 +160,12 @@ export function UsersDirectory() {
                       onClick={() => setToggling(row.original)}
                     >
                       <Power /> {row.original.isActive ? 'Deactivate' : 'Activate'}
+                    </DropdownMenuItem>
+                  ) : null}
+                  {/* Delete is offered only once a user is deactivated. */}
+                  {canManage && !row.original.isActive && row.original.id !== user.id ? (
+                    <DropdownMenuItem variant="destructive" onClick={() => setDeleting(row.original)}>
+                      <Trash2 /> Delete permanently
                     </DropdownMenuItem>
                   ) : null}
                 </DropdownMenuContent>
@@ -219,6 +236,19 @@ export function UsersDirectory() {
       >
         {resetResult ? <TempPasswordContent user={resetResult.user} temporaryPassword={resetResult.temporaryPassword} /> : null}
       </AppDialog>
+
+      <ConfirmDialog
+        open={!!deleting}
+        onOpenChange={(o) => {
+          if (!o) setDeleting(null);
+        }}
+        title={`Delete ${deleting?.name || 'this user'}?`}
+        description="This permanently removes the user and their attendance, leave, task and dues records. Content they authored and the activity log are kept. This can't be undone."
+        tone="destructive"
+        confirmLabel="Delete permanently"
+        loading={deleteMut.isPending}
+        onConfirm={() => deleting && deleteMut.mutate(deleting.id)}
+      />
 
       <ConfirmDialog
         open={!!resetting}

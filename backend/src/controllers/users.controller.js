@@ -1,7 +1,7 @@
 import { ok, fail } from '../lib/apiResponse.js';
 import { canAssignRole } from '../lib/permissions.js';
 import { User } from '../models/User.js';
-import { createEmployee, resetUserCredentials, updateUser as updateUserService } from '../services/user.service.js';
+import { createEmployee, resetUserCredentials, updateUser as updateUserService, deleteUser as deleteUserService } from '../services/user.service.js';
 import { getBalanceForUser, setLeaveBalance } from '../services/leave.service.js';
 import { getUserDossier } from '../services/dossier.service.js';
 import { audit } from '../models/AuditLog.js';
@@ -77,6 +77,17 @@ export async function userDossier(req, res, next) {
     if (to < from) return res.status(400).json(fail('BAD_RANGE', 'End date is before the start date'));
     const data = await getUserDossier(req.params.id, { from, to });
     return res.json(ok(data));
+  } catch (err) {
+    return sendServiceError(res, err, next);
+  }
+}
+
+/** Permanently delete a deactivated user + their data. */
+export async function deleteUser(req, res, next) {
+  try {
+    await deleteUserService(req.user, req.params.id);
+    await audit({ actor: req.user._id, action: 'user.delete', entityType: 'User', entityId: req.params.id });
+    return res.json(ok({ success: true }));
   } catch (err) {
     return sendServiceError(res, err, next);
   }

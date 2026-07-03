@@ -8,6 +8,7 @@ import {
   resetCredentials,
   listUsers,
   updateUser,
+  deleteUser,
   userDossier,
   getLeaveBalance,
   updateLeaveBalance,
@@ -20,6 +21,7 @@ usersRouter.get('/', requirePermission('viewEveryone'), listUsers);
 usersRouter.get('/:id/dossier', requirePermission('viewEveryone'), userDossier);
 usersRouter.post('/', requirePermission('createUsers'), validate(createUserSchema), createUser);
 usersRouter.patch('/:id', requirePermission('manageUsers'), validate(updateUserSchema), updateUser);
+usersRouter.delete('/:id', requirePermission('manageUsers'), deleteUser); // deactivated users only (enforced in service)
 usersRouter.get('/:id/leave-balance', requirePermission('manageUsers'), getLeaveBalance);
 usersRouter.patch('/:id/leave-balance', requirePermission('manageUsers'), validate(leaveBalanceSchema), updateLeaveBalance);
 usersRouter.post('/:id/reset-credentials', requirePermission('resetCredentials'), resetCredentials);

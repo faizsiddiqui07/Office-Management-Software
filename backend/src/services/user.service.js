@@ -3,6 +3,15 @@ import { generateEmployeeId } from '../lib/employeeId.js';
 import { generateTempPassword } from '../lib/tempPassword.js';
 import { User } from '../models/User.js';
 import { LeaveBalance } from '../models/LeaveBalance.js';
+import { LeaveRequest } from '../models/LeaveRequest.js';
+import { Attendance } from '../models/Attendance.js';
+import { Regularization } from '../models/Regularization.js';
+import { Task } from '../models/Task.js';
+import { Notification } from '../models/Notification.js';
+import { PushSubscription } from '../models/PushSubscription.js';
+import { PasswordResetToken } from '../models/PasswordResetToken.js';
+import { AnnouncementRead } from '../models/AnnouncementRead.js';
+import { LedgerEntry } from '../models/LedgerEntry.js';
 import { Setting } from '../models/Setting.js';
 import { canAssignRole } from '../lib/permissions.js';
 
@@ -156,4 +165,52 @@ export async function updateUser(actor, id, data) {
 
   await user.save();
   return user.toJSON();
+}
+
+/**
+ * Permanently delete a DEACTIVATED user and their personal data. Guarded: you
+ * can't delete yourself, and the user must already be inactive (deactivate
+ * first). Their transactional records are removed; references pointing at them
+ * (delegated tasks, decisions, reportsTo, etc.) are detached so nothing breaks;
+ * authored content + the audit trail are kept (with an orphaned link).
+ */
+export async function deleteUser(actor, id) {
+  if (String(actor._id) === String(id)) {
+    throw httpError(403, 'FORBIDDEN', 'You cannot delete your own account');
+  }
+  const user = await User.findById(id);
+  if (!user) throw httpError(404, 'NOT_FOUND', 'User not found');
+  if (user.isActive) {
+    throw httpError(409, 'STILL_ACTIVE', 'Deactivate the user first, then delete');
+  }
+
+  const uid = user._id;
+
+  // Remove their own transactional data.
+  await Promise.all([
+    Attendance.deleteMany({ user: uid }),
+    LeaveRequest.deleteMany({ user: uid }),
+    LeaveBalance.deleteMany({ user: uid }),
+    Regularization.deleteMany({ user: uid }),
+    Task.deleteMany({ owner: uid }),
+    Notification.deleteMany({ user: uid }),
+    PushSubscription.deleteMany({ user: uid }),
+    PasswordResetToken.deleteMany({ user: uid }),
+    AnnouncementRead.deleteMany({ user: uid }),
+    LedgerEntry.deleteMany({ person: uid }),
+  ]);
+
+  // Detach references pointing AT them so other records stay valid.
+  await Promise.all([
+    Task.updateMany({ assignedBy: uid }, { $set: { assignedBy: null } }),
+    LeaveRequest.updateMany({ decidedBy: uid }, { $set: { decidedBy: null } }),
+    Regularization.updateMany({ decidedBy: uid }, { $set: { decidedBy: null } }),
+    Attendance.updateMany({ excusedBy: uid }, { $set: { excusedBy: null } }),
+    User.updateMany({ reportsTo: uid }, { $set: { reportsTo: null } }),
+    User.updateMany({ createdBy: uid }, { $set: { createdBy: null } }),
+    User.updateMany({ 'taskAssign.users': uid }, { $pull: { 'taskAssign.users': uid } }),
+  ]);
+
+  await user.deleteOne();
+  return { success: true };
 }
