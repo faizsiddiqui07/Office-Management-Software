@@ -3,7 +3,8 @@ import { getRolePermissionSet } from '../lib/roles.js';
 
 const isRole = (r) => getRolePermissionSet(r) !== null;
 
-const hm = z.string().regex(/^\d{2}:\d{2}$/, 'Expected HH:mm');
+// A blank time is allowed — it means "follow the office hours" (custom timing off).
+const hm = z.string().regex(/^\d{2}:\d{2}$/, 'Expected HH:mm').or(z.literal(''));
 const employmentType = z.enum(['FULL_TIME', 'PART_TIME']);
 const scheduleSchema = z.object({
   workStart: hm.optional(),
