@@ -78,6 +78,14 @@ function fmtDate(d) {
   });
 }
 
+/** Earliest due date first; undated work sinks to the bottom (newest of those first). */
+function byDueDate(a, b) {
+  if (a.dueYMD && b.dueYMD && a.dueYMD !== b.dueYMD) return a.dueYMD < b.dueYMD ? -1 : 1;
+  if (a.dueYMD && !b.dueYMD) return -1;
+  if (!a.dueYMD && b.dueYMD) return 1;
+  return new Date(b.createdAt) - new Date(a.createdAt);
+}
+
 /** Personal / history task row — tap the row for full details, the circle to complete. */
 function TaskRow({ task, canToggle, onToggle, onEdit, onDelete, onOpen }) {
   const done = task.status === 'DONE';
@@ -138,7 +146,7 @@ function TaskRow({ task, canToggle, onToggle, onEdit, onDelete, onOpen }) {
 }
 
 /** A date-grouped list of a person's tasks (inside the folder dialog). */
-function DatedTaskList({ tasks, dateKey, ascending = false, onEdit, onDelete, onOpen }) {
+function DatedTaskList({ tasks, dateKey, ascending = false, onEdit, onDelete, onOpen, onToggle, canToggle = false, allowDelete = () => true }) {
   const groups = React.useMemo(() => {
     const map = new Map();
     for (const t of tasks) {
@@ -176,7 +184,29 @@ function DatedTaskList({ tasks, dateKey, ascending = false, onEdit, onDelete, on
                 onClick={() => onOpen(t)}
                 className="flex cursor-pointer items-start gap-2.5 rounded-lg bg-foreground/[0.03] p-2.5 ring-1 ring-border/50 transition-colors hover:bg-foreground/[0.06]"
               >
-                <span className={cn('mt-1 size-1.5 shrink-0 rounded-full', done ? 'bg-success' : 'bg-warning')} />
+                {canToggle ? (
+                  /* 40px touch target on mobile; the visual 20px circle sits inside. */
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggle?.(t);
+                    }}
+                    aria-label={done ? 'Mark as not done' : 'Mark as done'}
+                    className="group/tgl -m-1.5 flex size-10 shrink-0 items-center justify-center sm:size-8"
+                  >
+                    <span
+                      className={cn(
+                        'flex size-5 items-center justify-center rounded-full ring-1 transition-colors',
+                        done ? 'bg-success text-white ring-success' : 'ring-border group-hover/tgl:ring-primary',
+                      )}
+                    >
+                      {done ? <Check className="size-3.5" /> : null}
+                    </span>
+                  </button>
+                ) : (
+                  <span className={cn('mt-1 size-1.5 shrink-0 rounded-full', done ? 'bg-success' : 'bg-warning')} />
+                )}
                 <div className="min-w-0 flex-1">
                   <p className={cn('text-sm font-medium', done && 'text-muted-foreground line-through')}>{t.title}</p>
                   <div className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-muted-foreground">
@@ -188,9 +218,11 @@ function DatedTaskList({ tasks, dateKey, ascending = false, onEdit, onDelete, on
                   <Button variant="ghost" size="icon" className="size-10 sm:size-7" onClick={(e) => { e.stopPropagation(); onEdit(t); }} aria-label="Edit">
                     <Pencil className="size-3.5" />
                   </Button>
-                  <Button variant="ghost" size="icon" className="size-10 text-destructive sm:size-7" onClick={(e) => { e.stopPropagation(); onDelete(t); }} aria-label="Delete">
-                    <Trash2 className="size-3.5" />
-                  </Button>
+                  {allowDelete(t) ? (
+                    <Button variant="ghost" size="icon" className="size-10 text-destructive sm:size-7" onClick={(e) => { e.stopPropagation(); onDelete(t); }} aria-label="Delete">
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                  ) : null}
                 </div>
               </div>
             );
@@ -202,7 +234,7 @@ function DatedTaskList({ tasks, dateKey, ascending = false, onEdit, onDelete, on
 }
 
 /** A person "folder": name, progress, and (on click) their pending/completed tasks date-wise. */
-function PersonFolder({ folder, onEdit, onDelete, onOpen }) {
+function PersonFolder({ folder, onEdit, onDelete, onOpen, onToggle, canToggle = false, allowDelete = () => true }) {
   const [open, setOpen] = React.useState(false);
   const pct = folder.total ? Math.round((folder.done / folder.total) * 100) : 0;
   return (
@@ -243,13 +275,13 @@ function PersonFolder({ folder, onEdit, onDelete, onOpen }) {
             <h3 className="flex items-center gap-2 text-sm font-semibold">
               <ListTodo className="size-4 text-warning" /> Pending ({folder.pending})
             </h3>
-            <DatedTaskList tasks={folder.pendingTasks} dateKey={(t) => t.dueYMD || t.createdAt} ascending onEdit={onEdit} onDelete={onDelete} onOpen={onOpen} />
+            <DatedTaskList tasks={folder.pendingTasks} dateKey={(t) => t.dueYMD || t.createdAt} ascending onEdit={onEdit} onDelete={onDelete} onOpen={onOpen} onToggle={onToggle} canToggle={canToggle} allowDelete={allowDelete} />
           </section>
           <section className="space-y-2">
             <h3 className="flex items-center gap-2 text-sm font-semibold">
               <CheckCircle2 className="size-4 text-success" /> Completed ({folder.done})
             </h3>
-            <DatedTaskList tasks={folder.doneTasks} dateKey={(t) => t.completedAt || t.createdAt} onEdit={onEdit} onDelete={onDelete} onOpen={onOpen} />
+            <DatedTaskList tasks={folder.doneTasks} dateKey={(t) => t.completedAt || t.createdAt} onEdit={onEdit} onDelete={onDelete} onOpen={onOpen} onToggle={onToggle} canToggle={canToggle} allowDelete={allowDelete} />
           </section>
         </div>
       </AppDialog>
@@ -385,32 +417,80 @@ export function TaskBoard() {
   const { data: sum } = useQuery({ queryKey: ['tasks', 'summary'], queryFn: () => api.get('/tasks/summary') });
   const m = sum?.mine ?? { pending: 0, done: 0, total: 0 };
 
+  const isMine = tab === 'mine';
   const scope = isAssigned ? 'assigned' : 'mine';
-  const status = tab === 'mine' ? 'PENDING' : tab === 'history' ? 'DONE' : '';
+  // History fetches completed only. My tasks fetches ALL statuses (folders need
+  // pending AND completed together) and splits/groups client-side.
+  const status = tab === 'history' ? 'DONE' : '';
 
   const { data, isLoading } = useQuery({
-    queryKey: ['tasks', 'list', scope, status, isAssigned ? '' : debouncedSearch, period],
+    queryKey: ['tasks', 'list', scope, status, isMine || isAssigned ? '' : debouncedSearch, isMine ? 'all' : period],
     queryFn: () => {
-      const p = new URLSearchParams({ scope, limit: '1000' });
+      const p = new URLSearchParams({ scope, limit: '10000' });
       if (status) p.set('status', status);
-      if (!isAssigned && debouncedSearch) p.set('search', debouncedSearch); // assigned tab searches by person, client-side
-      if (period && period !== 'all') p.set('period', period);
+      // My tasks & Assigned search client-side (task text + person name); History uses the server.
+      if (!isMine && !isAssigned && debouncedSearch) p.set('search', debouncedSearch);
+      // My tasks always shows each assigner's full history, so no period trimming there.
+      if (period && period !== 'all' && !isMine) p.set('period', period);
       return api.get(`/tasks?${p.toString()}`);
     },
     placeholderData: (prev) => prev, // keep rows visible while a new search loads
   });
   const tasks = React.useMemo(() => data?.tasks ?? [], [data]);
 
-  // Earliest due date first (undated work sinks to the bottom, newest of those first).
-  const sortedTasks = React.useMemo(() => {
-    if (tab !== 'mine') return tasks;
-    return [...tasks].sort((a, b) => {
-      if (a.dueYMD && b.dueYMD && a.dueYMD !== b.dueYMD) return a.dueYMD < b.dueYMD ? -1 : 1;
-      if (a.dueYMD && !b.dueYMD) return -1;
-      if (!a.dueYMD && b.dueYMD) return 1;
-      return new Date(b.createdAt) - new Date(a.createdAt);
-    });
-  }, [tasks, tab]);
+  // My-tasks view: a flat list of personal pending work (nearest-due-first) plus,
+  // when 2+ people have delegated work to me, one folder per assigner. A lone
+  // assigner's pending tasks fold into the flat list (no folder tap for one person).
+  const mine = React.useMemo(() => {
+    if (!isMine) return { personalPending: [], folders: [] };
+    const q = search.toLowerCase().trim();
+    const textHit = (t) => t.title.toLowerCase().includes(q) || (t.notes || '').toLowerCase().includes(q);
+    // A flat row matches on its own text OR the name of whoever assigned it.
+    const matchesRow = (t) => !q || textHit(t) || (t.assignedBy?.name || '').toLowerCase().includes(q);
+
+    const byAssigner = new Map();
+    const personal = [];
+    for (const t of tasks) {
+      if (t.assignedBy) {
+        const id = t.assignedBy.id || String(t.assignedBy);
+        if (!byAssigner.has(id)) byAssigner.set(id, { id, name: t.assignedBy.name || 'Unknown', tasks: [] });
+        byAssigner.get(id).tasks.push(t);
+      } else if (t.status !== 'DONE') {
+        personal.push(t); // completed personal tasks live in History, not here
+      }
+    }
+
+    // A person only anchors a folder while they have PENDING work for me. Once it's
+    // all done, that relationship lives in History — not this pending-focused view.
+    const active = [...byAssigner.values()].filter((f) => f.tasks.some((t) => t.status !== 'DONE'));
+
+    let personalPending = personal;
+    let folders = [];
+
+    if (active.length >= 2) {
+      folders = active
+        .map((f) => {
+          const pendingTasks = f.tasks.filter((t) => t.status !== 'DONE');
+          const doneTasks = f.tasks.filter((t) => t.status === 'DONE');
+          const nextDue = pendingTasks.map((t) => t.dueYMD).filter(Boolean).sort()[0] || '';
+          return { ...f, pendingTasks, doneTasks, pending: pendingTasks.length, done: doneTasks.length, total: f.tasks.length, nextDue };
+        })
+        // A folder is a person — search it by name (task text filters the flat list).
+        .filter((f) => !q || f.name.toLowerCase().includes(q))
+        // Soonest deadline first, then most pending, then name (deterministic).
+        .sort((a, b) => {
+          if (a.nextDue && b.nextDue && a.nextDue !== b.nextDue) return a.nextDue < b.nextDue ? -1 : 1;
+          if (a.nextDue && !b.nextDue) return -1;
+          if (!a.nextDue && b.nextDue) return 1;
+          return b.pending - a.pending || a.name.localeCompare(b.name);
+        });
+    } else if (active.length === 1) {
+      personalPending = [...personal, ...active[0].tasks.filter((t) => t.status !== 'DONE')];
+    }
+
+    personalPending = personalPending.filter(matchesRow).sort(byDueDate);
+    return { personalPending, folders };
+  }, [isMine, tasks, search]);
 
   // Group assigned tasks into per-person folders (filtered by the name search).
   const folders = React.useMemo(() => {
@@ -478,22 +558,25 @@ export function TaskBoard() {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder={isAssigned ? 'Search by person…' : 'Search tasks…'}
+            placeholder={isAssigned ? 'Search by person…' : isMine ? 'Search tasks or people…' : 'Search tasks…'}
             className="h-9 bg-background/50 pl-9"
           />
         </div>
-        <Select value={period} onValueChange={setPeriod}>
-          <SelectTrigger className="h-9 w-full bg-background/50 sm:w-36">
-            <span className="line-clamp-1">{PERIOD_LABELS[period] ?? 'All Time'}</span>
-          </SelectTrigger>
-          <SelectContent>
-            {PERIODS.map((p) => (
-              <SelectItem key={p.value} value={p.value}>
-                {p.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {/* My tasks always shows every assigner's full history, so the period filter doesn't apply there. */}
+        {!isMine ? (
+          <Select value={period} onValueChange={setPeriod}>
+            <SelectTrigger className="h-9 w-full bg-background/50 sm:w-36">
+              <span className="line-clamp-1">{PERIOD_LABELS[period] ?? 'All Time'}</span>
+            </SelectTrigger>
+            <SelectContent>
+              {PERIODS.map((p) => (
+                <SelectItem key={p.value} value={p.value}>
+                  {p.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : null}
         <div className="flex w-full items-center gap-2 sm:ml-auto sm:w-auto">
           <Select value={pdfScope} onValueChange={setPdfScope}>
             <SelectTrigger className="h-9 flex-1 bg-background/50 sm:w-40">
@@ -538,11 +621,75 @@ export function TaskBoard() {
             ) : (
               <EmptyState icon={Users} title={search ? 'No one matches that name' : 'You haven’t assigned any work'} description={search ? '' : 'Use “Assign work” to give a task to someone below you.'} />
             )
+          ) : isMine ? (
+            !mine.personalPending.length && !mine.folders.length ? (
+              <EmptyState
+                icon={ListTodo}
+                title={search.trim() ? 'No matching tasks' : 'No pending tasks'}
+                description={search.trim() ? '' : 'Add your first task above.'}
+              />
+            ) : (
+              <div className="space-y-6">
+                {mine.personalPending.length ? (
+                  <div className="space-y-2.5">
+                    {/* Heading only appears once there are folders below to distinguish the two. */}
+                    {mine.folders.length ? (
+                      <h3 className="flex items-center gap-2 text-sm font-semibold">
+                        <ListTodo className="size-4 text-warning" /> My tasks
+                        <span className="font-normal text-muted-foreground">({mine.personalPending.length})</span>
+                      </h3>
+                    ) : null}
+                    {mine.personalPending.map((t) => (
+                      <TaskRow
+                        key={t.id}
+                        task={t}
+                        canToggle
+                        onToggle={(x) => toggleMut.mutate(x)}
+                        onEdit={(x) => setEditing(x)}
+                        onDelete={(x) => setDeleting(x)}
+                        onOpen={(x) => setViewing({ task: x, canToggle: true, allowDelete: !x.assignedBy, assignerView: false })}
+                      />
+                    ))}
+                  </div>
+                ) : null}
+
+                {mine.folders.length ? (
+                  <div className="space-y-3">
+                    <h3 className="flex items-center gap-2 text-sm font-semibold">
+                      <UserRound className="size-4 text-primary" /> Assigned to me
+                      <span className="font-normal text-muted-foreground">
+                        ({mine.folders.reduce((n, f) => n + f.pending, 0)} pending)
+                      </span>
+                    </h3>
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      {mine.folders.map((f) => (
+                        <PersonFolder
+                          key={f.id}
+                          folder={f}
+                          canToggle
+                          allowDelete={() => false}
+                          onToggle={(x) => toggleMut.mutate(x)}
+                          onEdit={(x) => setEditing(x)}
+                          onDelete={(x) => setDeleting(x)}
+                          onOpen={(x) => setViewing({ task: x, canToggle: true, allowDelete: false, assignerView: false })}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {(data?.total ?? 0) > tasks.length ? (
+                  <p className="px-1 text-xs text-muted-foreground">
+                    Showing your most recent {tasks.length} tasks — some older ones are hidden.
+                  </p>
+                ) : null}
+              </div>
+            )
           ) : !tasks.length ? (
-            <EmptyState icon={ListTodo} title={tab === 'history' ? 'Nothing completed yet' : 'No pending tasks'} description={tab === 'mine' ? 'Add your first task above.' : ''} />
+            <EmptyState icon={ListTodo} title="Nothing completed yet" description="" />
           ) : (
             <div className="space-y-2.5">
-              {sortedTasks.map((t) => (
+              {tasks.map((t) => (
                 <TaskRow
                   key={t.id}
                   task={t}
@@ -555,7 +702,7 @@ export function TaskBoard() {
               ))}
               {(data?.total ?? 0) > tasks.length ? (
                 <p className="px-1 text-xs text-muted-foreground">
-                  Showing {tasks.length} of {data.total} — narrow the search or period to see the rest.
+                  Showing {tasks.length} of {data.total} — narrow the search to see the rest.
                 </p>
               ) : null}
             </div>
