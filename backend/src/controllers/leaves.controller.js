@@ -36,6 +36,25 @@ export async function apply(req, res, next) {
   }
 }
 
+/** Leadership records + auto-approves a leave FOR an employee (from the attendance editor). */
+export async function record(req, res, next) {
+  try {
+    const { userId, startYMD, endYMD, type, reason } = req.body || {};
+    const ymd = /^\d{4}-\d{2}-\d{2}$/;
+    if (!userId || !ymd.test(startYMD || '') || !ymd.test(endYMD || '')) {
+      return res.status(400).json(fail('BAD_INPUT', 'userId and valid dates are required'));
+    }
+    if (!['CASUAL', 'SICK', 'PAID', 'UNPAID'].includes(type)) {
+      return res.status(400).json(fail('BAD_TYPE', 'Pick a valid leave type'));
+    }
+    const request = await svc.recordLeaveForUser(req.user, userId, { type, startYMD, endYMD, reason });
+    await audit({ actor: req.user._id, action: 'leave.record', entityType: 'LeaveRequest', entityId: request.id, meta: { userId, type, days: request.workingDays } });
+    res.json(ok({ request }));
+  } catch (err) {
+    handleErr(res, err, next);
+  }
+}
+
 export async function update(req, res, next) {
   try {
     const body = applyLeaveSchema.parse(req.body);

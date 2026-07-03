@@ -192,6 +192,69 @@ export async function updateLeave(user, id, { type, startYMD, endYMD, halfDay, h
   return request.toJSON();
 }
 
+/**
+ * Leadership records a leave FOR an employee (e.g. from the attendance editor)
+ * and auto-approves it — deducts balance, marks the day(s) ON_LEAVE, and shows
+ * up in the employee's leave history like any approved leave. Any existing
+ * check-in on those days is cleared (they're on leave now).
+ */
+export async function recordLeaveForUser(actor, userId, { type, startYMD, endYMD, reason }) {
+  const target = await User.findById(userId);
+  if (!target) throw httpError(404, 'NOT_FOUND', 'User not found');
+  if (endYMD < startYMD) throw httpError(400, 'BAD_RANGE', 'End date is before the start date');
+
+  // Don't double-book: block if an active leave already covers any of these days.
+  const overlap = await LeaveRequest.findOne({
+    user: userId,
+    status: { $in: ['PENDING', 'APPROVED'] },
+    startYMD: { $lte: endYMD },
+    endYMD: { $gte: startYMD },
+  });
+  if (overlap) {
+    throw httpError(409, 'LEAVE_EXISTS', 'This person already has a leave covering that date — manage it from the Leaves page');
+  }
+
+  const settings = await Setting.getSingleton();
+  const holidays = await holidayYMDSet(startYMD, endYMD);
+  const { count: workingDays } = computeWorkingDays({
+    fromYMD: startYMD,
+    toYMD: endYMD,
+    weekendDays: userWeekendDays(target, settings),
+    holidays,
+  });
+  if (workingDays <= 0) throw httpError(400, 'NO_WORKING_DAYS', 'The selected dates contain no working days');
+
+  if (isPaid(type)) {
+    const bal = await getOrCreateBalance(target._id, leaveYearOf(startYMD));
+    if (workingDays > bal.remaining) {
+      throw httpError(400, 'INSUFFICIENT_BALANCE', `Not enough leave balance (remaining ${bal.remaining}, requested ${workingDays}).`);
+    }
+  }
+
+  // Overwrite any present/absent record in range so ON_LEAVE applies cleanly.
+  await Attendance.deleteMany({
+    user: userId,
+    date: { $gte: companyDayFromYMD(startYMD), $lte: companyDayFromYMD(endYMD) },
+  });
+
+  // Create as PENDING then approve — reuses the balance + attendance machinery.
+  const req = await LeaveRequest.create({
+    user: target._id,
+    type,
+    startDate: companyDayFromYMD(startYMD),
+    endDate: companyDayFromYMD(endYMD),
+    startYMD,
+    endYMD,
+    halfDay: false,
+    halfDayPart: null,
+    workingDays,
+    reason: reason || 'Recorded by leadership',
+    status: 'PENDING',
+    appliedAt: new Date(),
+  });
+  return decideLeave(actor, req.id, 'APPROVE', 'Recorded by leadership');
+}
+
 async function markAttendanceOnLeave(userId, fromYMD, toYMD, halfDay, weekendDays, holidays, session) {
   const { workingDates } = computeWorkingDays({ fromYMD, toYMD, halfDay, weekendDays, holidays });
   for (const ymd of workingDates) {

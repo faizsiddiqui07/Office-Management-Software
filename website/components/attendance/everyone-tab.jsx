@@ -17,7 +17,15 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { formatTime, formatDuration, todayYMD } from '@/lib/time';
+import { LEAVE_TYPES } from '@/lib/leave';
 
 const columns = [
   {
@@ -165,32 +173,48 @@ export function EveryoneTab() {
     onError: (e) => toast.error(e?.message || 'Could not update'),
   });
 
-  // Leadership: edit/add a person's check-in & check-out for the selected day.
+  // Leadership: edit a person's day — set times, mark on leave, or clear.
   const [editing, setEditing] = React.useState(false);
+  const [editMode, setEditMode] = React.useState('present'); // 'present' | 'leave' | 'absent'
   const [editIn, setEditIn] = React.useState('');
   const [editOut, setEditOut] = React.useState('');
+  const [leaveType, setLeaveType] = React.useState('CASUAL');
   const hhmm = (iso) => (iso ? formatTime(iso) : ''); // 24h HH:mm for the time input
 
   React.useEffect(() => {
     setEditing(false);
+    setEditMode(selected?.attendance?.checkInAt ? 'present' : 'present');
     setEditIn(hhmm(selected?.attendance?.checkInAt));
     setEditOut(hhmm(selected?.attendance?.checkOutAt));
+    setLeaveType('CASUAL');
   }, [selected]);
 
-  const setRecordMut = useMutation({
-    mutationFn: () =>
-      api.put('/attendance/record', {
+  const editDate = data?.date ?? date;
+
+  const saveEditMut = useMutation({
+    mutationFn: () => {
+      if (editMode === 'leave') {
+        return api.post('/leaves/record', {
+          userId: selected.user.id,
+          startYMD: editDate,
+          endYMD: editDate,
+          type: leaveType,
+        });
+      }
+      return api.put('/attendance/record', {
         userId: selected.user.id,
-        dateYMD: data?.date ?? date,
-        checkIn: editIn || '',
-        checkOut: editOut || '',
-      }),
+        dateYMD: editDate,
+        checkIn: editMode === 'present' ? editIn || '' : '',
+        checkOut: editMode === 'present' ? editOut || '' : '',
+      });
+    },
     onSuccess: () => {
-      toast.success('Attendance updated');
+      toast.success(editMode === 'leave' ? 'Marked on leave' : editMode === 'absent' ? 'Marked absent' : 'Attendance updated');
       qc.invalidateQueries({ queryKey: ['attendance'] });
+      qc.invalidateQueries({ queryKey: ['leaves'] });
       setSelected(null);
     },
-    onError: (e) => toast.error(e?.message || 'Could not update attendance'),
+    onError: (e) => toast.error(e?.message || 'Could not update'),
   });
 
   const rows = React.useMemo(() => data?.rows ?? [], [data]);
@@ -316,12 +340,14 @@ export function EveryoneTab() {
           canExcuse ? (
             editing ? (
               <div className="flex w-full flex-wrap items-center justify-end gap-2">
-                <Button variant="outline" onClick={() => setEditing(false)} disabled={setRecordMut.isPending}>
+                <Button variant="outline" onClick={() => setEditing(false)} disabled={saveEditMut.isPending}>
                   Cancel
                 </Button>
-                <Button onClick={() => setRecordMut.mutate()} disabled={setRecordMut.isPending}>
-                  {setRecordMut.isPending ? 'Saving…' : 'Save times'}
-                </Button>
+                {sel.status !== 'ON_LEAVE' ? (
+                  <Button onClick={() => saveEditMut.mutate()} disabled={saveEditMut.isPending}>
+                    {saveEditMut.isPending ? 'Saving…' : 'Save'}
+                  </Button>
+                ) : null}
               </div>
             ) : (
               <div className="flex w-full flex-wrap items-center justify-between gap-2">
@@ -357,22 +383,76 @@ export function EveryoneTab() {
             </div>
 
             {canExcuse && editing ? (
-              <div className="space-y-3 rounded-xl bg-primary/[0.05] p-3 ring-1 ring-primary/15">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Edit times · {data?.date ?? date}</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="ed-in">Check-in</Label>
-                    <Input id="ed-in" type="time" value={editIn} onChange={(e) => setEditIn(e.target.value)} className="bg-background/50" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="ed-out">Check-out</Label>
-                    <Input id="ed-out" type="time" value={editOut} onChange={(e) => setEditOut(e.target.value)} className="bg-background/50" />
-                  </div>
+              sel.status === 'ON_LEAVE' ? (
+                <div className="rounded-xl bg-foreground/[0.04] p-3 text-sm text-muted-foreground ring-1 ring-border/50">
+                  This day is on leave. To change it, cancel the leave from the <span className="font-medium text-foreground">Leaves</span> page first.
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  Leave both blank to clear the day (marks absent). Late/overtime recompute automatically.
-                </p>
-              </div>
+              ) : (
+                <div className="space-y-3 rounded-xl bg-primary/[0.05] p-3 ring-1 ring-primary/15">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Edit · {editDate}</p>
+                  {/* Present (times) / On leave (type) / Absent (clear) */}
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { v: 'present', label: 'Present' },
+                      { v: 'leave', label: 'On leave' },
+                      { v: 'absent', label: 'Absent' },
+                    ].map((o) => (
+                      <button
+                        key={o.v}
+                        type="button"
+                        onClick={() => setEditMode(o.v)}
+                        className={cn(
+                          'rounded-lg px-2 py-2 text-sm font-medium ring-1 transition-colors',
+                          editMode === o.v
+                            ? 'bg-primary text-primary-foreground ring-primary'
+                            : 'bg-background/50 text-muted-foreground ring-border hover:text-foreground',
+                        )}
+                      >
+                        {o.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {editMode === 'present' ? (
+                    <>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <Label htmlFor="ed-in">Check-in</Label>
+                          <Input id="ed-in" type="time" value={editIn} onChange={(e) => setEditIn(e.target.value)} className="bg-background/50" />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label htmlFor="ed-out">Check-out</Label>
+                          <Input id="ed-out" type="time" value={editOut} onChange={(e) => setEditOut(e.target.value)} className="bg-background/50" />
+                        </div>
+                      </div>
+                      <p className="text-xs text-muted-foreground">Late/overtime recompute automatically from their schedule.</p>
+                    </>
+                  ) : null}
+
+                  {editMode === 'leave' ? (
+                    <div className="space-y-1.5">
+                      <Label htmlFor="ed-leave">Leave type</Label>
+                      <Select value={leaveType} onValueChange={setLeaveType}>
+                        <SelectTrigger id="ed-leave" className="w-full bg-background/50">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {LEAVE_TYPES.map((t) => (
+                            <SelectItem key={t.value} value={t.value}>
+                              {t.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">Creates an approved leave for this day and deducts their balance (paid types).</p>
+                    </div>
+                  ) : null}
+
+                  {editMode === 'absent' ? (
+                    <p className="text-xs text-muted-foreground">Clears any check-in/out for this day — the person shows as absent.</p>
+                  ) : null}
+                </div>
+              )
             ) : (
               <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
                 <Field label="Check-in" value={formatTime(a?.checkInAt)} />
