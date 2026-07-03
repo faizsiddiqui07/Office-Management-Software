@@ -13,19 +13,15 @@
  */
 export function effectiveSchedule(user, settings) {
   const s = user?.schedule || {};
-  if (user?.employmentType === 'PART_TIME') {
-    return {
-      workStart: s.workStart || settings.workStart,
-      workEnd: s.workEnd || settings.workEnd,
-      graceMinutes: Number.isFinite(s.graceMinutes) ? s.graceMinutes : settings.graceMinutes,
-      partTime: true,
-    };
-  }
+  // ANY user (full-time or part-time) may set their own hours. If they haven't,
+  // the company office hours apply. Custom = both check-in and check-out set.
+  const hasHours = !!(s.workStart && s.workEnd);
   return {
-    workStart: settings.workStart,
-    workEnd: settings.workEnd,
-    graceMinutes: settings.graceMinutes,
-    partTime: false,
+    workStart: s.workStart || settings.workStart,
+    workEnd: s.workEnd || settings.workEnd,
+    graceMinutes: hasHours ? (Number.isFinite(s.graceMinutes) ? s.graceMinutes : 0) : settings.graceMinutes,
+    custom: hasHours,
+    partTime: user?.employmentType === 'PART_TIME',
   };
 }
 
@@ -37,7 +33,9 @@ export function effectiveSchedule(user, settings) {
  */
 export function userWeekendDays(user, settings) {
   const wd = user?.schedule?.workDays;
-  if (user?.employmentType === 'PART_TIME' && Array.isArray(wd) && wd.length) {
+  // Any user with an explicit working-days list works only those days; otherwise
+  // the company weekend config applies.
+  if (Array.isArray(wd) && wd.length) {
     const works = new Set(wd);
     return [0, 1, 2, 3, 4, 5, 6].filter((d) => !works.has(d));
   }

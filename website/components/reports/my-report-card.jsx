@@ -9,6 +9,8 @@ import { cn } from '@/lib/utils';
 import { GlassPanel } from '@/components/glass/glass-panel';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
+import { useAuth } from '@/lib/auth';
+import { can } from '@/lib/permissions';
 import { PeriodPicker } from './period-picker';
 import { SELF_REPORT_SECTIONS } from '@/lib/report';
 import { todayYMD, formatMoney } from '@/lib/expense';
@@ -26,9 +28,15 @@ function Mini({ label, value, hint }) {
 }
 
 export function MyReportCard() {
+  const { user } = useAuth();
+  // Leadership (CEO/President) doesn't self-track attendance or apply for leave,
+  // so those sections don't apply to them — only offer what's relevant.
+  const selfTracks = !!user && (can(user, 'markAttendance') || can(user, 'applyLeave'));
+  const availableSections = SELF_REPORT_SECTIONS.filter((s) => selfTracks || s.value === 'dues');
+
   const [type, setType] = React.useState('daily'); // opens on today's report
   const [date, setDate] = React.useState(todayYMD());
-  const [sections, setSections] = React.useState(['attendance', 'leaves', 'dues']);
+  const [sections, setSections] = React.useState(availableSections.map((s) => s.value));
   const [downloading, setDownloading] = React.useState(false);
 
   const { data } = useQuery({
@@ -75,7 +83,11 @@ export function MyReportCard() {
         </span>
         <div>
           <h2 className="font-semibold tracking-tight">My report</h2>
-          <p className="text-sm text-muted-foreground">Your own attendance, leave & dues — a detailed, branded PDF.</p>
+          <p className="text-sm text-muted-foreground">
+            {selfTracks
+              ? 'Your own attendance, leave & dues — a detailed, branded PDF.'
+              : 'Your dues statement — a detailed, branded PDF. (Your role doesn’t track attendance or leave.)'}
+          </p>
         </div>
       </div>
 
@@ -84,7 +96,7 @@ export function MyReportCard() {
         <div className="w-full space-y-1.5 sm:w-auto">
           <Label>Include</Label>
           <div className="flex flex-wrap gap-1.5">
-            {SELF_REPORT_SECTIONS.map((s) => (
+            {availableSections.map((s) => (
               <button
                 key={s.value}
                 type="button"
@@ -113,13 +125,17 @@ export function MyReportCard() {
           <p className="text-sm text-muted-foreground">
             Period: <span className="font-medium text-foreground">{data.period.label}</span>
           </p>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <Mini
-              label="Attendance"
-              value={`${t.attendanceRate}%`}
-              hint={`${t.present} present${t.late ? ` (${t.late} late)` : ''} · ${t.absent} absent`}
-            />
-            <Mini label="Leave balance" value={`${bal.remaining} left`} hint={`${bal.used} used of ${bal.total}`} />
+          <div className={cn('grid gap-3', selfTracks ? 'sm:grid-cols-3' : 'sm:grid-cols-1')}>
+            {selfTracks && t ? (
+              <Mini
+                label="Attendance"
+                value={`${t.attendanceRate}%`}
+                hint={`${t.present} present${t.late ? ` (${t.late} late)` : ''} · ${t.absent} absent`}
+              />
+            ) : null}
+            {selfTracks && bal ? (
+              <Mini label="Leave balance" value={`${bal.remaining} left`} hint={`${bal.used} used of ${bal.total}`} />
+            ) : null}
             <Mini label="Dues" value={duesValue} hint={data.period.label} />
           </div>
         </>

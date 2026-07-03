@@ -12,12 +12,6 @@ const scheduleSchema = z.object({
   workDays: z.array(z.coerce.number().int().min(0).max(6)).optional(),
 });
 
-/** Part-timers must specify their check-in and check-out times. */
-const requirePartTimeHours = (v, ctx) => {
-  if (v.employmentType === 'PART_TIME' && (!v.schedule?.workStart || !v.schedule?.workEnd)) {
-    ctx.addIssue({ code: 'custom', message: 'Part-time needs a check-in and check-out time', path: ['schedule'] });
-  }
-};
 
 export const createUserSchema = z
   .object({
@@ -32,8 +26,7 @@ export const createUserSchema = z
     schedule: scheduleSchema.optional(),
     // Optional chosen temp password; if omitted a strong one is generated.
     temporaryPassword: z.string().min(8, 'Temporary password must be at least 8 characters').optional(),
-  })
-  .superRefine(requirePartTimeHours);
+  });
 
 export const leaveBalanceSchema = z
   .object({
@@ -62,5 +55,4 @@ export const updateUserSchema = z
     employmentType: employmentType.optional(),
     schedule: scheduleSchema.optional(),
     taskAssign: taskAssignSchema.optional(),
-  })
-  .superRefine(requirePartTimeHours);
+  });

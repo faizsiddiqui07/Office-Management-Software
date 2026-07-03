@@ -82,6 +82,55 @@ export async function checkIn(user, meta, coords, lateReason) {
   return record;
 }
 
+/**
+ * Leadership sets/edits a user's check-in and/or check-out for a given day —
+ * for any date, past or present. Recomputes late/worked/overtime against that
+ * user's effective schedule. Both times blank clears the record (→ absent).
+ */
+export async function setAttendanceRecord(userId, dateYMD, checkIn, checkOut) {
+  const user = await User.findById(userId).select('employmentType schedule');
+  if (!user) throw httpError(404, 'NOT_FOUND', 'User not found');
+  const settings = await Setting.getSingleton();
+  const sched = effectiveSchedule(user, settings);
+  const day = companyDayFromYMD(dateYMD);
+
+  let record = await Attendance.findOne({ user: userId, date: day });
+
+  if (record && record.status === 'ON_LEAVE') {
+    throw httpError(409, 'ON_LEAVE', 'This day is marked on leave — cancel the leave first to edit attendance');
+  }
+
+  // No times → clear the day (becomes absent).
+  if (!checkIn && !checkOut) {
+    if (record) await record.deleteOne();
+    return { cleared: true, dateYMD };
+  }
+
+  if (!record) record = new Attendance({ user: userId, date: day });
+
+  if (checkIn) {
+    const inAt = companyDayInstantAt(day, checkIn);
+    record.checkInAt = inAt;
+    record.status = isLateCheckIn(inAt, day, sched.workStart, sched.graceMinutes) ? 'LATE' : 'PRESENT';
+  } else {
+    record.checkInAt = null;
+    record.status = 'ABSENT';
+  }
+  record.checkOutAt = checkOut ? companyDayInstantAt(day, checkOut) : null;
+
+  if (record.checkInAt && record.checkOutAt) {
+    const { workedMinutes, overtimeMinutes } = computeWork(record.checkInAt, record.checkOutAt, day, sched.workEnd);
+    record.workedMinutes = workedMinutes;
+    record.overtimeMinutes = overtimeMinutes;
+  } else {
+    record.workedMinutes = 0;
+    record.overtimeMinutes = 0;
+  }
+
+  await record.save();
+  return record.toJSON();
+}
+
 /** Leadership marks a LATE record as excused (on-duty) — or un-excuses it. */
 export async function excuseLate(approver, attendanceId, excused) {
   const record = await Attendance.findById(attendanceId);

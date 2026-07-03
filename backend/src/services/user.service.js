@@ -13,21 +13,19 @@ function httpError(status, code, message) {
   return e;
 }
 
-/** Keep a per-user schedule only for part-timers; full-timers store an empty one. */
-function normalizeSchedule(employmentType, schedule) {
-  if (employmentType === 'PART_TIME' && schedule) {
-    // De-dupe + sort the working-day numbers (0=Sun…6=Sat); [] = follow office weekends.
-    const workDays = Array.isArray(schedule.workDays)
-      ? [...new Set(schedule.workDays.map(Number).filter((d) => d >= 0 && d <= 6))].sort((a, b) => a - b)
-      : [];
-    return {
-      workStart: schedule.workStart || '',
-      workEnd: schedule.workEnd || '',
-      graceMinutes: Number(schedule.graceMinutes) || 0,
-      workDays,
-    };
-  }
-  return { workStart: '', workEnd: '', graceMinutes: 0, workDays: [] };
+/** Any user may have a custom schedule; empty fields mean "follow office hours/week". */
+function normalizeSchedule(_employmentType, schedule) {
+  if (!schedule) return { workStart: '', workEnd: '', graceMinutes: 0, workDays: [] };
+  // De-dupe + sort the working-day numbers (0=Sun…6=Sat); [] = follow office weekends.
+  const workDays = Array.isArray(schedule.workDays)
+    ? [...new Set(schedule.workDays.map(Number).filter((d) => d >= 0 && d <= 6))].sort((a, b) => a - b)
+    : [];
+  return {
+    workStart: schedule.workStart || '',
+    workEnd: schedule.workEnd || '',
+    graceMinutes: Number(schedule.graceMinutes) || 0,
+    workDays,
+  };
 }
 
 /**

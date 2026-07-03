@@ -64,8 +64,8 @@ export function CreateUserDialog() {
   const submit = () => {
     if (!form.name.trim()) return toast.error('Add a name');
     if (!form.email.trim()) return toast.error('Add an email');
-    if (form.employmentType === 'PART_TIME' && (!form.schedule.workStart || !form.schedule.workEnd)) {
-      return toast.error('Part-time needs a check-in and check-out time');
+    if (form.schedule.workStart && form.schedule.workEnd && form.schedule.workEnd <= form.schedule.workStart) {
+      return toast.error('Check-out time must be after check-in');
     }
     mut.mutate();
   };

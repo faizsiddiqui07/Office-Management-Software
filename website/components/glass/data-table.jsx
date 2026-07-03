@@ -13,6 +13,13 @@ import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, ChevronsUpDown, Search }
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 
 /**
@@ -25,6 +32,7 @@ export function DataTable({
   searchable = true,
   searchPlaceholder = 'Search…',
   pageSize = 8,
+  pageSizeOptions = [10, 20, 50, 75, 100],
   emptyMessage = 'No results found.',
   className,
   onRowClick,
@@ -47,6 +55,15 @@ export function DataTable({
 
   const rows = table.getRowModel().rows;
   const totalRows = table.getFilteredRowModel().rows.length;
+
+  // Rows-per-page options (always include the current size so the value shows).
+  const currentSize = table.getState().pagination.pageSize;
+  const sizeOptions = React.useMemo(
+    () => [...new Set([...pageSizeOptions, pageSize])].sort((a, b) => a - b),
+    [pageSizeOptions, pageSize],
+  );
+  // Show the pager/size controls once there's more data than the smallest option.
+  const showPager = totalRows > sizeOptions[0] || table.getPageCount() > 1;
 
   return (
     <div className={cn('glass glass-highlight overflow-hidden rounded-2xl', className)}>
@@ -169,10 +186,25 @@ export function DataTable({
         )}
       </div>
 
-      {table.getPageCount() > 1 ? (
-        <div className="flex items-center justify-between gap-2 border-t border-border/60 p-3">
+      {showPager ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 p-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">Rows</span>
+            <Select value={String(currentSize)} onValueChange={(v) => table.setPageSize(Number(v))}>
+              <SelectTrigger size="sm" className="w-[4.5rem] bg-background/50">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {sizeOptions.map((n) => (
+                  <SelectItem key={n} value={String(n)}>
+                    {n}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <p className="text-xs text-muted-foreground">
-            Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}
+            Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()} · {totalRows} total
           </p>
           <div className="flex items-center gap-1.5">
             <Button

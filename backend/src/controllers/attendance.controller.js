@@ -35,6 +35,35 @@ export async function checkIn(req, res, next) {
   }
 }
 
+/** Leadership: set/edit/clear a user's check-in & check-out for a given day. */
+export async function setRecord(req, res, next) {
+  try {
+    const { userId, dateYMD } = req.body || {};
+    const checkIn = req.body?.checkIn || '';
+    const checkOut = req.body?.checkOut || '';
+    const hm = /^\d{2}:\d{2}$/;
+    if (!userId || !/^\d{4}-\d{2}-\d{2}$/.test(dateYMD || '')) {
+      return res.status(400).json(fail('BAD_INPUT', 'userId and a valid date are required'));
+    }
+    if (checkIn && !hm.test(checkIn)) return res.status(400).json(fail('BAD_TIME', 'Invalid check-in time'));
+    if (checkOut && !hm.test(checkOut)) return res.status(400).json(fail('BAD_TIME', 'Invalid check-out time'));
+    if (checkIn && checkOut && checkOut <= checkIn) {
+      return res.status(400).json(fail('BAD_RANGE', 'Check-out must be after check-in'));
+    }
+    const result = await svc.setAttendanceRecord(userId, dateYMD, checkIn, checkOut);
+    await audit({
+      actor: req.user._id,
+      action: 'attendance.edit',
+      entityType: 'Attendance',
+      entityId: String(userId),
+      meta: { dateYMD, checkIn, checkOut },
+    });
+    res.json(ok(result));
+  } catch (err) {
+    handleErr(res, err, next);
+  }
+}
+
 /** Leadership: excuse (or un-excuse) a late check-in so it isn't counted against the person. */
 export async function excuse(req, res, next) {
   try {

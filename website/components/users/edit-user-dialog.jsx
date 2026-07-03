@@ -85,8 +85,8 @@ export function EditUserDialog({ user: target, open, onOpenChange }) {
 
   const mut = useMutation({
     mutationFn: async () => {
-      if (employmentType === 'PART_TIME' && (!schedule.workStart || !schedule.workEnd)) {
-        throw new Error('Part-time needs a check-in and check-out time');
+      if (schedule.workStart && schedule.workEnd && schedule.workEnd <= schedule.workStart) {
+        throw new Error('Check-out time must be after check-in');
       }
       await api.patch(`/users/${target.id}`, {
         name,
@@ -95,7 +95,7 @@ export function EditUserDialog({ user: target, open, onOpenChange }) {
         role,
         isActive,
         employmentType,
-        schedule: employmentType === 'PART_TIME' ? schedule : undefined,
+        schedule, // custom timing is optional for everyone; blank = office hours
         taskAssign: { mode: assignMode, users: assignMode === 'SELECTED' ? [...assignUsers] : [] },
       });
       if (canManage) {

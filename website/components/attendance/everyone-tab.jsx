@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Check, Clock, Download, TriangleAlert, UserCheck, Users, UserX } from 'lucide-react';
+import { Check, Clock, Download, Pencil, TriangleAlert, UserCheck, Users, UserX } from 'lucide-react';
 import { api, getAuthToken } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can, prettyRole } from '@/lib/permissions';
@@ -165,6 +165,34 @@ export function EveryoneTab() {
     onError: (e) => toast.error(e?.message || 'Could not update'),
   });
 
+  // Leadership: edit/add a person's check-in & check-out for the selected day.
+  const [editing, setEditing] = React.useState(false);
+  const [editIn, setEditIn] = React.useState('');
+  const [editOut, setEditOut] = React.useState('');
+  const hhmm = (iso) => (iso ? formatTime(iso) : ''); // 24h HH:mm for the time input
+
+  React.useEffect(() => {
+    setEditing(false);
+    setEditIn(hhmm(selected?.attendance?.checkInAt));
+    setEditOut(hhmm(selected?.attendance?.checkOutAt));
+  }, [selected]);
+
+  const setRecordMut = useMutation({
+    mutationFn: () =>
+      api.put('/attendance/record', {
+        userId: selected.user.id,
+        dateYMD: data?.date ?? date,
+        checkIn: editIn || '',
+        checkOut: editOut || '',
+      }),
+    onSuccess: () => {
+      toast.success('Attendance updated');
+      qc.invalidateQueries({ queryKey: ['attendance'] });
+      setSelected(null);
+    },
+    onError: (e) => toast.error(e?.message || 'Could not update attendance'),
+  });
+
   const rows = React.useMemo(() => data?.rows ?? [], [data]);
   const summary = data?.summary;
   const unexcusedLate = Math.max(0, (summary?.late ?? 0) - (summary?.excused ?? 0));
@@ -285,14 +313,35 @@ export function EveryoneTab() {
           sel ? `${sel.user.employeeId} · ${prettyRole(sel.user.role)}${sel.user.department ? ` · ${sel.user.department}` : ''}` : undefined
         }
         footer={
-          canExcuse && isLateRow ? (
-            <Button
-              variant={a?.excused ? 'outline' : 'default'}
-              disabled={excuseMut.isPending}
-              onClick={() => excuseMut.mutate({ id: a.id, excused: !a.excused })}
-            >
-              {excuseMut.isPending ? 'Saving…' : a?.excused ? 'Remove excuse' : 'Excuse (mark on-duty)'}
-            </Button>
+          canExcuse ? (
+            editing ? (
+              <div className="flex w-full flex-wrap items-center justify-end gap-2">
+                <Button variant="outline" onClick={() => setEditing(false)} disabled={setRecordMut.isPending}>
+                  Cancel
+                </Button>
+                <Button onClick={() => setRecordMut.mutate()} disabled={setRecordMut.isPending}>
+                  {setRecordMut.isPending ? 'Saving…' : 'Save times'}
+                </Button>
+              </div>
+            ) : (
+              <div className="flex w-full flex-wrap items-center justify-between gap-2">
+                <Button variant="outline" onClick={() => setEditing(true)}>
+                  <Pencil className="size-4" /> Edit times
+                </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                  {isLateRow ? (
+                    <Button
+                      variant={a?.excused ? 'outline' : 'default'}
+                      disabled={excuseMut.isPending}
+                      onClick={() => excuseMut.mutate({ id: a.id, excused: !a.excused })}
+                    >
+                      {excuseMut.isPending ? 'Saving…' : a?.excused ? 'Remove excuse' : 'Excuse (on-duty)'}
+                    </Button>
+                  ) : null}
+                  <Button variant="ghost" onClick={() => setSelected(null)}>Close</Button>
+                </div>
+              </div>
+            )
           ) : (
             <Button variant="outline" onClick={() => setSelected(null)}>
               Close
@@ -307,12 +356,31 @@ export function EveryoneTab() {
               <span className="text-xs text-muted-foreground">{data?.date ?? date}</span>
             </div>
 
-            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
-              <Field label="Check-in" value={formatTime(a?.checkInAt)} />
-              <Field label="Check-out" value={formatTime(a?.checkOutAt)} />
-              <Field label="Worked" value={formatDuration(a?.workedMinutes)} />
-              <Field label="Overtime" value={a?.overtimeMinutes ? `+${formatDuration(a.overtimeMinutes)}` : '—'} />
-            </div>
+            {canExcuse && editing ? (
+              <div className="space-y-3 rounded-xl bg-primary/[0.05] p-3 ring-1 ring-primary/15">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Edit times · {data?.date ?? date}</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="ed-in">Check-in</Label>
+                    <Input id="ed-in" type="time" value={editIn} onChange={(e) => setEditIn(e.target.value)} className="bg-background/50" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="ed-out">Check-out</Label>
+                    <Input id="ed-out" type="time" value={editOut} onChange={(e) => setEditOut(e.target.value)} className="bg-background/50" />
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Leave both blank to clear the day (marks absent). Late/overtime recompute automatically.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+                <Field label="Check-in" value={formatTime(a?.checkInAt)} />
+                <Field label="Check-out" value={formatTime(a?.checkOutAt)} />
+                <Field label="Worked" value={formatDuration(a?.workedMinutes)} />
+                <Field label="Overtime" value={a?.overtimeMinutes ? `+${formatDuration(a.overtimeMinutes)}` : '—'} />
+              </div>
+            )}
 
             {isLateRow ? (
               <div className="rounded-xl bg-foreground/[0.04] p-3 ring-1 ring-border/50">
