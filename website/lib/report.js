@@ -20,6 +20,3 @@ export const SELF_REPORT_SECTIONS = [
   { value: 'leaves', label: 'Leave' },
   { value: 'dues', label: 'Dues' },
 ];
-
-// Any of these permissions unlocks the company report builder.
-export const COMPANY_REPORT_PERMS = ['downloadReports', 'viewEveryone', 'viewExpenses', 'manageDues'];

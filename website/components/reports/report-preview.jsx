@@ -1,6 +1,6 @@
 'use client';
 
-import { CalendarDays, Clock, UserCheck, UserX } from 'lucide-react';
+import { CalendarClock, CalendarDays, Clock, HandCoins, UserCheck, UserX, Users, Wallet } from 'lucide-react';
 import { StatCard } from '@/components/glass/stat-card';
 import { GlassCard } from '@/components/glass/glass-card';
 import { DataTable } from '@/components/glass/data-table';
@@ -10,6 +10,26 @@ import { formatMoney, categoryLabel } from '@/lib/expense';
 import { formatRange, formatYMD } from '@/lib/leave';
 import { prettyRole, roleName } from '@/lib/permissions';
 import { useRoleOptions } from '@/lib/use-roles';
+
+/**
+ * A clearly-bounded card for ONE report section: an icon + title + short summary
+ * in a header bar, content below. On a phone this gives every section an obvious
+ * start and end, so a long report doesn't blur into one confusing scroll.
+ */
+function ReportSection({ icon: Icon, title, meta, children }) {
+  return (
+    <section className="overflow-hidden rounded-2xl border border-border/60 bg-card/50 shadow-sm ring-1 ring-white/5">
+      <header className="flex items-center gap-2.5 border-b border-border/50 bg-foreground/[0.04] px-4 py-3">
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/15">
+          <Icon className="size-4" />
+        </span>
+        <h2 className="text-base font-semibold tracking-tight">{title}</h2>
+        {meta ? <span className="ml-auto shrink-0 text-right text-xs font-medium text-muted-foreground">{meta}</span> : null}
+      </header>
+      <div className="space-y-4 p-3 sm:p-4">{children}</div>
+    </section>
+  );
+}
 
 function AttendanceSection({ data }) {
   const t = data.attendance.totals;
@@ -35,22 +55,15 @@ function AttendanceSection({ data }) {
     { id: 'ot', header: 'OT', accessorFn: (r) => r.overtimeMinutes, cell: ({ row }) => <span className="tabular-nums">{formatDuration(row.original.overtimeMinutes)}</span> },
   ];
   return (
-    <section className="space-y-4">
-      <h2 className="text-lg font-semibold tracking-tight">Attendance</h2>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <ReportSection icon={CalendarClock} title="Attendance" meta={`${data.workingDays} working days`}>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label="Attendance rate" value={`${t.attendanceRate}%`} icon={UserCheck} tone="success" hint={`${data.workingDays} working days`} />
-        <StatCard
-          label="Present"
-          value={t.present}
-          icon={CalendarDays}
-          tone="default"
-          hint={t.late ? `${t.late} came late` : 'nobody late'}
-        />
+        <StatCard label="Present" value={t.present} icon={CalendarDays} tone="default" hint={t.late ? `${t.late} came late` : 'nobody late'} />
         <StatCard label="Absent / Leave" value={`${t.absent} / ${t.onLeave}`} icon={UserX} tone="warning" />
         <StatCard label="Overtime" value={formatDuration(t.overtimeMinutes)} icon={Clock} tone="info" hint={`${t.workedHours}h worked`} />
       </div>
       <DataTable columns={columns} data={data.attendance.perEmployee} searchPlaceholder="Search employees…" pageSize={8} emptyMessage="No employees." />
-    </section>
+    </ReportSection>
   );
 }
 
@@ -68,21 +81,20 @@ function LeavesSection({ data }) {
     { id: 'total', header: 'Quota', accessorFn: (r) => r.total, cell: ({ row }) => <span className="tabular-nums">{row.original.total}</span> },
   ];
   return (
-    <section className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-lg font-semibold tracking-tight">Leaves</h2>
-        <span className="text-sm text-muted-foreground">{data.leaves.taken.length} taken · {data.leaves.pending.length} pending</span>
+    <ReportSection icon={CalendarDays} title="Leaves" meta={`${data.leaves.taken.length} taken · ${data.leaves.pending.length} pending`}>
+      <div className="space-y-2">
+        <h3 className="text-sm font-medium text-muted-foreground">Taken this period</h3>
+        {data.leaves.taken.length ? (
+          <DataTable columns={takenCols} data={data.leaves.taken} searchable={false} pageSize={6} emptyMessage="No leaves." />
+        ) : (
+          <p className="rounded-lg bg-foreground/[0.03] p-3 text-sm text-muted-foreground ring-1 ring-border/50">No approved leaves in this period.</p>
+        )}
       </div>
-      {data.leaves.taken.length ? (
-        <DataTable columns={takenCols} data={data.leaves.taken} searchable={false} pageSize={6} emptyMessage="No leaves." />
-      ) : (
-        <GlassCard className="p-5 text-sm text-muted-foreground">No approved leaves in this period.</GlassCard>
-      )}
       <div className="space-y-2">
         <h3 className="text-sm font-medium text-muted-foreground">Remaining balances</h3>
         <DataTable columns={balCols} data={data.leaves.balances} searchPlaceholder="Search…" pageSize={6} emptyMessage="No balances." />
       </div>
-    </section>
+    </ReportSection>
   );
 }
 
@@ -105,27 +117,23 @@ function ExpensesSection({ data }) {
     { id: 'amount', header: 'Amount', accessorFn: (r) => r.amount, cell: ({ row }) => <span className="font-medium tabular-nums">{formatMoney(row.original.amount)}</span> },
   ];
   return (
-    <section className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-lg font-semibold tracking-tight">Expenses</h2>
-        <span className="text-sm font-medium">{formatMoney(e.total)} · {e.count} entries</span>
-      </div>
+    <ReportSection icon={Wallet} title="Expenses" meta={`${formatMoney(e.total)} · ${e.count} entries`}>
       {e.byCategory.length ? (
-        <GlassCard className="space-y-2 p-5">
+        <div className="space-y-2 rounded-lg bg-foreground/[0.03] p-3 ring-1 ring-border/50">
           {e.byCategory.map((c) => (
             <div key={c.category} className="flex items-center justify-between text-sm">
               <span className="text-muted-foreground">{categoryLabel(c.category)}</span>
               <span className="font-medium tabular-nums">{formatMoney(c.total)}</span>
             </div>
           ))}
-        </GlassCard>
+        </div>
       ) : null}
       {e.list.length ? (
         <DataTable columns={listCols} data={e.list} searchPlaceholder="Search…" pageSize={8} emptyMessage="No expenses." />
       ) : (
-        <GlassCard className="p-5 text-sm text-muted-foreground">No expenses in this period.</GlassCard>
+        <p className="rounded-lg bg-foreground/[0.03] p-3 text-sm text-muted-foreground ring-1 ring-border/50">No expenses in this period.</p>
       )}
-    </section>
+    </ReportSection>
   );
 }
 
@@ -137,19 +145,16 @@ function RosterSection({ data }) {
     { id: 'dept', header: 'Department', accessorFn: (r) => r.department || '', cell: ({ row }) => <span className="text-sm text-muted-foreground">{row.original.department || '—'}</span> },
   ];
   return (
-    <section className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-lg font-semibold tracking-tight">Roster · {data.roster.headcount} staff</h2>
-        <div className="flex flex-wrap gap-1.5">
-          {Object.entries(data.roster.byRole).map(([r, n]) => (
-            <StatusBadge key={r} tone="neutral" dot={false}>
-              {prettyRole(r)}: {n}
-            </StatusBadge>
-          ))}
-        </div>
+    <ReportSection icon={Users} title="Roster" meta={`${data.roster.headcount} staff`}>
+      <div className="flex flex-wrap gap-1.5">
+        {Object.entries(data.roster.byRole).map(([r, n]) => (
+          <StatusBadge key={r} tone="neutral" dot={false}>
+            {prettyRole(r)}: {n}
+          </StatusBadge>
+        ))}
       </div>
       <DataTable columns={cols} data={data.roster.members} searchPlaceholder="Search staff…" pageSize={8} emptyMessage="No members." />
-    </section>
+    </ReportSection>
   );
 }
 
@@ -163,19 +168,18 @@ function DuesSection({ data }) {
     { id: 'advance', header: 'Advance', accessorFn: (r) => r.advance ?? 0, cell: ({ row }) => <span className="tabular-nums text-muted-foreground">{row.original.advance ? formatMoney(row.original.advance) : '—'}</span> },
   ];
   return (
-    <section className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-lg font-semibold tracking-tight">Dues</h2>
-        <span className="text-sm text-muted-foreground">
-          {formatMoney(d.totalPending)} pending · {d.owingCount} owing · {formatMoney(d.totalAdvance)} advance
-        </span>
+    <ReportSection icon={HandCoins} title="Dues" meta={`${formatMoney(d.totalPending)} pending`}>
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+        <span>Pending: <span className="font-medium text-destructive">{formatMoney(d.totalPending)}</span></span>
+        <span>Owing: <span className="font-medium text-foreground">{d.owingCount}</span></span>
+        <span>Advance: <span className="font-medium text-foreground">{formatMoney(d.totalAdvance)}</span></span>
       </div>
       {d.people.length ? (
         <DataTable columns={cols} data={d.people} searchPlaceholder="Search people…" pageSize={8} emptyMessage="No dues." />
       ) : (
-        <GlassCard className="p-5 text-sm text-muted-foreground">No outstanding dues.</GlassCard>
+        <p className="rounded-lg bg-foreground/[0.03] p-3 text-sm text-muted-foreground ring-1 ring-border/50">No outstanding dues.</p>
       )}
-    </section>
+    </ReportSection>
   );
 }
 
@@ -211,7 +215,7 @@ export function ReportPreview({ data, sections }) {
   useRoleOptions();
   const has = (s) => sections.includes(s);
   return (
-    <div className="space-y-10">
+    <div className="space-y-4">
       <OngoingNotice data={data} workingDays={data.workingDays} />
       {has('attendance') && data.attendance ? <AttendanceSection data={data} /> : null}
       {has('leaves') && data.leaves ? <LeavesSection data={data} /> : null}

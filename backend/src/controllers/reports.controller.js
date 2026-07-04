@@ -34,18 +34,15 @@ function periodFilename(prefix, type, period) {
   return `${prefix}-${f}.pdf`;
 }
 
-/** Which company report sections a user may see, per their permissions. */
+/**
+ * Which company report sections a user may see. The company report is for
+ * LEADERSHIP who can see everyone's data — i.e. roles with BOTH the leadership
+ * dashboard and view-everyone access (CEO & President and Executive Management
+ * here). Everyone else gets only their own (self) report, never the company one.
+ */
 function sectionAccess(user) {
-  const all = can(user, 'downloadReports');
-  return {
-    attendance: all || can(user, 'viewEveryone'),
-    leaves: all || can(user, 'viewEveryone'),
-    roster: all || can(user, 'viewEveryone'),
-    // Expenses require the specific permission, never the blanket downloadReports
-    // grant — no expense access ⇒ no expense section.
-    expenses: can(user, 'viewExpenses'),
-    dues: all || can(user, 'manageDues'),
-  };
+  const all = can(user, 'leadershipDashboard') && can(user, 'viewEveryone');
+  return { attendance: all, leaves: all, roster: all, expenses: all, dues: all };
 }
 
 export function canCompanyReports(user) {

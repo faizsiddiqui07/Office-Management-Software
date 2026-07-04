@@ -6,11 +6,12 @@ import { can } from '@/lib/permissions';
 import { PageHeader } from '@/components/glass/page-header';
 import { MyReportCard } from '@/components/reports/my-report-card';
 import { CompanyReportBuilder } from '@/components/reports/company-report-builder';
-import { COMPANY_REPORT_PERMS } from '@/lib/report';
 
 export default function ReportsPage() {
   const { user } = useAuth();
-  const canCompany = !!user && COMPANY_REPORT_PERMS.some((p) => can(user, p));
+  // Company report = leadership who can see everyone's data (CEO & President and
+  // Executive Management). Everyone else sees only their own report below.
+  const canCompany = !!user && can(user, 'leadershipDashboard') && can(user, 'viewEveryone');
 
   return (
     <div className="space-y-8">
