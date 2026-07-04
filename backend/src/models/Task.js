@@ -7,6 +7,10 @@ const taskSchema = new mongoose.Schema(
     status: { type: String, enum: ['PENDING', 'DONE'], default: 'PENDING', index: true },
     owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true }, // who does it
     assignedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null, index: true }, // set when delegated
+    // Teammates tagged as also working on this task (a shared "project" task). The
+    // owner keeps it in their own to-do; each collaborator sees it in "assigned to
+    // me". Status is SHARED — whoever completes it, it's done for everyone.
+    collaborators: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }], default: [], index: true },
     dueYMD: { type: String, default: '' }, // optional deadline (YYYY-MM-DD)
     completedAt: { type: Date, default: null },
   },

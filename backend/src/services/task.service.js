@@ -40,9 +40,27 @@ export async function assignableUsers(actor) {
     .map((u) => ({ id: u.id, name: u.name, designation: u.designation || '', role: u.role, roleLabel: roleLabel(u.role) }));
 }
 
+/**
+ * Validate & normalise a list of collaborator ids the actor wants to tag on their
+ * own task. Reuses the delegation ACL — you can only tag people you may assign
+ * work to. Drops self, dedupes, and rejects the whole set if any id isn't allowed.
+ */
+async function resolveCollaborators(actor, ids) {
+  if (!Array.isArray(ids) || !ids.length) return [];
+  const uniq = [...new Set(ids.map(String))].filter((id) => id !== String(actor._id));
+  if (!uniq.length) return [];
+  const users = await User.find({ _id: { $in: uniq }, isActive: true });
+  const allowed = users.filter((u) => canAssignTo(actor, u));
+  if (allowed.length !== uniq.length) {
+    throw httpError(403, 'FORBIDDEN', 'You can only tag people you’re allowed to assign work to');
+  }
+  return allowed.map((u) => u._id);
+}
+
 export async function createTask(actor, data) {
   let owner = actor._id;
   let assignedBy = null;
+  let collaborators = [];
 
   if (data.assignTo && String(data.assignTo) !== String(actor._id)) {
     const target = await User.findById(data.assignTo);
@@ -52,6 +70,10 @@ export async function createTask(actor, data) {
     }
     owner = target._id;
     assignedBy = actor._id;
+  } else {
+    // A personal task the actor keeps in their own to-do can tag teammates who
+    // are also working on it (shared task) — they'll see it in "assigned to me".
+    collaborators = await resolveCollaborators(actor, data.collaborators);
   }
 
   const task = await Task.create({
@@ -60,6 +82,7 @@ export async function createTask(actor, data) {
     dueYMD: data.dueYMD || '',
     owner,
     assignedBy,
+    collaborators,
     status: 'PENDING',
   });
 
@@ -72,33 +95,50 @@ export async function createTask(actor, data) {
       link: '/todo',
     });
   }
+  for (const cid of collaborators) {
+    await notify({
+      user: cid,
+      type: 'TASK_ASSIGNED',
+      title: `${actor.name} tagged you on a task`,
+      message: data.dueYMD ? `${data.title} (due ${data.dueYMD})` : data.title,
+      link: '/todo',
+    });
+  }
 
   await task.populate('owner', 'name');
   await task.populate('assignedBy', 'name');
+  await task.populate('collaborators', 'name');
   return task.toJSON();
 }
 
 export async function setStatus(actor, id, status) {
   const task = await Task.findById(id);
   if (!task) throw httpError(404, 'NOT_FOUND', 'Task not found');
-  if (String(task.owner) !== String(actor._id)) throw httpError(403, 'FORBIDDEN', 'Only the task owner can update it');
+  const isOwner = String(task.owner) === String(actor._id);
+  const isCollaborator = (task.collaborators || []).some((c) => String(c) === String(actor._id));
+  // Shared tasks: the owner OR any tagged teammate can complete it (one status for all).
+  if (!isOwner && !isCollaborator) throw httpError(403, 'FORBIDDEN', 'Only the task owner or a tagged teammate can update it');
 
   task.status = status === 'DONE' ? 'DONE' : 'PENDING';
   task.completedAt = task.status === 'DONE' ? new Date() : null;
   await task.save();
 
-  if (task.status === 'DONE' && task.assignedBy) {
-    await notify({
-      user: task.assignedBy,
-      type: 'TASK_DONE',
-      title: `${actor.name} completed a task`,
-      message: task.title,
-      link: '/todo?tab=assigned',
-    });
+  if (task.status === 'DONE') {
+    // Delegated task → tell the person who assigned it (existing behaviour).
+    if (task.assignedBy && String(task.assignedBy) !== String(actor._id)) {
+      await notify({ user: task.assignedBy, type: 'TASK_DONE', title: `${actor.name} completed a task`, message: task.title, link: '/todo?tab=assigned' });
+    }
+    // Shared task → tell everyone else on it (owner + other collaborators).
+    const involved = new Set([String(task.owner), ...(task.collaborators || []).map(String)]);
+    involved.delete(String(actor._id));
+    for (const uid of involved) {
+      await notify({ user: uid, type: 'TASK_DONE', title: `${actor.name} completed a shared task`, message: task.title, link: '/todo' });
+    }
   }
 
   await task.populate('owner', 'name');
   await task.populate('assignedBy', 'name');
+  await task.populate('collaborators', 'name');
   return task.toJSON();
 }
 
@@ -116,9 +156,23 @@ export async function updateTask(actor, id, data) {
   }
 
   for (const f of ['title', 'notes', 'dueYMD']) if (data[f] !== undefined) task[f] = data[f];
+
+  // Only the owner of a non-delegated task manages its tagged teammates.
+  if (data.collaborators !== undefined && isOwner && !task.assignedBy) {
+    const before = new Set((task.collaborators || []).map(String));
+    const resolved = await resolveCollaborators(actor, data.collaborators);
+    task.collaborators = resolved;
+    for (const cid of resolved) {
+      if (!before.has(String(cid))) {
+        await notify({ user: cid, type: 'TASK_ASSIGNED', title: `${actor.name} tagged you on a task`, message: task.dueYMD ? `${task.title} (due ${task.dueYMD})` : task.title, link: '/todo' });
+      }
+    }
+  }
+
   await task.save();
   await task.populate('owner', 'name');
   await task.populate('assignedBy', 'name');
+  await task.populate('collaborators', 'name');
   return task.toJSON();
 }
 
@@ -143,18 +197,24 @@ function periodMatch(period, field = 'createdAt') {
 }
 
 export async function listTasks(actor, { scope = 'mine', status, search, period, page = 1, limit = 200 }) {
-  const filter = scope === 'assigned' ? { assignedBy: actor._id } : { owner: actor._id };
-  if (status && ['PENDING', 'DONE'].includes(status)) filter.status = status;
+  const and = [];
+  // "mine" now also includes shared tasks I'm tagged on (a collaborator), not just
+  // ones I own — so multiple $or blocks may stack; combine them with $and.
+  if (scope === 'assigned') and.push({ assignedBy: actor._id });
+  else and.push({ $or: [{ owner: actor._id }, { collaborators: actor._id }] });
+  if (status && ['PENDING', 'DONE'].includes(status)) and.push({ status });
   // "Last 7 days" on completed work should mean completed-in-window, not created.
-  Object.assign(filter, periodMatch(period, status === 'DONE' ? 'completedAt' : 'createdAt'));
+  const pm = periodMatch(period, status === 'DONE' ? 'completedAt' : 'createdAt');
+  if (Object.keys(pm).length) and.push(pm);
   if (search) {
     const rx = new RegExp(escapeRegex(search), 'i');
-    filter.$or = [{ title: rx }, { notes: rx }];
+    and.push({ $or: [{ title: rx }, { notes: rx }] });
   }
+  const filter = and.length === 1 ? and[0] : { $and: and };
 
   const skip = (page - 1) * limit;
   const [tasks, total] = await Promise.all([
-    Task.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).populate('owner', 'name').populate('assignedBy', 'name'),
+    Task.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).populate('owner', 'name').populate('assignedBy', 'name').populate('collaborators', 'name'),
     Task.countDocuments(filter),
   ]);
   return { tasks: tasks.map((t) => t.toJSON()), total, page, limit };
@@ -162,7 +222,7 @@ export async function listTasks(actor, { scope = 'mine', status, search, period,
 
 export async function taskSummary(actor) {
   const [mine, assigned] = await Promise.all([
-    Task.aggregate([{ $match: { owner: actor._id } }, { $group: { _id: '$status', n: { $sum: 1 } } }]),
+    Task.aggregate([{ $match: { $or: [{ owner: actor._id }, { collaborators: actor._id }] } }, { $group: { _id: '$status', n: { $sum: 1 } } }]),
     Task.aggregate([{ $match: { assignedBy: actor._id } }, { $group: { _id: '$status', n: { $sum: 1 } } }]),
   ]);
   const pick = (agg, st) => agg.find((a) => a._id === st)?.n ?? 0;

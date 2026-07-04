@@ -87,9 +87,15 @@ function byDueDate(a, b) {
 }
 
 /** Personal / history task row — tap the row for full details, the circle to complete. */
-function TaskRow({ task, canToggle, onToggle, onEdit, onDelete, onOpen }) {
+function TaskRow({ task, myId, canToggle, onToggle, onEdit, onDelete, onOpen }) {
   const done = task.status === 'DONE';
   const overdue = !done && isOverdue(task.dueYMD);
+  // Where the task comes from (delegator, or a shared task's owner if it's not me).
+  const from = task.assignedBy || (myId && task.owner && task.owner.id && task.owner.id !== myId ? task.owner : null);
+  // Only my OWN, non-delegated task can be edited/deleted here. A delegated or
+  // shared-with-me task: I can complete it, but not change or remove it.
+  const canManage = task.owner?.id === myId && !task.assignedBy;
+  const sharedWith = canManage && task.collaborators?.length ? task.collaborators : [];
   return (
     <div
       onClick={() => onOpen(task)}
@@ -121,19 +127,28 @@ function TaskRow({ task, canToggle, onToggle, onEdit, onDelete, onOpen }) {
         <p className={cn('font-medium leading-snug', done && 'text-muted-foreground line-through')}>{task.title}</p>
         {task.notes ? <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-muted-foreground">{task.notes}</p> : null}
         <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-          {!task.assignedBy ? null : (
+          {from ? (
             <span>
-              From: <span className="font-medium text-foreground">{task.assignedBy.name}</span>
+              From: <span className="font-medium text-foreground">{from.name}</span>
             </span>
-          )}
+          ) : null}
+          {sharedWith.length ? (
+            <span className="inline-flex items-center gap-1">
+              <Users className="size-3" /> Shared with{' '}
+              <span className="font-medium text-foreground">
+                {sharedWith.slice(0, 2).map((c) => c.name).join(', ')}
+                {sharedWith.length > 2 ? ` +${sharedWith.length - 2}` : ''}
+              </span>
+            </span>
+          ) : null}
           {task.dueYMD ? <span className={cn(overdue && 'font-medium text-destructive')}>Due {fmtDate(task.dueYMD)}</span> : null}
           {done && task.completedAt ? <span className="text-success">Done {fmtDate(task.completedAt)}</span> : null}
         </div>
       </div>
       <div className="flex shrink-0 items-center">
-        {/* A delegated task belongs to the assigner: the assignee can only complete
-            it — not edit or delete. Both actions show only on personal tasks. */}
-        {task.assignedBy ? null : (
+        {/* Edit/Delete only on my OWN task. A delegated or shared-with-me task can be
+            completed but not changed or removed by me. */}
+        {canManage ? (
           <>
             <Button variant="ghost" size="icon" className="size-10 sm:size-8" onClick={(e) => { e.stopPropagation(); onEdit(task); }} aria-label="Edit">
               <Pencil className="size-4" />
@@ -142,7 +157,7 @@ function TaskRow({ task, canToggle, onToggle, onEdit, onDelete, onOpen }) {
               <Trash2 className="size-4" />
             </Button>
           </>
-        )}
+        ) : null}
       </div>
     </div>
   );
@@ -295,10 +310,12 @@ function PersonFolder({ folder, onEdit, onDelete, onOpen, onToggle, canToggle = 
 }
 
 /** Full task details — opened by tapping any task row. */
-function TaskDetailDialog({ view, onClose, onToggle, onEdit, onDelete }) {
+function TaskDetailDialog({ view, myId, onClose, onToggle, onEdit, onDelete }) {
   const task = view?.task;
   const done = task?.status === 'DONE';
   const overdue = task && !done && isOverdue(task.dueYMD);
+  const iOwn = task && task.owner?.id === myId && !task.assignedBy;
+  const sharedWith = iOwn && task?.collaborators?.length ? task.collaborators : [];
 
   const Row = ({ label, children }) => (
     <div className="flex items-start justify-between gap-4 py-2">
@@ -374,10 +391,23 @@ function TaskDetailDialog({ view, onClose, onToggle, onEdit, onDelete }) {
                 <span className="inline-flex items-center gap-1.5">
                   <UserRound className="size-3.5 text-primary" /> Assigned to {task.owner.name}
                 </span>
+              ) : task.owner?.name && task.owner.id !== myId ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Users className="size-3.5 text-primary" /> Shared by {task.owner.name}
+                </span>
+              ) : sharedWith.length ? (
+                'Shared task'
               ) : (
                 'Personal task'
               )}
             </Row>
+            {sharedWith.length ? (
+              <Row label="Shared with">
+                <span className="inline-flex items-center gap-1.5">
+                  <Users className="size-3.5 text-primary" /> {sharedWith.map((c) => c.name).join(', ')}
+                </span>
+              </Row>
+            ) : null}
             <Row label="Due date">{task.dueYMD ? fmtDate(task.dueYMD) : '—'}</Row>
             <Row label="Created">{fmtDate(task.createdAt)}</Row>
             {done ? <Row label="Completed">{task.completedAt ? fmtDate(task.completedAt) : '—'}</Row> : null}
@@ -450,26 +480,37 @@ export function TaskBoard() {
   // assigner's pending tasks fold into the flat list (no folder tap for one person).
   const mine = React.useMemo(() => {
     if (!isMine) return { personalPending: [], folders: [] };
+    const myId = user?.id;
     const q = search.toLowerCase().trim();
     const textHit = (t) => t.title.toLowerCase().includes(q) || (t.notes || '').toLowerCase().includes(q);
-    // A flat row matches on its own text OR the name of whoever assigned it.
-    const matchesRow = (t) => !q || textHit(t) || (t.assignedBy?.name || '').toLowerCase().includes(q);
+    // Who a task "comes from" (for grouping into a folder): the person who delegated
+    // it, or — for a shared task I'm only tagged on — its owner. My own tasks: none.
+    const fromOf = (t) => {
+      if (t.assignedBy) return t.assignedBy;
+      if (myId && t.owner && t.owner.id && t.owner.id !== myId) return t.owner;
+      return null;
+    };
+    const matchesRow = (t) => {
+      const f = fromOf(t);
+      return !q || textHit(t) || (f?.name || '').toLowerCase().includes(q);
+    };
 
-    const byAssigner = new Map();
+    const byPerson = new Map();
     const personal = [];
     for (const t of tasks) {
-      if (t.assignedBy) {
-        const id = t.assignedBy.id || String(t.assignedBy);
-        if (!byAssigner.has(id)) byAssigner.set(id, { id, name: t.assignedBy.name || 'Unknown', tasks: [] });
-        byAssigner.get(id).tasks.push(t);
+      const from = fromOf(t);
+      if (from) {
+        const id = from.id || String(from);
+        if (!byPerson.has(id)) byPerson.set(id, { id, name: from.name || 'Unknown', tasks: [] });
+        byPerson.get(id).tasks.push(t);
       } else if (t.status !== 'DONE') {
-        personal.push(t); // completed personal tasks live in History, not here
+        personal.push(t); // my own pending tasks (completed ones live in History)
       }
     }
 
     // A person only anchors a folder while they have PENDING work for me. Once it's
     // all done, that relationship lives in History — not this pending-focused view.
-    const active = [...byAssigner.values()].filter((f) => f.tasks.some((t) => t.status !== 'DONE'));
+    const active = [...byPerson.values()].filter((f) => f.tasks.some((t) => t.status !== 'DONE'));
 
     let personalPending = personal;
     let folders = [];
@@ -497,7 +538,10 @@ export function TaskBoard() {
 
     personalPending = personalPending.filter(matchesRow).sort(byDueDate);
     return { personalPending, folders };
-  }, [isMine, tasks, search]);
+  }, [isMine, tasks, search, user?.id]);
+
+  // My OWN task (not delegated to me, not just shared with me) → I can edit/delete it.
+  const canMgr = (t) => t.owner?.id === user?.id && !t.assignedBy;
 
   // Group assigned tasks into per-person folders (filtered by the name search).
   const folders = React.useMemo(() => {
@@ -650,11 +694,12 @@ export function TaskBoard() {
                       <TaskRow
                         key={t.id}
                         task={t}
+                        myId={user?.id}
                         canToggle
                         onToggle={(x) => toggleMut.mutate(x)}
                         onEdit={(x) => setEditing(x)}
                         onDelete={(x) => setDeleting(x)}
-                        onOpen={(x) => setViewing({ task: x, canToggle: true, allowEdit: !x.assignedBy, allowDelete: !x.assignedBy, assignerView: false })}
+                        onOpen={(x) => setViewing({ task: x, canToggle: true, allowEdit: canMgr(x), allowDelete: canMgr(x), assignerView: false })}
                       />
                     ))}
                   </div>
@@ -701,11 +746,12 @@ export function TaskBoard() {
                 <TaskRow
                   key={t.id}
                   task={t}
+                  myId={user?.id}
                   canToggle
                   onToggle={(x) => toggleMut.mutate(x)}
                   onEdit={(x) => setEditing(x)}
                   onDelete={(x) => setDeleting(x)}
-                  onOpen={(x) => setViewing({ task: x, canToggle: true, allowEdit: !x.assignedBy, allowDelete: !x.assignedBy, assignerView: false })}
+                  onOpen={(x) => setViewing({ task: x, canToggle: true, allowEdit: canMgr(x), allowDelete: canMgr(x), assignerView: false })}
                 />
               ))}
               {(data?.total ?? 0) > tasks.length ? (
@@ -724,6 +770,7 @@ export function TaskBoard() {
 
       <TaskDetailDialog
         view={viewing}
+        myId={user?.id}
         onClose={() => setViewing(null)}
         onToggle={(t) => {
           toggleMut.mutate(t);

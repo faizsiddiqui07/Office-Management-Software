@@ -7,12 +7,14 @@ export const createTaskSchema = z.object({
   notes: z.string().max(2000).optional().default(''),
   dueYMD: ymd.optional().default(''),
   assignTo: z.string().optional(), // user id — present when delegating
+  collaborators: z.array(z.string()).max(20).optional(), // tagged teammates on a shared task
 });
 
 export const updateTaskSchema = z.object({
   title: z.string().min(1).max(300).optional(),
   notes: z.string().max(2000).optional(),
   dueYMD: ymd.optional(),
+  collaborators: z.array(z.string()).max(20).optional(), // owner can retag a shared task
 });
 
 export const statusSchema = z.object({ status: z.enum(['PENDING', 'DONE']) });
