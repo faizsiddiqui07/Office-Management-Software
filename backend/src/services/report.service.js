@@ -6,6 +6,7 @@ import { User } from '../models/User.js';
 import { Setting } from '../models/Setting.js';
 import { companyDayFromYMD, ymdInTz, formatCompany } from '../lib/time.js';
 import { roleLabel } from '../lib/roles.js';
+import { can } from '../lib/permissions.js';
 import { leaveYearOf } from '../lib/leaveYear.js';
 import { holidayYMDSet } from './holiday.service.js';
 import { expenseSummary } from './expense.service.js';
@@ -89,6 +90,12 @@ export async function buildReport(type, dateYMD) {
     duesOverview(),
   ]);
 
+  // Leadership don't clock in or apply for leave — keep them OUT of the attendance
+  // table and the leave-balance table, otherwise they read as permanently "absent"
+  // or as unused quota, which is nonsense. (They still appear in the roster.)
+  const attendanceUsers = activeUsers.filter((u) => can({ role: u.role }, 'markAttendance'));
+  const leaveUserIds = new Set(activeUsers.filter((u) => can({ role: u.role }, 'applyLeave')).map((u) => String(u._id)));
+
   // ── Attendance per employee ───────────────────────────────
   const byUser = new Map();
   for (const r of records) {
@@ -104,7 +111,7 @@ export async function buildReport(type, dateYMD) {
     m.overtimeMinutes += r.overtimeMinutes || 0;
   }
 
-  const perEmployee = activeUsers.map((u) => {
+  const perEmployee = attendanceUsers.map((u) => {
     const m = byUser.get(String(u._id)) || { present: 0, late: 0, onLeave: 0, workedMinutes: 0, overtimeMinutes: 0 };
     const showed = m.present + m.late;
     const absent = Math.max(0, workingDays - showed - m.onLeave);
@@ -137,7 +144,7 @@ export async function buildReport(type, dateYMD) {
     { present: 0, late: 0, absent: 0, onLeave: 0, workedHours: 0, overtimeMinutes: 0 },
   );
   totals.workedHours = round1(totals.workedHours);
-  const denom = activeUsers.length * workingDays;
+  const denom = attendanceUsers.length * workingDays;
   // `present` already includes late arrivals (they attended).
   totals.attendanceRate = denom > 0 ? Math.round((totals.present / denom) * 100) : 0;
 
@@ -158,13 +165,15 @@ export async function buildReport(type, dateYMD) {
       endYMD: l.endYMD,
       days: l.workingDays,
     })),
-    balances: balances.map((b) => ({
-      name: b.user?.name ?? '—',
-      employeeId: b.user?.employeeId ?? '',
-      used: b.used,
-      remaining: b.remaining,
-      total: b.totalQuota,
-    })),
+    balances: balances
+      .filter((b) => b.user && leaveUserIds.has(String(b.user._id)))
+      .map((b) => ({
+        name: b.user?.name ?? '—',
+        employeeId: b.user?.employeeId ?? '',
+        used: b.used,
+        remaining: b.remaining,
+        total: b.totalQuota,
+      })),
   };
 
   // ── Expenses ──────────────────────────────────────────────
