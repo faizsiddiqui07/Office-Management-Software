@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { BonusSettings } from '@/components/settings/bonus-settings';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -652,6 +653,9 @@ export default function SettingsPage() {
               <span className="text-xs text-muted-foreground">Test goes to {user?.email || 'your address'}</span>
             </div>
           </GlassPanel>
+
+          {/* Bonus points — self-contained (its own load/save via /bonus/config). */}
+          <BonusSettings />
 
           {/* Sticky save bar — appears only when something changed, always in reach on mobile. */}
           {dirty ? (

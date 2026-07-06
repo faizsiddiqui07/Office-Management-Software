@@ -7,6 +7,7 @@ import { NotificationsBell } from './notifications-bell';
 import { TopbarClock } from './topbar-clock';
 import { RefreshButton } from './refresh-button';
 import { MobileSidebar } from './mobile-sidebar';
+import { PointsBadge } from './points-badge';
 
 export function Topbar({ user }) {
   return (
@@ -27,6 +28,7 @@ export function Topbar({ user }) {
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+          <PointsBadge />
           <RefreshButton />
           <NotificationsBell />
           <ThemeToggle />
