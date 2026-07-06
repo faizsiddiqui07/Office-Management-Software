@@ -173,12 +173,12 @@ export default function UserDossierPage() {
             Custom
           </Button>
         </div>
-        <div className="flex flex-wrap items-end gap-2">
-          <div className="space-y-1">
+        <div className="flex w-full items-end gap-2 sm:w-auto">
+          <div className="min-w-0 flex-1 space-y-1 sm:flex-none">
             <Label htmlFor="d-from" className="text-xs text-muted-foreground">From</Label>
             <Input id="d-from" type="date" value={from} max={to} onChange={(e) => { setFrom(e.target.value); setPreset('custom'); }} className="h-9 w-full bg-background/50 sm:w-40" />
           </div>
-          <div className="space-y-1">
+          <div className="min-w-0 flex-1 space-y-1 sm:flex-none">
             <Label htmlFor="d-to" className="text-xs text-muted-foreground">To</Label>
             <Input id="d-to" type="date" value={to} min={from} onChange={(e) => { setTo(e.target.value); setPreset('custom'); }} className="h-9 w-full bg-background/50 sm:w-40" />
           </div>
@@ -194,7 +194,7 @@ export default function UserDossierPage() {
       ) : (
         <>
           {/* Stat cards */}
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6">
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3 xl:grid-cols-6">
             <StatCard label="Present" value={att.presentDays} hint={`of ${att.workingDays} working days`} icon={CheckCircle2} tone="success" />
             <StatCard label="Late" value={att.lateDays} hint={att.excusedLateDays ? `${att.excusedLateDays} on-duty` : undefined} icon={TriangleAlert} tone="warning" />
             <StatCard label="Absent" value={att.tracksAttendance ? att.absentDays : '—'} icon={CalendarOff} tone="destructive" />
@@ -204,11 +204,12 @@ export default function UserDossierPage() {
           </div>
 
           <Tabs defaultValue="attendance" className="space-y-4">
-            <TabsList>
-              <TabsTrigger value="attendance">Attendance</TabsTrigger>
-              <TabsTrigger value="leaves">Leaves</TabsTrigger>
-              <TabsTrigger value="tasks">To-do</TabsTrigger>
-              <TabsTrigger value="activity">Activity</TabsTrigger>
+            {/* Full-width equal tabs on a phone (no side-scroll); natural width on desktop. */}
+            <TabsList className="grid w-full grid-cols-4 sm:inline-flex sm:w-fit">
+              <TabsTrigger value="attendance" className="min-w-0 px-1.5 text-xs sm:px-3.5 sm:text-sm">Attendance</TabsTrigger>
+              <TabsTrigger value="leaves" className="min-w-0 px-1.5 text-xs sm:px-3.5 sm:text-sm">Leaves</TabsTrigger>
+              <TabsTrigger value="tasks" className="min-w-0 px-1.5 text-xs sm:px-3.5 sm:text-sm">To-do</TabsTrigger>
+              <TabsTrigger value="activity" className="min-w-0 px-1.5 text-xs sm:px-3.5 sm:text-sm">Activity</TabsTrigger>
             </TabsList>
 
             {/* Attendance */}
