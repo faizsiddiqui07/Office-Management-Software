@@ -16,6 +16,7 @@ import {
 } from '../lib/time.js';
 import { effectiveSchedule, userWeekendDays, workWindowClosed } from '../lib/schedule.js';
 import { leaveYearOf } from '../lib/leaveYear.js';
+import { onCheckIn } from './bonus.service.js';
 
 function httpError(status, code, message) {
   const e = new Error(message);
@@ -79,6 +80,11 @@ export async function checkIn(user, meta, coords, lateReason) {
     update,
     { upsert: true, new: true, setDefaultsOnInsert: true },
   );
+
+  // Bonus: an on-time check-in may complete a punctual streak (best-effort).
+  if (!isLate) {
+    try { await onCheckIn(user, ymdInTz(day)); } catch (e) { console.error('bonus streak hook failed', e?.message); }
+  }
   return record;
 }
 

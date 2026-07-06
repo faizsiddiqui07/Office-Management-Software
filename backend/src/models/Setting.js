@@ -66,6 +66,7 @@ const settingSchema = new mongoose.Schema(
         type: [{ _id: false, id: String, label: String, points: Number }],
         default: [],
       },
+      lastPenaltyRun: { type: String, default: '' }, // YMD — throttles the daily overdue-task scan
     },
   },
   { timestamps: true },

@@ -39,3 +39,13 @@ export function useBonusLeaderboard(enabled = true) {
     select: (res) => res.rows ?? [],
   });
 }
+
+/** Recent manual awards (leadership only) — for review + owner-only undo. */
+export function useRecentAwards(enabled = true) {
+  return useQuery({
+    queryKey: ['bonus', 'awards'],
+    queryFn: () => api.get('/bonus/awards'),
+    enabled,
+    select: (res) => res.awards ?? [],
+  });
+}

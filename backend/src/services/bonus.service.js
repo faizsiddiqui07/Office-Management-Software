@@ -2,7 +2,11 @@ import mongoose from 'mongoose';
 import { Setting } from '../models/Setting.js';
 import { PointEntry } from '../models/PointEntry.js';
 import { User } from '../models/User.js';
-import { ymdInTz } from '../lib/time.js';
+import { Task } from '../models/Task.js';
+import { Attendance } from '../models/Attendance.js';
+import { ymdInTz, companyDayFromYMD, dayOfWeekInTz } from '../lib/time.js';
+import { userWeekendDays } from '../lib/schedule.js';
+import { holidayYMDSet } from './holiday.service.js';
 
 const toId = (v) => (typeof v === 'string' ? new mongoose.Types.ObjectId(v) : v);
 
@@ -62,6 +66,7 @@ export async function updateConfig(patch) {
           .slice(0, 100)
           .map((m) => ({ id: m.id || rand(), label: String(m.label).trim().slice(0, 80), points: num(m.points, 0) }))
       : (b.manualItems || []),
+    lastPenaltyRun: b.lastPenaltyRun || '', // internal — preserved across edits
   };
   s.bonus = next;
   await s.save();
@@ -130,12 +135,29 @@ export async function awardManual(actor, { userId, points, reason, itemId, month
   return entry.toJSON();
 }
 
-/** Leadership deletes an entry (undo a mistaken award, or clear a penalty). */
-export async function removeEntry(_actor, id) {
+/**
+ * Delete an entry (undo a mistaken award / clear a penalty). Restricted to the
+ * owner role — only CEO & President can take points back, not other leadership.
+ */
+export async function removeEntry(actor, id) {
+  if (actor.role !== 'CEO_PRESIDENT') throw httpError(403, 'FORBIDDEN', 'Only CEO & President can delete points');
   const entry = await PointEntry.findById(id);
   if (!entry) throw httpError(404, 'NOT_FOUND', 'Entry not found');
   await entry.deleteOne();
   return { success: true };
+}
+
+/** Recent manual awards (across everyone) so leadership can review / undo them. */
+export async function recentAwards(limit = 30) {
+  const entries = await PointEntry.find({ source: 'manual' })
+    .sort({ createdAt: -1 })
+    .limit(Math.min(100, limit))
+    .populate('user', 'name')
+    .populate('awardedBy', 'name');
+  return entries.map((e) => {
+    const j = e.toJSON();
+    return { id: j.id, points: j.points, reason: j.reason, month: j.month, createdAt: j.createdAt, user: j.user, awardedBy: j.awardedBy };
+  });
 }
 
 /** Per-user totals for a month (leadership leaderboard). */
@@ -187,4 +209,81 @@ export async function onAssignedTaskDone(task) {
 /** Un-completing / deleting a task pulls back its auto award. */
 export async function onAssignedTaskUndone(taskId) {
   await PointEntry.deleteMany({ taskRef: taskId, source: 'auto_task' });
+}
+
+/**
+ * Punctual-streak award: run after an on-time check-in. Counts consecutive
+ * on-time WORKING days ending today (within this month) and awards points each
+ * time the streak reaches a multiple of `punctualStreakDays`. A late or absent
+ * working day breaks the streak; weekends/holidays are skipped, not breaks.
+ */
+export async function onCheckIn(user, dateYMD) {
+  const s = await Setting.getSingleton();
+  const b = s.bonus || {};
+  if (!b.enabled || !b.punctualStreakPoints) return;
+  const N = Math.max(1, b.punctualStreakDays || 10);
+  const month = dateYMD.slice(0, 7);
+  const monthStart = `${month}-01`;
+
+  const recs = await Attendance.find({ user: user._id, date: { $gte: companyDayFromYMD(monthStart), $lte: companyDayFromYMD(dateYMD) } }).select('date status');
+  const byDay = new Map(recs.map((r) => [ymdInTz(r.date), r.status]));
+  const holidays = await holidayYMDSet(monthStart, dateYMD);
+  const offDays = userWeekendDays(user, s);
+
+  let streak = 0;
+  let cur = dateYMD;
+  while (cur >= monthStart) {
+    const dow = dayOfWeekInTz(companyDayFromYMD(cur));
+    const isOff = offDays.includes(dow) || holidays.has(cur);
+    if (!isOff) {
+      if (byDay.get(cur) === 'PRESENT') streak += 1; // came on time
+      else break; // late / absent / no record ends the streak
+    }
+    cur = ymdInTz(new Date(companyDayFromYMD(cur).getTime() - 86400000));
+  }
+
+  if (streak > 0 && streak % N === 0) {
+    // A milestone is reached at most once a day — dedupe on today's date.
+    const dayStart = companyDayFromYMD(dateYMD);
+    const dayEnd = new Date(dayStart.getTime() + 86400000);
+    const already = await PointEntry.findOne({ user: user._id, source: 'auto_streak', createdAt: { $gte: dayStart, $lt: dayEnd } });
+    if (!already) {
+      await PointEntry.create({ user: user._id, month, points: Math.abs(b.punctualStreakPoints), reason: `${N}-day punctual streak`, source: 'auto_streak' });
+    }
+  }
+}
+
+/**
+ * Penalise assigned tasks that are still open after their due date + grace days.
+ * One penalty per task (idempotent); when the task is later completed the task
+ * hook replaces it. Returns how many penalties were created.
+ */
+export async function runOverduePenalties() {
+  const s = await Setting.getSingleton();
+  const b = s.bonus || {};
+  if (!b.enabled || !b.assignedTaskLatePenalty) return 0;
+  const today = ymdInTz(new Date());
+  const grace = b.graceDays || 0;
+  const tasks = await Task.find({ assignedBy: { $ne: null }, status: 'PENDING', dueYMD: { $ne: '' } }).select('owner dueYMD title');
+  let created = 0;
+  for (const t of tasks) {
+    if (addDays(t.dueYMD, grace) >= today) continue; // still within due + grace
+    const exists = await PointEntry.findOne({ taskRef: t._id, source: 'auto_task' });
+    if (exists) continue;
+    await PointEntry.create({ user: t.owner, month: today.slice(0, 7), points: -Math.abs(b.assignedTaskLatePenalty), reason: `Overdue: ${t.title}`, source: 'auto_task', taskRef: t._id });
+    created += 1;
+  }
+  return created;
+}
+
+/** Run the overdue-task scan at most once a day (opportunistic, no cron needed). */
+export async function maybeRunDaily() {
+  const s = await Setting.getSingleton();
+  const b = s.bonus || {};
+  if (!b.enabled) return;
+  const today = ymdInTz(new Date());
+  if (b.lastPenaltyRun === today) return;
+  s.bonus.lastPenaltyRun = today; // set first so concurrent calls don't double-run
+  await s.save();
+  try { await runOverduePenalties(); } catch (e) { console.error('overdue scan failed', e?.message); }
 }

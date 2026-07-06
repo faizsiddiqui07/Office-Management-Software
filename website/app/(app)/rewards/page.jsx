@@ -8,7 +8,7 @@ import { Award, Coins, Gift, Sparkles, Trash2, TrendingUp } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can, roleName } from '@/lib/permissions';
-import { useMyBonus, useBonusGuide, useBonusConfig, useBonusLeaderboard } from '@/lib/bonus';
+import { useMyBonus, useBonusGuide, useBonusConfig, useBonusLeaderboard, useRecentAwards } from '@/lib/bonus';
 import { PageHeader } from '@/components/glass/page-header';
 import { GlassPanel } from '@/components/glass/glass-panel';
 import { StatCard } from '@/components/glass/stat-card';
@@ -26,12 +26,14 @@ function fmtDate(iso) {
 const money = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 const Pts = ({ n }) => <span className={n < 0 ? 'font-medium text-destructive' : 'font-medium text-emerald-600 dark:text-emerald-300'}>{n > 0 ? `+${n}` : n}</span>;
 
-/** Leadership-only: give points to a teammate and see the leaderboard. */
-function LeadershipTools() {
+/** Leadership-only: give points to a teammate and see the leaderboard.
+ *  `isOwner` (CEO & President) also gets an undo on recent awards. */
+function LeadershipTools({ isOwner, onDelete }) {
   const qc = useQueryClient();
   const { data: cfg } = useBonusConfig();
   const { data: usersData } = useQuery({ queryKey: ['users'], queryFn: () => api.get('/users') });
   const board = useBonusLeaderboard();
+  const recent = useRecentAwards();
 
   const users = (usersData?.users ?? []).filter((u) => u.isActive);
   const items = cfg?.manualItems ?? [];
@@ -123,6 +125,29 @@ function LeadershipTools() {
           <p className="px-3 py-6 text-center text-sm text-muted-foreground">No points awarded yet this month.</p>
         )}
       </GlassPanel>
+
+      <GlassPanel className="p-2">
+        <div className="px-3 py-2 text-sm font-semibold">Recent awards given</div>
+        {recent.data?.length ? (
+          <ul className="divide-y divide-border/50">
+            {recent.data.map((a) => (
+              <li key={a.id} className="flex items-center gap-3 px-3 py-2.5">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm"><span className="font-medium">{a.user?.name || '—'}</span> · {a.reason}</p>
+                  <p className="text-xs text-muted-foreground">{fmtDate(a.createdAt)}{a.awardedBy?.name ? ` · by ${a.awardedBy.name}` : ''}</p>
+                </div>
+                <span className="shrink-0 tabular-nums text-sm"><Pts n={a.points} /></span>
+                {isOwner ? (
+                  <Button variant="ghost" size="icon" className="size-8 text-destructive" onClick={() => onDelete(a.id)} aria-label="Delete award"><Trash2 className="size-4" /></Button>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="px-3 py-6 text-center text-sm text-muted-foreground">No awards given yet.</p>
+        )}
+        {!isOwner ? <p className="px-3 pb-2 pt-1 text-center text-xs text-muted-foreground">Only CEO &amp; President can undo an award.</p> : null}
+      </GlassPanel>
     </div>
   );
 }
@@ -131,6 +156,7 @@ export default function RewardsPage() {
   const { user } = useAuth();
   const qc = useQueryClient();
   const isLeader = !!user && can(user, 'manageSettings');
+  const isOwner = user?.role === 'CEO_PRESIDENT'; // CEO & President — only they can delete points
   const { data: me } = useMyBonus();
   const { data: guide } = useBonusGuide();
 
@@ -192,7 +218,7 @@ export default function RewardsPage() {
                       <p className="text-xs text-muted-foreground">{fmtDate(e.createdAt)}{e.source === 'manual' ? ' · awarded' : ' · automatic'}</p>
                     </div>
                     <span className="shrink-0 tabular-nums text-sm"><Pts n={e.points} /></span>
-                    {isLeader ? (
+                    {isOwner ? (
                       <Button variant="ghost" size="icon" className="size-8 text-destructive" onClick={() => delMut.mutate(e.id)} aria-label="Remove"><Trash2 className="size-4" /></Button>
                     ) : null}
                   </li>
@@ -203,7 +229,7 @@ export default function RewardsPage() {
             )}
           </GlassPanel>
 
-          {isLeader ? <LeadershipTools /> : null}
+          {isLeader ? <LeadershipTools isOwner={isOwner} onDelete={(id) => delMut.mutate(id)} /> : null}
 
           {!isLeader ? (
             <p className="text-center text-xs text-muted-foreground">

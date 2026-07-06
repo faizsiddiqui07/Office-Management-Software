@@ -10,7 +10,18 @@ function handleErr(res, err, next) {
 /** The signed-in user's own points (header badge + their rewards page). */
 export async function me(req, res, next) {
   try {
+    // Opportunistic: apply any overdue-task penalties (throttled to once a day).
+    try { await svc.maybeRunDaily(); } catch { /* non-blocking */ }
     res.json(ok(await svc.mySummary(req.user, req.query.month)));
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** Recent manual awards, so leadership can review and (CEO/President) undo them. */
+export async function awards(_req, res, next) {
+  try {
+    res.json(ok({ awards: await svc.recentAwards() }));
   } catch (err) {
     next(err);
   }
