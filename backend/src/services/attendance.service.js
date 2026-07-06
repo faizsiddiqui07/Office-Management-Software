@@ -14,7 +14,7 @@ import {
   isLateCheckIn,
   computeWork,
 } from '../lib/time.js';
-import { effectiveSchedule, userWeekendDays } from '../lib/schedule.js';
+import { effectiveSchedule, userWeekendDays, workWindowClosed } from '../lib/schedule.js';
 import { leaveYearOf } from '../lib/leaveYear.js';
 
 function httpError(status, code, message) {
@@ -268,7 +268,7 @@ export async function attendanceMatrix(monthKey) {
 
   const settings = await Setting.getSingleton();
   const holidays = await holidayYMDSet(from, to);
-  const today = ymdInTz(new Date());
+  const now = new Date();
 
   const allUsers = await User.find({ isActive: true }).select('name employeeId role employmentType schedule').sort({ name: 1 });
   const users = allUsers.filter((u) => can({ role: u.role }, 'markAttendance'));
@@ -302,7 +302,9 @@ export async function attendanceMatrix(monthKey) {
         return 'OL';
       }
       if (isOff) return 'H';
-      if (ymd > today) return '';
+      // Future days, and today before the person's office day is over, aren't
+      // absent yet — leave the cell blank until the window closes.
+      if (!workWindowClosed(u, ymd, settings, now)) return '';
       t.absent += 1;
       return 'A';
     });
@@ -334,6 +336,7 @@ export async function attendanceOverview(ymd) {
   // present/absent — they simply aren't part of the daily attendance view.
   const users = allUsers.filter((u) => can({ role: u.role }, 'markAttendance'));
 
+  const now = new Date();
   const byUser = new Map(records.map((r) => [String(r.user), r]));
   const rows = users.map((u) => {
     const rec = byUser.get(String(u._id)) || null;
@@ -341,7 +344,10 @@ export async function attendanceOverview(ymd) {
     if (!status) {
       // A part-timer's own off-day counts as a day off, not an absence.
       const off = isHoliday || userWeekendDays(u, settings).includes(dow);
-      status = off ? 'HOLIDAY' : 'ABSENT';
+      // A no-show is only "absent" once their office day is over — until then
+      // they may still arrive, so they're "AWAITED" (shown as "—").
+      if (off) status = 'HOLIDAY';
+      else status = workWindowClosed(u, dateYMD, settings, now) ? 'ABSENT' : 'AWAITED';
     }
     return { user: u.toJSON(), attendance: rec ? rec.toJSON() : null, status };
   });
@@ -352,6 +358,7 @@ export async function attendanceOverview(ymd) {
     late: rows.filter((r) => r.status === 'LATE').length,
     excused: rows.filter((r) => r.status === 'LATE' && r.attendance?.excused).length,
     absent: rows.filter((r) => r.status === 'ABSENT').length,
+    awaited: rows.filter((r) => r.status === 'AWAITED').length,
     onLeave: rows.filter((r) => r.status === 'ON_LEAVE').length,
   };
 

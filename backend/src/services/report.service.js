@@ -7,6 +7,7 @@ import { Setting } from '../models/Setting.js';
 import { companyDayFromYMD, ymdInTz, formatCompany } from '../lib/time.js';
 import { roleLabel } from '../lib/roles.js';
 import { can } from '../lib/permissions.js';
+import { workWindowClosed } from '../lib/schedule.js';
 import { leaveYearOf } from '../lib/leaveYear.js';
 import { holidayYMDSet } from './holiday.service.js';
 import { expenseSummary } from './expense.service.js';
@@ -74,8 +75,14 @@ export async function buildReport(type, dateYMD) {
 
   const fromDay = companyDayFromYMD(from);
   const toDay = companyDayFromYMD(to);
-  const todayYMD = ymdInTz(new Date());
-  const elapsedTo = to < todayYMD ? to : todayYMD;
+  const now = new Date();
+  const todayYMD = ymdInTz(now);
+  // Today only becomes an "absent-countable" working day once the office day is
+  // over — until then a no-show may still turn up. So measure up to the last
+  // FINISHED working day (yesterday while today's company hours are still on).
+  const companyClosed = formatCompany(now, 'HH:mm') >= settings.workEnd;
+  const lastFinishedYMD = companyClosed ? todayYMD : ymdInTz(new Date(now.getTime() - 86400000));
+  const elapsedTo = to < lastFinishedYMD ? to : lastFinishedYMD;
   const holidaySet = await holidayYMDSet(from, to);
   const workingDays = from > elapsedTo ? 0 : countWorkingDays(from, elapsedTo, settings.weekendDays, holidaySet);
 
@@ -258,7 +265,8 @@ export async function buildSelfReport({ user, type, dateYMD }) {
   const settings = await Setting.getSingleton();
   const period = computePeriod(type, dateYMD);
   const { from, to } = period;
-  const todayYMD = ymdInTz(new Date());
+  const now = new Date();
+  const todayYMD = ymdInTz(now);
   const fromDay = companyDayFromYMD(from);
   const toDay = companyDayFromYMD(to);
   const holidaySet = await holidayYMDSet(from, to);
@@ -301,7 +309,8 @@ export async function buildSelfReport({ user, type, dateYMD }) {
       status = 'HOLIDAY';
     } else if (weekendDays.includes(dow)) {
       status = 'WEEKEND';
-    } else if (ymd > todayYMD) {
+    } else if (!workWindowClosed(user, ymd, settings, now)) {
+      // Future days, and today before the office day is over — not absent yet.
       status = 'UPCOMING';
     } else {
       status = 'ABSENT';

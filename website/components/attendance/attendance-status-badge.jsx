@@ -10,6 +10,8 @@ import { effectiveStatus, attendanceStatusLabel } from '@/lib/attendance';
  */
 export function AttendanceStatusBadge({ attendance, fallback }) {
   const s = effectiveStatus(attendance, fallback);
+  // Awaited = office day still running, not in yet → a quiet dash, never "Absent".
+  if (s === 'AWAITED') return <span className="text-sm text-muted-foreground">—</span>;
   if (s === 'LATE') {
     return (
       <span className="inline-flex flex-wrap items-center gap-1.5">

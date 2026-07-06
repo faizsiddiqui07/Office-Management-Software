@@ -15,5 +15,7 @@ export function effectiveStatus(att, fallback) {
 /** Human label for an attendance status. */
 export function attendanceStatusLabel(status) {
   if (status === 'ON_DUTY') return 'On duty';
+  // Not in yet, but their office day isn't over — shown as a neutral dash, not "Absent".
+  if (status === 'AWAITED') return '—';
   return (status || '').replace('_', ' ');
 }

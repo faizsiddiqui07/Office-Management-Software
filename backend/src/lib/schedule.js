@@ -1,3 +1,5 @@
+import { ymdInTz, formatCompany } from './time.js';
+
 /**
  * The effective work schedule for a user.
  *
@@ -40,4 +42,20 @@ export function userWeekendDays(user, settings) {
     return [0, 1, 2, 3, 4, 5, 6].filter((d) => !works.has(d));
   }
   return settings.weekendDays;
+}
+
+/**
+ * Has the work window for `user` on day `dateYMD` already closed as of `now`?
+ *
+ * A no-show should only count as "absent" once the office day is actually over —
+ * before that they may still turn up, so it shows as "—", not "Absent". A PAST
+ * day is always finished; a FUTURE day never is; TODAY closes the moment company
+ * time reaches the user's own work-end (so part-timers use their own end time).
+ */
+export function workWindowClosed(user, dateYMD, settings, now = new Date()) {
+  const today = ymdInTz(now);
+  if (dateYMD < today) return true; // a past day is finished
+  if (dateYMD > today) return false; // a future day hasn't started
+  const { workEnd } = effectiveSchedule(user, settings);
+  return formatCompany(now, 'HH:mm') >= workEnd; // "HH:mm" compares correctly zero-padded
 }
