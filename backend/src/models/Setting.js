@@ -51,6 +51,22 @@ const settingSchema = new mongoose.Schema(
       longitude: { type: Number, default: null },
       radiusMeters: { type: Number, default: 200 },
     },
+    // Configurable bonus-points system (monthly). Point values are set by leadership
+    // here — never hardcoded. 0 on any auto rule turns that rule off.
+    bonus: {
+      enabled: { type: Boolean, default: false },
+      rupeesPerPoint: { type: Number, default: 0 },
+      graceDays: { type: Number, default: 1 }, // extra days after a task's due date before it counts "late"
+      assignedTaskOnTime: { type: Number, default: 0 }, // + to the assignee for finishing an assigned task on time
+      assignedTaskLatePenalty: { type: Number, default: 0 }, // − when an assigned task is finished late (stored positive)
+      punctualStreakDays: { type: Number, default: 10 }, // N consecutive on-time days …
+      punctualStreakPoints: { type: Number, default: 0 }, // … earns this many points
+      // CEO's manual award/penalty catalog. `points` may be negative (a penalty).
+      manualItems: {
+        type: [{ _id: false, id: String, label: String, points: Number }],
+        default: [],
+      },
+    },
   },
   { timestamps: true },
 );

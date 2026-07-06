@@ -3,6 +3,7 @@ import { User } from '../models/User.js';
 import { notify } from '../models/Notification.js';
 import { roleLabel } from '../lib/roles.js';
 import { companyDayFromYMD } from '../lib/time.js';
+import { onAssignedTaskDone, onAssignedTaskUndone } from './bonus.service.js';
 
 function httpError(status, code, message) {
   const e = new Error(message);
@@ -137,6 +138,15 @@ export async function setStatus(actor, id, status) {
     }
   }
 
+  // Bonus points: award/penalise the assignee for an assigned task (best-effort —
+  // never let a points hiccup block the actual task update).
+  try {
+    if (task.status === 'DONE') await onAssignedTaskDone(task);
+    else await onAssignedTaskUndone(task._id);
+  } catch (e) {
+    console.error('bonus hook (setStatus) failed', e?.message);
+  }
+
   await task.populate('owner', 'name');
   await task.populate('assignedBy', 'name');
   await task.populate('collaborators', 'name');
@@ -189,6 +199,7 @@ export async function deleteTask(actor, id) {
   }
   if (!isOwner && !isAssigner) throw httpError(403, 'FORBIDDEN', 'You cannot delete this task');
   await task.deleteOne();
+  try { await onAssignedTaskUndone(task._id); } catch (e) { console.error('bonus hook (delete) failed', e?.message); }
   return { success: true };
 }
 

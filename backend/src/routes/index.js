@@ -18,6 +18,7 @@ import { regularizationRouter } from './regularization.routes.js';
 import { rolesRouter } from './roles.routes.js';
 import { visitorsRouter } from './visitors.routes.js';
 import { tasksRouter } from './tasks.routes.js';
+import { bonusRouter } from './bonus.routes.js';
 
 /**
  * Root API router, mounted at /api in index.js.
@@ -53,6 +54,7 @@ apiRouter.use('/regularizations', regularizationRouter);
 apiRouter.use('/roles', rolesRouter);
 apiRouter.use('/visitors', visitorsRouter);
 apiRouter.use('/tasks', tasksRouter);
+apiRouter.use('/bonus', bonusRouter);
 
 // ── Feature routers (added in later phases) ───────────────
 // apiRouter.use('/leaves', leavesRouter);
