@@ -24,13 +24,15 @@ import {
 } from '@/components/ui/select';
 import { TaskDialog } from './task-dialog';
 import { AssignDialog } from './assign-dialog';
-import { PDF_SCOPES, downloadTasksPdf, isOverdue } from '@/lib/task';
+import { DateRange } from '@/components/ui/date-range';
+import { PDF_SCOPES, downloadTasksPdf, isOverdue, todayYMD } from '@/lib/task';
 
 const PERIODS = [
   { value: 'all', label: 'All Time' },
   { value: 'week', label: 'Last 7 days' },
   { value: 'month', label: 'Last 30 days' },
   { value: 'year', label: 'Last year' },
+  { value: 'custom', label: 'Custom range' },
 ];
 const PERIOD_LABELS = Object.fromEntries(PERIODS.map((p) => [p.value, p.label]));
 const PDF_LABELS = Object.fromEntries(PDF_SCOPES.map((s) => [s.value, s.label]));
@@ -440,6 +442,7 @@ export function TaskBoard() {
     return () => clearTimeout(t);
   }, [search]);
   const [period, setPeriod] = React.useState('all');
+  const [range, setRange] = React.useState({ from: '', to: '' }); // for period === 'custom'
   const [pdfScope, setPdfScope] = React.useState('all');
   const [pdfBusy, setPdfBusy] = React.useState(false);
   const [deleting, setDeleting] = React.useState(null);
@@ -461,14 +464,21 @@ export function TaskBoard() {
   const status = tab === 'history' ? 'DONE' : '';
 
   const { data, isLoading } = useQuery({
-    queryKey: ['tasks', 'list', scope, status, isMine || isAssigned ? '' : debouncedSearch, isMine ? 'all' : period],
+    queryKey: ['tasks', 'list', scope, status, isMine || isAssigned ? '' : debouncedSearch, isMine ? 'all' : period, isMine ? '' : `${range.from}~${range.to}`],
     queryFn: () => {
       const p = new URLSearchParams({ scope, limit: '10000' });
       if (status) p.set('status', status);
       // My tasks & Assigned search client-side (task text + person name); History uses the server.
       if (!isMine && !isAssigned && debouncedSearch) p.set('search', debouncedSearch);
       // My tasks always shows each assigner's full history, so no period trimming there.
-      if (period && period !== 'all' && !isMine) p.set('period', period);
+      if (!isMine) {
+        if (period === 'custom') {
+          if (range.from) p.set('from', range.from);
+          if (range.to) p.set('to', range.to);
+        } else if (period && period !== 'all') {
+          p.set('period', period);
+        }
+      }
       return api.get(`/tasks?${p.toString()}`);
     },
     placeholderData: (prev) => prev, // keep rows visible while a new search loads
@@ -628,6 +638,7 @@ export function TaskBoard() {
             </SelectContent>
           </Select>
         ) : null}
+        {!isMine && period === 'custom' ? <DateRange value={range} onChange={setRange} max={todayYMD()} /> : null}
         <div className="flex w-full items-center gap-2 sm:ml-auto sm:w-auto">
           <Select value={pdfScope} onValueChange={setPdfScope}>
             <SelectTrigger className="h-9 flex-1 bg-background/50 sm:w-40">

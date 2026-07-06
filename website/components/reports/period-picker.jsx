@@ -10,6 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { DateRange } from '@/components/ui/date-range';
 import { REPORT_TYPES } from '@/lib/report';
 import { todayYMD } from '@/lib/expense';
 
@@ -25,7 +26,7 @@ function fiscalYearOf(ymd) {
  * and a fiscal-year select for yearly. Parent keeps `type` + `date` (the YMD
  * the API expects); this converts month/year picks into that date.
  */
-export function PeriodPicker({ type, onTypeChange, date, onDateChange, idPrefix = 'pp' }) {
+export function PeriodPicker({ type, onTypeChange, date, onDateChange, range, onRangeChange, idPrefix = 'pp' }) {
   const today = todayYMD();
   const currentFY = fiscalYearOf(today);
   const fyOptions = [currentFY, currentFY - 1, currentFY - 2, currentFY - 3];
@@ -104,6 +105,13 @@ export function PeriodPicker({ type, onTypeChange, date, onDateChange, idPrefix 
               ))}
             </SelectContent>
           </Select>
+        </div>
+      ) : null}
+
+      {type === 'custom' ? (
+        <div className="w-full space-y-1.5 sm:w-auto">
+          <Label>Date range</Label>
+          <DateRange value={range} onChange={onRangeChange} max={today} />
         </div>
       ) : null}
     </>

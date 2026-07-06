@@ -24,6 +24,9 @@ export const listTasksQuerySchema = z.object({
   status: z.enum(['PENDING', 'DONE']).optional(),
   search: z.string().optional(),
   period: z.enum(['all', 'week', 'month', 'year']).optional(),
+  // Custom date range (overrides `period` when both are given). YMD strings.
+  from: ymd.optional(),
+  to: ymd.optional(),
   page: z.coerce.number().int().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(10000).optional(),
 });

@@ -6,12 +6,19 @@ import { buildReport, buildSelfReport } from '../services/report.service.js';
 import { renderReportToStream, renderSelfReportToStream } from '../services/reportPdf.service.js';
 import { audit } from '../models/AuditLog.js';
 
-const TYPES = ['daily', 'weekly', 'monthly', 'yearly'];
+const TYPES = ['daily', 'weekly', 'monthly', 'yearly', 'custom'];
 const COMPANY_SECTIONS = ['attendance', 'leaves', 'expenses', 'roster', 'dues'];
 const SELF_SECTIONS = ['attendance', 'leaves', 'dues'];
 
+const isYMD = (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+
 function dateOrToday(query) {
-  return typeof query.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(query.date) ? query.date : ymdInTz(new Date());
+  return isYMD(query.date) ? query.date : ymdInTz(new Date());
+}
+
+/** The from/to window for a `type=custom` report (ignored by the other types). */
+function rangeOf(query) {
+  return { from: isYMD(query.from) ? query.from : undefined, to: isYMD(query.to) ? query.to : undefined };
 }
 
 function typeOrMonthly(query) {
@@ -63,7 +70,7 @@ export async function preview(req, res, next) {
   try {
     if (!TYPES.includes(req.params.type)) return res.status(400).json(fail('BAD_TYPE', 'Invalid report type'));
     const access = sectionAccess(req.user);
-    const data = await buildReport(req.params.type, dateOrToday(req.query));
+    const data = await buildReport(req.params.type, dateOrToday(req.query), rangeOf(req.query));
     // Strip sections the user may not see.
     if (!access.expenses) delete data.expenses;
     if (!access.dues) delete data.dues;
@@ -90,7 +97,7 @@ export async function download(req, res, next) {
     if (!sections.length) return res.status(403).json(fail('FORBIDDEN', 'No permitted sections to include'));
 
     const date = dateOrToday(req.query);
-    const data = await buildReport(type, date);
+    const data = await buildReport(type, date, rangeOf(req.query));
     await audit({ actor: req.user._id, action: 'report.download', entityType: 'Report', entityId: type, meta: { scope: 'company', date, sections } });
 
     res.setHeader('Content-Type', 'application/pdf');
@@ -109,7 +116,7 @@ export async function download(req, res, next) {
 
 export async function selfPreview(req, res, next) {
   try {
-    const data = await buildSelfReport({ user: req.user, type: typeOrMonthly(req.query), dateYMD: dateOrToday(req.query) });
+    const data = await buildSelfReport({ user: req.user, type: typeOrMonthly(req.query), dateYMD: dateOrToday(req.query), range: rangeOf(req.query) });
     return res.json(ok(data));
   } catch (err) {
     return next(err);
@@ -122,7 +129,7 @@ export async function selfDownload(req, res, next) {
     const date = dateOrToday(req.query);
     const sections = parseSections(req.query.sections, SELF_SECTIONS);
 
-    const data = await buildSelfReport({ user: req.user, type, dateYMD: date });
+    const data = await buildSelfReport({ user: req.user, type, dateYMD: date, range: rangeOf(req.query) });
     await audit({ actor: req.user._id, action: 'report.download', entityType: 'Report', entityId: 'me', meta: { scope: 'me', type, date, sections } });
 
     res.setHeader('Content-Type', 'application/pdf');

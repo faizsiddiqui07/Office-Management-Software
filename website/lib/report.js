@@ -3,6 +3,7 @@ export const REPORT_TYPES = [
   { value: 'weekly', label: 'Weekly' },
   { value: 'monthly', label: 'Monthly' },
   { value: 'yearly', label: 'Yearly' },
+  { value: 'custom', label: 'Custom range' },
 ];
 
 // Company-wide report sections (filtered per role by the server's allowedSections).

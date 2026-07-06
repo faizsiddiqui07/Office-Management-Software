@@ -25,7 +25,15 @@ function niceDate(ymd) {
   });
 }
 
-export function computePeriod(type, dateYMD) {
+export function computePeriod(type, dateYMD, range) {
+  if (type === 'custom') {
+    // An arbitrary "x date → y date" window. Fall back to the single date if a
+    // side is missing, and always keep from <= to.
+    let from = range?.from || dateYMD;
+    let to = range?.to || range?.from || dateYMD;
+    if (to < from) [from, to] = [to, from];
+    return { from, to, label: from === to ? niceDate(from) : `${niceDate(from)} – ${niceDate(to)}` };
+  }
   const d = new Date(`${dateYMD}T00:00:00Z`);
   if (type === 'daily') {
     return { from: dateYMD, to: dateYMD, label: niceDate(dateYMD) };
@@ -68,9 +76,9 @@ function countWorkingDays(fromYMD, toYMD, weekendDays, holidaySet) {
 
 const round1 = (n) => Math.round(n * 10) / 10;
 
-export async function buildReport(type, dateYMD) {
+export async function buildReport(type, dateYMD, range) {
   const settings = await Setting.getSingleton();
-  const period = computePeriod(type, dateYMD);
+  const period = computePeriod(type, dateYMD, range);
   const { from, to } = period;
 
   const fromDay = companyDayFromYMD(from);
@@ -261,9 +269,9 @@ const STATUS_LABEL = {
  * A single person's own report (attendance day-by-day, leaves, dues) for a period.
  * Available to any signed-in user for THEIR OWN data.
  */
-export async function buildSelfReport({ user, type, dateYMD }) {
+export async function buildSelfReport({ user, type, dateYMD, range }) {
   const settings = await Setting.getSingleton();
-  const period = computePeriod(type, dateYMD);
+  const period = computePeriod(type, dateYMD, range);
   const { from, to } = period;
   const now = new Date();
   const todayYMD = ymdInTz(now);

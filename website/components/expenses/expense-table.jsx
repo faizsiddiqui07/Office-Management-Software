@@ -18,8 +18,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { DateRange } from '@/components/ui/date-range';
 import { ExpenseDialog } from './add-expense-dialog';
-import { formatMoney, categoryLabel, PAYMENT_LABELS, PAYMENT_METHODS } from '@/lib/expense';
+import { formatMoney, categoryLabel, PAYMENT_LABELS, PAYMENT_METHODS, todayYMD } from '@/lib/expense';
 import { formatYMD } from '@/lib/leave';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
@@ -30,6 +31,7 @@ export function ExpenseTable({ canManage = true }) {
   const [debouncedSearch, setDebouncedSearch] = React.useState('');
   const [category, setCategory] = React.useState('ALL');
   const [payment, setPayment] = React.useState('ALL');
+  const [range, setRange] = React.useState({ from: '', to: '' }); // custom date range
   const [editing, setEditing] = React.useState(null);
   const [deleting, setDeleting] = React.useState(null);
 
@@ -43,12 +45,14 @@ export function ExpenseTable({ canManage = true }) {
   const categories = meta?.categories ?? [];
 
   const { data, isLoading } = useQuery({
-    queryKey: ['expenses', 'list', debouncedSearch, category, payment],
+    queryKey: ['expenses', 'list', debouncedSearch, category, payment, range.from, range.to],
     queryFn: () => {
       const params = new URLSearchParams({ limit: '100' });
       if (debouncedSearch) params.set('search', debouncedSearch);
       if (category !== 'ALL') params.set('category', category);
       if (payment !== 'ALL') params.set('paymentMethod', payment);
+      if (range.from) params.set('from', range.from);
+      if (range.to) params.set('to', range.to);
       return api.get(`/expenses?${params.toString()}`);
     },
     placeholderData: (prev) => prev, // keep rows visible while refetching
@@ -162,6 +166,7 @@ export function ExpenseTable({ canManage = true }) {
             ))}
           </SelectContent>
         </Select>
+        <DateRange value={range} onChange={setRange} max={todayYMD()} />
         {canManage ? (
           <div className="w-full sm:ml-auto sm:w-auto">
             <ExpenseDialog />

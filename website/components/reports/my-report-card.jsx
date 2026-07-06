@@ -37,12 +37,16 @@ export function MyReportCard() {
 
   const [type, setType] = React.useState('daily'); // opens on today's report
   const [date, setDate] = React.useState(todayYMD());
+  const [range, setRange] = React.useState({ from: '', to: '' }); // for type === 'custom'
   const [sections, setSections] = React.useState(availableSections.map((s) => s.value));
   const [downloading, setDownloading] = React.useState(false);
 
+  // What identifies the chosen period on the API: a from/to range for "custom", else a single date.
+  const periodQuery = type === 'custom' ? `type=custom&from=${range.from}&to=${range.to}` : `type=${type}&date=${date}`;
+
   const { data } = useQuery({
-    queryKey: ['self-report', type, date],
-    queryFn: () => api.get(`/reports/me/preview?type=${type}&date=${date}`),
+    queryKey: ['self-report', type, date, range.from, range.to],
+    queryFn: () => api.get(`/reports/me/preview?${periodQuery}`),
   });
 
   const toggle = (s) => setSections((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]));
@@ -51,7 +55,7 @@ export function MyReportCard() {
     if (!sections.length) return toast.error('Pick at least one section');
     setDownloading(true);
     try {
-      const url = `${API_BASE}/api/reports/me?type=${type}&date=${date}&sections=${sections.join(',')}`;
+      const url = `${API_BASE}/api/reports/me?${periodQuery}&sections=${sections.join(',')}`;
       await downloadFile(url, `my-${type}-report-${date}.pdf`);
       toast.success('Report downloaded');
     } catch (e) {
@@ -83,7 +87,7 @@ export function MyReportCard() {
       </div>
 
       <div className="flex flex-wrap items-end gap-4">
-        <PeriodPicker idPrefix="mr" type={type} onTypeChange={setType} date={date} onDateChange={setDate} />
+        <PeriodPicker idPrefix="mr" type={type} onTypeChange={setType} date={date} onDateChange={setDate} range={range} onRangeChange={setRange} />
         <div className="w-full space-y-1.5 sm:w-auto">
           <Label>Include</Label>
           <div className="flex flex-wrap gap-1.5">

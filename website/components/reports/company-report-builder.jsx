@@ -21,12 +21,16 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 export function CompanyReportBuilder() {
   const [type, setType] = React.useState('daily'); // opens on today's report
   const [date, setDate] = React.useState(todayYMD());
+  const [range, setRange] = React.useState({ from: '', to: '' }); // for type === 'custom'
   const [sections, setSections] = React.useState(null); // null until allowed sections load
   const [downloading, setDownloading] = React.useState(false);
 
+  // A from/to window for "custom", else a single date. `type` travels in the path.
+  const periodQuery = type === 'custom' ? `from=${range.from}&to=${range.to}` : `date=${date}`;
+
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['company-report', type, date],
-    queryFn: () => api.get(`/reports/${type}/preview?date=${date}`),
+    queryKey: ['company-report', type, date, range.from, range.to],
+    queryFn: () => api.get(`/reports/${type}/preview?${periodQuery}`),
   });
 
   const allowed = data?.allowedSections ?? [];
@@ -48,7 +52,7 @@ export function CompanyReportBuilder() {
     if (!selected.length) return toast.error('Pick at least one section');
     setDownloading(true);
     try {
-      const url = `${API_BASE}/api/reports/${type}?date=${date}&sections=${selected.join(',')}`;
+      const url = `${API_BASE}/api/reports/${type}?${periodQuery}&sections=${selected.join(',')}`;
       await downloadFile(url, `${type}-report-${date}.pdf`);
       toast.success('Report downloaded');
     } catch (e) {
@@ -72,7 +76,7 @@ export function CompanyReportBuilder() {
 
       <GlassPanel className="p-5">
         <div className="flex flex-wrap items-end gap-4">
-          <PeriodPicker idPrefix="cr" type={type} onTypeChange={setType} date={date} onDateChange={setDate} />
+          <PeriodPicker idPrefix="cr" type={type} onTypeChange={setType} date={date} onDateChange={setDate} range={range} onRangeChange={setRange} />
           <div className="w-full space-y-1.5 sm:w-auto">
             <Label>Sections</Label>
             <div className="flex flex-wrap gap-1.5">

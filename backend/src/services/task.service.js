@@ -2,6 +2,7 @@ import { Task } from '../models/Task.js';
 import { User } from '../models/User.js';
 import { notify } from '../models/Notification.js';
 import { roleLabel } from '../lib/roles.js';
+import { companyDayFromYMD } from '../lib/time.js';
 
 function httpError(status, code, message) {
   const e = new Error(message);
@@ -196,16 +197,25 @@ function periodMatch(period, field = 'createdAt') {
   return days ? { [field]: { $gte: new Date(Date.now() - days * 86400000) } } : {};
 }
 
-export async function listTasks(actor, { scope = 'mine', status, search, period, page = 1, limit = 200 }) {
+export async function listTasks(actor, { scope = 'mine', status, search, period, from, to, page = 1, limit = 200 }) {
   const and = [];
   // "mine" now also includes shared tasks I'm tagged on (a collaborator), not just
   // ones I own — so multiple $or blocks may stack; combine them with $and.
   if (scope === 'assigned') and.push({ assignedBy: actor._id });
   else and.push({ $or: [{ owner: actor._id }, { collaborators: actor._id }] });
   if (status && ['PENDING', 'DONE'].includes(status)) and.push({ status });
-  // "Last 7 days" on completed work should mean completed-in-window, not created.
-  const pm = periodMatch(period, status === 'DONE' ? 'completedAt' : 'createdAt');
-  if (Object.keys(pm).length) and.push(pm);
+  // Completed work filters on when it was completed; open work on when it was created.
+  const dateField = status === 'DONE' ? 'completedAt' : 'createdAt';
+  if (from || to) {
+    // A custom date range (x → y) takes precedence over the preset period.
+    const r = {};
+    if (from) r.$gte = companyDayFromYMD(from);
+    if (to) r.$lt = new Date(companyDayFromYMD(to).getTime() + 86400000); // through end of `to` day
+    and.push({ [dateField]: r });
+  } else {
+    const pm = periodMatch(period, dateField);
+    if (Object.keys(pm).length) and.push(pm);
+  }
   if (search) {
     const rx = new RegExp(escapeRegex(search), 'i');
     and.push({ $or: [{ title: rx }, { notes: rx }] });
