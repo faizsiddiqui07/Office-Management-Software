@@ -16,7 +16,7 @@ import {
 } from '../lib/time.js';
 import { effectiveSchedule, userWeekendDays, workWindowClosed } from '../lib/schedule.js';
 import { leaveYearOf } from '../lib/leaveYear.js';
-import { onCheckIn } from './bonus.service.js';
+import { onCheckIn, onCheckOut } from './bonus.service.js';
 
 function httpError(status, code, message) {
   const e = new Error(message);
@@ -81,10 +81,8 @@ export async function checkIn(user, meta, coords, lateReason) {
     { upsert: true, new: true, setDefaultsOnInsert: true },
   );
 
-  // Bonus: an on-time check-in may complete a punctual streak (best-effort).
-  if (!isLate) {
-    try { await onCheckIn(user, ymdInTz(day)); } catch (e) { console.error('bonus streak hook failed', e?.message); }
-  }
+  // Bonus (best-effort): a late arrival is penalised, an on-time one may extend a streak.
+  try { await onCheckIn(user, ymdInTz(day), isLate); } catch (e) { console.error('bonus check-in hook failed', e?.message); }
   return record;
 }
 
@@ -189,6 +187,9 @@ export async function checkOut(user, meta, coords) {
       { upsert: true },
     );
   }
+
+  // Bonus (best-effort): reward each full hour of overtime.
+  try { await onCheckOut(user, ymdInTz(day), overtimeMinutes); } catch (e) { console.error('bonus check-out hook failed', e?.message); }
 
   return record;
 }

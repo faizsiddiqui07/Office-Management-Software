@@ -57,16 +57,20 @@ const settingSchema = new mongoose.Schema(
       enabled: { type: Boolean, default: false },
       rupeesPerPoint: { type: Number, default: 0 },
       graceDays: { type: Number, default: 1 }, // extra days after a task's due date before it counts "late"
-      assignedTaskOnTime: { type: Number, default: 0 }, // + to the assignee for finishing an assigned task on time
-      assignedTaskLatePenalty: { type: Number, default: 0 }, // − when an assigned task is finished late (stored positive)
-      punctualStreakDays: { type: Number, default: 10 }, // N consecutive on-time days …
-      punctualStreakPoints: { type: Number, default: 0 }, // … earns this many points
+      streakDays: { type: Number, default: 10 }, // N consecutive on-time days = one punctual-streak award
+      // Which automatic rules are ON + their point values. Keys come from the
+      // AUTO_RULES catalog in bonus.service; a rule not in this list is off.
+      autoRules: {
+        type: [{ _id: false, key: String, points: Number }],
+        default: [],
+      },
       // CEO's manual award/penalty catalog. `points` may be negative (a penalty).
       manualItems: {
         type: [{ _id: false, id: String, label: String, points: Number }],
         default: [],
       },
-      lastPenaltyRun: { type: String, default: '' }, // YMD — throttles the daily overdue-task scan
+      lastPenaltyRun: { type: String, default: '' }, // YMD — throttles the daily scan
+      lastMonthRollup: { type: String, default: '' }, // YYYY-MM — last month whose month-end awards ran
     },
   },
   { timestamps: true },

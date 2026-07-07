@@ -12,7 +12,12 @@ const pointEntrySchema = new mongoose.Schema(
     month: { type: String, required: true, index: true }, // 'YYYY-MM'
     points: { type: Number, required: true }, // + credit, − penalty
     reason: { type: String, default: '' }, // human label shown in the breakdown
-    source: { type: String, enum: ['auto_task', 'auto_streak', 'manual'], default: 'manual', index: true },
+    source: {
+      type: String,
+      enum: ['auto_task', 'auto_streak', 'auto_late', 'auto_ot', 'auto_absent', 'auto_noleave', 'auto_perfect', 'manual'],
+      default: 'manual',
+      index: true,
+    },
     taskRef: { type: mongoose.Schema.Types.ObjectId, ref: 'Task', default: null, index: true }, // idempotency for task awards
     awardedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }, // who granted a manual award
   },

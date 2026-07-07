@@ -72,7 +72,7 @@ function LeadershipTools({ isOwner, onDelete }) {
           <div className="space-y-1.5">
             <Label>To</Label>
             <Select value={userId} onValueChange={setUserId}>
-              <SelectTrigger className="bg-background/50"><SelectValue placeholder="Pick a person…" /></SelectTrigger>
+              <SelectTrigger className="w-full bg-background/50"><SelectValue placeholder="Pick a person…" /></SelectTrigger>
               <SelectContent>
                 {users.map((u) => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
               </SelectContent>
@@ -81,7 +81,7 @@ function LeadershipTools({ isOwner, onDelete }) {
           <div className="space-y-1.5">
             <Label>Reason</Label>
             <Select value={itemId} onValueChange={setItemId}>
-              <SelectTrigger className="bg-background/50"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-full bg-background/50"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="custom">Custom…</SelectItem>
                 {items.map((m) => <SelectItem key={m.id} value={m.id}>{m.label} ({m.points > 0 ? `+${m.points}` : m.points})</SelectItem>)}
