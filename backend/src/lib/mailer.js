@@ -68,6 +68,42 @@ function fromAddress(name, user) {
   return process.env.SMTP_FROM || 'Office Management <no-reply@example.com>';
 }
 
+const esc = (s) => String(s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+/** A clean, email-safe (inline-styled, table-based) password-reset email. */
+function resetEmailHtml(company, resetUrl) {
+  const name = esc(company);
+  const url = esc(resetUrl);
+  return `<!doctype html><html><body style="margin:0;padding:0;background:#f4f5f7;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f5f7;padding:24px 12px;">
+    <tr><td align="center">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#ffffff;border:1px solid #e5e7eb;border-radius:14px;overflow:hidden;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
+        <tr><td style="padding:22px 28px 0;">
+          <p style="margin:0;font-size:13px;font-weight:600;letter-spacing:.02em;color:#6b7280;text-transform:uppercase;">${name}</p>
+        </td></tr>
+        <tr><td style="padding:10px 28px 0;">
+          <h1 style="margin:0;font-size:20px;line-height:1.3;color:#111827;font-weight:600;">Reset your password</h1>
+          <p style="margin:12px 0 0;font-size:15px;line-height:1.6;color:#374151;">We received a request to reset your password. Click the button below to choose a new one.</p>
+        </td></tr>
+        <tr><td style="padding:22px 28px 4px;" align="center">
+          <a href="${url}" style="display:inline-block;background:#111827;color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;padding:13px 26px;border-radius:10px;">Reset password</a>
+        </td></tr>
+        <tr><td style="padding:8px 28px 0;" align="center">
+          <p style="margin:0;font-size:13px;color:#6b7280;">This link expires in about 30 minutes.</p>
+        </td></tr>
+        <tr><td style="padding:20px 28px;">
+          <div style="border-top:1px solid #eef0f2;padding-top:16px;">
+            <p style="margin:0;font-size:12px;color:#9ca3af;">If the button doesn't work, copy and paste this link into your browser:</p>
+            <p style="margin:6px 0 0;font-size:12px;word-break:break-all;"><a href="${url}" style="color:#2563eb;">${url}</a></p>
+            <p style="margin:16px 0 0;font-size:12px;color:#9ca3af;">If you didn't request this, you can safely ignore this email — your password won't change.</p>
+          </div>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+}
+
 /**
  * Sends the password-reset link. If SMTP isn't configured, logs the link to the
  * server console instead (documented in the README) so dev still works.
@@ -85,8 +121,8 @@ export async function sendPasswordResetEmail(to, resetUrl, companyName) {
     from: fromAddress(company, conn.cfg.user),
     to,
     subject: `Reset your ${company} password`,
-    text: `Reset your password using this link (valid ~30 minutes): ${resetUrl}`,
-    html: `<p>Reset your password using this link (valid ~30 minutes):</p><p><a href="${resetUrl}">${resetUrl}</a></p>`,
+    text: `Reset your ${company} password\n\nWe received a request to reset your password. Open the link below to choose a new one (it expires in about 30 minutes):\n\n${resetUrl}\n\nIf you didn't request this, you can safely ignore this email — your password won't change.`,
+    html: resetEmailHtml(company, resetUrl),
   });
   return { delivered: true };
 }

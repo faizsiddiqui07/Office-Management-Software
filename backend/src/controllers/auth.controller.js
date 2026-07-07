@@ -7,6 +7,7 @@ import { signToken } from '../lib/jwt.js';
 import { setAuthCookie, clearAuthCookie } from '../lib/cookies.js';
 import { ok, fail } from '../lib/apiResponse.js';
 import { sendPasswordResetEmail } from '../lib/mailer.js';
+import { publicAppUrl } from '../lib/appUrl.js';
 import { audit } from '../models/AuditLog.js';
 import { permissionsForRole, roleLabel } from '../lib/roles.js';
 
@@ -94,8 +95,7 @@ export async function forgotPassword(req, res, next) {
       await PasswordResetToken.updateMany({ user: user._id, usedAt: null }, { usedAt: new Date() });
       await PasswordResetToken.create({ user: user._id, tokenHash, expiresAt });
 
-      const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
-      const resetUrl = `${clientUrl}/reset-password/${rawToken}`;
+      const resetUrl = `${publicAppUrl()}/reset-password/${rawToken}`;
       const settings = await Setting.getSingleton().catch(() => null);
       await sendPasswordResetEmail(user.email, resetUrl, settings?.companyName);
       await audit({ actor: user._id, action: 'auth.forgot_password', entityType: 'User', entityId: user._id.toString() });
