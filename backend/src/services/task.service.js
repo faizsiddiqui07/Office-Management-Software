@@ -145,8 +145,18 @@ export async function setStatus(actor, id, status) {
   // Shared tasks: the owner OR any tagged teammate can complete it (one status for all).
   if (!isOwner && !isCollaborator) throw httpError(403, 'FORBIDDEN', 'Only the task owner or a tagged teammate can update it');
 
-  task.status = status === 'DONE' ? 'DONE' : 'PENDING';
-  task.completedAt = task.status === 'DONE' ? new Date() : null;
+  const wantDone = status === 'DONE';
+
+  // Reopening a shared (multi-assign) task un-completes it for the WHOLE team and wipes
+  // the doer's bonus — so only the person who actually completed it may reopen it, never
+  // a bystander on the batch. (Older copies with no recorded doer are left permissive.)
+  if (!wantDone && task.status === 'DONE' && task.assignBatch && task.completedBy && String(task.completedBy) !== String(actor._id)) {
+    throw httpError(403, 'SHARED_REOPEN', 'Only the person who completed this shared task can reopen it');
+  }
+
+  task.status = wantDone ? 'DONE' : 'PENDING';
+  task.completedAt = wantDone ? new Date() : null;
+  task.completedBy = wantDone ? actor._id : null; // remember who actually did it
   await task.save();
 
   if (task.status === 'DONE') {
@@ -171,9 +181,40 @@ export async function setStatus(actor, id, status) {
     console.error('bonus hook (setStatus) failed', e?.message);
   }
 
+  // Shared completion: a multi-assign batch is ONE piece of work — when anyone marks
+  // their copy done (or reopens it), every sibling copy follows so it's done for all,
+  // and each carries who completed it. Only the acting completer keeps bonus credit, so
+  // strip every sibling's own auto_task points EITHER way (prevents double payout when
+  // two people complete, and clears siblings' stale overdue penalties). Best-effort per
+  // sibling — one bad copy must not fail the actor's update or the rest of the batch.
+  if (task.assignBatch) {
+    const siblings = await Task.find({ assignBatch: task.assignBatch, _id: { $ne: task._id } });
+    for (const sib of siblings) {
+      try {
+        try { await onAssignedTaskUndone(sib._id); } catch (e) { console.error('bonus hook (batch sync) failed', e?.message); }
+        // Already in sync (same status + same doer) → no redundant save or notification.
+        if (sib.status === task.status && String(sib.completedBy || '') === String(task.completedBy || '')) continue;
+        sib.status = task.status;
+        sib.completedAt = task.completedAt;
+        sib.completedBy = task.completedBy;
+        await sib.save();
+        await notify({
+          user: sib.owner,
+          type: 'TASK_DONE',
+          title: task.status === 'DONE' ? `${actor.name} completed a shared task` : `${actor.name} reopened a shared task`,
+          message: task.title,
+          link: '/todo',
+        });
+      } catch (e) {
+        console.error('batch sync (sibling) failed', e?.message);
+      }
+    }
+  }
+
   await task.populate('owner', 'name');
   await task.populate('assignedBy', 'name');
   await task.populate('collaborators', 'name');
+  await task.populate('completedBy', 'name');
   return task.toJSON();
 }
 
@@ -292,7 +333,7 @@ export async function listTasks(actor, { scope = 'mine', status, search, period,
 
   const skip = (page - 1) * limit;
   const [tasks, total] = await Promise.all([
-    Task.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).populate('owner', 'name').populate('assignedBy', 'name').populate('collaborators', 'name'),
+    Task.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).populate('owner', 'name').populate('assignedBy', 'name').populate('collaborators', 'name').populate('completedBy', 'name'),
     Task.countDocuments(filter),
   ]);
   return { tasks: tasks.map((t) => t.toJSON()), total, page, limit };

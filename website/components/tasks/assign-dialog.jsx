@@ -64,7 +64,7 @@ export function AssignDialog() {
         </Button>
       }
       title="Assign work"
-      description="Give a task to one or more people below you — it shows up in each of their to-dos instantly, and you’ll see when each is done."
+      description="Give a task to one or more people below you — it shows up in each of their to-dos instantly. When anyone marks it done, it’s done for everyone (and only they can reopen it)."
       footer={
         <>
           <Button variant="outline" onClick={() => setOpen(false)}>
@@ -114,7 +114,9 @@ export function AssignDialog() {
           )}
           {assignTo.length ? (
             <p className="text-xs text-muted-foreground">
-              Goes to {assignTo.length} {assignTo.length > 1 ? 'people' : 'person'} — each gets their own copy to complete.
+              {assignTo.length > 1
+                ? `Goes to ${assignTo.length} people — when anyone marks it done, it’s done for everyone.`
+                : 'Goes to 1 person.'}
             </p>
           ) : null}
         </div>

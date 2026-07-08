@@ -17,6 +17,7 @@ const taskSchema = new mongoose.Schema(
     assignBatch: { type: String, default: '', index: true },
     dueYMD: { type: String, default: '' }, // optional deadline (YYYY-MM-DD)
     completedAt: { type: Date, default: null },
+    completedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }, // who actually marked it done (matters for shared batches)
   },
   { timestamps: true },
 );

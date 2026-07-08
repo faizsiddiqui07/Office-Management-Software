@@ -144,7 +144,7 @@ function TaskRow({ task, myId, canToggle, onToggle, onEdit, onDelete, onOpen }) 
             </span>
           ) : null}
           {task.dueYMD ? <span className={cn(overdue && 'font-medium text-destructive')}>Due {fmtDate(task.dueYMD)}</span> : null}
-          {done && task.completedAt ? <span className="text-success">Done {fmtDate(task.completedAt)}</span> : null}
+          {done && task.completedAt ? <span className="text-success">Done {fmtDate(task.completedAt)}{task.completedBy && task.completedBy.id !== myId ? ` · by ${task.completedBy.name}` : ''}</span> : null}
         </div>
       </div>
       <div className="flex shrink-0 items-center">
@@ -231,7 +231,7 @@ function DatedTaskList({ tasks, dateKey, ascending = false, onEdit, onDelete, on
                   <p className={cn('text-sm font-medium', done && 'text-muted-foreground line-through')}>{t.title}</p>
                   <div className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-muted-foreground">
                     {t.dueYMD ? <span className={cn(overdue && 'font-medium text-destructive')}>Due {fmtDate(t.dueYMD)}</span> : null}
-                    {done && t.completedAt ? <span className="text-success">Done {fmtDate(t.completedAt)}</span> : null}
+                    {done && t.completedAt ? <span className="text-success">Done {fmtDate(t.completedAt)}{t.completedBy?.name ? ` · by ${t.completedBy.name}` : ''}</span> : null}
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center">
@@ -417,7 +417,11 @@ function TaskDetailDialog({ view, myId, onClose, onToggle, onEdit, onDelete }) {
             ) : null}
             <Row label="Due date">{task.dueYMD ? fmtDate(task.dueYMD) : '—'}</Row>
             <Row label="Created">{fmtDate(task.createdAt)}</Row>
-            {done ? <Row label="Completed">{task.completedAt ? fmtDate(task.completedAt) : '—'}</Row> : null}
+            {done ? (
+              <Row label="Completed">
+                {task.completedBy?.name ? <span className="inline-flex items-center gap-1.5"><UserRound className="size-3.5 text-success" /> {task.completedBy.name}{task.completedAt ? ` · ${fmtDate(task.completedAt)}` : ''}</span> : task.completedAt ? fmtDate(task.completedAt) : '—'}
+              </Row>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -593,6 +597,23 @@ export function TaskBoard() {
     onError: (e) => toast.error(e?.message || 'Could not update the task'),
   });
 
+  // Un-completing a shared (multi-assign) task reopens it for EVERYONE and wipes the
+  // doer's bonus, so confirm first — and only the person who completed it may do it
+  // (the server enforces this too; here we give a clean message instead of a 403).
+  const [reopening, setReopening] = React.useState(null);
+  const requestToggle = (t) => {
+    if (t.status === 'DONE' && t.assignBatch && batchCountOf(t) > 1) {
+      const completerId = t.completedBy?.id || t.completedBy;
+      if (completerId && String(completerId) !== String(user?.id)) {
+        toast.error(`Only ${t.completedBy?.name || 'the person who completed it'} can reopen this shared task`);
+        return;
+      }
+      setReopening(t);
+      return;
+    }
+    toggleMut.mutate(t);
+  };
+
   const delMut = useMutation({
     mutationFn: (id) => api.delete(`/tasks/${id}`),
     onSuccess: () => {
@@ -721,7 +742,7 @@ export function TaskBoard() {
                         task={t}
                         myId={user?.id}
                         canToggle
-                        onToggle={(x) => toggleMut.mutate(x)}
+                        onToggle={(x) => requestToggle(x)}
                         onEdit={(x) => setEditing(x)}
                         onDelete={(x) => setDeleting(x)}
                         onOpen={(x) => setViewing({ task: x, canToggle: true, allowEdit: canMgr(x), allowDelete: canMgr(x), assignerView: false })}
@@ -746,7 +767,7 @@ export function TaskBoard() {
                           canToggle
                           allowEdit={() => false}
                           allowDelete={() => false}
-                          onToggle={(x) => toggleMut.mutate(x)}
+                          onToggle={(x) => requestToggle(x)}
                           onEdit={(x) => setEditing(x)}
                           onDelete={(x) => setDeleting(x)}
                           onOpen={(x) => setViewing({ task: x, canToggle: true, allowEdit: false, allowDelete: false, assignerView: false })}
@@ -803,8 +824,8 @@ export function TaskBoard() {
         myId={user?.id}
         onClose={() => setViewing(null)}
         onToggle={(t) => {
-          toggleMut.mutate(t);
           setViewing(null);
+          requestToggle(t);
         }}
         onEdit={(t) => {
           setViewing(null);
@@ -825,6 +846,19 @@ export function TaskBoard() {
         confirmLabel="Delete"
         loading={delMut.isPending}
         onConfirm={() => deleting && delMut.mutate(deleting.id)}
+      />
+
+      <ConfirmDialog
+        open={!!reopening}
+        onOpenChange={(o) => (!o ? setReopening(null) : null)}
+        title="Reopen for everyone?"
+        description={reopening ? `This marks “${reopening.title}” not done for all ${batchCountOf(reopening)} people and removes it from their completed list.` : ''}
+        confirmLabel="Reopen for all"
+        loading={toggleMut.isPending}
+        onConfirm={() => {
+          if (reopening) toggleMut.mutate(reopening);
+          setReopening(null);
+        }}
       />
     </div>
   );
