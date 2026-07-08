@@ -3,25 +3,19 @@
 import * as React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { UserRoundPlus } from 'lucide-react';
+import { Check, UserRoundPlus, Users } from 'lucide-react';
 import { api } from '@/lib/api';
+import { cn } from '@/lib/utils';
 import { AppDialog } from '@/components/glass/app-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 
 export function AssignDialog() {
   const qc = useQueryClient();
   const [open, setOpen] = React.useState(false);
-  const [assignTo, setAssignTo] = React.useState('');
+  const [assignTo, setAssignTo] = React.useState([]); // ids of people to assign to
   const [title, setTitle] = React.useState('');
   const [notes, setNotes] = React.useState('');
   const [dueYMD, setDueYMD] = React.useState('');
@@ -31,17 +25,23 @@ export function AssignDialog() {
 
   React.useEffect(() => {
     if (open) {
-      setAssignTo('');
+      setAssignTo([]);
       setTitle('');
       setNotes('');
       setDueYMD('');
     }
   }, [open]);
 
+  const toggle = (id) => setAssignTo((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  const allIds = users.map((u) => u.id);
+  const allSelected = allIds.length > 0 && allIds.every((id) => assignTo.includes(id));
+  const toggleAll = () => setAssignTo(allSelected ? [] : allIds);
+
   const mut = useMutation({
     mutationFn: () => api.post('/tasks', { assignTo, title, notes, dueYMD }),
-    onSuccess: () => {
-      toast.success('Task assigned');
+    onSuccess: (res) => {
+      const n = res?.count ?? assignTo.length;
+      toast.success(n > 1 ? `Task assigned to ${n} people` : 'Task assigned');
       qc.invalidateQueries({ queryKey: ['tasks'] });
       setOpen(false);
     },
@@ -49,7 +49,7 @@ export function AssignDialog() {
   });
 
   const submit = () => {
-    if (!assignTo) return toast.error('Pick a person');
+    if (!assignTo.length) return toast.error('Pick at least one person');
     if (!title.trim()) return toast.error('Add the work');
     mut.mutate();
   };
@@ -64,7 +64,7 @@ export function AssignDialog() {
         </Button>
       }
       title="Assign work"
-      description="Give a task to someone below you — it shows up in their to-do instantly, and you’ll see when it’s done."
+      description="Give a task to one or more people below you — it shows up in each of their to-dos instantly, and you’ll see when each is done."
       footer={
         <>
           <Button variant="outline" onClick={() => setOpen(false)}>
@@ -78,24 +78,45 @@ export function AssignDialog() {
     >
       <div className="space-y-4 py-2">
         <div className="space-y-1.5">
-          <Label htmlFor="a-user">Assign to</Label>
-          <Select value={assignTo} onValueChange={setAssignTo}>
-            <SelectTrigger id="a-user" className="w-full bg-background/50">
-              <SelectValue placeholder="Select a person…" />
-            </SelectTrigger>
-            <SelectContent>
-              {users.length ? (
-                users.map((u) => (
-                  <SelectItem key={u.id} value={u.id}>
+          <div className="flex items-center justify-between gap-2">
+            <Label className="flex items-center gap-1.5">
+              <Users className="size-3.5" /> Assign to
+            </Label>
+            {users.length > 1 ? (
+              <button type="button" onClick={toggleAll} className="text-xs font-medium text-primary hover:underline">
+                {allSelected ? 'Clear all' : 'Select all'}
+              </button>
+            ) : null}
+          </div>
+          {users.length ? (
+            <div className="flex flex-wrap gap-1.5">
+              {users.map((u) => {
+                const on = assignTo.includes(u.id);
+                return (
+                  <button
+                    key={u.id}
+                    type="button"
+                    onClick={() => toggle(u.id)}
+                    className={cn(
+                      'inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium ring-1 transition-colors',
+                      on ? 'bg-primary/12 text-primary ring-primary/25' : 'bg-muted/40 text-muted-foreground ring-border hover:text-foreground',
+                    )}
+                  >
+                    {on ? <Check className="size-3" /> : null}
                     {u.name}
-                    {u.designation ? ` · ${u.designation}` : ''}
-                  </SelectItem>
-                ))
-              ) : (
-                <div className="px-3 py-2 text-sm text-muted-foreground">No one below you to assign to.</div>
-              )}
-            </SelectContent>
-          </Select>
+                    {u.designation ? <span className="opacity-60">· {u.designation}</span> : null}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No one below you to assign to.</p>
+          )}
+          {assignTo.length ? (
+            <p className="text-xs text-muted-foreground">
+              Goes to {assignTo.length} {assignTo.length > 1 ? 'people' : 'person'} — each gets their own copy to complete.
+            </p>
+          ) : null}
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="a-title">Work</Label>

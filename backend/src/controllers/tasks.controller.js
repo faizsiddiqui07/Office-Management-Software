@@ -39,9 +39,11 @@ export async function list(req, res, next) {
 export async function create(req, res, next) {
   try {
     const body = createTaskSchema.parse(req.body);
-    const task = await svc.createTask(req.user, body);
-    await audit({ actor: req.user._id, action: 'task.create', entityType: 'Task', entityId: task.id, meta: { assigned: !!task.assignedBy } });
-    res.status(201).json(ok({ task }));
+    const { tasks } = await svc.createTask(req.user, body);
+    for (const t of tasks) {
+      await audit({ actor: req.user._id, action: 'task.create', entityType: 'Task', entityId: t.id, meta: { assigned: !!t.assignedBy } });
+    }
+    res.status(201).json(ok({ task: tasks[0], tasks, count: tasks.length }));
   } catch (err) {
     handleErr(res, err, next);
   }

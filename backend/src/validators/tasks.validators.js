@@ -6,7 +6,9 @@ export const createTaskSchema = z.object({
   title: z.string().min(1, 'Add the work').max(300),
   notes: z.string().max(2000).optional().default(''),
   dueYMD: ymd.optional().default(''),
-  assignTo: z.string().optional(), // user id — present when delegating
+  // One id (single delegate) OR a list — assigning the same work to several people
+  // at once creates one independent task each.
+  assignTo: z.union([z.string(), z.array(z.string()).max(50)]).optional(),
   collaborators: z.array(z.string()).max(20).optional(), // tagged teammates on a shared task
 });
 

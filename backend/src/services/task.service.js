@@ -59,44 +59,62 @@ async function resolveCollaborators(actor, ids) {
   return allowed.map((u) => u._id);
 }
 
+/**
+ * Create a task. Returns `{ tasks: [...] }` — one entry, except when delegating the
+ * same work to several people at once (then one independent task per person).
+ */
 export async function createTask(actor, data) {
-  let owner = actor._id;
-  let assignedBy = null;
-  let collaborators = [];
+  // `assignTo` may be a single id or a list. Delegating to one or more people creates
+  // an independent task each (each person owns and completes their own copy).
+  const rawAssign = Array.isArray(data.assignTo) ? data.assignTo : data.assignTo ? [data.assignTo] : [];
+  const assigneeIds = [...new Set(rawAssign.map(String))].filter((id) => id && id !== String(actor._id));
 
-  if (data.assignTo && String(data.assignTo) !== String(actor._id)) {
-    const target = await User.findById(data.assignTo);
-    if (!target || !target.isActive) throw httpError(404, 'NOT_FOUND', 'That user was not found');
-    if (!canAssignTo(actor, target)) {
-      throw httpError(403, 'FORBIDDEN', 'You don’t have access to assign work to this person — ask leadership to grant it');
+  if (assigneeIds.length) {
+    const targets = await User.find({ _id: { $in: assigneeIds }, isActive: true });
+    if (targets.length !== assigneeIds.length) throw httpError(404, 'NOT_FOUND', 'One of the selected people was not found');
+    for (const t of targets) {
+      if (!canAssignTo(actor, t)) {
+        throw httpError(403, 'FORBIDDEN', 'You don’t have access to assign work to one of the selected people — ask leadership to grant it');
+      }
     }
-    owner = target._id;
-    assignedBy = actor._id;
-  } else {
-    // A personal task the actor keeps in their own to-do can tag teammates who
-    // are also working on it (shared task) — they'll see it in "assigned to me".
-    collaborators = await resolveCollaborators(actor, data.collaborators);
+
+    const created = [];
+    for (const target of targets) {
+      const task = await Task.create({
+        title: data.title,
+        notes: data.notes || '',
+        dueYMD: data.dueYMD || '',
+        owner: target._id,
+        assignedBy: actor._id,
+        collaborators: [],
+        status: 'PENDING',
+      });
+      await notify({
+        user: target._id,
+        type: 'TASK_ASSIGNED',
+        title: `New task from ${actor.name}`,
+        message: data.dueYMD ? `${data.title} (due ${data.dueYMD})` : data.title,
+        link: '/todo',
+      });
+      await task.populate('owner', 'name');
+      await task.populate('assignedBy', 'name');
+      created.push(task.toJSON());
+    }
+    return { tasks: created };
   }
 
+  // A personal task the actor keeps in their own to-do can tag teammates who are
+  // also working on it (shared task) — they'll see it in "assigned to me".
+  const collaborators = await resolveCollaborators(actor, data.collaborators);
   const task = await Task.create({
     title: data.title,
     notes: data.notes || '',
     dueYMD: data.dueYMD || '',
-    owner,
-    assignedBy,
+    owner: actor._id,
+    assignedBy: null,
     collaborators,
     status: 'PENDING',
   });
-
-  if (assignedBy) {
-    await notify({
-      user: owner,
-      type: 'TASK_ASSIGNED',
-      title: `New task from ${actor.name}`,
-      message: data.dueYMD ? `${data.title} (due ${data.dueYMD})` : data.title,
-      link: '/todo',
-    });
-  }
   for (const cid of collaborators) {
     await notify({
       user: cid,
@@ -110,7 +128,7 @@ export async function createTask(actor, data) {
   await task.populate('owner', 'name');
   await task.populate('assignedBy', 'name');
   await task.populate('collaborators', 'name');
-  return task.toJSON();
+  return { tasks: [task.toJSON()] };
 }
 
 export async function setStatus(actor, id, status) {
