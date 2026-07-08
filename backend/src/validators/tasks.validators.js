@@ -17,6 +17,7 @@ export const updateTaskSchema = z.object({
   notes: z.string().max(2000).optional(),
   dueYMD: ymd.optional(),
   collaborators: z.array(z.string()).max(20).optional(), // owner can retag a shared task
+  applyToAll: z.boolean().optional(), // assigner: push a content edit to every copy of a multi-assigned task
 });
 
 export const statusSchema = z.object({ status: z.enum(['PENDING', 'DONE']) });

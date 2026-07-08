@@ -11,9 +11,10 @@ import { AppDialog } from '@/components/glass/app-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 
-export function TaskDialog({ task, open: openProp, onOpenChange }) {
+export function TaskDialog({ task, open: openProp, onOpenChange, batchCount = 0 }) {
   const isEdit = !!task;
   const qc = useQueryClient();
   const { user } = useAuth();
@@ -25,10 +26,18 @@ export function TaskDialog({ task, open: openProp, onOpenChange }) {
   const ta = user?.taskAssign || {};
   const canTag = ta.mode === 'ALL' || (ta.mode === 'SELECTED' && (ta.users || []).length > 0);
 
+  // Editing a task I delegated to someone (not my own, not a shared task).
+  const assignerId = task?.assignedBy?.id || task?.assignedBy || null;
+  const isAssignedByMe = isEdit && !!assignerId && String(assignerId) === String(user?.id);
+  // …and it was part of one multi-assign action with 2+ live copies → offer the
+  // "edit everyone's copy" switch. (A batch shrunk to one copy edits normally.)
+  const showBatchSwitch = isAssignedByMe && !!task?.assignBatch && batchCount > 1;
+
   const [title, setTitle] = React.useState('');
   const [notes, setNotes] = React.useState('');
   const [dueYMD, setDueYMD] = React.useState('');
   const [collaborators, setCollaborators] = React.useState([]); // tagged teammate ids
+  const [applyToAll, setApplyToAll] = React.useState(true); // batch edit: push to every copy
 
   React.useEffect(() => {
     if (!open) return;
@@ -36,6 +45,7 @@ export function TaskDialog({ task, open: openProp, onOpenChange }) {
     setNotes(task?.notes || '');
     setDueYMD(task?.dueYMD || '');
     setCollaborators((task?.collaborators || []).map((c) => c.id).filter(Boolean));
+    setApplyToAll(true);
   }, [open, task]);
 
   const { data: assignData } = useQuery({
@@ -50,16 +60,22 @@ export function TaskDialog({ task, open: openProp, onOpenChange }) {
   const mut = useMutation({
     mutationFn: () => {
       const body = { title, notes, dueYMD };
-      if (canTag) body.collaborators = collaborators;
+      // Collaborators only apply to my OWN task; a delegated task uses batch-edit instead.
+      if (canTag && !isAssignedByMe) body.collaborators = collaborators;
+      if (showBatchSwitch) body.applyToAll = applyToAll;
       return isEdit ? api.patch(`/tasks/${task.id}`, body) : api.post('/tasks', body);
     },
-    onSuccess: () => {
-      toast.success(isEdit ? 'Task updated' : 'Task added');
+    onSuccess: (res) => {
+      const n = res?.task?.batchCount; // controller nests the updated task under `task`
+      toast.success(!isEdit ? 'Task added' : showBatchSwitch && applyToAll && n > 1 ? `Updated for ${n} people` : 'Task updated');
       qc.invalidateQueries({ queryKey: ['tasks'] });
       setOpen(false);
     },
     onError: (e) => toast.error(e?.message || 'Could not save the task'),
   });
+
+  // Make the primary button's scope unmistakable when a batch edit is in play.
+  const saveLabel = mut.isPending ? 'Saving…' : !isEdit ? 'Add' : showBatchSwitch ? (applyToAll ? `Save for ${batchCount} people` : 'Save for this one') : 'Save';
 
   const submit = () => {
     if (!title.trim()) return toast.error('Add the work');
@@ -84,12 +100,31 @@ export function TaskDialog({ task, open: openProp, onOpenChange }) {
             Cancel
           </Button>
           <Button onClick={submit} disabled={mut.isPending}>
-            {mut.isPending ? 'Saving…' : isEdit ? 'Save' : 'Add'}
+            {saveLabel}
           </Button>
         </>
       }
     >
       <div className="space-y-4 py-2">
+        {/* This task was assigned to several people at once. Scope sits FIRST so it's
+            seen before the fields: one switch to fix every copy, or just this one.
+            Each person's completion status is always left untouched. */}
+        {showBatchSwitch ? (
+          <div className="flex items-start justify-between gap-3 rounded-xl bg-primary/[0.06] p-3 ring-1 ring-primary/15">
+            <div className="min-w-0">
+              <Label className="flex items-center gap-1.5">
+                <Users className="size-3.5" /> Apply to all {batchCount} people
+              </Label>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {applyToAll
+                  ? `Your changes save to every copy of this task (${batchCount} people).`
+                  : 'Only this person’s copy will change.'}
+              </p>
+            </div>
+            <Switch checked={applyToAll} onCheckedChange={setApplyToAll} />
+          </div>
+        ) : null}
+
         <div className="space-y-1.5">
           <Label htmlFor="t-title">Work</Label>
           <Input id="t-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What needs to be done?" className="bg-background/50" />
@@ -105,7 +140,7 @@ export function TaskDialog({ task, open: openProp, onOpenChange }) {
 
         {/* Tag teammates who are also working on this — it stays in your to-do AND
             shows in theirs (whoever finishes it, it's done for everyone). */}
-        {canTag ? (
+        {canTag && !isAssignedByMe ? (
           <div className="space-y-1.5">
             <Label className="flex items-center gap-1.5">
               <Users className="size-3.5" /> Also working on this (optional)

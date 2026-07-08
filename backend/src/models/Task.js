@@ -11,6 +11,10 @@ const taskSchema = new mongoose.Schema(
     // owner keeps it in their own to-do; each collaborator sees it in "assigned to
     // me". Status is SHARED — whoever completes it, it's done for everyone.
     collaborators: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }], default: [], index: true },
+    // Set (to a shared random id) when the SAME work is assigned to several people
+    // at once — links those independent copies so the assigner can edit them all in
+    // one go. Empty for personal / single-assign tasks. Status stays per-person.
+    assignBatch: { type: String, default: '', index: true },
     dueYMD: { type: String, default: '' }, // optional deadline (YYYY-MM-DD)
     completedAt: { type: Date, default: null },
   },

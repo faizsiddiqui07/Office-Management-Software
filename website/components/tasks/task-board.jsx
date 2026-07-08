@@ -372,6 +372,11 @@ function TaskDetailDialog({ view, myId, onClose, onToggle, onEdit, onDelete }) {
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge tone={done ? 'success' : 'warning'}>{done ? 'Done' : 'Pending'}</StatusBadge>
             {overdue ? <StatusBadge tone="destructive">Overdue</StatusBadge> : null}
+            {view?.batchCount > 1 ? (
+              <StatusBadge tone="primary" dot={false}>
+                <Users className="size-3" /> Assigned to {view.batchCount} people
+              </StatusBadge>
+            ) : null}
           </div>
 
           <div>
@@ -553,6 +558,15 @@ export function TaskBoard() {
   // My OWN task (not delegated to me, not just shared with me) → I can edit/delete it.
   const canMgr = (t) => t.owner?.id === user?.id && !t.assignedBy;
 
+  // How many live copies each multi-assign batch has (for the "N people" badge and
+  // the batch-edit switch). Computed from the loaded list of the current tab.
+  const batchCounts = React.useMemo(() => {
+    const m = {};
+    for (const t of tasks) if (t.assignBatch) m[t.assignBatch] = (m[t.assignBatch] || 0) + 1;
+    return m;
+  }, [tasks]);
+  const batchCountOf = (t) => (t?.assignBatch ? batchCounts[t.assignBatch] || 0 : 0);
+
   // Group assigned tasks into per-person folders (filtered by the name search).
   const folders = React.useMemo(() => {
     if (!isAssigned) return [];
@@ -676,7 +690,7 @@ export function TaskBoard() {
                     folder={f}
                     onEdit={(x) => setEditing(x)}
                     onDelete={(x) => setDeleting(x)}
-                    onOpen={(x) => setViewing({ task: x, canToggle: false, allowEdit: true, allowDelete: true, assignerView: true })}
+                    onOpen={(x) => setViewing({ task: x, canToggle: false, allowEdit: true, allowDelete: true, assignerView: true, batchCount: batchCountOf(x) })}
                   />
                 ))}
               </div>
@@ -776,7 +790,12 @@ export function TaskBoard() {
       </Tabs>
 
       {editing ? (
-        <TaskDialog task={editing} open={!!editing} onOpenChange={(o) => (!o ? setEditing(null) : null)} />
+        <TaskDialog
+          task={editing}
+          open={!!editing}
+          onOpenChange={(o) => (!o ? setEditing(null) : null)}
+          batchCount={batchCountOf(editing)}
+        />
       ) : null}
 
       <TaskDetailDialog

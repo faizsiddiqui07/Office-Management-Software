@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Task } from '../models/Task.js';
 import { User } from '../models/User.js';
 import { notify } from '../models/Notification.js';
@@ -78,6 +79,10 @@ export async function createTask(actor, data) {
       }
     }
 
+    // Link the copies only when there are 2+ — so the assigner can later edit them
+    // all at once. A lone delegate has no siblings, so no batch.
+    const batch = targets.length > 1 ? randomUUID() : '';
+
     const created = [];
     for (const target of targets) {
       const task = await Task.create({
@@ -87,6 +92,7 @@ export async function createTask(actor, data) {
         owner: target._id,
         assignedBy: actor._id,
         collaborators: [],
+        assignBatch: batch,
         status: 'PENDING',
       });
       await notify({
@@ -184,7 +190,40 @@ export async function updateTask(actor, id, data) {
     throw httpError(403, 'FORBIDDEN', 'You cannot edit this task');
   }
 
-  for (const f of ['title', 'notes', 'dueYMD']) if (data[f] !== undefined) task[f] = data[f];
+  const contentFields = ['title', 'notes', 'dueYMD'];
+
+  // Batch edit: when the same work was assigned to several people at once, the
+  // assigner can fix the content of every copy in one go. Only the assigner, only
+  // the shared content — each person's own completion status is left untouched.
+  if (data.applyToAll && isAssigner && task.assignBatch) {
+    const patch = {};
+    for (const f of contentFields) if (data[f] !== undefined) patch[f] = data[f];
+    const siblings = await Task.find({ assignBatch: task.assignBatch, assignedBy: actor._id });
+    let changedCount = 0;
+    for (const sib of siblings) {
+      const changed = Object.keys(patch).some((f) => sib[f] !== patch[f]);
+      if (!changed) continue; // a copy that already matches — don't save or ping
+      Object.assign(sib, patch);
+      await sib.save();
+      changedCount += 1;
+      // Only ping people who still have it pending — no noise for teammates who
+      // already finished. (Their copy's text stays consistent, but bonus points are
+      // frozen at completion: a later due-date edit does not re-score them.)
+      if (sib.status !== 'DONE') {
+        await notify({
+          user: sib.owner,
+          type: 'TASK_ASSIGNED',
+          title: `${actor.name} updated a task`,
+          message: sib.dueYMD ? `${sib.title} (due ${sib.dueYMD})` : sib.title,
+          link: '/todo',
+        });
+      }
+    }
+    const updated = await Task.findById(id).populate('owner', 'name').populate('assignedBy', 'name').populate('collaborators', 'name');
+    return { ...updated.toJSON(), batchCount: siblings.length, changedCount };
+  }
+
+  for (const f of contentFields) if (data[f] !== undefined) task[f] = data[f];
 
   // Only the owner of a non-delegated task manages its tagged teammates.
   if (data.collaborators !== undefined && isOwner && !task.assignedBy) {
