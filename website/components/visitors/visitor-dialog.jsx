@@ -27,6 +27,10 @@ export function VisitorDialog({ visitor, open: openProp, onOpenChange }) {
   const open = openProp !== undefined ? openProp : openInternal;
   const setOpen = onOpenChange || setOpenInternal;
 
+  // Once a visitor has checked out, their visit times are a finalised record — you can
+  // still fix any other detail, but the check-in / check-out time is locked.
+  const timesLocked = isEdit && !!visitor?.checkOutTime;
+
   const { data: meta } = useQuery({ queryKey: ['visitors', 'meta'], queryFn: () => api.get('/visitors/meta') });
   const categories = meta?.categories ?? ['Visitors', 'Finance'];
   const { data: peopleData } = useQuery({ queryKey: ['visitors', 'people'], queryFn: () => api.get('/visitors/people'), staleTime: 5 * 60 * 1000 });
@@ -151,13 +155,18 @@ export function VisitorDialog({ visitor, open: openProp, onOpenChange }) {
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="v-in">Check-in</Label>
-            <Input id="v-in" type="time" value={form.checkInTime || ''} onChange={set('checkInTime')} className="bg-background/50" />
+            <Input id="v-in" type="time" value={form.checkInTime || ''} onChange={set('checkInTime')} disabled={timesLocked} className="bg-background/50 disabled:cursor-not-allowed disabled:opacity-60" />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="v-out">Check-out</Label>
-            <Input id="v-out" type="time" value={form.checkOutTime || ''} onChange={set('checkOutTime')} className="bg-background/50" />
+            <Input id="v-out" type="time" value={form.checkOutTime || ''} onChange={set('checkOutTime')} disabled={timesLocked} className="bg-background/50 disabled:cursor-not-allowed disabled:opacity-60" />
           </div>
         </div>
+        {timesLocked ? (
+          <p className="-mt-1.5 text-xs text-muted-foreground">
+            Check-in &amp; check-out times are locked once the visitor has checked out. You can still update every other detail.
+          </p>
+        ) : null}
 
         <div className="space-y-1.5">
           <Label htmlFor="v-purpose">Purpose / notes</Label>

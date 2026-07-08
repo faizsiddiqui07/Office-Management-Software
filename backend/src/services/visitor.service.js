@@ -74,7 +74,13 @@ export async function createVisitor(user, data) {
 export async function updateVisitor(id, data) {
   const v = await Visitor.findById(id);
   if (!v) throw httpError(404, 'NOT_FOUND', 'Visitor entry not found');
-  for (const f of ['name', 'phone', 'category', 'fromPlace', 'company', 'toMeet', 'purpose', 'checkInTime', 'checkOutTime']) {
+  // Once a visitor has checked out, their visit times are a finalised record: every
+  // other detail can still be corrected, but the check-in / check-out time cannot.
+  // (The check-out action itself still works — that's the first time it's ever set.)
+  const timesLocked = !!v.checkOutTime;
+  const editable = ['name', 'phone', 'category', 'fromPlace', 'company', 'toMeet', 'purpose'];
+  if (!timesLocked) editable.push('checkInTime', 'checkOutTime');
+  for (const f of editable) {
     if (data[f] !== undefined) v[f] = data[f];
   }
   if (data.dateYMD !== undefined) {
