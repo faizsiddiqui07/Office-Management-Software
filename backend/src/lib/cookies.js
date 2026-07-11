@@ -19,7 +19,7 @@ export function setAuthCookie(res, token) {
   try {
     res.cookie(AUTH_COOKIE, token, {
       ...cookieOptions(),
-      maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
+      maxAge: 1000 * 60 * 60 * 24 * 3650, // ~10 years — lifetime session, until manual logout
     });
   } catch {
     // ignore — token auth still works
