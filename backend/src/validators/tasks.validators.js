@@ -10,6 +10,7 @@ export const createTaskSchema = z.object({
   // at once creates one independent task each.
   assignTo: z.union([z.string(), z.array(z.string()).max(50)]).optional(),
   collaborators: z.array(z.string()).max(20).optional(), // tagged teammates on a shared task
+  requiresApproval: z.boolean().optional(), // assigner must approve before it's done
 });
 
 export const updateTaskSchema = z.object({
@@ -18,9 +19,16 @@ export const updateTaskSchema = z.object({
   dueYMD: ymd.optional(),
   collaborators: z.array(z.string()).max(20).optional(), // owner can retag a shared task
   applyToAll: z.boolean().optional(), // assigner: push a content edit to every copy of a multi-assigned task
+  assignTo: z.union([z.string(), z.array(z.string()).max(50)]).optional(), // assigner: change who it's assigned to
+  requiresApproval: z.boolean().optional(),
 });
 
 export const statusSchema = z.object({ status: z.enum(['PENDING', 'DONE']) });
+
+export const reviewTaskSchema = z.object({
+  approve: z.boolean(),
+  reason: z.string().max(1000).optional().default(''),
+});
 
 export const listTasksQuerySchema = z.object({
   scope: z.enum(['mine', 'assigned']).optional(),

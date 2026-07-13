@@ -3,13 +3,14 @@
 import * as React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Check, UserRoundPlus, Users } from 'lucide-react';
+import { Check, ThumbsUp, UserRoundPlus, Users } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { AppDialog } from '@/components/glass/app-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 
 export function AssignDialog() {
@@ -19,6 +20,7 @@ export function AssignDialog() {
   const [title, setTitle] = React.useState('');
   const [notes, setNotes] = React.useState('');
   const [dueYMD, setDueYMD] = React.useState('');
+  const [requiresApproval, setRequiresApproval] = React.useState(false);
 
   const { data } = useQuery({ queryKey: ['tasks', 'assignable'], queryFn: () => api.get('/tasks/assignable'), enabled: open });
   const users = data?.users ?? [];
@@ -29,6 +31,7 @@ export function AssignDialog() {
       setTitle('');
       setNotes('');
       setDueYMD('');
+      setRequiresApproval(false);
     }
   }, [open]);
 
@@ -38,7 +41,7 @@ export function AssignDialog() {
   const toggleAll = () => setAssignTo(allSelected ? [] : allIds);
 
   const mut = useMutation({
-    mutationFn: () => api.post('/tasks', { assignTo, title, notes, dueYMD }),
+    mutationFn: () => api.post('/tasks', { assignTo, title, notes, dueYMD, requiresApproval }),
     onSuccess: (res) => {
       const n = res?.count ?? assignTo.length;
       toast.success(n > 1 ? `Task assigned to ${n} people` : 'Task assigned');
@@ -64,7 +67,7 @@ export function AssignDialog() {
         </Button>
       }
       title="Assign work"
-      description="Give a task to one or more people below you — it shows up in each of their to-dos instantly. When anyone marks it done, it’s done for everyone (and only they can reopen it)."
+      description="Give a task to one or more people below you — it shows up in each of their to-dos instantly. Everyone completes their own copy."
       footer={
         <>
           <Button variant="outline" onClick={() => setOpen(false)}>
@@ -115,7 +118,7 @@ export function AssignDialog() {
           {assignTo.length ? (
             <p className="text-xs text-muted-foreground">
               {assignTo.length > 1
-                ? `Goes to ${assignTo.length} people — when anyone marks it done, it’s done for everyone.`
+                ? `Goes to ${assignTo.length} people — each completes their own copy, and everyone can see who's done.`
                 : 'Goes to 1 person.'}
             </p>
           ) : null}
@@ -131,6 +134,17 @@ export function AssignDialog() {
         <div className="space-y-1.5">
           <Label htmlFor="a-notes">Notes (optional)</Label>
           <Textarea id="a-notes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Details…" className="bg-background/50" />
+        </div>
+
+        {/* Approval gate — the assignee's "done" becomes a request you approve first. */}
+        <div className="flex items-start justify-between gap-3 rounded-xl bg-primary/[0.05] p-3 ring-1 ring-primary/15">
+          <div className="min-w-0">
+            <Label className="flex items-center gap-1.5"><ThumbsUp className="size-3.5" /> Require my approval</Label>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {requiresApproval ? 'They submit it, and it’s done only after you approve.' : 'Off — their “done” closes it immediately.'}
+            </p>
+          </div>
+          <Switch checked={requiresApproval} onCheckedChange={setRequiresApproval} />
         </div>
       </div>
     </AppDialog>

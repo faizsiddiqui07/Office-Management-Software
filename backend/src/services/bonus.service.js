@@ -192,7 +192,11 @@ export async function onAssignedTaskDone(task) {
   const b = s.bonus || {};
   if (!b.enabled || !task.assignedBy) return;
   await PointEntry.deleteMany({ taskRef: task._id, source: 'auto_task' });
-  const completedYMD = ymdInTz(task.completedAt || new Date());
+  // On-time is judged from when the assignee did the work — for approval-gated tasks
+  // that's the submit time, so a slow approval never turns on-time work into "late".
+  // Only trust submittedAt when the task is actually an approval task (guards against a
+  // stale submit timestamp left behind if the gate was later switched off).
+  const completedYMD = ymdInTz((task.requiresApproval && task.submittedAt) || task.completedAt || new Date());
   const late = task.dueYMD && completedYMD > addDays(task.dueYMD, b.graceDays || 0);
   const pts = rulePoints(b, late ? 'assignedTaskLate' : 'assignedTaskOnTime');
   if (!pts) return;
@@ -268,7 +272,9 @@ async function scanOverdueTasks(b) {
   const pts = rulePoints(b, 'assignedTaskLate');
   if (!pts) return;
   const today = ymdInTz(new Date());
-  const tasks = await Task.find({ assignedBy: { $ne: null }, status: 'PENDING', dueYMD: { $ne: '' } }).select('owner dueYMD title');
+  // Skip tasks already submitted for approval — the assignee did the work; a slow
+  // approval must not become an "overdue" penalty on them.
+  const tasks = await Task.find({ assignedBy: { $ne: null }, status: 'PENDING', dueYMD: { $ne: '' }, submittedAt: null }).select('owner dueYMD title');
   for (const t of tasks) {
     if (addDays(t.dueYMD, b.graceDays || 0) >= today) continue;
     if (await PointEntry.findOne({ taskRef: t._id, source: 'auto_task' })) continue;

@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Check, Plus, Users } from 'lucide-react';
+import { Check, Plus, ThumbsUp, UserRoundPlus, Users } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { cn } from '@/lib/utils';
@@ -22,22 +22,28 @@ export function TaskDialog({ task, open: openProp, onOpenChange, batchCount = 0 
   const open = openProp !== undefined ? openProp : openInternal;
   const setOpen = onOpenChange || setOpenInternal;
 
-  // Only people who may delegate work can tag teammates onto a shared task.
+  // Only people who may delegate work can tag teammates / reassign.
   const ta = user?.taskAssign || {};
   const canTag = ta.mode === 'ALL' || (ta.mode === 'SELECTED' && (ta.users || []).length > 0);
 
   // Editing a task I delegated to someone (not my own, not a shared task).
   const assignerId = task?.assignedBy?.id || task?.assignedBy || null;
   const isAssignedByMe = isEdit && !!assignerId && String(assignerId) === String(user?.id);
-  // …and it was part of one multi-assign action with 2+ live copies → offer the
-  // "edit everyone's copy" switch. (A batch shrunk to one copy edits normally.)
-  const showBatchSwitch = isAssignedByMe && !!task?.assignBatch && batchCount > 1;
+
+  // Everyone this delegated work currently sits with (owner + its batch siblings).
+  const currentAssignees = React.useMemo(() => {
+    if (!isAssignedByMe) return [];
+    const ids = [task?.owner?.id, ...((task?.siblings || []).map((s) => s.owner?.id))].filter(Boolean);
+    return [...new Set(ids.map(String))];
+  }, [isAssignedByMe, task]);
 
   const [title, setTitle] = React.useState('');
   const [notes, setNotes] = React.useState('');
   const [dueYMD, setDueYMD] = React.useState('');
-  const [collaborators, setCollaborators] = React.useState([]); // tagged teammate ids
-  const [applyToAll, setApplyToAll] = React.useState(true); // batch edit: push to every copy
+  const [collaborators, setCollaborators] = React.useState([]); // tagged teammate ids (personal task)
+  const [assignees, setAssignees] = React.useState([]); // who a delegated task is assigned to
+  const [requiresApproval, setRequiresApproval] = React.useState(false);
+  const [applyToAll, setApplyToAll] = React.useState(true); // batch content edit: push to every copy
 
   React.useEffect(() => {
     if (!open) return;
@@ -45,8 +51,10 @@ export function TaskDialog({ task, open: openProp, onOpenChange, batchCount = 0 
     setNotes(task?.notes || '');
     setDueYMD(task?.dueYMD || '');
     setCollaborators((task?.collaborators || []).map((c) => c.id).filter(Boolean));
+    setAssignees(currentAssignees);
+    setRequiresApproval(!!task?.requiresApproval);
     setApplyToAll(true);
-  }, [open, task]);
+  }, [open, task]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const { data: assignData } = useQuery({
     queryKey: ['tasks', 'assignable'],
@@ -55,30 +63,57 @@ export function TaskDialog({ task, open: openProp, onOpenChange, batchCount = 0 
   });
   const people = assignData?.users ?? [];
 
-  const toggle = (id) => setCollaborators((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  const toggleCollab = (id) => setCollaborators((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  const toggleAssignee = (id) => setAssignees((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+
+  // Did the assigner change who it's assigned to? (drives whether we reconcile the batch)
+  const reassigned = isAssignedByMe && (assignees.length !== currentAssignees.length || assignees.some((id) => !currentAssignees.includes(id)));
+  // The "edit every copy vs just this one" switch — only when 2+ copies and not reassigning
+  // (a reassignment always applies the content to everyone).
+  const showBatchSwitch = isAssignedByMe && !!task?.assignBatch && batchCount > 1 && !reassigned;
 
   const mut = useMutation({
     mutationFn: () => {
       const body = { title, notes, dueYMD };
-      // Collaborators only apply to my OWN task; a delegated task uses batch-edit instead.
-      if (canTag && !isAssignedByMe) body.collaborators = collaborators;
-      if (showBatchSwitch) body.applyToAll = applyToAll;
+      if (isAssignedByMe) {
+        body.requiresApproval = requiresApproval;
+        if (reassigned) body.assignTo = assignees; // reconcile people (content applies to all)
+        else if (showBatchSwitch) body.applyToAll = applyToAll;
+      } else if (canTag) {
+        body.collaborators = collaborators; // personal task — tag teammates
+      }
       return isEdit ? api.patch(`/tasks/${task.id}`, body) : api.post('/tasks', body);
     },
     onSuccess: (res) => {
-      const n = res?.task?.batchCount; // controller nests the updated task under `task`
-      toast.success(!isEdit ? 'Task added' : showBatchSwitch && applyToAll && n > 1 ? `Updated for ${n} people` : 'Task updated');
+      const n = res?.task?.batchCount;
+      toast.success(
+        !isEdit
+          ? 'Task added'
+          : reassigned
+            ? 'Task updated & reassigned'
+            : showBatchSwitch && applyToAll && n > 1
+              ? `Updated for ${n} people`
+              : 'Task updated',
+      );
       qc.invalidateQueries({ queryKey: ['tasks'] });
       setOpen(false);
     },
     onError: (e) => toast.error(e?.message || 'Could not save the task'),
   });
 
-  // Make the primary button's scope unmistakable when a batch edit is in play.
-  const saveLabel = mut.isPending ? 'Saving…' : !isEdit ? 'Add' : showBatchSwitch ? (applyToAll ? `Save for ${batchCount} people` : 'Save for this one') : 'Save';
+  const saveLabel = mut.isPending
+    ? 'Saving…'
+    : !isEdit
+      ? 'Add'
+      : reassigned
+        ? `Save for ${assignees.length} ${assignees.length === 1 ? 'person' : 'people'}`
+        : showBatchSwitch
+          ? applyToAll ? `Save for ${batchCount} people` : 'Save for this one'
+          : 'Save';
 
   const submit = () => {
     if (!title.trim()) return toast.error('Add the work');
+    if (isAssignedByMe && !assignees.length) return toast.error('Pick at least one person to assign this to');
     mut.mutate();
   };
 
@@ -106,9 +141,40 @@ export function TaskDialog({ task, open: openProp, onOpenChange, batchCount = 0 
       }
     >
       <div className="space-y-4 py-2">
-        {/* This task was assigned to several people at once. Scope sits FIRST so it's
-            seen before the fields: one switch to fix every copy, or just this one.
-            Each person's completion status is always left untouched. */}
+        {/* Reassign — change / add / remove who a delegated task is assigned to. */}
+        {isAssignedByMe ? (
+          <div className="space-y-1.5">
+            <Label className="flex items-center gap-1.5"><UserRoundPlus className="size-3.5" /> Assigned to</Label>
+            {people.length ? (
+              <div className="flex flex-wrap gap-1.5">
+                {people.map((p) => {
+                  const on = assignees.includes(p.id);
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => toggleAssignee(p.id)}
+                      className={cn(
+                        'inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium ring-1 transition-colors',
+                        on ? 'bg-primary/12 text-primary ring-primary/25' : 'bg-muted/40 text-muted-foreground ring-border hover:text-foreground',
+                      )}
+                    >
+                      {on ? <Check className="size-3" /> : null}
+                      {p.name}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">No one available to assign to.</p>
+            )}
+            {reassigned ? (
+              <p className="text-xs text-primary">Changes will apply to all {assignees.length} {assignees.length === 1 ? 'person' : 'people'}.</p>
+            ) : null}
+          </div>
+        ) : null}
+
+        {/* Batch content scope — edit every copy, or just this one (when not reassigning). */}
         {showBatchSwitch ? (
           <div className="flex items-start justify-between gap-3 rounded-xl bg-primary/[0.06] p-3 ring-1 ring-primary/15">
             <div className="min-w-0">
@@ -116,9 +182,7 @@ export function TaskDialog({ task, open: openProp, onOpenChange, batchCount = 0 
                 <Users className="size-3.5" /> Apply to all {batchCount} people
               </Label>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                {applyToAll
-                  ? `Your changes save to every copy of this task (${batchCount} people).`
-                  : 'Only this person’s copy will change.'}
+                {applyToAll ? `Your changes save to every copy (${batchCount} people).` : 'Only this person’s copy will change.'}
               </p>
             </div>
             <Switch checked={applyToAll} onCheckedChange={setApplyToAll} />
@@ -138,8 +202,20 @@ export function TaskDialog({ task, open: openProp, onOpenChange, batchCount = 0 
           <Textarea id="t-notes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Details…" className="bg-background/50" />
         </div>
 
-        {/* Tag teammates who are also working on this — it stays in your to-do AND
-            shows in theirs (whoever finishes it, it's done for everyone). */}
+        {/* Approval gate for a delegated task. */}
+        {isAssignedByMe ? (
+          <div className="flex items-start justify-between gap-3 rounded-xl bg-primary/[0.05] p-3 ring-1 ring-primary/15">
+            <div className="min-w-0">
+              <Label className="flex items-center gap-1.5"><ThumbsUp className="size-3.5" /> Require my approval</Label>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {requiresApproval ? 'They submit it, and it’s done only after you approve.' : 'Off — their “done” closes it immediately.'}
+              </p>
+            </div>
+            <Switch checked={requiresApproval} onCheckedChange={setRequiresApproval} />
+          </div>
+        ) : null}
+
+        {/* Tag teammates onto a personal task (whoever finishes it, it's done for everyone). */}
         {canTag && !isAssignedByMe ? (
           <div className="space-y-1.5">
             <Label className="flex items-center gap-1.5">
@@ -153,7 +229,7 @@ export function TaskDialog({ task, open: openProp, onOpenChange, batchCount = 0 
                     <button
                       key={p.id}
                       type="button"
-                      onClick={() => toggle(p.id)}
+                      onClick={() => toggleCollab(p.id)}
                       className={cn(
                         'inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium ring-1 transition-colors',
                         on ? 'bg-primary/12 text-primary ring-primary/25' : 'bg-muted/40 text-muted-foreground ring-border hover:text-foreground',

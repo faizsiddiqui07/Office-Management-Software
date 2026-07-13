@@ -93,6 +93,7 @@ export async function createTask(actor, data) {
         assignedBy: actor._id,
         collaborators: [],
         assignBatch: batch,
+        requiresApproval: !!data.requiresApproval,
         status: 'PENDING',
       });
       await notify({
@@ -137,34 +138,64 @@ export async function createTask(actor, data) {
   return { tasks: [task.toJSON()] };
 }
 
+async function populated(task) {
+  await task.populate('owner', 'name');
+  await task.populate('assignedBy', 'name');
+  await task.populate('collaborators', 'name');
+  await task.populate('completedBy', 'name');
+  await task.populate('approvedBy', 'name');
+  return task.toJSON();
+}
+
 export async function setStatus(actor, id, status) {
   const task = await Task.findById(id);
   if (!task) throw httpError(404, 'NOT_FOUND', 'Task not found');
   const isOwner = String(task.owner) === String(actor._id);
   const isCollaborator = (task.collaborators || []).some((c) => String(c) === String(actor._id));
-  // Shared tasks: the owner OR any tagged teammate can complete it (one status for all).
+  const isAssigner = task.assignedBy && String(task.assignedBy) === String(actor._id);
+  // The owner (or a tagged collaborator) marks their OWN copy. Each multi-assign copy
+  // is independent now — completing one does NOT complete the others.
   if (!isOwner && !isCollaborator) throw httpError(403, 'FORBIDDEN', 'Only the task owner or a tagged teammate can update it');
 
   const wantDone = status === 'DONE';
 
-  // Reopening a shared (multi-assign) task un-completes it for the WHOLE team and wipes
-  // the doer's bonus — so only the person who actually completed it may reopen it, never
-  // a bystander on the batch. (Older copies with no recorded doer are left permissive.)
-  if (!wantDone && task.status === 'DONE' && task.assignBatch && task.completedBy && String(task.completedBy) !== String(actor._id)) {
-    throw httpError(403, 'SHARED_REOPEN', 'Only the person who completed this shared task can reopen it');
+  // Approval gate: when the assigner required approval, the assignee marking "done"
+  // SUBMITS for review instead of closing it. It sits as "awaiting approval" until the
+  // assigner approves/rejects (reviewTask). The submit time is the on-time reference so
+  // a slow approval never turns on-time work into "late".
+  if (wantDone && task.requiresApproval && task.assignedBy && isOwner && task.status !== 'DONE') {
+    task.submittedAt = new Date();
+    task.rejectionReason = '';
+    await task.save();
+    await notify({
+      user: task.assignedBy,
+      type: 'TASK_ASSIGNED',
+      title: `${actor.name} submitted work for approval`,
+      message: task.title,
+      link: '/todo?tab=assigned',
+    });
+    return populated(task);
+  }
+
+  // Withdraw a pending submission (assignee pulls it back before it's reviewed).
+  if (!wantDone && task.awaitingApproval) {
+    task.submittedAt = null;
+    await task.save();
+    return populated(task);
   }
 
   task.status = wantDone ? 'DONE' : 'PENDING';
   task.completedAt = wantDone ? new Date() : null;
-  task.completedBy = wantDone ? actor._id : null; // remember who actually did it
+  task.completedBy = wantDone ? actor._id : null;
+  if (!wantDone) { task.submittedAt = null; task.approvedBy = null; } // reopening clears the submission/approval trail
+
   await task.save();
 
   if (task.status === 'DONE') {
-    // Delegated task → tell the person who assigned it (existing behaviour).
-    if (task.assignedBy && String(task.assignedBy) !== String(actor._id)) {
+    if (task.assignedBy && !isAssigner) {
       await notify({ user: task.assignedBy, type: 'TASK_DONE', title: `${actor.name} completed a task`, message: task.title, link: '/todo?tab=assigned' });
     }
-    // Shared task → tell everyone else on it (owner + other collaborators).
+    // Legacy shared "collaborator" task (single doc, tagged teammates) → tell the others.
     const involved = new Set([String(task.owner), ...(task.collaborators || []).map(String)]);
     involved.delete(String(actor._id));
     for (const uid of involved) {
@@ -172,8 +203,8 @@ export async function setStatus(actor, id, status) {
     }
   }
 
-  // Bonus points: award/penalise the assignee for an assigned task (best-effort —
-  // never let a points hiccup block the actual task update).
+  // Bonus points: award/penalise the assignee (best-effort — a points hiccup must never
+  // block the task update).
   try {
     if (task.status === 'DONE') await onAssignedTaskDone(task);
     else await onAssignedTaskUndone(task._id);
@@ -181,41 +212,43 @@ export async function setStatus(actor, id, status) {
     console.error('bonus hook (setStatus) failed', e?.message);
   }
 
-  // Shared completion: a multi-assign batch is ONE piece of work — when anyone marks
-  // their copy done (or reopens it), every sibling copy follows so it's done for all,
-  // and each carries who completed it. Only the acting completer keeps bonus credit, so
-  // strip every sibling's own auto_task points EITHER way (prevents double payout when
-  // two people complete, and clears siblings' stale overdue penalties). Best-effort per
-  // sibling — one bad copy must not fail the actor's update or the rest of the batch.
-  if (task.assignBatch) {
-    const siblings = await Task.find({ assignBatch: task.assignBatch, _id: { $ne: task._id } });
-    for (const sib of siblings) {
-      try {
-        try { await onAssignedTaskUndone(sib._id); } catch (e) { console.error('bonus hook (batch sync) failed', e?.message); }
-        // Already in sync (same status + same doer) → no redundant save or notification.
-        if (sib.status === task.status && String(sib.completedBy || '') === String(task.completedBy || '')) continue;
-        sib.status = task.status;
-        sib.completedAt = task.completedAt;
-        sib.completedBy = task.completedBy;
-        await sib.save();
-        await notify({
-          user: sib.owner,
-          type: 'TASK_DONE',
-          title: task.status === 'DONE' ? `${actor.name} completed a shared task` : `${actor.name} reopened a shared task`,
-          message: task.title,
-          link: '/todo',
-        });
-      } catch (e) {
-        console.error('batch sync (sibling) failed', e?.message);
-      }
-    }
-  }
+  return populated(task);
+}
 
-  await task.populate('owner', 'name');
-  await task.populate('assignedBy', 'name');
-  await task.populate('collaborators', 'name');
-  await task.populate('completedBy', 'name');
-  return task.toJSON();
+/**
+ * The assigner reviews an approval-required task the assignee has submitted:
+ * approve → it's DONE (credited to the assignee, on-time judged from submit time),
+ * reject → back to the assignee's to-do with the reason.
+ */
+export async function reviewTask(actor, id, approve, reason) {
+  const task = await Task.findById(id);
+  if (!task) throw httpError(404, 'NOT_FOUND', 'Task not found');
+  const isAssigner = task.assignedBy && String(task.assignedBy) === String(actor._id);
+  if (!isAssigner) throw httpError(403, 'FORBIDDEN', 'Only the person who assigned this task can review it');
+  if (!task.awaitingApproval) throw httpError(400, 'NOT_AWAITING', 'This task isn’t waiting for approval');
+
+  if (approve) {
+    task.status = 'DONE';
+    task.completedAt = new Date();
+    task.completedBy = task.owner; // the assignee did the work
+    task.approvedBy = actor._id;
+    task.rejectionReason = '';
+    await task.save();
+    await notify({ user: task.owner, type: 'TASK_DONE', title: `${actor.name} approved your task`, message: task.title, link: '/todo' });
+    try { await onAssignedTaskDone(task); } catch (e) { console.error('bonus hook (approve) failed', e?.message); }
+  } else {
+    task.submittedAt = null; // back to plain pending, with the reason attached
+    task.rejectionReason = String(reason || '').trim();
+    await task.save();
+    await notify({
+      user: task.owner,
+      type: 'TASK_ASSIGNED',
+      title: `${actor.name} sent your task back`,
+      message: task.rejectionReason ? `${task.title} — ${task.rejectionReason}` : task.title,
+      link: '/todo',
+    });
+  }
+  return populated(task);
 }
 
 export async function updateTask(actor, id, data) {
@@ -232,41 +265,90 @@ export async function updateTask(actor, id, data) {
   }
 
   const contentFields = ['title', 'notes', 'dueYMD'];
+  const patch = {};
+  for (const f of contentFields) if (data[f] !== undefined) patch[f] = data[f];
 
-  // Batch edit: when the same work was assigned to several people at once, the
-  // assigner can fix the content of every copy in one go. Only the assigner, only
-  // the shared content — each person's own completion status is left untouched.
-  if (data.applyToAll && isAssigner && task.assignBatch) {
-    const patch = {};
-    for (const f of contentFields) if (data[f] !== undefined) patch[f] = data[f];
-    const siblings = await Task.find({ assignBatch: task.assignBatch, assignedBy: actor._id });
+  // ── Assigner editing a delegated task: may re-assign it, toggle approval, and edit
+  //    the content of one copy or every copy of a multi-assign batch. ──────────────
+  if (isAssigner) {
+    const batchQuery = task.assignBatch ? { assignBatch: task.assignBatch, assignedBy: actor._id } : { _id: task._id };
+    let members = await Task.find(batchQuery);
+
+    // (a) Reassignment — make the set of people match `assignTo` (add / remove copies).
+    if (data.assignTo !== undefined) {
+      const desired = [...new Set((Array.isArray(data.assignTo) ? data.assignTo : [data.assignTo]).map(String))].filter((x) => x && x !== String(actor._id));
+      if (!desired.length) throw httpError(400, 'INVALID', 'Pick at least one person to assign this to');
+      // Only the NEWLY-added people need to be active & assignable — people already on
+      // the batch stay put even if they've since been deactivated (so an inactive member
+      // can never dead-end editing the rest of the batch).
+      const currentIds = new Set(members.map((mm) => String(mm.owner)));
+      const addedIds = desired.filter((id) => !currentIds.has(id));
+      let addedUsers = [];
+      if (addedIds.length) {
+        addedUsers = await User.find({ _id: { $in: addedIds }, isActive: true });
+        if (addedUsers.length !== addedIds.length) throw httpError(404, 'NOT_FOUND', 'One of the selected people was not found');
+        for (const t of addedUsers) if (!canAssignTo(actor, t)) throw httpError(403, 'FORBIDDEN', 'You can only assign to people you’re allowed to assign work to');
+      }
+
+      // Always identify this assignment's copies by a batch id (even a single one), so
+      // reconciliation stays reliable after copies are added or removed.
+      const batch = task.assignBatch || randomUUID();
+      for (const mm of members) {
+        if (desired.includes(String(mm.owner))) {
+          if (mm.assignBatch !== batch) { mm.assignBatch = batch; await mm.save(); } // retained → keep, stamp
+        } else if (mm.status === 'DONE' || mm.awaitingApproval) {
+          // Preserve completed / submitted work rather than destroying history & bonus.
+          if (mm.assignBatch !== batch) { mm.assignBatch = batch; await mm.save(); }
+        } else {
+          await mm.deleteOne(); // drop a not-yet-started copy for someone taken off the task
+          try { await onAssignedTaskUndone(mm._id); } catch (e) { console.error('bonus hook (reassign remove) failed', e?.message); }
+          await notify({ user: mm.owner, type: 'TASK_ASSIGNED', title: `${actor.name} removed a task`, message: mm.title, link: '/todo' });
+        }
+      }
+      const base = {
+        title: patch.title ?? task.title,
+        notes: patch.notes ?? task.notes,
+        dueYMD: patch.dueYMD ?? task.dueYMD,
+        requiresApproval: data.requiresApproval !== undefined ? !!data.requiresApproval : task.requiresApproval,
+      };
+      for (const t of addedUsers) {
+        await Task.create({ ...base, owner: t._id, assignedBy: actor._id, collaborators: [], assignBatch: batch, status: 'PENDING' });
+        await notify({ user: t._id, type: 'TASK_ASSIGNED', title: `New task from ${actor.name}`, message: base.dueYMD ? `${base.title} (due ${base.dueYMD})` : base.title, link: '/todo' });
+      }
+      members = await Task.find({ assignBatch: batch, assignedBy: actor._id });
+    }
+
+    // (b) Content + approval edits — to every copy when scoped to all (applyToAll or a
+    //     reassignment just happened), otherwise only the copy that was opened.
+    const applyAll = !!data.applyToAll || data.assignTo !== undefined;
+    const editSet = applyAll ? members : members.filter((mm) => String(mm._id) === String(id));
     let changedCount = 0;
-    for (const sib of siblings) {
-      const changed = Object.keys(patch).some((f) => sib[f] !== patch[f]);
-      if (!changed) continue; // a copy that already matches — don't save or ping
-      Object.assign(sib, patch);
-      await sib.save();
-      changedCount += 1;
-      // Only ping people who still have it pending — no noise for teammates who
-      // already finished. (Their copy's text stays consistent, but bonus points are
-      // frozen at completion: a later due-date edit does not re-score them.)
-      if (sib.status !== 'DONE') {
-        await notify({
-          user: sib.owner,
-          type: 'TASK_ASSIGNED',
-          title: `${actor.name} updated a task`,
-          message: sib.dueYMD ? `${sib.title} (due ${sib.dueYMD})` : sib.title,
-          link: '/todo',
-        });
+    for (const mm of editSet) {
+      let changed = false;
+      for (const f of contentFields) if (patch[f] !== undefined && mm[f] !== patch[f]) { mm[f] = patch[f]; changed = true; }
+      if (data.requiresApproval !== undefined && mm.requiresApproval !== !!data.requiresApproval) {
+        mm.requiresApproval = !!data.requiresApproval;
+        // Turning the gate OFF: drop any pending submission trail so no orphaned
+        // submittedAt survives to mis-score bonus or hide the task from the overdue scan.
+        if (!mm.requiresApproval) { mm.submittedAt = null; mm.approvedBy = null; }
+        changed = true;
+      }
+      if (changed) {
+        await mm.save();
+        changedCount += 1;
+        if (mm.status !== 'DONE' && String(mm.owner) !== String(actor._id)) {
+          await notify({ user: mm.owner, type: 'TASK_ASSIGNED', title: `${actor.name} updated a task`, message: mm.dueYMD ? `${mm.title} (due ${mm.dueYMD})` : mm.title, link: '/todo' });
+        }
       }
     }
-    const updated = await Task.findById(id).populate('owner', 'name').populate('assignedBy', 'name').populate('collaborators', 'name');
-    return { ...updated.toJSON(), batchCount: siblings.length, changedCount };
+
+    const rep = (await Task.findById(id)) || members[0];
+    const out = rep ? await populated(rep) : {};
+    return { ...out, batchCount: members.length, changedCount };
   }
 
-  for (const f of contentFields) if (data[f] !== undefined) task[f] = data[f];
-
-  // Only the owner of a non-delegated task manages its tagged teammates.
+  // ── Owner editing their own (personal) task ──────────────────────────────────────
+  for (const f of contentFields) if (patch[f] !== undefined) task[f] = patch[f];
   if (data.collaborators !== undefined && isOwner && !task.assignedBy) {
     const before = new Set((task.collaborators || []).map(String));
     const resolved = await resolveCollaborators(actor, data.collaborators);
@@ -277,12 +359,8 @@ export async function updateTask(actor, id, data) {
       }
     }
   }
-
   await task.save();
-  await task.populate('owner', 'name');
-  await task.populate('assignedBy', 'name');
-  await task.populate('collaborators', 'name');
-  return task.toJSON();
+  return populated(task);
 }
 
 export async function deleteTask(actor, id) {
@@ -333,10 +411,36 @@ export async function listTasks(actor, { scope = 'mine', status, search, period,
 
   const skip = (page - 1) * limit;
   const [tasks, total] = await Promise.all([
-    Task.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).populate('owner', 'name').populate('assignedBy', 'name').populate('collaborators', 'name').populate('completedBy', 'name'),
+    Task.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).populate('owner', 'name').populate('assignedBy', 'name').populate('collaborators', 'name').populate('completedBy', 'name').populate('approvedBy', 'name'),
     Task.countDocuments(filter),
   ]);
-  return { tasks: tasks.map((t) => t.toJSON()), total, page, limit };
+
+  const out = tasks.map((t) => t.toJSON());
+
+  // Attach teammates' progress on multi-assign batches, so each person can see who else
+  // is on the task and whether they've done it (per-person completion).
+  const batchIds = [...new Set(out.map((t) => t.assignBatch).filter(Boolean))];
+  if (batchIds.length) {
+    const sibs = await Task.find({ assignBatch: { $in: batchIds } }).select('assignBatch owner status submittedAt requiresApproval').populate('owner', 'name');
+    const byBatch = new Map();
+    for (const s of sibs) {
+      const arr = byBatch.get(s.assignBatch) || [];
+      arr.push({
+        id: s.id,
+        owner: s.owner ? { id: s.owner.id, name: s.owner.name } : null,
+        status: s.status,
+        awaitingApproval: s.awaitingApproval,
+      });
+      byBatch.set(s.assignBatch, arr);
+    }
+    for (const t of out) {
+      if (t.assignBatch && byBatch.has(t.assignBatch)) {
+        t.siblings = byBatch.get(t.assignBatch).filter((s) => s.id !== t.id);
+      }
+    }
+  }
+
+  return { tasks: out, total, page, limit };
 }
 
 export async function taskSummary(actor) {

@@ -4,7 +4,8 @@ import * as React from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Check, CheckCircle2, ClipboardList, Download, FolderOpen, ListTodo, Pencil, Search, Trash2, Undo2, UserRound, Users } from 'lucide-react';
+import { Check, CheckCircle2, ClipboardList, Clock, Download, FolderOpen, ListTodo, Pencil, Search, Send, ThumbsUp, Trash2, Undo2, UserRound, Users, X } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { cn } from '@/lib/utils';
@@ -88,10 +89,40 @@ function byDueDate(a, b) {
   return new Date(b.createdAt) - new Date(a.createdAt);
 }
 
+/** Teammates' progress on a multi-assign task — each person does their OWN copy, so
+ *  everyone can see who's finished and who hasn't. */
+function SiblingProgress({ siblings }) {
+  if (!siblings?.length) return null;
+  return (
+    <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-0.5">
+      <span className="text-muted-foreground">Team:</span>
+      {siblings.map((s) => (
+        <span key={s.id} className={cn('inline-flex items-center gap-0.5', s.status === 'DONE' ? 'text-success' : 'text-muted-foreground')}>
+          {s.status === 'DONE' ? <Check className="size-3" /> : <Clock className="size-3" />}
+          {s.owner?.name?.split(' ')[0] || '—'}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/** Amber "awaiting approval" chip and the red "sent back" reason, shown wherever a task
+ *  appears so both sides always know where an approval-gated task stands. */
+function ApprovalState({ task, className }) {
+  if (task.awaitingApproval) {
+    return <StatusBadge tone="warning" dot={false} className={className}><Clock className="size-3" /> Awaiting approval</StatusBadge>;
+  }
+  if (task.rejectionReason && task.status !== 'DONE') {
+    return <span className={cn('inline-flex items-start gap-1 text-xs font-medium text-destructive', className)}><X className="mt-0.5 size-3 shrink-0" /> Sent back: {task.rejectionReason}</span>;
+  }
+  return null;
+}
+
 /** Personal / history task row — tap the row for full details, the circle to complete. */
 function TaskRow({ task, myId, canToggle, onToggle, onEdit, onDelete, onOpen }) {
   const done = task.status === 'DONE';
-  const overdue = !done && isOverdue(task.dueYMD);
+  const awaiting = task.awaitingApproval;
+  const overdue = !done && !awaiting && isOverdue(task.dueYMD);
   // Where the task comes from (delegator, or a shared task's owner if it's not me).
   const from = task.assignedBy || (myId && task.owner && task.owner.id && task.owner.id !== myId ? task.owner : null);
   // Only my OWN, non-delegated task can be edited/deleted here. A delegated or
@@ -111,18 +142,18 @@ function TaskRow({ task, myId, canToggle, onToggle, onEdit, onDelete, onOpen }) 
           e.stopPropagation();
           if (canToggle) onToggle(task);
         }}
-        aria-label={done ? 'Mark as not done' : 'Mark as done'}
+        aria-label={done ? 'Mark as not done' : awaiting ? 'Withdraw submission' : 'Mark as done'}
         className={cn('group/tgl -m-2.5 -mt-2 flex size-10 shrink-0 items-center justify-center', !canToggle && 'cursor-default')}
       >
         <span
           className={cn(
             'flex size-5 items-center justify-center rounded-full ring-1 transition-colors',
-            done ? 'bg-success text-white ring-success' : 'ring-border',
-            canToggle && !done && 'group-hover/tgl:ring-primary',
+            done ? 'bg-success text-white ring-success' : awaiting ? 'bg-warning/20 text-amber-600 ring-warning dark:text-amber-300' : 'ring-border',
+            canToggle && !done && !awaiting && 'group-hover/tgl:ring-primary',
             !canToggle && 'opacity-70',
           )}
         >
-          {done ? <Check className="size-3.5" /> : null}
+          {done ? <Check className="size-3.5" /> : awaiting ? <Clock className="size-3" /> : null}
         </span>
       </button>
       <div className="min-w-0 flex-1">
@@ -144,7 +175,10 @@ function TaskRow({ task, myId, canToggle, onToggle, onEdit, onDelete, onOpen }) 
             </span>
           ) : null}
           {task.dueYMD ? <span className={cn(overdue && 'font-medium text-destructive')}>Due {fmtDate(task.dueYMD)}</span> : null}
+          {task.requiresApproval && !done && !awaiting ? <span className="inline-flex items-center gap-1 text-primary"><ThumbsUp className="size-3" /> Needs approval</span> : null}
           {done && task.completedAt ? <span className="text-success">Done {fmtDate(task.completedAt)}{task.completedBy && task.completedBy.id !== myId ? ` · by ${task.completedBy.name}` : ''}</span> : null}
+          {task.siblings?.length ? <SiblingProgress siblings={task.siblings} /> : null}
+          <ApprovalState task={task} />
         </div>
       </div>
       <div className="flex shrink-0 items-center">
@@ -197,7 +231,8 @@ function DatedTaskList({ tasks, dateKey, ascending = false, onEdit, onDelete, on
           <p className="px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">{g.date ? fmtDate(g.date) : 'No date'}</p>
           {g.items.map((t) => {
             const done = t.status === 'DONE';
-            const overdue = !done && isOverdue(t.dueYMD);
+            const awaiting = t.awaitingApproval;
+            const overdue = !done && !awaiting && isOverdue(t.dueYMD);
             return (
               <div
                 key={t.id}
@@ -218,20 +253,22 @@ function DatedTaskList({ tasks, dateKey, ascending = false, onEdit, onDelete, on
                     <span
                       className={cn(
                         'flex size-5 items-center justify-center rounded-full ring-1 transition-colors',
-                        done ? 'bg-success text-white ring-success' : 'ring-border group-hover/tgl:ring-primary',
+                        done ? 'bg-success text-white ring-success' : awaiting ? 'bg-warning/20 text-amber-600 ring-warning dark:text-amber-300' : 'ring-border group-hover/tgl:ring-primary',
                       )}
                     >
-                      {done ? <Check className="size-3.5" /> : null}
+                      {done ? <Check className="size-3.5" /> : awaiting ? <Clock className="size-3" /> : null}
                     </span>
                   </button>
                 ) : (
-                  <span className={cn('mt-1 size-1.5 shrink-0 rounded-full', done ? 'bg-success' : 'bg-warning')} />
+                  <span className={cn('mt-1 size-1.5 shrink-0 rounded-full', done ? 'bg-success' : awaiting ? 'bg-warning' : 'bg-warning')} />
                 )}
                 <div className="min-w-0 flex-1">
                   <p className={cn('text-sm font-medium', done && 'text-muted-foreground line-through')}>{t.title}</p>
-                  <div className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+                  <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
                     {t.dueYMD ? <span className={cn(overdue && 'font-medium text-destructive')}>Due {fmtDate(t.dueYMD)}</span> : null}
                     {done && t.completedAt ? <span className="text-success">Done {fmtDate(t.completedAt)}{t.completedBy?.name ? ` · by ${t.completedBy.name}` : ''}</span> : null}
+                    {t.siblings?.length ? <SiblingProgress siblings={t.siblings} /> : null}
+                    <ApprovalState task={t} />
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center">
@@ -312,12 +349,15 @@ function PersonFolder({ folder, onEdit, onDelete, onOpen, onToggle, canToggle = 
 }
 
 /** Full task details — opened by tapping any task row. */
-function TaskDetailDialog({ view, myId, onClose, onToggle, onEdit, onDelete }) {
+function TaskDetailDialog({ view, myId, onClose, onToggle, onEdit, onDelete, onApprove, onReject }) {
   const task = view?.task;
   const done = task?.status === 'DONE';
-  const overdue = task && !done && isOverdue(task.dueYMD);
+  const awaiting = task?.awaitingApproval;
+  const overdue = task && !done && !awaiting && isOverdue(task.dueYMD);
   const iOwn = task && task.owner?.id === myId && !task.assignedBy;
   const sharedWith = iOwn && task?.collaborators?.length ? task.collaborators : [];
+  // The assigner reviewing a submitted task can approve or reject it here.
+  const canReview = !!view?.assignerView && awaiting;
 
   const Row = ({ label, children }) => (
     <div className="flex items-start justify-between gap-4 py-2">
@@ -346,16 +386,25 @@ function TaskDetailDialog({ view, myId, onClose, onToggle, onEdit, onDelete }) {
                 </Button>
               ) : null}
             </div>
-            {view.canToggle ? (
-              <Button variant={done ? 'outline' : 'default'} onClick={() => onToggle(task)}>
+            {canReview ? (
+              <div className="flex items-center gap-2">
+                <Button variant="outline" className="text-destructive" onClick={() => onReject(task)}>
+                  <X className="size-4" /> Reject
+                </Button>
+                <Button onClick={() => onApprove(task)}>
+                  <ThumbsUp className="size-4" /> Approve
+                </Button>
+              </div>
+            ) : view.canToggle ? (
+              <Button variant={done || awaiting ? 'outline' : 'default'} onClick={() => onToggle(task)}>
                 {done ? (
-                  <>
-                    <Undo2 className="size-4" /> Mark not done
-                  </>
+                  <><Undo2 className="size-4" /> Mark not done</>
+                ) : awaiting ? (
+                  <><Undo2 className="size-4" /> Withdraw</>
+                ) : task.requiresApproval ? (
+                  <><Send className="size-4" /> Submit for approval</>
                 ) : (
-                  <>
-                    <Check className="size-4" /> Mark as done
-                  </>
+                  <><Check className="size-4" /> Mark as done</>
                 )}
               </Button>
             ) : (
@@ -370,7 +419,9 @@ function TaskDetailDialog({ view, myId, onClose, onToggle, onEdit, onDelete }) {
       {task ? (
         <div className="space-y-4 py-1">
           <div className="flex flex-wrap items-center gap-2">
-            <StatusBadge tone={done ? 'success' : 'warning'}>{done ? 'Done' : 'Pending'}</StatusBadge>
+            <StatusBadge tone={done ? 'success' : 'warning'}>{done ? 'Done' : awaiting ? 'Submitted' : 'Pending'}</StatusBadge>
+            {awaiting ? <StatusBadge tone="warning" dot={false}><Clock className="size-3" /> Awaiting approval</StatusBadge> : null}
+            {task.requiresApproval && !done && !awaiting ? <StatusBadge tone="primary" dot={false}><ThumbsUp className="size-3" /> Needs approval</StatusBadge> : null}
             {overdue ? <StatusBadge tone="destructive">Overdue</StatusBadge> : null}
             {view?.batchCount > 1 ? (
               <StatusBadge tone="primary" dot={false}>
@@ -378,6 +429,13 @@ function TaskDetailDialog({ view, myId, onClose, onToggle, onEdit, onDelete }) {
               </StatusBadge>
             ) : null}
           </div>
+
+          {task.rejectionReason && !awaiting && !done ? (
+            <div className="flex items-start gap-2 rounded-xl bg-destructive/10 p-3 text-sm text-destructive ring-1 ring-destructive/20">
+              <X className="mt-0.5 size-4 shrink-0" />
+              <span><span className="font-semibold">Sent back:</span> {task.rejectionReason}</span>
+            </div>
+          ) : null}
 
           <div>
             <p className={cn('text-lg font-semibold leading-snug break-words', done && 'text-muted-foreground line-through')}>{task.title}</p>
@@ -415,6 +473,11 @@ function TaskDetailDialog({ view, myId, onClose, onToggle, onEdit, onDelete }) {
                 </span>
               </Row>
             ) : null}
+            {task.siblings?.length ? (
+              <Row label="Team">
+                <SiblingProgress siblings={task.siblings} />
+              </Row>
+            ) : null}
             <Row label="Due date">{task.dueYMD ? fmtDate(task.dueYMD) : '—'}</Row>
             <Row label="Created">{fmtDate(task.createdAt)}</Row>
             {done ? (
@@ -422,6 +485,7 @@ function TaskDetailDialog({ view, myId, onClose, onToggle, onEdit, onDelete }) {
                 {task.completedBy?.name ? <span className="inline-flex items-center gap-1.5"><UserRound className="size-3.5 text-success" /> {task.completedBy.name}{task.completedAt ? ` · ${fmtDate(task.completedAt)}` : ''}</span> : task.completedAt ? fmtDate(task.completedAt) : '—'}
               </Row>
             ) : null}
+            {done && task.approvedBy?.name ? <Row label="Approved by">{task.approvedBy.name}</Row> : null}
           </div>
         </div>
       ) : null}
@@ -591,28 +655,41 @@ export function TaskBoard() {
       .sort((a, b) => b.pending - a.pending || a.name.localeCompare(b.name));
   }, [isAssigned, tasks, search]);
 
+  // Everything submitted and waiting for the assigner to approve/reject — surfaced at
+  // the top of "Assigned by me" so nothing sits in limbo.
+  const awaitingList = React.useMemo(() => {
+    if (!isAssigned) return [];
+    const q = search.toLowerCase().trim();
+    return tasks.filter((t) => t.awaitingApproval && (!q || (t.owner?.name || '').toLowerCase().includes(q)));
+  }, [isAssigned, tasks, search]);
+
+  // Each person completes their OWN copy. Marking "done" on an approval-gated task
+  // submits it for review; tapping again on a submitted one withdraws it.
   const toggleMut = useMutation({
-    mutationFn: (t) => api.patch(`/tasks/${t.id}/status`, { status: t.status === 'DONE' ? 'PENDING' : 'DONE' }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['tasks'] }),
+    mutationFn: (t) => {
+      const next = t.awaitingApproval || t.status === 'DONE' ? 'PENDING' : 'DONE';
+      return api.patch(`/tasks/${t.id}/status`, { status: next });
+    },
+    onSuccess: (res) => {
+      if (res?.task?.awaitingApproval) toast.success('Submitted for approval');
+      qc.invalidateQueries({ queryKey: ['tasks'] });
+    },
     onError: (e) => toast.error(e?.message || 'Could not update the task'),
   });
 
-  // Un-completing a shared (multi-assign) task reopens it for EVERYONE and wipes the
-  // doer's bonus, so confirm first — and only the person who completed it may do it
-  // (the server enforces this too; here we give a clean message instead of a 403).
-  const [reopening, setReopening] = React.useState(null);
-  const requestToggle = (t) => {
-    if (t.status === 'DONE' && t.assignBatch && batchCountOf(t) > 1) {
-      const completerId = t.completedBy?.id || t.completedBy;
-      if (completerId && String(completerId) !== String(user?.id)) {
-        toast.error(`Only ${t.completedBy?.name || 'the person who completed it'} can reopen this shared task`);
-        return;
-      }
-      setReopening(t);
-      return;
-    }
-    toggleMut.mutate(t);
-  };
+  // The assigner approves or rejects a submitted task — a rejection carries a reason.
+  const [rejecting, setRejecting] = React.useState(null);
+  const [rejectReason, setRejectReason] = React.useState('');
+  const reviewMut = useMutation({
+    mutationFn: ({ id, approve, reason }) => api.patch(`/tasks/${id}/review`, { approve, reason }),
+    onSuccess: (_res, vars) => {
+      toast.success(vars.approve ? 'Task approved' : 'Sent back to the assignee');
+      qc.invalidateQueries({ queryKey: ['tasks'] });
+      setRejecting(null);
+      setRejectReason('');
+    },
+    onError: (e) => toast.error(e?.message || 'Could not submit your review'),
+  });
 
   const delMut = useMutation({
     mutationFn: (id) => api.delete(`/tasks/${id}`),
@@ -703,21 +780,58 @@ export function TaskBoard() {
           {isLoading ? (
             <LoadingState label="Loading tasks…" />
           ) : isAssigned ? (
-            folders.length ? (
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {folders.map((f) => (
-                  <PersonFolder
-                    key={f.id}
-                    folder={f}
-                    onEdit={(x) => setEditing(x)}
-                    onDelete={(x) => setDeleting(x)}
-                    onOpen={(x) => setViewing({ task: x, canToggle: false, allowEdit: true, allowDelete: true, assignerView: true, batchCount: batchCountOf(x) })}
-                  />
-                ))}
-              </div>
-            ) : (
-              <EmptyState icon={Users} title={search ? 'No one matches that name' : 'You haven’t assigned any work'} description={search ? '' : 'Use “Assign work” to give a task to someone below you.'} />
-            )
+            <div className="space-y-6">
+              {awaitingList.length ? (
+                <div className="space-y-2.5 rounded-2xl bg-warning/[0.06] p-3 ring-1 ring-warning/20 sm:p-4">
+                  <h3 className="flex items-center gap-2 text-sm font-semibold">
+                    <Clock className="size-4 text-amber-600 dark:text-amber-300" /> Awaiting your approval
+                    <span className="font-normal text-muted-foreground">({awaitingList.length})</span>
+                  </h3>
+                  <div className="space-y-2">
+                    {awaitingList.map((t) => (
+                      <div key={t.id} className="flex items-center gap-3 rounded-xl bg-background/60 p-3 ring-1 ring-border/50">
+                        <button
+                          type="button"
+                          onClick={() => setViewing({ task: t, canToggle: false, allowEdit: true, allowDelete: true, assignerView: true, batchCount: batchCountOf(t) })}
+                          className="min-w-0 flex-1 text-left"
+                        >
+                          <p className="truncate text-sm font-medium">{t.title}</p>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {t.owner?.name}
+                            {t.submittedAt ? ` · submitted ${fmtDate(t.submittedAt)}` : ''}
+                            {t.dueYMD ? ` · due ${fmtDate(t.dueYMD)}` : ''}
+                          </p>
+                        </button>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          <Button variant="outline" size="icon" className="size-9 text-destructive" onClick={() => { setRejecting(t); setRejectReason(''); }} aria-label="Reject">
+                            <X className="size-4" />
+                          </Button>
+                          <Button size="icon" className="size-9" disabled={reviewMut.isPending} onClick={() => reviewMut.mutate({ id: t.id, approve: true })} aria-label="Approve">
+                            <ThumbsUp className="size-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {folders.length ? (
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {folders.map((f) => (
+                    <PersonFolder
+                      key={f.id}
+                      folder={f}
+                      onEdit={(x) => setEditing(x)}
+                      onDelete={(x) => setDeleting(x)}
+                      onOpen={(x) => setViewing({ task: x, canToggle: false, allowEdit: true, allowDelete: true, assignerView: true, batchCount: batchCountOf(x) })}
+                    />
+                  ))}
+                </div>
+              ) : !awaitingList.length ? (
+                <EmptyState icon={Users} title={search ? 'No one matches that name' : 'You haven’t assigned any work'} description={search ? '' : 'Use “Assign work” to give a task to someone below you.'} />
+              ) : null}
+            </div>
           ) : isMine ? (
             !mine.personalPending.length && !mine.folders.length ? (
               <EmptyState
@@ -742,7 +856,7 @@ export function TaskBoard() {
                         task={t}
                         myId={user?.id}
                         canToggle
-                        onToggle={(x) => requestToggle(x)}
+                        onToggle={(x) => toggleMut.mutate(x)}
                         onEdit={(x) => setEditing(x)}
                         onDelete={(x) => setDeleting(x)}
                         onOpen={(x) => setViewing({ task: x, canToggle: true, allowEdit: canMgr(x), allowDelete: canMgr(x), assignerView: false })}
@@ -767,7 +881,7 @@ export function TaskBoard() {
                           canToggle
                           allowEdit={() => false}
                           allowDelete={() => false}
-                          onToggle={(x) => requestToggle(x)}
+                          onToggle={(x) => toggleMut.mutate(x)}
                           onEdit={(x) => setEditing(x)}
                           onDelete={(x) => setDeleting(x)}
                           onOpen={(x) => setViewing({ task: x, canToggle: true, allowEdit: false, allowDelete: false, assignerView: false })}
@@ -825,7 +939,16 @@ export function TaskBoard() {
         onClose={() => setViewing(null)}
         onToggle={(t) => {
           setViewing(null);
-          requestToggle(t);
+          toggleMut.mutate(t);
+        }}
+        onApprove={(t) => {
+          setViewing(null);
+          reviewMut.mutate({ id: t.id, approve: true });
+        }}
+        onReject={(t) => {
+          setViewing(null);
+          setRejecting(t);
+          setRejectReason('');
         }}
         onEdit={(t) => {
           setViewing(null);
@@ -848,18 +971,26 @@ export function TaskBoard() {
         onConfirm={() => deleting && delMut.mutate(deleting.id)}
       />
 
-      <ConfirmDialog
-        open={!!reopening}
-        onOpenChange={(o) => (!o ? setReopening(null) : null)}
-        title="Reopen for everyone?"
-        description={reopening ? `This marks “${reopening.title}” not done for all ${batchCountOf(reopening)} people and removes it from their completed list.` : ''}
-        confirmLabel="Reopen for all"
-        loading={toggleMut.isPending}
-        onConfirm={() => {
-          if (reopening) toggleMut.mutate(reopening);
-          setReopening(null);
-        }}
-      />
+      {/* Reject with a reason — the assignee sees exactly what to fix. */}
+      <AppDialog
+        open={!!rejecting}
+        onOpenChange={(o) => (!o ? (setRejecting(null), setRejectReason('')) : null)}
+        title="Send this task back?"
+        description={rejecting ? `“${rejecting.title}” will return to ${rejecting.owner?.name || 'the assignee'}'s to-do with your note.` : ''}
+        footer={
+          <>
+            <Button variant="outline" onClick={() => { setRejecting(null); setRejectReason(''); }}>Cancel</Button>
+            <Button className="text-destructive" variant="outline" disabled={reviewMut.isPending || !rejectReason.trim()} onClick={() => rejecting && reviewMut.mutate({ id: rejecting.id, approve: false, reason: rejectReason.trim() })}>
+              <X className="size-4" /> {reviewMut.isPending ? 'Sending…' : 'Send back'}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-1.5 py-2">
+          <label htmlFor="reject-reason" className="text-sm font-medium">Reason (what needs fixing?)</label>
+          <Textarea id="reject-reason" value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} placeholder="e.g. Please redo the north elevation dimensions…" className="bg-background/50" autoFocus />
+        </div>
+      </AppDialog>
     </div>
   );
 }

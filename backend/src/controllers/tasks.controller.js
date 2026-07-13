@@ -1,5 +1,5 @@
 import { ok, fail } from '../lib/apiResponse.js';
-import { createTaskSchema, updateTaskSchema, statusSchema, listTasksQuerySchema } from '../validators/tasks.validators.js';
+import { createTaskSchema, updateTaskSchema, statusSchema, listTasksQuerySchema, reviewTaskSchema } from '../validators/tasks.validators.js';
 import * as svc from '../services/task.service.js';
 import { Setting } from '../models/Setting.js';
 import { audit } from '../models/AuditLog.js';
@@ -53,6 +53,16 @@ export async function setStatus(req, res, next) {
   try {
     const { status } = statusSchema.parse(req.body);
     const task = await svc.setStatus(req.user, req.params.id, status);
+    res.json(ok({ task }));
+  } catch (err) {
+    handleErr(res, err, next);
+  }
+}
+
+export async function review(req, res, next) {
+  try {
+    const { approve, reason } = reviewTaskSchema.parse(req.body);
+    const task = await svc.reviewTask(req.user, req.params.id, approve, reason);
     res.json(ok({ task }));
   } catch (err) {
     handleErr(res, err, next);
