@@ -1,12 +1,18 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { Wallet } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { can } from '@/lib/permissions';
 import { PageHeader } from '@/components/glass/page-header';
 import { EmptyState } from '@/components/glass/empty-state';
 import { ExpenseSummary } from '@/components/expenses/expense-summary';
-import { ExpenseCharts } from '@/components/expenses/expense-charts';
+// Same as the dashboard: the charting library is heavy, so let the table and
+// summary paint first and bring the charts in behind a matching placeholder.
+const ExpenseCharts = dynamic(() => import('@/components/expenses/expense-charts').then((m) => m.ExpenseCharts), {
+  ssr: false,
+  loading: () => <div className="h-64 animate-pulse rounded-2xl bg-foreground/[0.04]" />,
+});
 import { ExpenseTable } from '@/components/expenses/expense-table';
 
 export default function ExpensesPage() {

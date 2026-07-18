@@ -52,7 +52,6 @@ import {
 
 // Vengeance UI
 import AnimatedButton from '@/components/ui/animated-button';
-import GlassDock from '@/components/ui/glass-dock';
 import { GlowBorderCard } from '@/components/ui/glow-border-card';
 import { AnimatedRays } from '@/components/ui/animated-rays';
 import { SpotlightNavbar } from '@/components/ui/spotlight-navbar';
@@ -100,15 +99,6 @@ const demoColumns = [
     },
   },
   { accessorKey: 'hours', header: 'Hours', cell: ({ row }) => <span className="tabular-nums">{row.original.hours}</span> },
-];
-
-const dockItems = [
-  { title: 'Dashboard', icon: LayoutDashboard },
-  { title: 'Attendance', icon: CalendarClock },
-  { title: 'Leaves', icon: CalendarDays },
-  { title: 'Announcements', icon: Megaphone },
-  { title: 'Expenses', icon: Wallet },
-  { title: 'Settings', icon: Settings },
 ];
 
 /* ── page ────────────────────────────────────────────────── */
@@ -369,15 +359,6 @@ export default function StyleGuidePage() {
         <Section title="Vengeance UI" description="Premium animated components layered on top of the glass system.">
           <div className="space-y-6">
             <GlassPanel className="space-y-6 p-6">
-              <div>
-                <p className="mb-3 text-sm font-medium text-muted-foreground">Glass Dock</p>
-                <div className="flex justify-center py-4">
-                  <GlassDock items={dockItems} />
-                </div>
-              </div>
-
-              <Separator />
-
               <div>
                 <p className="mb-1 text-sm font-medium text-muted-foreground">Spotlight Navbar</p>
                 <SpotlightNavbar

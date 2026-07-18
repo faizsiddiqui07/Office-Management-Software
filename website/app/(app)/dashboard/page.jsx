@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import { useQuery } from '@tanstack/react-query';
 import {
   Activity,
@@ -35,7 +36,25 @@ import { StatCard } from '@/components/glass/stat-card';
 import { StatusBadge, STATUS_TONES } from '@/components/glass/status-badge';
 import { EmptyState } from '@/components/glass/empty-state';
 import { LoadingState } from '@/components/glass/skeletons';
-import { AttendanceDonut, ExpenseTrendChart, OvertimeLeaders } from '@/components/dashboard/charts';
+// Charts pull in the charting library, which is by far the heaviest thing on this
+// page — and the dashboard is the first screen everyone lands on. Load them after
+// the page is interactive instead, behind placeholders of the same height so
+// nothing jumps when they arrive.
+const ChartFallback = ({ h }) => (
+  <div className="animate-pulse rounded-xl bg-foreground/[0.04]" style={{ height: h }} />
+);
+const AttendanceDonut = dynamic(() => import('@/components/dashboard/charts').then((m) => m.AttendanceDonut), {
+  ssr: false,
+  loading: () => <ChartFallback h={220} />,
+});
+const ExpenseTrendChart = dynamic(() => import('@/components/dashboard/charts').then((m) => m.ExpenseTrendChart), {
+  ssr: false,
+  loading: () => <ChartFallback h={240} />,
+});
+const OvertimeLeaders = dynamic(() => import('@/components/dashboard/charts').then((m) => m.OvertimeLeaders), {
+  ssr: false,
+  loading: () => <ChartFallback h={150} />,
+});
 
 function greeting() {
   const h = new Date().getHours();
