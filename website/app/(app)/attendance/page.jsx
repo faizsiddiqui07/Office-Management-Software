@@ -49,8 +49,8 @@ export default function AttendancePage() {
   const correctionsNew = isApprover && isNew(CORRECTIONS_KEY, badges.attendance);
 
   React.useEffect(() => {
-    if (initialTab === 'corrections') markSeen(CORRECTIONS_KEY);
-  }, [initialTab, markSeen]);
+    if (initialTab === 'corrections' && correctionsNew) markSeen(CORRECTIONS_KEY);
+  }, [initialTab, correctionsNew, markSeen]);
 
   const description = canMark
     ? 'Mark your attendance — check-in and check-out times are captured automatically.'

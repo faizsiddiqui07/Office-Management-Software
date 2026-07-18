@@ -64,6 +64,11 @@ export function markSeen(key) {
   listeners.forEach((l) => l());
 }
 
+// One shared empty object. Returning a fresh `{}` while the request is in flight
+// would give every render a new identity, so any effect depending on it would re-run
+// forever.
+const NO_BADGES = {};
+
 /** Latest "something happened here" timestamp per section. */
 export function useBadges() {
   const { data } = useQuery({
@@ -73,7 +78,7 @@ export function useBadges() {
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
   });
-  return data ?? {};
+  return data ?? NO_BADGES;
 }
 
 /** `isNew(key, latestAt)` → has something arrived since this section was last opened? */
@@ -103,8 +108,12 @@ export function useNavBadges() {
 
   React.useEffect(() => {
     const href = Object.keys(BADGE_BY_HREF).find((h) => pathname === h || pathname.startsWith(`${h}/`));
-    if (href) markSeen(BADGE_BY_HREF[href]);
-  }, [pathname, badges]);
+    if (!href) return;
+    const key = BADGE_BY_HREF[href];
+    // Only write when there's genuinely something unseen. Marking on every pass would
+    // notify the store, re-render, and run this again — the write has to settle.
+    if (isNew(key, badges[key])) markSeen(key);
+  }, [pathname, badges, isNew]);
 
   return React.useCallback(
     (href) => {
