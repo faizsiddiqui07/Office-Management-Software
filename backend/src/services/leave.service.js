@@ -415,23 +415,40 @@ export async function cancelLeave(viewer, id) {
  * Remove a request outright — for the "I sent that by mistake" case, where cancelling
  * still leaves a row sitting in the list.
  *
- * An APPROVED leave is deliberately NOT deletable: approving it deducted the balance
- * and wrote the attendance days, and deleting the record would strand both. Cancel it
- * first (that puts the balance and attendance back), then the cancelled row can go.
+ * Deliberately narrow: ONLY the person who raised it, and only while nobody else has
+ * acted on it. A request is a record between two people — once it has been approved,
+ * rejected or cancelled by someone else, erasing it would destroy the evidence that it
+ * ever existed. That cuts both ways: an approver must not be able to delete a request
+ * and later say it was never sent, and an employee must not be able to delete a
+ * rejection. Approvers already have Reject and Cancel, which settle a request while
+ * keeping the record.
+ *
+ * An APPROVED leave is never deletable anyway: approving deducted the balance and wrote
+ * the attendance days, so removing the row would strand both.
  */
 export async function deleteLeave(viewer, id) {
   const request = await LeaveRequest.findById(id);
   if (!request) throw httpError(404, 'NOT_FOUND', 'Leave request not found');
 
-  const isOwner = String(request.user) === String(viewer._id);
-  const isApprover = can(viewer, 'approveLeave');
-  if (!isOwner && !isApprover) throw httpError(403, 'FORBIDDEN', 'You cannot delete this request');
+  if (String(request.user) !== String(viewer._id)) {
+    throw httpError(403, 'FORBIDDEN', 'Only the person who raised a request can delete it');
+  }
 
   if (request.status === 'APPROVED') {
     throw httpError(
       409,
       'APPROVED_LEAVE',
-      'This leave is already approved — cancel it first so the balance and attendance are restored, then you can delete it.',
+      'This leave is already approved — ask for it to be cancelled instead, so your balance and attendance are put back.',
+    );
+  }
+
+  // decidedBy is set by whoever acted. Their own cancellation is fine; anyone else's
+  // decision makes this a shared record that has to stay.
+  if (request.decidedBy && String(request.decidedBy) !== String(viewer._id)) {
+    throw httpError(
+      409,
+      'ALREADY_REVIEWED',
+      'This request has already been reviewed, so it stays on the record. You can only delete a request nobody has acted on.',
     );
   }
 

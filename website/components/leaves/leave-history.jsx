@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Pencil, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
 import { DataTable } from '@/components/glass/data-table';
 import { StatusBadge, STATUS_TONES } from '@/components/glass/status-badge';
 import { TableSkeleton } from '@/components/glass/skeletons';
@@ -62,6 +63,13 @@ export function LeaveHistory() {
   const [editing, setEditing] = React.useState(null); // pending request being edited
   const [cancelling, setCancelling] = React.useState(null);
   const [deleting, setDeleting] = React.useState(null);
+  const { user } = useAuth();
+
+  // A request can only be removed by the person who raised it, and only while nobody
+  // else has acted on it — once someone has approved, rejected or cancelled it, it's a
+  // shared record and it stays. (The server enforces this too.)
+  const canDelete = (l) =>
+    !!l && l.status !== 'APPROVED' && (!l.decidedBy || String(l.decidedBy.id ?? l.decidedBy) === String(user?.id));
 
   const cancelMut = useMutation({
     mutationFn: (id) => api.post(`/leaves/${id}/cancel`),
@@ -131,7 +139,7 @@ export function LeaveHistory() {
             </div>
           ) : (
             <div className="flex w-full items-center justify-between gap-2">
-              {viewing?.status !== 'APPROVED' ? (
+              {canDelete(viewing) ? (
                 <Button variant="ghost" className="text-destructive" onClick={() => setDeleting(viewing)}>
                   <Trash2 className="size-4" /> Delete
                 </Button>
