@@ -134,12 +134,16 @@ export function VisitorTable({ canManageCategories = false }) {
         header: 'Visitor',
         accessorFn: (r) => r.name, // header sort orders by the visible name
 
-        cell: ({ row }) => (
-          <div className="min-w-0">
-            <p className="truncate font-medium">{row.original.name}</p>
-            {row.original.phone ? <p className="truncate text-xs text-muted-foreground">{row.original.phone}</p> : null}
-          </div>
-        ),
+        // Where they came from now sits under the name, freeing its column for the purpose.
+        cell: ({ row }) => {
+          const sub = [row.original.fromPlace, row.original.phone].filter(Boolean).join(' · ');
+          return (
+            <div className="min-w-0">
+              <p className="truncate font-medium">{row.original.name}</p>
+              {sub ? <p className="truncate text-xs text-muted-foreground">{sub}</p> : null}
+            </div>
+          );
+        },
       },
       {
         id: 'category',
@@ -150,7 +154,20 @@ export function VisitorTable({ canManageCategories = false }) {
           </StatusBadge>
         ),
       },
-      { id: 'from', header: 'From', cell: ({ row }) => <span className="text-sm text-muted-foreground">{row.original.fromPlace || '—'}</span> },
+      // Purpose can run long, so clamp it to two lines and keep the full text in the
+      // tooltip — the row-click detail dialog still shows all of it.
+      {
+        id: 'purpose',
+        header: 'Purpose',
+        cell: ({ row }) => (
+          <span
+            title={row.original.purpose || ''}
+            className="line-clamp-2 max-w-[26ch] text-sm text-muted-foreground"
+          >
+            {row.original.purpose || '—'}
+          </span>
+        ),
+      },
       { id: 'company', header: 'Who / Company', cell: ({ row }) => <span className="text-sm text-muted-foreground">{row.original.company || '—'}</span> },
       { id: 'toMeet', header: 'To meet', cell: ({ row }) => <span className="text-sm">{row.original.toMeet || '—'}</span> },
       {
