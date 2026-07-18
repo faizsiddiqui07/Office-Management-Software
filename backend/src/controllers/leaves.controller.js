@@ -107,3 +107,13 @@ export async function cancel(req, res, next) {
     handleErr(res, err, next);
   }
 }
+
+export async function remove(req, res, next) {
+  try {
+    await svc.deleteLeave(req.user, req.params.id);
+    await audit({ actor: req.user._id, action: 'leave.delete', entityType: 'LeaveRequest', entityId: req.params.id });
+    res.json(ok({ success: true }));
+  } catch (err) {
+    handleErr(res, err, next);
+  }
+}

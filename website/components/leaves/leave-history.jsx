@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Pencil } from 'lucide-react';
+import { Pencil, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { DataTable } from '@/components/glass/data-table';
 import { StatusBadge, STATUS_TONES } from '@/components/glass/status-badge';
@@ -61,6 +61,7 @@ export function LeaveHistory() {
   const [viewing, setViewing] = React.useState(null); // row-click detail
   const [editing, setEditing] = React.useState(null); // pending request being edited
   const [cancelling, setCancelling] = React.useState(null);
+  const [deleting, setDeleting] = React.useState(null);
 
   const cancelMut = useMutation({
     mutationFn: (id) => api.post(`/leaves/${id}/cancel`),
@@ -71,6 +72,20 @@ export function LeaveHistory() {
       qc.invalidateQueries({ queryKey: ['leaves'] });
     },
     onError: (e) => toast.error(e?.message || 'Could not cancel'),
+  });
+
+  // Removes the row entirely — for a request that shouldn't have been sent at all.
+  // An approved leave can't be deleted (the server says so): cancelling it first puts
+  // the balance and attendance back, and then the cancelled row can go.
+  const deleteMut = useMutation({
+    mutationFn: (id) => api.delete(`/leaves/${id}`),
+    onSuccess: () => {
+      toast.success('Request deleted');
+      setDeleting(null);
+      setViewing(null);
+      qc.invalidateQueries({ queryKey: ['leaves'] });
+    },
+    onError: (e) => toast.error(e?.message || 'Could not delete'),
   });
 
   if (isLoading) return <TableSkeleton rows={5} cols={5} />;
@@ -96,9 +111,14 @@ export function LeaveHistory() {
         footer={
           isPending ? (
             <div className="flex w-full flex-wrap items-center justify-between gap-2">
-              <Button variant="ghost" className="text-destructive" onClick={() => setCancelling(viewing)}>
-                Cancel request
-              </Button>
+              <div className="flex items-center gap-1">
+                <Button variant="ghost" className="text-destructive" onClick={() => setCancelling(viewing)}>
+                  Cancel request
+                </Button>
+                <Button variant="ghost" size="icon" className="text-destructive" onClick={() => setDeleting(viewing)} aria-label="Delete request">
+                  <Trash2 className="size-4" />
+                </Button>
+              </div>
               <Button
                 onClick={() => {
                   const l = viewing;
@@ -110,7 +130,16 @@ export function LeaveHistory() {
               </Button>
             </div>
           ) : (
-            <Button variant="outline" onClick={() => setViewing(null)}>Close</Button>
+            <div className="flex w-full items-center justify-between gap-2">
+              {viewing?.status !== 'APPROVED' ? (
+                <Button variant="ghost" className="text-destructive" onClick={() => setDeleting(viewing)}>
+                  <Trash2 className="size-4" /> Delete
+                </Button>
+              ) : (
+                <span />
+              )}
+              <Button variant="outline" onClick={() => setViewing(null)}>Close</Button>
+            </div>
           )
         }
       />
@@ -128,6 +157,17 @@ export function LeaveHistory() {
         confirmLabel="Cancel request"
         loading={cancelMut.isPending}
         onConfirm={() => cancelling && cancelMut.mutate(cancelling.id)}
+      />
+
+      <ConfirmDialog
+        open={!!deleting}
+        onOpenChange={(o) => (!o ? setDeleting(null) : null)}
+        title="Delete this request?"
+        description="It disappears from your history for good. Use this for a request that shouldn't have been sent — to withdraw a real one, cancel it instead."
+        tone="destructive"
+        confirmLabel="Delete"
+        loading={deleteMut.isPending}
+        onConfirm={() => deleting && deleteMut.mutate(deleting.id)}
       />
     </>
   );

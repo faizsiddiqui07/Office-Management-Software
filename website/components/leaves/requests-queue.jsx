@@ -3,11 +3,12 @@
 import * as React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Check, X } from 'lucide-react';
+import { Check, Trash2, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import { DataTable } from '@/components/glass/data-table';
 import { StatusBadge, STATUS_TONES } from '@/components/glass/status-badge';
 import { TableSkeleton } from '@/components/glass/skeletons';
+import { ConfirmDialog } from '@/components/glass/confirm-dialog';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
@@ -89,6 +90,22 @@ export function RequestsQueue() {
     [],
   );
 
+  const [deleting, setDeleting] = React.useState(null);
+
+  // Clears out a request that shouldn't be in the queue at all. The server refuses
+  // this for an approved leave — that has to be cancelled first so the balance and
+  // attendance are restored.
+  const deleteMut = useMutation({
+    mutationFn: (id) => api.delete(`/leaves/${id}`),
+    onSuccess: () => {
+      toast.success('Request deleted');
+      setDeleting(null);
+      setViewing(null);
+      qc.invalidateQueries({ queryKey: ['leaves'] });
+    },
+    onError: (e) => toast.error(e?.message || 'Could not delete'),
+  });
+
   const isPending = viewing?.status === 'PENDING';
 
   return (
@@ -123,16 +140,30 @@ export function RequestsQueue() {
         showApplicant
         footer={
           isPending ? (
-            <div className="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <Button variant="outline" onClick={() => mut.mutate({ id: viewing.id, action: 'REJECT', note })} disabled={mut.isPending}>
-                <X className="size-4" /> Reject
+            <div className="flex w-full flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <Button variant="ghost" className="text-destructive sm:mr-auto" onClick={() => setDeleting(viewing)}>
+                <Trash2 className="size-4" /> Delete
               </Button>
-              <Button onClick={() => mut.mutate({ id: viewing.id, action: 'APPROVE', note })} disabled={mut.isPending}>
-                <Check className="size-4" /> Approve
-              </Button>
+              <div className="flex flex-col-reverse gap-2 sm:flex-row">
+                <Button variant="outline" onClick={() => mut.mutate({ id: viewing.id, action: 'REJECT', note })} disabled={mut.isPending}>
+                  <X className="size-4" /> Reject
+                </Button>
+                <Button onClick={() => mut.mutate({ id: viewing.id, action: 'APPROVE', note })} disabled={mut.isPending}>
+                  <Check className="size-4" /> Approve
+                </Button>
+              </div>
             </div>
           ) : (
-            <Button variant="outline" onClick={() => setViewing(null)}>Close</Button>
+            <div className="flex w-full items-center justify-between gap-2">
+              {viewing?.status !== 'APPROVED' ? (
+                <Button variant="ghost" className="text-destructive" onClick={() => setDeleting(viewing)}>
+                  <Trash2 className="size-4" /> Delete
+                </Button>
+              ) : (
+                <span />
+              )}
+              <Button variant="outline" onClick={() => setViewing(null)}>Close</Button>
+            </div>
           )
         }
       >
@@ -149,6 +180,17 @@ export function RequestsQueue() {
           </div>
         ) : null}
       </LeaveDetailDialog>
+
+      <ConfirmDialog
+        open={!!deleting}
+        onOpenChange={(o) => (!o ? setDeleting(null) : null)}
+        title="Delete this request?"
+        description="It's removed from the queue and the employee's history for good. To turn a request down, reject it instead — that keeps the record."
+        tone="destructive"
+        confirmLabel="Delete"
+        loading={deleteMut.isPending}
+        onConfirm={() => deleting && deleteMut.mutate(deleting.id)}
+      />
     </div>
   );
 }

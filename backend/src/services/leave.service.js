@@ -411,6 +411,34 @@ export async function cancelLeave(viewer, id) {
   return result.toJSON();
 }
 
+/**
+ * Remove a request outright — for the "I sent that by mistake" case, where cancelling
+ * still leaves a row sitting in the list.
+ *
+ * An APPROVED leave is deliberately NOT deletable: approving it deducted the balance
+ * and wrote the attendance days, and deleting the record would strand both. Cancel it
+ * first (that puts the balance and attendance back), then the cancelled row can go.
+ */
+export async function deleteLeave(viewer, id) {
+  const request = await LeaveRequest.findById(id);
+  if (!request) throw httpError(404, 'NOT_FOUND', 'Leave request not found');
+
+  const isOwner = String(request.user) === String(viewer._id);
+  const isApprover = can(viewer, 'approveLeave');
+  if (!isOwner && !isApprover) throw httpError(403, 'FORBIDDEN', 'You cannot delete this request');
+
+  if (request.status === 'APPROVED') {
+    throw httpError(
+      409,
+      'APPROVED_LEAVE',
+      'This leave is already approved — cancel it first so the balance and attendance are restored, then you can delete it.',
+    );
+  }
+
+  await request.deleteOne();
+  return { success: true };
+}
+
 export async function listLeaves(viewer, { status, userId, from, to, queue }) {
   const isApprover = can(viewer, 'approveLeave');
   const filter = {};
