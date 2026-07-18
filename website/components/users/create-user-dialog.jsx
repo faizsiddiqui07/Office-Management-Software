@@ -22,10 +22,13 @@ import { useRoleOptions } from '@/lib/use-roles';
 import { TempPasswordContent } from './temp-password-content';
 import { EmploymentFields, DEFAULT_SCHEDULE } from './employment-fields';
 
+// Roles are DB-backed (leadership can rename/add them), so NEVER hard-code a key
+// here — a stale one is rejected by the server as "Invalid role". The real default is
+// filled in from the live role list once it loads (see the effect below).
 const EMPTY = {
   name: '',
   email: '',
-  role: 'EMPLOYEE',
+  role: '',
   department: '',
   designation: '',
   employmentType: 'FULL_TIME',
@@ -50,6 +53,13 @@ export function CreateUserDialog() {
     }
   }, [open]);
 
+  // Select the first role this person may assign as soon as the live list arrives —
+  // and repair the value if it isn't a real role, so we can never post a stale key.
+  React.useEffect(() => {
+    if (!open || !assignableRoles.length) return;
+    setForm((f) => (assignableRoles.some((r) => r.key === f.role) ? f : { ...f, role: assignableRoles[0].key }));
+  }, [open, assignableRoles]);
+
   const mut = useMutation({
     mutationFn: () => api.post('/users', form),
     onSuccess: (res) => {
@@ -64,6 +74,7 @@ export function CreateUserDialog() {
   const submit = () => {
     if (!form.name.trim()) return toast.error('Add a name');
     if (!form.email.trim()) return toast.error('Add an email');
+    if (!form.role) return toast.error('Pick a role');
     if (form.schedule.workStart && form.schedule.workEnd && form.schedule.workEnd <= form.schedule.workStart) {
       return toast.error('Check-out time must be after check-in');
     }
@@ -115,7 +126,7 @@ export function CreateUserDialog() {
               <Label htmlFor="cu-role">Role</Label>
               <Select value={form.role} onValueChange={(v) => setForm((f) => ({ ...f, role: v }))}>
                 <SelectTrigger id="cu-role" className="w-full bg-background/50">
-                  <SelectValue />
+                  <SelectValue placeholder="Select a role…" />
                 </SelectTrigger>
                 <SelectContent>
                   {assignableRoles.map((r) => (

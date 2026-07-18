@@ -33,7 +33,7 @@ export function EditUserDialog({ user: target, open, onOpenChange }) {
   const [name, setName] = React.useState('');
   const [department, setDepartment] = React.useState('');
   const [designation, setDesignation] = React.useState('');
-  const [role, setRole] = React.useState('EMPLOYEE');
+  const [role, setRole] = React.useState(''); // filled from the user being edited — never hard-code a role key
   const [isActive, setIsActive] = React.useState(true);
   const [employmentType, setEmploymentType] = React.useState('FULL_TIME');
   const [schedule, setSchedule] = React.useState({ ...DEFAULT_SCHEDULE });
@@ -57,7 +57,7 @@ export function EditUserDialog({ user: target, open, onOpenChange }) {
     setName(target.name || '');
     setDepartment(target.department || '');
     setDesignation(target.designation || '');
-    setRole(target.role || 'EMPLOYEE');
+    setRole(target.role || '');
     setIsActive(target.isActive !== false);
     setEmploymentType(target.employmentType || 'FULL_TIME');
     setSchedule({

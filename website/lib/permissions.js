@@ -22,8 +22,10 @@ import {
  * hides/shows UI. It prefers the user's live permission set (from /auth/me) and
  * falls back to the built-in role groups when that isn't available yet.
  */
-export const ROLES = ['CEO', 'DIRECTOR', 'ADMIN_MANAGER', 'MANAGER', 'EMPLOYEE', 'OFFICE_BOY', 'SECURITY'];
-
+// NOTE: role keys are DB-backed and editable by leadership — never hard-code a list of
+// them for logic. (A stale `ROLES` array lived here and was unused; the server rejects
+// any key it doesn't know with "Invalid role".) The map below is only a display
+// fallback for prettyRole() when the server hasn't supplied a label.
 export const ROLE_LABELS = {
   CEO: 'CEO',
   DIRECTOR: 'Director',
