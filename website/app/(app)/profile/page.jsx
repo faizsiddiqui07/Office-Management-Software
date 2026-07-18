@@ -3,9 +3,10 @@
 import * as React from 'react';
 import { useTheme } from 'next-themes';
 import { toast } from 'sonner';
-import { Camera, CircleUser, KeyRound, Loader2, Monitor, Moon, Sun, Trash2, UserCog } from 'lucide-react';
+import { Camera, CircleUser, Gauge, KeyRound, Loader2, Monitor, Moon, Sun, Trash2, UserCog } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { useLiteMode } from '@/lib/lite-mode';
 import { roleName } from '@/lib/permissions';
 import { downscaleImage } from '@/lib/image';
 import { cn } from '@/lib/utils';
@@ -17,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PasswordInput } from '@/components/ui/password-input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 
 function initialsOf(name = '') {
   return name.split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase();
@@ -25,6 +27,7 @@ function initialsOf(name = '') {
 export default function ProfilePage() {
   const { user, refresh } = useAuth();
   const { theme, setTheme } = useTheme();
+  const { lite, setLiteMode } = useLiteMode();
 
   const [form, setForm] = React.useState({ name: '', phone: '', avatarUrl: '' });
   const [savingProfile, setSavingProfile] = React.useState(false);
@@ -206,6 +209,21 @@ export default function ProfilePage() {
                 {theme === t.value ? <span className="ml-auto text-xs">Active</span> : null}
               </button>
             ))}
+          </div>
+
+          {/* Per-device performance switch — no auto-detection, the person decides. */}
+          <div className="flex items-start justify-between gap-3 rounded-xl bg-foreground/[0.03] p-3 ring-1 ring-border/50">
+            <div className="min-w-0">
+              <Label className="flex items-center gap-1.5">
+                <Gauge className="size-3.5" /> Lite mode
+              </Label>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {lite
+                  ? 'On — blur and background animation are off, so the app stays smooth.'
+                  : 'Turn this on if this phone feels slow, or the screen flickers when a dropdown opens. Nothing moves or disappears — only the effects get lighter.'}
+              </p>
+            </div>
+            <Switch checked={lite} onCheckedChange={setLiteMode} aria-label="Lite mode" />
           </div>
         </GlassPanel>
       </div>

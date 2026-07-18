@@ -48,6 +48,13 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${inter.variable} min-h-dvh font-sans antialiased`}>
+        {/* Apply the per-device "Lite UI" choice before anything paints, so a slow
+            phone never flashes the heavy glass version first. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: "try{if(localStorage.getItem('om_lite_ui')==='1'){document.documentElement.dataset.lite='true'}}catch(e){}",
+          }}
+        />
         <ThemeProvider>
           <QueryProvider>
             <AuthProvider>

@@ -326,6 +326,46 @@
 }
 
 /* ────────────────────────────────────────────────────────────
+   Lite UI — switched on by hand (Profile → Appearance) on phones that can't
+   keep up with the glass look. Everything stays: same layout, same colours,
+   same features. Only the expensive painting is dropped, because that is what
+   actually stutters and tears on an older GPU:
+     · backdrop-filter — the frosted surfaces AND the full-screen background
+       wash. Re-blurring the screen every frame is the single biggest cost, and
+       stacking three of them (page + card + open dropdown) is what makes a
+       dropdown flicker mid-open.
+     · the aurora blobs — decorative, animated, and each 90px-blurred.
+     · heavy shadows and animation.
+   The choice is stored per DEVICE (localStorage), so the same person still
+   gets the full look on a laptop that can handle it.
+   ──────────────────────────────────────────────────────────── */
+:root[data-lite='true'] .glass,
+:root[data-lite='true'] .glass-strong,
+:root[data-lite='true'] .glass-subtle {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background-color: var(--card);
+  box-shadow: none;
+}
+
+:root[data-lite='true'] [class*='backdrop-blur'] {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+:root[data-lite='true'] .aurora-blob {
+  display: none;
+}
+
+:root[data-lite='true'] *,
+:root[data-lite='true'] *::before,
+:root[data-lite='true'] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+}
+
+/* ────────────────────────────────────────────────────────────
    Vengeance UI — supporting styles for the installed components
    (glass-dock, spotlight-navbar, glow-border-card, animated-rays)
    ──────────────────────────────────────────────────────────── */
