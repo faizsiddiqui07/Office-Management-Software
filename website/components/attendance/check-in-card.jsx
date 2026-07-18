@@ -1,11 +1,9 @@
 'use client';
 
 import * as React from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
 import { Clock, LogIn, LogOut, MapPin, ShieldCheck } from 'lucide-react';
-import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { useAttendanceToday, fmtCountdown } from './use-attendance-today';
 import { GlassCard } from '@/components/glass/glass-card';
 import { StatusBadge, STATUS_TONES } from '@/components/glass/status-badge';
 import { AppDialog } from '@/components/glass/app-dialog';
@@ -31,35 +29,23 @@ export const LATE_REASONS = [
   'Other',
 ];
 
-/** "28:14" / "1:05:09" — the live count-down until check-out unlocks. */
-function fmtCountdown(ms) {
-  const total = Math.max(0, Math.ceil(ms / 1000));
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const s = total % 60;
-  const pad = (n) => String(n).padStart(2, '0');
-  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
-}
-
-/** Resolve the device's current GPS position, or reject with a friendly message. */
-function getPosition() {
-  return new Promise((resolve, reject) => {
-    if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      reject(new Error('Location is not available on this device/browser'));
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      (err) =>
-        reject(new Error(err?.code === 1 ? 'Please allow location access to mark attendance' : 'Could not get your location — try again')),
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 },
-    );
-  });
-}
-
 export function CheckInCard() {
-  const qc = useQueryClient();
-  const [now, setNow] = React.useState(() => Date.now());
+  const {
+    data,
+    isLoading,
+    now,
+    record,
+    checkedIn,
+    checkedOut,
+    elapsedMin,
+    overtimeMin,
+    cooldownLeftMs,
+    inCooldown,
+    wouldBeLate,
+    checkInMut,
+    checkOutMut,
+  } = useAttendanceToday();
+
   const [lateOpen, setLateOpen] = React.useState(false);
   const [lateCategory, setLateCategory] = React.useState('');
   const [lateNote, setLateNote] = React.useState('');
@@ -77,79 +63,7 @@ export function CheckInCard() {
     return () => clearTimeout(t);
   }, [confirmOut]);
 
-  React.useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, []);
-
-  const { data, isLoading } = useQuery({
-    queryKey: ['attendance', 'today'],
-    queryFn: () => api.get('/attendance/today'),
-    refetchOnWindowFocus: true,
-  });
-
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['attendance'] });
-
-  const checkInMut = useMutation({
-    mutationFn: async (lateReason) => {
-      const coords = data?.gps?.enabled ? await getPosition() : null;
-      const body = { ...(coords || {}), ...(lateReason ? { lateReason } : {}) };
-      return api.post('/attendance/check-in', body);
-    },
-    onSuccess: () => {
-      toast.success('Checked in — have a great day!');
-      setLateCategory('');
-      setLateNote('');
-      invalidate();
-    },
-    onError: (e) => toast.error(e?.message || 'Could not check in'),
-  });
-
-  const checkOutMut = useMutation({
-    mutationFn: async () => {
-      const body = data?.gps?.enabled ? await getPosition() : undefined;
-      return api.post('/attendance/check-out', body);
-    },
-    onSuccess: () => {
-      toast.success('Checked out — see you tomorrow!');
-      invalidate();
-    },
-    onError: (e) => toast.error(e?.message || 'Could not check out'),
-  });
-
-  const record = data?.record;
-  const workEndAt = data?.workEndAt ? new Date(data.workEndAt).getTime() : null;
-  const checkedIn = !!record?.checkInAt;
-  const checkedOut = !!record?.checkOutAt;
-
-  let elapsedMin = 0;
-  let overtimeMin = 0;
-  if (checkedIn && !checkedOut) {
-    elapsedMin = (now - new Date(record.checkInAt).getTime()) / 60000;
-    overtimeMin = workEndAt ? Math.max(0, (now - workEndAt) / 60000) : 0;
-  } else if (checkedOut) {
-    elapsedMin = record.workedMinutes;
-    overtimeMin = record.overtimeMinutes;
-  }
-
   const status = effectiveStatus(record);
-
-  // Check-out stays locked for a short while after check-in (leadership sets the
-  // minutes in Settings). This is what stops the classic mishap: on a slow phone the
-  // check-in takes a few seconds, the person thinks it didn't work, taps again — and
-  // by then the very same button says "Check out".
-  const cooldownMin = data?.settings?.checkOutCooldownMinutes ?? 30;
-  const cooldownLeftMs =
-    checkedIn && !checkedOut && cooldownMin > 0
-      ? new Date(record.checkInAt).getTime() + cooldownMin * 60000 - now
-      : 0;
-  const inCooldown = cooldownLeftMs > 0;
-
-  // Would this check-in (right now) be late? → ask for an optional reason first.
-  const lateThreshold = data?.workStartAt
-    ? new Date(data.workStartAt).getTime() + (data.settings?.graceMinutes || 0) * 60000
-    : null;
-  const wouldBeLate = !checkedIn && lateThreshold != null && now > lateThreshold;
 
   const onCheckIn = () => {
     if (wouldBeLate) setLateOpen(true);
@@ -158,7 +72,12 @@ export function CheckInCard() {
   const submitLate = () => {
     const reason = lateCategory || lateNote.trim() ? { category: lateCategory, note: lateNote.trim() } : undefined;
     setLateOpen(false);
-    checkInMut.mutate(reason);
+    checkInMut.mutate(reason, {
+      onSuccess: () => {
+        setLateCategory('');
+        setLateNote('');
+      },
+    });
   };
 
   return (

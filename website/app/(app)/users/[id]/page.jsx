@@ -46,6 +46,12 @@ function daysAgo(n) {
   d.setDate(d.getDate() - n);
   return localYMD(d);
 }
+/** 1st of the current calendar month — "Month" means July, not the last 30 days. */
+function monthStart() {
+  const d = new Date();
+  d.setDate(1);
+  return localYMD(d);
+}
 function fmtDate(ymd) {
   if (!ymd) return '—';
   return new Date(`${ymd}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -60,9 +66,12 @@ function prettyAction(a) {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+// "This month" is the calendar month so far (1 Jul → today), which is what people
+// mean when they ask how someone did this month. The others are rolling windows,
+// and their labels say so.
 const PRESETS = [
-  { key: 'week', label: 'Week', days: 7 },
-  { key: 'month', label: 'Month', days: 30 },
+  { key: 'week', label: 'Last 7 days', days: 7 },
+  { key: 'month', label: 'This month', calendarMonth: true },
   { key: 'quarter', label: '90 days', days: 90 },
   { key: 'year', label: 'Year', days: 365 },
 ];
@@ -76,12 +85,12 @@ export default function UserDossierPage() {
   const allowed = !!user && can(user, 'viewEveryone');
 
   const [preset, setPreset] = React.useState('month');
-  const [from, setFrom] = React.useState(daysAgo(29));
+  const [from, setFrom] = React.useState(monthStart());
   const [to, setTo] = React.useState(daysAgo(0));
 
   const applyPreset = (p) => {
     setPreset(p.key);
-    setFrom(daysAgo(p.days - 1));
+    setFrom(p.calendarMonth ? monthStart() : daysAgo(p.days - 1));
     setTo(daysAgo(0));
   };
 

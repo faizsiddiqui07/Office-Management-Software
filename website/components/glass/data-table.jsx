@@ -40,6 +40,15 @@ export function DataTable({
   const [sorting, setSorting] = React.useState([]);
   const [globalFilter, setGlobalFilter] = React.useState('');
 
+  // The rows-per-page menu offers exactly `pageSizeOptions` — a caller's own
+  // pageSize is never bolted on, or odd values like 12 and 15 leak into the menu.
+  // Snap the starting size to the closest offered one so the control always shows
+  // a real selection.
+  const startSize = React.useMemo(() => {
+    if (pageSizeOptions.includes(pageSize)) return pageSize;
+    return pageSizeOptions.reduce((best, n) => (Math.abs(n - pageSize) < Math.abs(best - pageSize) ? n : best), pageSizeOptions[0]);
+  }, [pageSize, pageSizeOptions]);
+
   const table = useReactTable({
     data,
     columns,
@@ -50,18 +59,14 @@ export function DataTable({
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
-    initialState: { pagination: { pageSize } },
+    initialState: { pagination: { pageSize: startSize } },
   });
 
   const rows = table.getRowModel().rows;
   const totalRows = table.getFilteredRowModel().rows.length;
 
-  // Rows-per-page options (always include the current size so the value shows).
   const currentSize = table.getState().pagination.pageSize;
-  const sizeOptions = React.useMemo(
-    () => [...new Set([...pageSizeOptions, pageSize])].sort((a, b) => a - b),
-    [pageSizeOptions, pageSize],
-  );
+  const sizeOptions = React.useMemo(() => [...pageSizeOptions].sort((a, b) => a - b), [pageSizeOptions]);
   // Show the pager/size controls once there's more data than the smallest option.
   const showPager = totalRows > sizeOptions[0] || table.getPageCount() > 1;
 

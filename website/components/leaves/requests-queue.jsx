@@ -23,7 +23,7 @@ import { LeaveDetailDialog } from './leave-detail-dialog';
 
 export function RequestsQueue() {
   const qc = useQueryClient();
-  const [statusFilter, setStatusFilter] = React.useState('PENDING');
+  const [statusFilter, setStatusFilter] = React.useState('ALL'); // show the whole queue first, not just pending
   const [viewing, setViewing] = React.useState(null); // row-click detail
   const [note, setNote] = React.useState('');
 

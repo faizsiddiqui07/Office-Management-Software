@@ -15,8 +15,9 @@ import { StatusBadge } from '@/components/glass/status-badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select';
 
-const LIMIT = 30;
+const PAGE_SIZES = [25, 50, 75, 100];
 
 function fmtWhen(iso) {
   const d = new Date(iso);
@@ -40,17 +41,18 @@ export default function ActivityPage() {
   const [from, setFrom] = React.useState('');
   const [to, setTo] = React.useState('');
   const [page, setPage] = React.useState(1);
+  const [limit, setLimit] = React.useState(PAGE_SIZES[0]);
 
-  // Reset to first page whenever a filter changes.
-  React.useEffect(() => setPage(1), [action, from, to]);
+  // Reset to first page whenever a filter (or the page size) changes.
+  React.useEffect(() => setPage(1), [action, from, to, limit]);
 
-  const query = new URLSearchParams({ page: String(page), limit: String(LIMIT) });
+  const query = new URLSearchParams({ page: String(page), limit: String(limit) });
   if (action.trim()) query.set('action', action.trim());
   if (from) query.set('from', from);
   if (to) query.set('to', to);
 
   const { data, isLoading, isFetching } = useQuery({
-    queryKey: ['audit', action, from, to, page],
+    queryKey: ['audit', action, from, to, page, limit],
     queryFn: () => api.get(`/audit?${query.toString()}`),
     enabled: allowed,
     placeholderData: keepPreviousData,
@@ -67,7 +69,7 @@ export default function ActivityPage() {
 
   const logs = data?.logs ?? [];
   const total = data?.total ?? 0;
-  const pages = Math.max(1, Math.ceil(total / LIMIT));
+  const pages = Math.max(1, Math.ceil(total / limit));
 
   return (
     <div className="space-y-8">
@@ -124,6 +126,21 @@ export default function ActivityPage() {
             </div>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/50 px-5 py-3 text-sm">
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground">Rows</span>
+              <Select value={String(limit)} onValueChange={(v) => setLimit(Number(v))}>
+                <SelectTrigger className="h-8 w-[4.5rem] bg-background/50">
+                  <span className="tabular-nums">{limit}</span>
+                </SelectTrigger>
+                <SelectContent>
+                  {PAGE_SIZES.map((n) => (
+                    <SelectItem key={n} value={String(n)}>
+                      {n}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <span className="text-muted-foreground">Page {page} of {pages}{isFetching ? ' · updating…' : ''}</span>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>

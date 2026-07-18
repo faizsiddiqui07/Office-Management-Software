@@ -27,6 +27,7 @@ import { formatMoney, categoryLabel } from '@/lib/expense';
 import { formatDuration } from '@/lib/time';
 import { LEAVE_TYPE_LABELS } from '@/lib/leave';
 import { Button } from '@/components/ui/button';
+import { QuickAttendanceAction } from '@/components/attendance/quick-attendance-action';
 import { PageHeader } from '@/components/glass/page-header';
 import { GlassCard } from '@/components/glass/glass-card';
 import { GlassPanel } from '@/components/glass/glass-panel';
@@ -153,11 +154,8 @@ export default function DashboardPage() {
 
       {/* Quick actions */}
       <div className="flex flex-wrap gap-2.5">
-        {can(user, 'markAttendance') ? (
-          <QuickAction href="/attendance" icon={Clock} primary>
-            {today?.record?.checkInAt && !today?.record?.checkOutAt ? 'Check out' : 'Check in'}
-          </QuickAction>
-        ) : null}
+        {/* Marks attendance right here — same rules as the Attendance page card. */}
+        {can(user, 'markAttendance') ? <QuickAttendanceAction /> : null}
         {can(user, 'applyLeave') ? (
           <QuickAction href="/leaves" icon={CalendarPlus}>Apply leave</QuickAction>
         ) : null}
