@@ -68,6 +68,10 @@ export async function ensureRoleManagerExists() {
   return repaired;
 }
 
+// When this container last loaded roles, and how long that stays trusted.
+let loadedAt = 0;
+const FRESH_MS = 30_000;
+
 /** (Re)load all roles into the in-memory cache. */
 export async function loadRoles() {
   const docs = await Role.find();
@@ -82,6 +86,25 @@ export async function loadRoles() {
   cache = map;
   labels = lbl;
   ranks = rnk;
+  loadedAt = Date.now();
+  return cache.size;
+}
+
+/**
+ * Keep this container's cache usable in a multi-instance (Lambda) deployment.
+ *
+ * Every instance holds its OWN copy, filled at boot and refreshed only when THAT
+ * instance mutates a role. So a role created on instance A is unknown to instance B
+ * until B reloads — which made a brand-new role randomly fail with "Invalid role",
+ * or briefly resolve to no permissions / a raw key as its label, depending on which
+ * instance happened to serve the request.
+ *
+ * Pass `unknownKey` to force an immediate reload when a key isn't cached (exactly the
+ * just-created-role case); otherwise it reloads only when the cache has gone stale.
+ */
+export async function ensureRolesFresh(unknownKey) {
+  const missing = unknownKey && !cache.has(unknownKey);
+  if (missing || Date.now() - loadedAt > FRESH_MS) await loadRoles();
   return cache.size;
 }
 
