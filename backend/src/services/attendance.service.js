@@ -159,6 +159,24 @@ export async function checkOut(user, meta, coords) {
   }
 
   const settings = await Setting.getSingleton();
+
+  // Cool-down guard: a slow phone can make someone tap again after checking in — by
+  // then the same button reads "Check out" — and they'd check themselves straight out.
+  // The UI hides this behind a countdown; enforce it here too so a stale screen,
+  // a queued tap or a direct call can't slip through.
+  const cooldownMin = settings.checkOutCooldownMinutes ?? 30;
+  if (cooldownMin > 0) {
+    const remainMs = cooldownMin * 60000 - (now.getTime() - new Date(record.checkInAt).getTime());
+    if (remainMs > 0) {
+      const mins = Math.ceil(remainMs / 60000);
+      throw httpError(
+        409,
+        'CHECKOUT_TOO_SOON',
+        `You can check out in ${mins} minute${mins > 1 ? 's' : ''} — this guard stops accidental check-outs right after checking in.`,
+      );
+    }
+  }
+
   const geoMeta = verifyGeofence(settings.gpsAttendance, coords);
   const sched = effectiveSchedule(user, settings); // part-time overtime counts past its own end
   const { workedMinutes, overtimeMinutes } = computeWork(record.checkInAt, now, day, sched.workEnd);
@@ -216,6 +234,7 @@ export async function getTodayPayload(user) {
       workEnd: sched.workEnd,
       graceMinutes: sched.graceMinutes,
       timezone: settings.timezone,
+      checkOutCooldownMinutes: settings.checkOutCooldownMinutes ?? 30,
     },
     gps: {
       enabled: !!(

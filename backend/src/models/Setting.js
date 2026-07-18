@@ -15,6 +15,10 @@ const settingSchema = new mongoose.Schema(
     workStart: { type: String, default: '10:00' },
     workEnd: { type: String, default: '18:00' },
     graceMinutes: { type: Number, default: 0 },
+    // Minutes after check-in during which check-out stays locked. Stops the common
+    // mishap where a slow phone makes someone tap again — the button has already
+    // flipped to "Check out" — and they instantly check themselves out. 0 = off.
+    checkOutCooldownMinutes: { type: Number, default: 30 },
     // Day-of-week numbers that are weekends (0 = Sunday … 6 = Saturday).
     weekendDays: { type: [Number], default: [0] },
     annualLeaveQuota: { type: Number, default: 18 },

@@ -23,6 +23,7 @@ export const updateSettingsSchema = z.object({
   workStart: hm.optional(),
   workEnd: hm.optional(),
   graceMinutes: z.coerce.number().int().min(0).max(180).optional(),
+  checkOutCooldownMinutes: z.coerce.number().int().min(0).max(480).optional(),
   weekendDays: z.array(z.coerce.number().int().min(0).max(6)).optional(),
   annualLeaveQuota: z.coerce.number().int().min(0).max(365).optional(),
   currency: z.string().min(1).max(8).optional(),
