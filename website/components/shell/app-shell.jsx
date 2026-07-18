@@ -11,6 +11,7 @@ import { AnnouncementPopup } from '@/components/announcements/announcement-popup
 import { BirthdayPopup } from '@/components/calendar/birthday-popup';
 import { PwaRegister } from '@/components/pwa/pwa-register';
 import { DocumentTitle } from './document-title';
+import { UpdatePrompt } from './update-prompt';
 
 /**
  * Auth guard + shell for all /(app) routes. Redirects to /login when
@@ -48,6 +49,7 @@ export function AppShell({ children }) {
   return (
     <div className="relative min-h-dvh">
       <DocumentTitle />
+      <UpdatePrompt />
       <AppSidebar user={user} />
       <div className="lg:pl-64">
         <Topbar user={user} />
