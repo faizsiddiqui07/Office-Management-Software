@@ -12,7 +12,6 @@ const expenseSchema = new mongoose.Schema(
     paymentMethod: { type: String, enum: ['CASH', 'CARD', 'UPI', 'BANK_TRANSFER', 'OTHER'], default: 'CASH' },
     vendor: { type: String, default: '' },
     notes: { type: String, default: '' },
-    receiptUrl: { type: String, default: '' },
     addedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   },
   { timestamps: true },

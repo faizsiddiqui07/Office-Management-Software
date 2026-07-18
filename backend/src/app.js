@@ -4,7 +4,6 @@ import helmet from 'helmet';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import morgan from 'morgan';
-import path from 'node:path';
 
 import { connectDB } from './config/db.js';
 import { apiRouter } from './routes/index.js';
@@ -33,9 +32,6 @@ app.use(cookieParser());
 app.use(express.json({ limit: '12mb' })); // headroom for base64 logo + background uploads
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
-
-/* ── Static: uploaded files (expense receipts, later phases) ── */
-app.use('/uploads', express.static(path.resolve(process.cwd(), 'uploads')));
 
 /* ── API routes ──────────────────────────────────────────── */
 app.use('/api', apiRouter);

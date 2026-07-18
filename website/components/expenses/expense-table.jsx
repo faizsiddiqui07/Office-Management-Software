@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Paperclip, Pencil, Search, Trash2 } from 'lucide-react';
+import { Pencil, Search, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { DataTable } from '@/components/glass/data-table';
 import { StatusBadge } from '@/components/glass/status-badge';
@@ -22,8 +22,6 @@ import { DateRange } from '@/components/ui/date-range';
 import { ExpenseDialog } from './add-expense-dialog';
 import { formatMoney, categoryLabel, PAYMENT_LABELS, PAYMENT_METHODS, todayYMD } from '@/lib/expense';
 import { formatYMD } from '@/lib/leave';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
 export function ExpenseTable({ canManage = true }) {
   const qc = useQueryClient();
@@ -105,17 +103,6 @@ export function ExpenseTable({ canManage = true }) {
         header: '',
         cell: ({ row }) => (
           <div className="flex items-center justify-end gap-0.5">
-            {row.original.receiptUrl ? (
-              <a
-                href={`${API_BASE}${row.original.receiptUrl}`}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex size-8 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground"
-                aria-label="View receipt"
-              >
-                <Paperclip className="size-4" />
-              </a>
-            ) : null}
             {canManage ? (
               <>
                 <Button variant="ghost" size="icon" onClick={() => setEditing(row.original)} aria-label="Edit">

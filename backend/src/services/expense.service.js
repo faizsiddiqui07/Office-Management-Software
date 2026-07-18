@@ -12,7 +12,7 @@ function escapeRegex(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-export async function createExpense(user, data, receiptUrl) {
+export async function createExpense(user, data) {
   const expense = await Expense.create({
     title: data.title,
     amount: data.amount,
@@ -23,14 +23,13 @@ export async function createExpense(user, data, receiptUrl) {
     paymentMethod: data.paymentMethod || 'CASH',
     vendor: data.vendor || '',
     notes: data.notes || '',
-    receiptUrl: receiptUrl || '',
     addedBy: user._id,
   });
   await expense.populate('addedBy', 'name');
   return expense.toJSON();
 }
 
-export async function updateExpense(id, data, receiptUrl) {
+export async function updateExpense(id, data) {
   const expense = await Expense.findById(id);
   if (!expense) throw httpError(404, 'NOT_FOUND', 'Expense not found');
 
@@ -41,7 +40,6 @@ export async function updateExpense(id, data, receiptUrl) {
     expense.dateYMD = data.dateYMD;
     expense.date = companyDayFromYMD(data.dateYMD);
   }
-  if (receiptUrl) expense.receiptUrl = receiptUrl;
 
   await expense.save();
   await expense.populate('addedBy', 'name');

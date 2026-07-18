@@ -15,10 +15,6 @@ function handleErr(res, err, next) {
   return next(err);
 }
 
-function receiptUrlOf(req) {
-  return req.file ? `/uploads/${req.file.filename}` : '';
-}
-
 export async function meta(_req, res, next) {
   try {
     const settings = await Setting.getSingleton();
@@ -77,7 +73,7 @@ export async function exportCsv(req, res, next) {
 export async function create(req, res, next) {
   try {
     const body = createExpenseSchema.parse(req.body);
-    const expense = await svc.createExpense(req.user, body, receiptUrlOf(req));
+    const expense = await svc.createExpense(req.user, body);
     await audit({ actor: req.user._id, action: 'expense.create', entityType: 'Expense', entityId: expense.id, meta: { amount: expense.amount, category: expense.category } });
     res.status(201).json(ok({ expense }));
   } catch (err) {
@@ -88,7 +84,7 @@ export async function create(req, res, next) {
 export async function update(req, res, next) {
   try {
     const body = updateExpenseSchema.parse(req.body);
-    const expense = await svc.updateExpense(req.params.id, body, receiptUrlOf(req));
+    const expense = await svc.updateExpense(req.params.id, body);
     await audit({ actor: req.user._id, action: 'expense.update', entityType: 'Expense', entityId: req.params.id });
     res.json(ok({ expense }));
   } catch (err) {

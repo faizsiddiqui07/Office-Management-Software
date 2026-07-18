@@ -36,7 +36,6 @@ export function ExpenseDialog({ expense, open: openProp, onOpenChange }) {
   const [paymentMethod, setPaymentMethod] = React.useState('CASH');
   const [vendor, setVendor] = React.useState('');
   const [notes, setNotes] = React.useState('');
-  const [receipt, setReceipt] = React.useState(null);
 
   React.useEffect(() => {
     if (!open) return;
@@ -47,19 +46,11 @@ export function ExpenseDialog({ expense, open: openProp, onOpenChange }) {
     setPaymentMethod(expense?.paymentMethod || 'CASH');
     setVendor(expense?.vendor || '');
     setNotes(expense?.notes || '');
-    setReceipt(null);
   }, [open, expense, categories]);
 
   const mut = useMutation({
     mutationFn: () => {
-      const base = { title, amount: rupeesToPaise(amount), category, dateYMD: date, paymentMethod, vendor, notes };
-      let payload = base;
-      if (receipt) {
-        const fd = new FormData();
-        Object.entries(base).forEach(([k, v]) => fd.append(k, String(v)));
-        fd.append('receipt', receipt);
-        payload = fd;
-      }
+      const payload = { title, amount: rupeesToPaise(amount), category, dateYMD: date, paymentMethod, vendor, notes };
       return isEdit ? api.put(`/expenses/${expense.id}`, payload) : api.post('/expenses', payload);
     },
     onSuccess: () => {
@@ -157,17 +148,6 @@ export function ExpenseDialog({ expense, open: openProp, onOpenChange }) {
         <div className="space-y-1.5">
           <Label htmlFor="ex-notes">Notes</Label>
           <Textarea id="ex-notes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional…" className="bg-background/50" />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="ex-receipt">Receipt (optional)</Label>
-          <Input
-            id="ex-receipt"
-            type="file"
-            accept="image/*,application/pdf"
-            onChange={(e) => setReceipt(e.target.files?.[0] || null)}
-            className="bg-background/50 file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-2 file:py-1 file:text-xs"
-          />
-          {isEdit && expense.receiptUrl ? <p className="text-xs text-muted-foreground">A receipt is already attached — upload to replace it.</p> : null}
         </div>
       </div>
     </AppDialog>
