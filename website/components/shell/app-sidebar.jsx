@@ -3,12 +3,14 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { navItemsFor } from '@/lib/permissions';
+import { useNavBadges } from '@/lib/badges';
 import { cn } from '@/lib/utils';
 import { Brand } from './brand';
 
 export function AppSidebar({ user }) {
   const pathname = usePathname();
   const items = navItemsFor(user);
+  const hasDot = useNavBadges();
 
   return (
     <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col p-4 lg:flex">
@@ -35,7 +37,12 @@ export function AppSidebar({ user }) {
               >
                 <Icon className="size-[18px]" />
                 <span className="flex-1">{item.label}</span>
-                {active ? <span className="size-1.5 rounded-full bg-primary" /> : null}
+                {/* Something new here that hasn't been opened yet. */}
+                {hasDot(item.href) ? (
+                  <span className="size-2 rounded-full bg-destructive ring-2 ring-destructive/25" aria-label="New" />
+                ) : active ? (
+                  <span className="size-1.5 rounded-full bg-primary" />
+                ) : null}
               </Link>
             );
           })}

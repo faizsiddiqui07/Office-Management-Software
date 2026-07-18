@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { Menu } from 'lucide-react';
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from '@/components/ui/sheet';
 import { navItemsFor } from '@/lib/permissions';
+import { useNavBadges } from '@/lib/badges';
 import { cn } from '@/lib/utils';
 import { Brand } from './brand';
 
@@ -17,6 +18,7 @@ export function MobileSidebar({ user }) {
   const pathname = usePathname();
   const [open, setOpen] = React.useState(false);
   const items = navItemsFor(user);
+  const hasDot = useNavBadges();
 
   // Close the drawer whenever the route changes.
   React.useEffect(() => {
@@ -65,7 +67,11 @@ export function MobileSidebar({ user }) {
                 >
                   <Icon className="size-[18px]" />
                   <span className="flex-1">{item.label}</span>
-                  {active ? <span className="size-1.5 rounded-full bg-primary" /> : null}
+                  {hasDot(item.href) ? (
+                    <span className="size-2 rounded-full bg-destructive ring-2 ring-destructive/25" aria-label="New" />
+                  ) : active ? (
+                    <span className="size-1.5 rounded-full bg-primary" />
+                  ) : null}
                 </Link>
               );
             })}
