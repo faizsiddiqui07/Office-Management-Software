@@ -160,13 +160,6 @@ function RosterSection({ data }) {
 
 function DuesSection({ data }) {
   const d = data.dues;
-  const cols = [
-    { id: 'name', header: 'Person', accessorFn: (r) => `${r.name} ${r.employeeId} ${roleName(r)}`, cell: ({ row }) => <span className="font-medium">{row.original.name}</span> },
-    { id: 'id', header: 'ID', accessorFn: (r) => r.employeeId, cell: ({ row }) => <span className="text-sm tabular-nums text-muted-foreground">{row.original.employeeId}</span> },
-    { id: 'role', header: 'Role', accessorFn: (r) => roleName(r), cell: ({ row }) => <StatusBadge tone="primary" dot={false}>{roleName(row.original)}</StatusBadge> },
-    { id: 'pending', header: 'Pending', accessorFn: (r) => r.pending ?? 0, cell: ({ row }) => <span className="font-medium tabular-nums text-destructive">{row.original.pending ? formatMoney(row.original.pending) : '—'}</span> },
-    { id: 'advance', header: 'Advance', accessorFn: (r) => r.advance ?? 0, cell: ({ row }) => <span className="tabular-nums text-muted-foreground">{row.original.advance ? formatMoney(row.original.advance) : '—'}</span> },
-  ];
   return (
     <ReportSection icon={HandCoins} title="Dues" meta={`${formatMoney(d.totalPending)} pending`}>
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
@@ -174,14 +167,15 @@ function DuesSection({ data }) {
         <span>Owing: <span className="font-medium text-foreground">{d.owingCount}</span></span>
         <span>Advance: <span className="font-medium text-foreground">{formatMoney(d.totalAdvance)}</span></span>
       </div>
-      {d.people.length ? (
-        <DataTable columns={cols} data={d.people} searchPlaceholder="Search people…" pageSize={8} emptyMessage="No dues." />
-      ) : (
-        <p className="rounded-lg bg-foreground/[0.03] p-3 text-sm text-muted-foreground ring-1 ring-border/50">No outstanding dues.</p>
-      )}
+      {/* Deliberately no per-person table: what someone owes is between them and the
+          office. Each person sees their own dues, entry by entry, in their report. */}
+      <p className="rounded-lg bg-foreground/[0.03] p-3 text-sm text-muted-foreground ring-1 ring-border/50">
+        Individual balances are private — each person sees their own in their report. Manage them on the Dues page.
+      </p>
     </ReportSection>
   );
 }
+
 
 /**
  * Shown when the selected period hasn't finished yet (e.g. a yearly report taken

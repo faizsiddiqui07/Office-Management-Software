@@ -40,11 +40,19 @@ export function computePeriod(type, dateYMD, range) {
     return { from: dateYMD, to: dateYMD, label: niceDate(dateYMD) };
   }
   if (type === 'weekly') {
-    const dow = d.getUTCDay(); // 0=Sun
-    const toMonday = dow === 0 ? -6 : 1 - dow;
-    const mon = new Date(d.getTime() + toMonday * 86400000);
-    const sun = new Date(mon.getTime() + 6 * 86400000);
-    return { from: ymdOf(mon), to: ymdOf(sun), label: `${niceDate(ymdOf(mon))} – ${niceDate(ymdOf(sun))}` };
+    // Weeks are counted within the month — 1–7, 8–14, 15–21, 22–28, then whatever is
+    // left. Calendar (Mon–Sun) weeks straddle month ends, so a "weekly" report for
+    // early July would open on 29 June and read as an arbitrary window; anchoring to
+    // the month keeps every report lined up with the month it belongs to.
+    const y = d.getUTCFullYear();
+    const mo = d.getUTCMonth();
+    const day = d.getUTCDate();
+    const lastDay = new Date(Date.UTC(y, mo + 1, 0)).getUTCDate();
+    const startDay = Math.floor((day - 1) / 7) * 7 + 1;
+    const endDay = Math.min(startDay + 6, lastDay);
+    const from = `${y}-${pad(mo + 1)}-${pad(startDay)}`;
+    const to = `${y}-${pad(mo + 1)}-${pad(endDay)}`;
+    return { from, to, label: `${niceDate(from)} – ${niceDate(to)}` };
   }
   if (type === 'monthly') {
     const y = d.getUTCFullYear();
@@ -235,21 +243,15 @@ export async function buildReport(type, dateYMD, range) {
   };
 
   // ── Dues ledger (company-wide) ────────────────────────────
+  // Totals only. What a person owes or has taken as an advance is their own business,
+  // so the company report no longer names anyone — each person sees their own dues,
+  // entry by entry, in their own report. The Dues page stays the place to actually
+  // administer them.
   const duesSection = {
     currency: settings.currency,
     totalPending: dues.totalPending,
     totalAdvance: dues.totalAdvance,
     owingCount: dues.owingCount,
-    people: dues.people
-      .filter((p) => p.pending > 0 || p.advance > 0)
-      .map((p) => ({
-        name: p.person.name,
-        employeeId: p.person.employeeId,
-        role: p.person.role,
-        roleLabel: roleLabel(p.person.role),
-        pending: p.pending,
-        advance: p.advance,
-      })),
   };
 
   return {

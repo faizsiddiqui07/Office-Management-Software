@@ -286,26 +286,14 @@ function rosterSection(d, accent) {
 }
 
 function companyDuesSection(d, accent) {
-  const headers = [
-    { label: 'Person', w: '36%' },
-    { label: 'ID', w: '16%' },
-    { label: 'Role', w: '20%' },
-    { label: 'Pending', w: '14%', align: 'right' },
-    { label: 'Advance', w: '14%', align: 'right' },
-  ];
-  const rows = d.dues.people.map((p) => [
-    p.name,
-    p.employeeId,
-    cap(p.role),
-    { text: p.pending ? money(p.pending) : '—', color: p.pending ? STATUS_COLOR.ABSENT : undefined },
-    p.advance ? money(p.advance) : '—',
-  ]);
+  // Totals only — the report deliberately doesn't name who owes what. A PDF gets
+  // forwarded and printed, so an individual's dues must not travel inside it.
   return E(
     View,
     { key: 'dues' },
     sectionTitle('Dues ledger', accent),
     E(Text, { style: styles.muted }, `Outstanding: ${money(d.dues.totalPending)}  ·  Advances held: ${money(d.dues.totalAdvance)}  ·  ${d.dues.owingCount} owing`),
-    rows.length ? table(headers, rows) : E(Text, { style: styles.empty }, 'Everyone is settled — no pending dues.'),
+    E(Text, { style: styles.empty }, 'Individual balances are private — each person sees their own in their report.'),
   );
 }
 
