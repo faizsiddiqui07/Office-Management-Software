@@ -3,6 +3,7 @@ import { LeaveBalance } from '../models/LeaveBalance.js';
 import { Attendance } from '../models/Attendance.js';
 import { User } from '../models/User.js';
 import { Setting } from '../models/Setting.js';
+import { joinedYMD } from '../lib/joining.js';
 import { notify } from '../models/Notification.js';
 import { can } from '../lib/permissions.js';
 import { rolesWithPermission } from '../lib/roles.js';
@@ -23,18 +24,40 @@ function httpError(status, code, message) {
   return e;
 }
 
+/**
+ * Leave is earned month by month (the yearly quota spread over 12), so somebody who
+ * starts part-way through the leave year earns only the months they're actually here
+ * for. Anyone already employed when the year began gets the full quota — how long
+ * before that they joined makes no difference, because the quota resets every 1 April.
+ *
+ * Leave year `year` runs 1 April `year` → 31 March `year + 1`.
+ */
+export function quotaForJoiner(joinedYMD, year, annualQuota) {
+  if (!joinedYMD) return annualQuota;
+  const joinYear = Number(joinedYMD.slice(0, 4));
+  const joinMonth = Number(joinedYMD.slice(5, 7));
+  // Months elapsed from the April this leave year started (Apr = 0 … Mar = 11).
+  const sinceApril = (joinYear - year) * 12 + (joinMonth - 4);
+  const monthsHere = Math.max(0, Math.min(12, 12 - sinceApril));
+  if (monthsHere >= 12) return annualQuota; // already here when the year began
+  // Round to the nearest half day — the accrual itself is 1.5/month.
+  return Math.round(((monthsHere * annualQuota) / 12) * 2) / 2;
+}
+
 export async function getOrCreateBalance(userId, year, session = null) {
   let bal = await LeaveBalance.findOne({ user: userId, year }).session(session);
   if (!bal) {
     const settings = await Setting.getSingleton();
+    const user = await User.findById(userId).select('dateOfJoining').session(session);
+    const quota = quotaForJoiner(joinedYMD(user), year, settings.annualLeaveQuota);
     const [created] = await LeaveBalance.create(
       [
         {
           user: userId,
           year,
-          totalQuota: settings.annualLeaveQuota,
+          totalQuota: quota,
           used: 0,
-          remaining: settings.annualLeaveQuota,
+          remaining: quota,
           overtimeMinutes: 0,
         },
       ],
