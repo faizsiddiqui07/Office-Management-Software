@@ -25,6 +25,9 @@ const taskSchema = new mongoose.Schema(
     approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }, // assigner who approved it
     rejectionReason: { type: String, default: '' }, // why the assigner last sent it back
     dueYMD: { type: String, default: '' }, // optional deadline (YYYY-MM-DD)
+    // When the assignee first opened the task and read it — the delivered/read
+    // distinction, so the person who assigned it knows it actually landed.
+    seenAt: { type: Date, default: null },
     completedAt: { type: Date, default: null },
     completedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }, // who actually did the work
   },

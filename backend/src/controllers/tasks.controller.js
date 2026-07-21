@@ -59,6 +59,15 @@ export async function setStatus(req, res, next) {
   }
 }
 
+export async function seen(req, res, next) {
+  try {
+    const task = await svc.markSeen(req.user, req.params.id);
+    res.json(ok({ task }));
+  } catch (err) {
+    handleErr(res, err, next);
+  }
+}
+
 export async function review(req, res, next) {
   try {
     const { approve, reason } = reviewTaskSchema.parse(req.body);

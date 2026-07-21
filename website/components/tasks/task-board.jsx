@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Check, CheckCircle2, ClipboardList, Clock, Download, FolderOpen, ListTodo, Pencil, Search, Send, ThumbsUp, Trash2, Undo2, UserRound, Users, X } from 'lucide-react';
+import { Check, CheckCheck, CheckCircle2, ClipboardList, Clock, Download, FolderOpen, ListTodo, Pencil, Search, Send, ThumbsUp, Trash2, Undo2, UserRound, Users, X } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -118,6 +118,32 @@ function ApprovalState({ task, className }) {
   return null;
 }
 
+/**
+ * Read receipt for delegated work — the difference between "sent" and "actually read",
+ * so the person who assigned it isn't left guessing. Wording flips depending on which
+ * side is looking: the assigner learns it was seen, the assignee is reassured that the
+ * assigner knows.
+ */
+function SeenState({ task, myId }) {
+  if (!task.assignedBy) return null; // a personal note has nobody to report to
+  const mine = task.owner?.id === myId;
+  if (task.seenAt) {
+    return (
+      <span className="inline-flex items-center gap-1 text-primary" title={`Seen ${fmtDate(task.seenAt)}`}>
+        <CheckCheck className="size-3.5" />
+        {mine ? 'You’ve seen this' : `Seen ${fmtDate(task.seenAt)}`}
+      </span>
+    );
+  }
+  // Only the assigner benefits from knowing it hasn't been opened yet.
+  if (mine) return null;
+  return (
+    <span className="inline-flex items-center gap-1">
+      <Check className="size-3.5" /> Delivered · not opened yet
+    </span>
+  );
+}
+
 /** Personal / history task row — tap the row for full details, the circle to complete. */
 function TaskRow({ task, myId, canToggle, onToggle, onEdit, onDelete, onOpen }) {
   const done = task.status === 'DONE';
@@ -178,6 +204,7 @@ function TaskRow({ task, myId, canToggle, onToggle, onEdit, onDelete, onOpen }) 
           {task.requiresApproval && !done && !awaiting ? <span className="inline-flex items-center gap-1 text-primary"><ThumbsUp className="size-3" /> Needs approval</span> : null}
           {done && task.completedAt ? <span className="text-success">Done {fmtDate(task.completedAt)}{task.completedBy && task.completedBy.id !== myId ? ` · by ${task.completedBy.name}` : ''}</span> : null}
           {task.siblings?.length ? <SiblingProgress siblings={task.siblings} /> : null}
+          <SeenState task={task} myId={myId} />
           <ApprovalState task={task} />
         </div>
       </div>
@@ -200,7 +227,7 @@ function TaskRow({ task, myId, canToggle, onToggle, onEdit, onDelete, onOpen }) 
 }
 
 /** A date-grouped list of a person's tasks (inside the folder dialog). */
-function DatedTaskList({ tasks, dateKey, ascending = false, onEdit, onDelete, onOpen, onToggle, canToggle = false, allowEdit = () => true, allowDelete = () => true }) {
+function DatedTaskList({ tasks, myId, dateKey, ascending = false, onEdit, onDelete, onOpen, onToggle, canToggle = false, allowEdit = () => true, allowDelete = () => true }) {
   const groups = React.useMemo(() => {
     const map = new Map();
     for (const t of tasks) {
@@ -268,6 +295,7 @@ function DatedTaskList({ tasks, dateKey, ascending = false, onEdit, onDelete, on
                     {t.dueYMD ? <span className={cn(overdue && 'font-medium text-destructive')}>Due {fmtDate(t.dueYMD)}</span> : null}
                     {done && t.completedAt ? <span className="text-success">Done {fmtDate(t.completedAt)}{t.completedBy?.name ? ` · by ${t.completedBy.name}` : ''}</span> : null}
                     {t.siblings?.length ? <SiblingProgress siblings={t.siblings} /> : null}
+                    <SeenState task={t} myId={myId} />
                     <ApprovalState task={t} />
                   </div>
                 </div>
@@ -293,7 +321,7 @@ function DatedTaskList({ tasks, dateKey, ascending = false, onEdit, onDelete, on
 }
 
 /** A person "folder": name, progress, and (on click) their pending/completed tasks date-wise. */
-function PersonFolder({ folder, onEdit, onDelete, onOpen, onToggle, canToggle = false, allowEdit = () => true, allowDelete = () => true }) {
+function PersonFolder({ folder, myId, onEdit, onDelete, onOpen, onToggle, canToggle = false, allowEdit = () => true, allowDelete = () => true }) {
   const [open, setOpen] = React.useState(false);
   const pct = folder.total ? Math.round((folder.done / folder.total) * 100) : 0;
   return (
@@ -334,13 +362,13 @@ function PersonFolder({ folder, onEdit, onDelete, onOpen, onToggle, canToggle = 
             <h3 className="flex items-center gap-2 text-sm font-semibold">
               <ListTodo className="size-4 text-warning" /> Pending ({folder.pending})
             </h3>
-            <DatedTaskList tasks={folder.pendingTasks} dateKey={(t) => t.dueYMD || t.createdAt} ascending onEdit={onEdit} onDelete={onDelete} onOpen={onOpen} onToggle={onToggle} canToggle={canToggle} allowEdit={allowEdit} allowDelete={allowDelete} />
+            <DatedTaskList myId={myId} tasks={folder.pendingTasks} dateKey={(t) => t.dueYMD || t.createdAt} ascending onEdit={onEdit} onDelete={onDelete} onOpen={onOpen} onToggle={onToggle} canToggle={canToggle} allowEdit={allowEdit} allowDelete={allowDelete} />
           </section>
           <section className="space-y-2">
             <h3 className="flex items-center gap-2 text-sm font-semibold">
               <CheckCircle2 className="size-4 text-success" /> Completed ({folder.done})
             </h3>
-            <DatedTaskList tasks={folder.doneTasks} dateKey={(t) => t.completedAt || t.createdAt} onEdit={onEdit} onDelete={onDelete} onOpen={onOpen} onToggle={onToggle} canToggle={canToggle} allowEdit={allowEdit} allowDelete={allowDelete} />
+            <DatedTaskList myId={myId} tasks={folder.doneTasks} dateKey={(t) => t.completedAt || t.createdAt} onEdit={onEdit} onDelete={onDelete} onOpen={onOpen} onToggle={onToggle} canToggle={canToggle} allowEdit={allowEdit} allowDelete={allowDelete} />
           </section>
         </div>
       </AppDialog>
@@ -476,6 +504,19 @@ function TaskDetailDialog({ view, myId, onClose, onToggle, onEdit, onDelete, onA
             {task.siblings?.length ? (
               <Row label="Team">
                 <SiblingProgress siblings={task.siblings} />
+              </Row>
+            ) : null}
+            {task.assignedBy ? (
+              <Row label="Read">
+                {task.seenAt ? (
+                  <span className="inline-flex items-center gap-1.5 text-primary">
+                    <CheckCheck className="size-3.5" /> Seen {fmtDate(task.seenAt)}
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+                    <Check className="size-3.5" /> Not opened yet
+                  </span>
+                )}
               </Row>
             ) : null}
             <Row label="Due date">{task.dueYMD ? fmtDate(task.dueYMD) : '—'}</Row>
@@ -691,6 +732,19 @@ export function TaskBoard() {
     onError: (e) => toast.error(e?.message || 'Could not submit your review'),
   });
 
+  // Opening a task you were given is what counts as reading it — the server ignores
+  // everyone else and only records the first time, so this can fire freely.
+  const seenMut = useMutation({
+    mutationFn: (id) => api.patch(`/tasks/${id}/seen`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['tasks'] }),
+    onError: () => {}, // a read receipt is never worth interrupting someone for
+  });
+  const openTask = (view) => {
+    setViewing(view);
+    const t = view?.task;
+    if (t && !t.seenAt && t.assignedBy && t.owner?.id === user?.id) seenMut.mutate(t.id);
+  };
+
   const delMut = useMutation({
     mutationFn: (id) => api.delete(`/tasks/${id}`),
     onSuccess: () => {
@@ -824,7 +878,7 @@ export function TaskBoard() {
                       folder={f}
                       onEdit={(x) => setEditing(x)}
                       onDelete={(x) => setDeleting(x)}
-                      onOpen={(x) => setViewing({ task: x, canToggle: false, allowEdit: true, allowDelete: true, assignerView: true, batchCount: batchCountOf(x) })}
+                      onOpen={(x) => openTask({ task: x, canToggle: false, allowEdit: true, allowDelete: true, assignerView: true, batchCount: batchCountOf(x) })}
                     />
                   ))}
                 </div>
@@ -859,7 +913,7 @@ export function TaskBoard() {
                         onToggle={(x) => toggleMut.mutate(x)}
                         onEdit={(x) => setEditing(x)}
                         onDelete={(x) => setDeleting(x)}
-                        onOpen={(x) => setViewing({ task: x, canToggle: true, allowEdit: canMgr(x), allowDelete: canMgr(x), assignerView: false })}
+                        onOpen={(x) => openTask({ task: x, canToggle: true, allowEdit: canMgr(x), allowDelete: canMgr(x), assignerView: false })}
                       />
                     ))}
                   </div>
@@ -876,6 +930,7 @@ export function TaskBoard() {
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                       {mine.folders.map((f) => (
                         <PersonFolder
+                          myId={user?.id}
                           key={f.id}
                           folder={f}
                           canToggle
@@ -884,7 +939,7 @@ export function TaskBoard() {
                           onToggle={(x) => toggleMut.mutate(x)}
                           onEdit={(x) => setEditing(x)}
                           onDelete={(x) => setDeleting(x)}
-                          onOpen={(x) => setViewing({ task: x, canToggle: true, allowEdit: false, allowDelete: false, assignerView: false })}
+                          onOpen={(x) => openTask({ task: x, canToggle: true, allowEdit: false, allowDelete: false, assignerView: false })}
                         />
                       ))}
                     </div>
@@ -911,7 +966,7 @@ export function TaskBoard() {
                   onToggle={(x) => toggleMut.mutate(x)}
                   onEdit={(x) => setEditing(x)}
                   onDelete={(x) => setDeleting(x)}
-                  onOpen={(x) => setViewing({ task: x, canToggle: true, allowEdit: canMgr(x), allowDelete: canMgr(x), assignerView: false })}
+                  onOpen={(x) => openTask({ task: x, canToggle: true, allowEdit: canMgr(x), allowDelete: canMgr(x), assignerView: false })}
                 />
               ))}
               {(data?.total ?? 0) > tasks.length ? (

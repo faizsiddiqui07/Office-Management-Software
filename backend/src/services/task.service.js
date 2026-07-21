@@ -251,6 +251,25 @@ export async function reviewTask(actor, id, approve, reason) {
   return populated(task);
 }
 
+/**
+ * The assignee has opened and read a task they were given. Recorded once, the first
+ * time — a "read receipt" so the person who assigned it can tell the difference
+ * between work that was delivered and work that was actually seen.
+ *
+ * Only the person it was assigned TO can mark it, and only on delegated work: marking
+ * your own note as read would mean nothing. Silent no-op otherwise, since this fires
+ * from simply opening a task and must never interrupt anyone.
+ */
+export async function markSeen(actor, id) {
+  const task = await Task.findById(id);
+  if (!task) throw httpError(404, 'NOT_FOUND', 'Task not found');
+  const isOwner = String(task.owner) === String(actor._id);
+  if (!isOwner || !task.assignedBy || task.seenAt) return populated(task);
+  task.seenAt = new Date();
+  await task.save();
+  return populated(task);
+}
+
 export async function updateTask(actor, id, data) {
   const task = await Task.findById(id);
   if (!task) throw httpError(404, 'NOT_FOUND', 'Task not found');
