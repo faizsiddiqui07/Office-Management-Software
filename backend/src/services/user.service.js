@@ -155,7 +155,29 @@ export async function updateUser(actor, id, data) {
   // The joining date decides which periods this person appears in at all, so it has to
   // be correctable — an account created late for someone who started earlier would
   // otherwise hide their real history for good.
-  if (data.dateOfJoining !== undefined) user.dateOfJoining = companyDayFromYMD(data.dateOfJoining);
+  if (data.dateOfJoining !== undefined) {
+    const wasYMD = ymdInTz(user.dateOfJoining || new Date());
+    user.dateOfJoining = companyDayFromYMD(data.dateOfJoining);
+    const nowYMD = ymdInTz(user.dateOfJoining);
+    // Correcting the date should correct the leave it earns, otherwise an account
+    // created late leaves the person short for the rest of the year. Only touch a
+    // quota that still matches what the old date produced — a figure leadership set by
+    // hand is a deliberate exception and must survive. `used` is never recalculated.
+    if (nowYMD !== wasYMD) {
+      const settings = await Setting.getSingleton();
+      const year = leaveYearOf(nowYMD);
+      const bal = await LeaveBalance.findOne({ user: user._id, year });
+      if (bal) {
+        const wasExpected = quotaForJoiner(wasYMD, year, settings.annualLeaveQuota);
+        const nowExpected = quotaForJoiner(nowYMD, year, settings.annualLeaveQuota);
+        if (bal.totalQuota === wasExpected && nowExpected !== wasExpected) {
+          bal.totalQuota = nowExpected;
+          bal.remaining = nowExpected - bal.used;
+          await bal.save();
+        }
+      }
+    }
+  }
 
   if (data.taskAssign !== undefined) {
     const mode = ['NONE', 'ALL', 'SELECTED'].includes(data.taskAssign.mode) ? data.taskAssign.mode : 'NONE';

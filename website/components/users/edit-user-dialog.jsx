@@ -78,10 +78,17 @@ export function EditUserDialog({ user: target, open, onOpenChange }) {
     queryFn: () => api.get(`/users/${target.id}/leave-balance`),
     enabled: open && canManage,
   });
+  // Keep what was loaded so we only send figures leadership actually edited. Sending
+  // the untouched values back would immediately overwrite the quota the server just
+  // recalculated from a corrected joining date.
+  const loadedBal = React.useRef({ quota: '', used: '' });
   React.useEffect(() => {
     if (balData?.balance) {
-      setQuota(String(balData.balance.totalQuota ?? ''));
-      setUsed(String(balData.balance.used ?? ''));
+      const q = String(balData.balance.totalQuota ?? '');
+      const u = String(balData.balance.used ?? '');
+      loadedBal.current = { quota: q, used: u };
+      setQuota(q);
+      setUsed(u);
     }
   }, [balData]);
 
@@ -103,8 +110,8 @@ export function EditUserDialog({ user: target, open, onOpenChange }) {
       });
       if (canManage) {
         const payload = {};
-        if (quota !== '') payload.totalQuota = Number(quota);
-        if (used !== '') payload.used = Number(used);
+        if (quota !== '' && quota !== loadedBal.current.quota) payload.totalQuota = Number(quota);
+        if (used !== '' && used !== loadedBal.current.used) payload.used = Number(used);
         if (payload.totalQuota !== undefined || payload.used !== undefined) {
           await api.patch(`/users/${target.id}/leave-balance`, payload);
         }
