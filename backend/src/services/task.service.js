@@ -43,21 +43,28 @@ export async function assignableUsers(actor) {
     .map((u) => ({ id: u.id, name: u.name, designation: u.designation || '', role: u.role, roleLabel: roleLabel(u.role) }));
 }
 
+/** Everyone in the office, for tagging — anyone can be a colleague on a task. */
+export async function taggableUsers(actor) {
+  const users = await User.find({ isActive: true, _id: { $ne: actor._id } }).select('name designation role').sort({ name: 1 });
+  return users.map((u) => ({ id: u.id, name: u.name, designation: u.designation || '', role: u.role, roleLabel: roleLabel(u.role) }));
+}
+
 /**
- * Validate & normalise a list of collaborator ids the actor wants to tag on their
- * own task. Reuses the delegation ACL — you can only tag people you may assign
- * work to. Drops self, dedupes, and rejects the whole set if any id isn't allowed.
+ * Validate & normalise a list of colleague ids the actor wants to tag on their own
+ * task. Deliberately NOT the delegation ACL: tagging says "this person is working on
+ * this with me", which is a fact about who is involved, not an instruction — so anyone
+ * in the office can be tagged, while handing work TO someone still needs assign access.
+ * Drops self, dedupes, and rejects the whole set if an id isn't a real active person.
  */
 async function resolveCollaborators(actor, ids) {
   if (!Array.isArray(ids) || !ids.length) return [];
   const uniq = [...new Set(ids.map(String))].filter((id) => id !== String(actor._id));
   if (!uniq.length) return [];
   const users = await User.find({ _id: { $in: uniq }, isActive: true });
-  const allowed = users.filter((u) => canAssignTo(actor, u));
-  if (allowed.length !== uniq.length) {
-    throw httpError(403, 'FORBIDDEN', 'You can only tag people you’re allowed to assign work to');
+  if (users.length !== uniq.length) {
+    throw httpError(404, 'NOT_FOUND', 'One of the people you tagged was not found');
   }
-  return allowed.map((u) => u._id);
+  return users.map((u) => u._id);
 }
 
 /**

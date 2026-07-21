@@ -22,9 +22,9 @@ export function TaskDialog({ task, open: openProp, onOpenChange, batchCount = 0 
   const open = openProp !== undefined ? openProp : openInternal;
   const setOpen = onOpenChange || setOpenInternal;
 
-  // Only people who may delegate work can tag teammates / reassign.
-  const ta = user?.taskAssign || {};
-  const canTag = ta.mode === 'ALL' || (ta.mode === 'SELECTED' && (ta.users || []).length > 0);
+  // Note: tagging a colleague on your own task needs no delegation access — saying who
+  // is working with you isn't handing them work. Only reassigning does, and that's
+  // enforced by the server plus the assignable list it returns.
 
   // Editing a task I delegated to someone (not my own, not a shared task).
   const assignerId = task?.assignedBy?.id || task?.assignedBy || null;
@@ -59,9 +59,11 @@ export function TaskDialog({ task, open: openProp, onOpenChange, batchCount = 0 
   const { data: assignData } = useQuery({
     queryKey: ['tasks', 'assignable'],
     queryFn: () => api.get('/tasks/assignable'),
-    enabled: open && canTag,
+    enabled: open,
   });
-  const people = assignData?.users ?? [];
+  // Reassigning offers only people you may delegate to; tagging offers the whole office.
+  const assignablePeople = assignData?.users ?? [];
+  const taggablePeople = assignData?.taggable ?? [];
 
   const toggleCollab = (id) => setCollaborators((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   const toggleAssignee = (id) => setAssignees((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -79,8 +81,9 @@ export function TaskDialog({ task, open: openProp, onOpenChange, batchCount = 0 
         body.requiresApproval = requiresApproval;
         if (reassigned) body.assignTo = assignees; // reconcile people (content applies to all)
         else if (showBatchSwitch) body.applyToAll = applyToAll;
-      } else if (canTag) {
-        body.collaborators = collaborators; // personal task — tag teammates
+      } else {
+        // Anyone can say who's working with them — tagging isn't handing out work.
+        body.collaborators = collaborators;
       }
       return isEdit ? api.patch(`/tasks/${task.id}`, body) : api.post('/tasks', body);
     },
@@ -145,9 +148,9 @@ export function TaskDialog({ task, open: openProp, onOpenChange, batchCount = 0 
         {isAssignedByMe ? (
           <div className="space-y-1.5">
             <Label className="flex items-center gap-1.5"><UserRoundPlus className="size-3.5" /> Assigned to</Label>
-            {people.length ? (
+            {assignablePeople.length ? (
               <div className="flex flex-wrap gap-1.5">
-                {people.map((p) => {
+                {assignablePeople.map((p) => {
                   const on = assignees.includes(p.id);
                   return (
                     <button
@@ -216,14 +219,14 @@ export function TaskDialog({ task, open: openProp, onOpenChange, batchCount = 0 
         ) : null}
 
         {/* Tag teammates onto a personal task (whoever finishes it, it's done for everyone). */}
-        {canTag && !isAssignedByMe ? (
+        {!isAssignedByMe ? (
           <div className="space-y-1.5">
             <Label className="flex items-center gap-1.5">
               <Users className="size-3.5" /> Also working on this (optional)
             </Label>
-            {people.length ? (
+            {taggablePeople.length ? (
               <div className="flex flex-wrap gap-1.5">
-                {people.map((p) => {
+                {taggablePeople.map((p) => {
                   const on = collaborators.includes(p.id);
                   return (
                     <button

@@ -21,7 +21,10 @@ export async function summary(req, res, next) {
 
 export async function assignable(req, res, next) {
   try {
-    res.json(ok({ users: await svc.assignableUsers(req.user) }));
+    // `users` = who they may hand work TO (access-controlled).
+    // `taggable` = everyone, since tagging a colleague isn't giving them work.
+    const [users, taggable] = await Promise.all([svc.assignableUsers(req.user), svc.taggableUsers(req.user)]);
+    res.json(ok({ users, taggable }));
   } catch (err) {
     next(err);
   }
