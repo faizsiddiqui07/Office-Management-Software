@@ -1,5 +1,5 @@
 import { hashPassword } from '../lib/password.js';
-import { companyDayFromYMD } from '../lib/time.js';
+import { companyDayFromYMD, ymdInTz } from '../lib/time.js';
 import { generateEmployeeId } from '../lib/employeeId.js';
 import { generateTempPassword } from '../lib/tempPassword.js';
 import { User } from '../models/User.js';
@@ -15,6 +15,8 @@ import { AnnouncementRead } from '../models/AnnouncementRead.js';
 import { LedgerEntry } from '../models/LedgerEntry.js';
 import { Setting } from '../models/Setting.js';
 import { canAssignRole } from '../lib/permissions.js';
+import { leaveYearOf } from '../lib/leaveYear.js';
+import { quotaForJoiner } from './leave.service.js';
 
 function httpError(status, code, message) {
   const e = new Error(message);
@@ -81,17 +83,23 @@ export async function createEmployee({
     isActive: true,
   });
 
+  // Seed this year's leave balance. Two things matter here: the leave year runs
+  // April–March (the calendar year would file a January joiner under the wrong one,
+  // hiding their real balance), and someone joining part-way through only earns the
+  // months they're here for — the same rule getOrCreateBalance applies.
   const settings = await Setting.getSingleton();
-  const year = new Date().getFullYear();
+  const joinedOn = ymdInTz(user.dateOfJoining || new Date());
+  const year = leaveYearOf(joinedOn);
+  const quota = quotaForJoiner(joinedOn, year, settings.annualLeaveQuota);
   await LeaveBalance.findOneAndUpdate(
     { user: user._id, year },
     {
       $setOnInsert: {
         user: user._id,
         year,
-        totalQuota: settings.annualLeaveQuota,
+        totalQuota: quota,
         used: 0,
-        remaining: settings.annualLeaveQuota,
+        remaining: quota,
         overtimeMinutes: 0,
       },
     },
