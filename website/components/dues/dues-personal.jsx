@@ -1,5 +1,6 @@
 'use client';
 
+import * as React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowDownLeft, ArrowUpRight, CheckCircle2, HandCoins, Wallet } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -10,6 +11,7 @@ import { GlassCard } from '@/components/glass/glass-card';
 import { GlassPanel } from '@/components/glass/glass-panel';
 import { EmptyState } from '@/components/glass/empty-state';
 import { LoadingState } from '@/components/glass/skeletons';
+import { DuesEntryDetailDialog } from './dues-entry-detail-dialog';
 
 function fmtDate(iso) {
   return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -56,12 +58,16 @@ function BalanceHero({ pending, advance }) {
   );
 }
 
-function EntryRow({ e }) {
+function EntryRow({ e, onOpen }) {
   const isDue = e.kind === 'DUE';
   const paid = isDue && e.status === 'PAID';
   const partial = isDue && e.status === 'PARTIAL';
   return (
-    <div className="flex items-center gap-3 p-3">
+    <button
+      type="button"
+      onClick={() => onOpen(e)}
+      className="flex w-full items-center gap-3 rounded-xl p-3 text-left transition-colors hover:bg-foreground/5"
+    >
       <span
         className={cn(
           'flex size-9 shrink-0 items-center justify-center rounded-xl ring-1',
@@ -94,12 +100,13 @@ function EntryRow({ e }) {
         {isDue ? '−' : '+'}
         {formatMoney(e.amount)}
       </span>
-    </div>
+    </button>
   );
 }
 
 export function DuesPersonal() {
-  const { data, isLoading } = useQuery({ queryKey: ['dues', 'me'], queryFn: () => api.get('/dues/me') });
+  const { data, isLoading, isError, error } = useQuery({ queryKey: ['dues', 'me'], queryFn: () => api.get('/dues/me') });
+  const [viewing, setViewing] = React.useState(null); // ledger line opened from History
 
   return (
     <div className="space-y-8">
@@ -110,7 +117,9 @@ export function DuesPersonal() {
         description="What you owe the office admin for lunch, tea, and errands — and any advance you’ve paid."
       />
 
-      {isLoading || !data ? (
+      {isError ? (
+        <EmptyState icon={HandCoins} title="Couldn’t load your dues" description={error?.message || 'Check your connection and try again.'} />
+      ) : isLoading || !data ? (
         <LoadingState label="Loading your dues…" />
       ) : (
         <>
@@ -121,7 +130,7 @@ export function DuesPersonal() {
             {data.entries.length ? (
               <GlassCard className="divide-y divide-border/50 p-2">
                 {data.entries.map((e) => (
-                  <EntryRow key={e.id} e={e} />
+                  <EntryRow key={e.id} e={e} onOpen={setViewing} />
                 ))}
               </GlassCard>
             ) : (
@@ -130,6 +139,12 @@ export function DuesPersonal() {
           </section>
         </>
       )}
+
+      <DuesEntryDetailDialog
+        entry={viewing}
+        open={!!viewing}
+        onOpenChange={(o) => { if (!o) setViewing(null); }}
+      />
     </div>
   );
 }

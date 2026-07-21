@@ -29,6 +29,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ConfirmDialog } from '@/components/glass/confirm-dialog';
 import { DuesEntryDialog } from './dues-entry-dialog';
+import { DuesEntryDetailDialog } from './dues-entry-detail-dialog';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
@@ -51,8 +52,9 @@ function PersonDetail({ personId, onAddDue, onAddPay }) {
   const qc = useQueryClient();
   const [confirmSettle, setConfirmSettle] = React.useState(false);
   const [pendingDelete, setPendingDelete] = React.useState(null);
+  const [viewingId, setViewingId] = React.useState(null); // ledger line opened from History
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ['dues', 'person', personId],
     queryFn: () => api.get(`/dues/person/${personId}`),
     enabled: !!personId,
@@ -91,9 +93,20 @@ function PersonDetail({ personId, onAddDue, onAddPay }) {
         <p className="text-sm text-muted-foreground">Select a person to see their ledger and add a due or payment.</p>
       </GlassCard>
     );
+  // Without this an errored query sits on "Loading ledger…" forever — isLoading goes
+  // false but data stays undefined.
+  if (isError)
+    return (
+      <GlassCard className="flex min-h-[320px] items-center justify-center p-6 text-center">
+        <p className="text-sm text-muted-foreground">{error?.message || 'Couldn’t load this ledger. Try again.'}</p>
+      </GlassCard>
+    );
   if (isLoading || !data) return <GlassCard className="min-h-[320px] p-6"><LoadingState label="Loading ledger…" /></GlassCard>;
 
   const { person, pending, advance, entries } = data;
+  // Read the open line back out of the current list, so settling from inside the
+  // dialog updates what the dialog is showing instead of freezing on a stale copy.
+  const viewing = viewingId ? entries.find((x) => x.id === viewingId) || null : null;
 
   return (
     <GlassCard className="p-5">
@@ -139,7 +152,22 @@ function PersonDetail({ personId, onAddDue, onAddPay }) {
               const paid = isDue && e.status === 'PAID';
               const partial = isDue && e.status === 'PARTIAL';
               return (
-                <div key={e.id} className="group flex items-start gap-3 py-2.5">
+                /* Not a <button>: the row already holds Settle and Remove buttons and
+                   nesting them would be invalid. role + key handling gives it the same
+                   behaviour for keyboard and screen-reader users. */
+                <div
+                  key={e.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setViewing(e)}
+                  onKeyDown={(ev) => {
+                    if (ev.key === 'Enter' || ev.key === ' ') {
+                      ev.preventDefault();
+                      setViewingId(e.id);
+                    }
+                  }}
+                  className="group -mx-2 flex cursor-pointer items-start gap-3 rounded-xl px-2 py-2.5 transition-colors hover:bg-foreground/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                >
                   <span
                     className={cn(
                       'mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg ring-1',
@@ -169,7 +197,7 @@ function PersonDetail({ personId, onAddDue, onAddPay }) {
                       {isDue && e.remaining > 0 ? (
                         <button
                           type="button"
-                          onClick={() => settleEntry.mutate(e.id)}
+                          onClick={(ev) => { ev.stopPropagation(); settleEntry.mutate(e.id); }}
                           disabled={settleEntry.isPending}
                           className="text-xs font-semibold text-primary hover:underline disabled:opacity-50"
                         >
@@ -185,7 +213,7 @@ function PersonDetail({ personId, onAddDue, onAddPay }) {
                     </span>
                     <button
                       type="button"
-                      onClick={() => setPendingDelete(e)}
+                      onClick={(ev) => { ev.stopPropagation(); setPendingDelete(e); }}
                       aria-label="Remove entry"
                       className="rounded-md p-1.5 text-muted-foreground opacity-100 transition-opacity hover:text-destructive focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
                     >
@@ -200,6 +228,26 @@ function PersonDetail({ personId, onAddDue, onAddPay }) {
           <p className="py-8 text-center text-sm text-muted-foreground">No entries yet for {person.name}.</p>
         )}
       </div>
+
+      <DuesEntryDetailDialog
+        entry={viewing}
+        open={!!viewing}
+        onOpenChange={(o) => { if (!o) setViewingId(null); }}
+        footer={
+          viewing ? (
+            <>
+              {viewing.kind === 'DUE' && viewing.remaining > 0 ? (
+                <Button variant="outline" onClick={() => settleEntry.mutate(viewing.id)} disabled={settleEntry.isPending}>
+                  <CheckCheck className="size-4" /> Settle {formatMoney(viewing.remaining)}
+                </Button>
+              ) : null}
+              <Button variant="outline" onClick={() => setPendingDelete(viewing)}>
+                <Trash2 className="size-4" /> Remove
+              </Button>
+            </>
+          ) : null
+        }
+      />
 
       <ConfirmDialog
         open={confirmSettle}
@@ -230,7 +278,7 @@ function PersonDetail({ personId, onAddDue, onAddPay }) {
 
 export function DuesAdmin() {
   const { user } = useAuth();
-  const { data, isLoading } = useQuery({ queryKey: ['dues', 'overview'], queryFn: () => api.get('/dues/overview') });
+  const { data, isLoading, isError, error } = useQuery({ queryKey: ['dues', 'overview'], queryFn: () => api.get('/dues/overview') });
   const [q, setQ] = React.useState('');
   const [selectedId, setSelectedId] = React.useState(null);
   const [dueOpen, setDueOpen] = React.useState(false);
@@ -288,7 +336,9 @@ export function DuesAdmin() {
         }
       />
 
-      {isLoading || !data ? (
+      {isError ? (
+        <EmptyState icon={HandCoins} title="Couldn’t load the ledger" description={error?.message || 'Check your connection and try again.'} />
+      ) : isLoading || !data ? (
         <LoadingState label="Loading dues…" />
       ) : (
         <>
