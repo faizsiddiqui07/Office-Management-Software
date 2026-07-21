@@ -25,6 +25,13 @@ const taskSchema = new mongoose.Schema(
     approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }, // assigner who approved it
     rejectionReason: { type: String, default: '' }, // why the assigner last sent it back
     dueYMD: { type: String, default: '' }, // optional deadline (YYYY-MM-DD)
+    // Forwarding: a manager passes work down but stays on the hook for it. The copy
+    // they were given stays in their list and only closes once this child does —
+    // through their own approval if they asked for one, then their assigner's.
+    forwardedFrom: { type: mongoose.Schema.Types.ObjectId, ref: 'Task', default: null, index: true },
+    // The very first person who set this work in motion, carried down the chain so a
+    // forwarded task can always say where it originally came from.
+    originalAssignedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     // When the assignee first opened the task and read it — the delivered/read
     // distinction, so the person who assigned it knows it actually landed.
     seenAt: { type: Date, default: null },

@@ -25,6 +25,12 @@ export const updateTaskSchema = z.object({
 
 export const statusSchema = z.object({ status: z.enum(['PENDING', 'DONE']) });
 
+export const forwardTaskSchema = z.object({
+  assignTo: z.string().min(1, 'Pick a person'),
+  requiresApproval: z.boolean().optional(),
+  notes: z.string().max(2000).optional(),
+});
+
 export const reviewTaskSchema = z.object({
   approve: z.boolean(),
   reason: z.string().max(1000).optional().default(''),

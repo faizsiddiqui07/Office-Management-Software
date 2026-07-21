@@ -151,6 +151,7 @@ async function populated(task) {
   await task.populate('collaborators', 'name');
   await task.populate('completedBy', 'name');
   await task.populate('approvedBy', 'name');
+  await task.populate('originalAssignedBy', 'name');
   return task.toJSON();
 }
 
@@ -219,6 +220,12 @@ export async function setStatus(actor, id, status) {
     console.error('bonus hook (setStatus) failed', e?.message);
   }
 
+  // Finishing forwarded work settles the copy it came from — through that person's
+  // own approval if one was asked for. Best-effort: their chain must never block this.
+  if (task.status === 'DONE') {
+    try { await settleParent(task); } catch (e) { console.error('forward settle failed', e?.message); }
+  }
+
   return populated(task);
 }
 
@@ -237,12 +244,16 @@ export async function reviewTask(actor, id, approve, reason) {
   if (approve) {
     task.status = 'DONE';
     task.completedAt = new Date();
-    task.completedBy = task.owner; // the assignee did the work
+    // Normally the assignee did it. For forwarded work the real doer was already
+    // recorded further down the chain, so never overwrite it.
+    task.completedBy = task.completedBy || task.owner;
     task.approvedBy = actor._id;
     task.rejectionReason = '';
     await task.save();
     await notify({ user: task.owner, type: 'TASK_DONE', title: `${actor.name} approved your task`, message: task.title, link: '/todo' });
     try { await onAssignedTaskDone(task); } catch (e) { console.error('bonus hook (approve) failed', e?.message); }
+    // An approval can be the last link needed to settle the copy above it.
+    try { await settleParent(task); } catch (e) { console.error('forward settle failed', e?.message); }
   } else {
     task.submittedAt = null; // back to plain pending, with the reason attached
     task.rejectionReason = String(reason || '').trim();
@@ -294,6 +305,114 @@ export async function markSeenBulk(actor, ids) {
     { $set: { seenAt: new Date() } },
   );
   return { seen: res.modifiedCount || 0 };
+}
+
+/**
+ * Pass work you were given further down, without dropping it. The copy you were
+ * assigned stays in your list — you're still answerable for it to whoever gave it to
+ * you — and it closes only when the person you forwarded to finishes AND every
+ * approval up the chain is satisfied (see settleParent).
+ *
+ * Forwarding is delegating, so it needs the same access as assigning. The original
+ * source is carried down so the new owner can always see where the work came from.
+ */
+export async function forwardTask(actor, id, { assignTo, requiresApproval, notes } = {}) {
+  const parent = await Task.findById(id);
+  if (!parent) throw httpError(404, 'NOT_FOUND', 'Task not found');
+  if (String(parent.owner) !== String(actor._id)) {
+    throw httpError(403, 'FORBIDDEN', 'You can only forward a task that was given to you');
+  }
+  if (parent.status === 'DONE') throw httpError(409, 'ALREADY_DONE', 'This task is already done');
+
+  const target = await User.findById(assignTo);
+  if (!target || !target.isActive) throw httpError(404, 'NOT_FOUND', 'That person was not found');
+  if (!canAssignTo(actor, target)) {
+    throw httpError(403, 'FORBIDDEN', 'You don’t have access to assign work to this person — ask leadership to grant it');
+  }
+  const already = await Task.findOne({ forwardedFrom: parent._id, owner: target._id, status: { $ne: 'DONE' } });
+  if (already) throw httpError(409, 'ALREADY_FORWARDED', 'You have already forwarded this task to them');
+
+  const child = await Task.create({
+    title: parent.title,
+    notes: notes !== undefined ? notes : parent.notes,
+    dueYMD: parent.dueYMD,
+    owner: target._id,
+    assignedBy: actor._id,
+    forwardedFrom: parent._id,
+    originalAssignedBy: parent.originalAssignedBy || parent.assignedBy || null,
+    requiresApproval: !!requiresApproval,
+    status: 'PENDING',
+  });
+
+  await notify({
+    user: target._id,
+    type: 'TASK_ASSIGNED',
+    title: `${actor.name} forwarded a task to you`,
+    message: parent.dueYMD ? `${parent.title} (due ${parent.dueYMD})` : parent.title,
+    link: '/todo',
+  });
+  return populated(child);
+}
+
+/**
+ * A forwarded task just closed — carry that up to the copy it came from.
+ *
+ * The parent doesn't simply close: if its own assigner asked for approval it goes to
+ * them for review first, exactly as if the parent's owner had finished it themselves.
+ * So a chain settles one link at a time, honouring each approval that was switched on
+ * and skipping the ones that weren't. Credit for the work stays with whoever actually
+ * did it, all the way up.
+ */
+async function settleParent(childTask, depth = 0) {
+  if (!childTask.forwardedFrom || depth > 10) return; // depth guard: never loop a chain
+  const parent = await Task.findById(childTask.forwardedFrom);
+  if (!parent || parent.status === 'DONE') return;
+
+  // Any other live forward of the same parent still outstanding? Then it isn't finished.
+  const siblingOpen = await Task.findOne({
+    forwardedFrom: parent._id,
+    _id: { $ne: childTask._id },
+    status: { $ne: 'DONE' },
+  });
+  if (siblingOpen) return;
+
+  const doer = childTask.completedBy || childTask.owner;
+
+  if (parent.requiresApproval && parent.assignedBy) {
+    // Their assigner wanted to approve — hand it over rather than closing it.
+    if (!parent.submittedAt) {
+      parent.submittedAt = new Date();
+      parent.rejectionReason = '';
+      // Record who actually did it now, so approving it later can't rewrite the credit
+      // to the person who merely forwarded it.
+      parent.completedBy = doer;
+      await parent.save();
+      await notify({
+        user: parent.assignedBy,
+        type: 'TASK_ASSIGNED',
+        title: 'Forwarded work is ready for your approval',
+        message: parent.title,
+        link: '/todo?tab=assigned',
+      });
+    }
+    return;
+  }
+
+  parent.status = 'DONE';
+  parent.completedAt = new Date();
+  parent.completedBy = doer; // credit stays with whoever actually did the work
+  await parent.save();
+  try { await onAssignedTaskDone(parent); } catch (e) { console.error('bonus hook (forward settle) failed', e?.message); }
+  if (parent.assignedBy) {
+    await notify({
+      user: parent.assignedBy,
+      type: 'TASK_DONE',
+      title: 'A task you assigned is done',
+      message: parent.title,
+      link: '/todo?tab=assigned',
+    });
+  }
+  await settleParent(parent, depth + 1);
 }
 
 export async function updateTask(actor, id, data) {
@@ -456,7 +575,7 @@ export async function listTasks(actor, { scope = 'mine', status, search, period,
 
   const skip = (page - 1) * limit;
   const [tasks, total] = await Promise.all([
-    Task.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).populate('owner', 'name').populate('assignedBy', 'name').populate('collaborators', 'name').populate('completedBy', 'name').populate('approvedBy', 'name'),
+    Task.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).populate('owner', 'name').populate('assignedBy', 'name').populate('collaborators', 'name').populate('completedBy', 'name').populate('approvedBy', 'name').populate('originalAssignedBy', 'name'),
     Task.countDocuments(filter),
   ]);
 
@@ -481,6 +600,28 @@ export async function listTasks(actor, { scope = 'mine', status, search, period,
     for (const t of out) {
       if (t.assignBatch && byBatch.has(t.assignBatch)) {
         t.siblings = byBatch.get(t.assignBatch).filter((s) => s.id !== t.id);
+      }
+    }
+  }
+
+  // Who a task was passed on to, so a forwarded copy shows where the work now sits
+  // rather than looking like it's been sitting untouched.
+  const parentIds = out.filter((t) => !t.forwardedFrom).map((t) => t.id);
+  if (parentIds.length) {
+    const kids = await Task.find({ forwardedFrom: { $in: parentIds } })
+      .select('forwardedFrom owner status submittedAt requiresApproval')
+      .populate('owner', 'name');
+    if (kids.length) {
+      const byParent = new Map();
+      for (const k of kids) {
+        const key = String(k.forwardedFrom);
+        const arr = byParent.get(key) || [];
+        arr.push({ id: k.id, owner: k.owner ? { id: k.owner.id, name: k.owner.name } : null, status: k.status, awaitingApproval: k.awaitingApproval });
+        byParent.set(key, arr);
+      }
+      for (const t of out) {
+        const kidsOf = byParent.get(String(t.id));
+        if (kidsOf) t.forwardedTo = kidsOf;
       }
     }
   }

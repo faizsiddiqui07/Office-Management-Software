@@ -1,5 +1,5 @@
 import { ok, fail } from '../lib/apiResponse.js';
-import { createTaskSchema, updateTaskSchema, statusSchema, listTasksQuerySchema, reviewTaskSchema } from '../validators/tasks.validators.js';
+import { createTaskSchema, updateTaskSchema, statusSchema, listTasksQuerySchema, reviewTaskSchema, forwardTaskSchema } from '../validators/tasks.validators.js';
 import * as svc from '../services/task.service.js';
 import { Setting } from '../models/Setting.js';
 import { audit } from '../models/AuditLog.js';
@@ -75,6 +75,17 @@ export async function seenBulk(req, res, next) {
   try {
     const result = await svc.markSeenBulk(req.user, req.body?.ids);
     res.json(ok(result));
+  } catch (err) {
+    handleErr(res, err, next);
+  }
+}
+
+export async function forward(req, res, next) {
+  try {
+    const body = forwardTaskSchema.parse(req.body);
+    const task = await svc.forwardTask(req.user, req.params.id, body);
+    await audit({ actor: req.user._id, action: 'task.forward', entityType: 'Task', entityId: req.params.id, meta: { to: body.assignTo } });
+    res.status(201).json(ok({ task }));
   } catch (err) {
     handleErr(res, err, next);
   }

@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Check, CheckCircle2, ClipboardList, Clock, Download, Eye, EyeOff, FolderOpen, ListTodo, Pencil, Search, Send, ThumbsUp, Trash2, Undo2, UserRound, Users, X } from 'lucide-react';
+import { Check, CheckCircle2, ClipboardList, Clock, Download, Eye, EyeOff, FolderOpen, Forward, ListTodo, Pencil, Search, Send, ThumbsUp, Trash2, Undo2, UserRound, Users, X } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/select';
 import { TaskDialog } from './task-dialog';
 import { AssignDialog } from './assign-dialog';
+import { ForwardDialog } from './forward-dialog';
 import { DateRange } from '@/components/ui/date-range';
 import { PDF_SCOPES, downloadTasksPdf, isOverdue, todayYMD } from '@/lib/task';
 
@@ -144,6 +145,30 @@ function SeenState({ task, myId }) {
   );
 }
 
+/** Where forwarded work came from and where it went — the chain stays visible so the
+ *  original request is never lost behind whoever passed it on. */
+function ForwardTrail({ task }) {
+  const origin = task.originalAssignedBy?.name;
+  const passedOn = task.forwardedTo || [];
+  if (!origin && !passedOn.length) return null;
+  return (
+    <>
+      {origin ? (
+        <span className="inline-flex items-center gap-1 text-primary" title={`Originally from ${origin}`}>
+          <Forward className="size-3" /> via {task.assignedBy?.name?.split(' ')[0]} · from {origin}
+        </span>
+      ) : null}
+      {passedOn.length ? (
+        <span className="inline-flex items-center gap-1">
+          <Forward className="size-3" /> Forwarded to{' '}
+          <span className="font-medium text-foreground">{passedOn.map((f) => f.owner?.name).filter(Boolean).join(', ')}</span>
+          {passedOn.every((f) => f.status === 'DONE') ? <span className="text-success">· done</span> : null}
+        </span>
+      ) : null}
+    </>
+  );
+}
+
 /** Personal / history task row — tap the row for full details, the circle to complete. */
 function TaskRow({ task, myId, canToggle, onToggle, onEdit, onDelete, onOpen }) {
   const done = task.status === 'DONE';
@@ -204,6 +229,7 @@ function TaskRow({ task, myId, canToggle, onToggle, onEdit, onDelete, onOpen }) 
           {task.requiresApproval && !done && !awaiting ? <span className="inline-flex items-center gap-1 text-primary"><ThumbsUp className="size-3" /> Needs approval</span> : null}
           {done && task.completedAt ? <span className="text-success">Done {fmtDate(task.completedAt)}{task.completedBy && task.completedBy.id !== myId ? ` · by ${task.completedBy.name}` : ''}</span> : null}
           {task.siblings?.length ? <SiblingProgress siblings={task.siblings} /> : null}
+          <ForwardTrail task={task} />
           <SeenState task={task} myId={myId} />
           <ApprovalState task={task} />
         </div>
@@ -380,7 +406,7 @@ function PersonFolder({ folder, myId, onEdit, onDelete, onOpen, onToggle, onExpa
 }
 
 /** Full task details — opened by tapping any task row. */
-function TaskDetailDialog({ view, myId, onClose, onToggle, onEdit, onDelete, onApprove, onReject }) {
+function TaskDetailDialog({ view, myId, onClose, onToggle, onEdit, onDelete, onApprove, onReject, onForward }) {
   const task = view?.task;
   const done = task?.status === 'DONE';
   const awaiting = task?.awaitingApproval;
@@ -427,6 +453,12 @@ function TaskDetailDialog({ view, myId, onClose, onToggle, onEdit, onDelete, onA
                 </Button>
               </div>
             ) : view.canToggle ? (
+              <>
+                {view.canForward ? (
+                  <Button variant="outline" onClick={() => onForward(task)}>
+                    <Forward className="size-4" /> Forward
+                  </Button>
+                ) : null}
               <Button variant={done || awaiting ? 'outline' : 'default'} onClick={() => onToggle(task)}>
                 {done ? (
                   <><Undo2 className="size-4" /> Mark not done</>
@@ -438,6 +470,7 @@ function TaskDetailDialog({ view, myId, onClose, onToggle, onEdit, onDelete, onA
                   <><Check className="size-4" /> Mark as done</>
                 )}
               </Button>
+              </>
             ) : (
               <Button variant="outline" onClick={onClose}>
                 Close
@@ -564,7 +597,8 @@ export function TaskBoard() {
   const [pdfBusy, setPdfBusy] = React.useState(false);
   const [deleting, setDeleting] = React.useState(null);
   const [editing, setEditing] = React.useState(null);
-  const [viewing, setViewing] = React.useState(null); // { task, canToggle, allowDelete, assignerView }
+  const [viewing, setViewing] = React.useState(null);
+  const [forwarding, setForwarding] = React.useState(null); // task being passed further down
 
   const isAssigned = tab === 'assigned';
 
@@ -770,6 +804,9 @@ export function TaskBoard() {
     reportSeen(isMine ? mine.personalPending : tasks);
   }, [tasks, mine.personalPending, isMine, isAssigned, reportSeen]);
 
+  // Work given to me that I may pass further down: still open, and I have assign access.
+  const canForwardTask = (t) => !!t?.assignedBy && t.owner?.id === user?.id && t.status !== 'DONE' && !t.awaitingApproval && canAssign;
+
   const openTask = (view) => {
     setViewing(view);
     if (view?.task) reportSeen([view.task]);
@@ -943,7 +980,7 @@ export function TaskBoard() {
                         onToggle={(x) => toggleMut.mutate(x)}
                         onEdit={(x) => setEditing(x)}
                         onDelete={(x) => setDeleting(x)}
-                        onOpen={(x) => openTask({ task: x, canToggle: true, allowEdit: canMgr(x), allowDelete: canMgr(x), assignerView: false })}
+                        onOpen={(x) => openTask({ task: x, canToggle: true, allowEdit: canMgr(x), allowDelete: canMgr(x), assignerView: false, canForward: canForwardTask(x) })}
                       />
                     ))}
                   </div>
@@ -970,7 +1007,7 @@ export function TaskBoard() {
                           onEdit={(x) => setEditing(x)}
                           onDelete={(x) => setDeleting(x)}
                           onExpand={reportSeen}
-                          onOpen={(x) => openTask({ task: x, canToggle: true, allowEdit: false, allowDelete: false, assignerView: false })}
+                          onOpen={(x) => openTask({ task: x, canToggle: true, allowEdit: false, allowDelete: false, assignerView: false, canForward: canForwardTask(x) })}
                         />
                       ))}
                     </div>
@@ -997,7 +1034,7 @@ export function TaskBoard() {
                   onToggle={(x) => toggleMut.mutate(x)}
                   onEdit={(x) => setEditing(x)}
                   onDelete={(x) => setDeleting(x)}
-                  onOpen={(x) => openTask({ task: x, canToggle: true, allowEdit: canMgr(x), allowDelete: canMgr(x), assignerView: false })}
+                  onOpen={(x) => openTask({ task: x, canToggle: true, allowEdit: canMgr(x), allowDelete: canMgr(x), assignerView: false, canForward: canForwardTask(x) })}
                 />
               ))}
               {(data?.total ?? 0) > tasks.length ? (
@@ -1040,11 +1077,19 @@ export function TaskBoard() {
           setViewing(null);
           setEditing(t);
         }}
+        onForward={(t) => {
+          setViewing(null);
+          setForwarding(t);
+        }}
         onDelete={(t) => {
           setViewing(null);
           setDeleting(t);
         }}
       />
+
+      {forwarding ? (
+        <ForwardDialog task={forwarding} open={!!forwarding} onOpenChange={(o) => (!o ? setForwarding(null) : null)} />
+      ) : null}
 
       <ConfirmDialog
         open={!!deleting}
