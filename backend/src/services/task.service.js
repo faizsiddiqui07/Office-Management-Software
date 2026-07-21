@@ -298,7 +298,7 @@ export async function markSeen(actor, id) {
  * or rewrite a timestamp.
  */
 export async function markSeenBulk(actor, ids) {
-  const list = (Array.isArray(ids) ? ids : []).filter(Boolean).slice(0, 500);
+  const list = (Array.isArray(ids) ? ids : []).filter(Boolean).slice(0, 10000);
   if (!list.length) return { seen: 0 };
   const res = await Task.updateMany(
     { _id: { $in: list }, owner: actor._id, assignedBy: { $ne: null }, seenAt: null },
@@ -328,6 +328,12 @@ export async function forwardTask(actor, id, { assignTo, requiresApproval, notes
   if (!target || !target.isActive) throw httpError(404, 'NOT_FOUND', 'That person was not found');
   if (!canAssignTo(actor, target)) {
     throw httpError(403, 'FORBIDDEN', 'You don’t have access to assign work to this person — ask leadership to grant it');
+  }
+  // Never hand the work back up the line it came down. Sending it to the person who
+  // gave it to you (or to whoever started it) isn't delegating, it's a loop.
+  const upstream = [parent.assignedBy, parent.originalAssignedBy].filter(Boolean).map(String);
+  if (upstream.includes(String(target._id))) {
+    throw httpError(403, 'FORBIDDEN', 'You can’t forward this back to the person who gave it to you');
   }
   const already = await Task.findOne({ forwardedFrom: parent._id, owner: target._id, status: { $ne: 'DONE' } });
   if (already) throw httpError(409, 'ALREADY_FORWARDED', 'You have already forwarded this task to them');
@@ -489,7 +495,12 @@ export async function updateTask(actor, id, data) {
     let changedCount = 0;
     for (const mm of editSet) {
       let changed = false;
-      for (const f of contentFields) if (patch[f] !== undefined && mm[f] !== patch[f]) { mm[f] = patch[f]; changed = true; }
+      let contentChanged = false;
+      for (const f of contentFields) if (patch[f] !== undefined && mm[f] !== patch[f]) { mm[f] = patch[f]; changed = true; contentChanged = true; }
+      // Rewriting the work makes an old receipt a lie — "Seen 20 Jul" would refer to
+      // wording nobody has read. Clear it so it goes back to "delivered" and earns a
+      // fresh receipt the next time the assignee's list loads.
+      if (contentChanged && mm.assignedBy && mm.seenAt) mm.seenAt = null;
       if (data.requiresApproval !== undefined && mm.requiresApproval !== !!data.requiresApproval) {
         mm.requiresApproval = !!data.requiresApproval;
         // Turning the gate OFF: drop any pending submission trail so no orphaned

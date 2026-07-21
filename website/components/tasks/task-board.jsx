@@ -633,6 +633,16 @@ export function TaskBoard() {
       return api.get(`/tasks?${p.toString()}`);
     },
     placeholderData: (prev) => prev, // keep rows visible while a new search loads
+    // A read receipt arrives because of something SOMEONE ELSE did, so this view has
+    // to go and look — nothing here triggers a refetch on its own. The assigner's tab
+    // is the one sitting and waiting ("have they seen it yet?"), so only that one
+    // polls; every tab picks changes up the moment the window is focused again.
+    // (The app-wide defaults are no focus refetch and a 30s stale time — both are
+    // deliberately overridden here.)
+    refetchInterval: isAssigned ? 20_000 : false,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+    staleTime: 0,
   });
   const tasks = React.useMemo(() => data?.tasks ?? [], [data]);
 
@@ -795,14 +805,20 @@ export function TaskBoard() {
     [user?.id, seenMut],
   );
 
-  // Only what is genuinely on screen. In My tasks that's the flat list; work from
-  // several people is tucked inside per-person folders, and a collapsed folder shows
-  // no titles — reporting those as read would be a lie, so a folder reports its own
-  // tasks when it is opened (below).
+  // Everything this person's own to-do just loaded counts as delivered to them —
+  // whether it sits in the flat list or inside a per-person folder, finished or not.
+  //
+  // This used to report only `mine.personalPending`, which merges an assigner's tasks
+  // in ONLY when exactly one person has given you work (see the memo above); with two
+  // or more, their tasks stayed folded away and were reported just on expanding the
+  // folder, and completed ones never at all. That is why receipts landed on some
+  // tasks and not others. Waiting for a folder to be opened was the more literal
+  // reading of "seen", but it made the receipt unreliable, which is worse than
+  // slightly generous: a folder still shows who it's from and how much is in it.
   React.useEffect(() => {
     if (isAssigned) return; // the assigner's own view isn't "reading" anyone's task
-    reportSeen(isMine ? mine.personalPending : tasks);
-  }, [tasks, mine.personalPending, isMine, isAssigned, reportSeen]);
+    reportSeen(tasks);
+  }, [tasks, isAssigned, reportSeen]);
 
   // Work given to me that I may pass further down: still open, and I have assign access.
   const canForwardTask = (t) => !!t?.assignedBy && t.owner?.id === user?.id && t.status !== 'DONE' && !t.awaitingApproval && canAssign;
@@ -811,6 +827,16 @@ export function TaskBoard() {
     setViewing(view);
     if (view?.task) reportSeen([view.task]);
   };
+
+  // `viewing` holds the task as it was when the row was tapped. An assigner watching
+  // for a receipt sits on exactly this dialog, so a snapshot would stay frozen on
+  // "Not seen yet" however often the list behind it refreshed. Re-read the task from
+  // the current list each render and keep only the view's own flags.
+  const viewingLive = React.useMemo(() => {
+    if (!viewing?.task) return viewing;
+    const fresh = tasks.find((t) => t.id === viewing.task.id);
+    return fresh ? { ...viewing, task: fresh } : viewing;
+  }, [viewing, tasks]);
 
   const delMut = useMutation({
     mutationFn: (id) => api.delete(`/tasks/${id}`),
@@ -1057,7 +1083,7 @@ export function TaskBoard() {
       ) : null}
 
       <TaskDetailDialog
-        view={viewing}
+        view={viewingLive}
         myId={user?.id}
         onClose={() => setViewing(null)}
         onToggle={(t) => {

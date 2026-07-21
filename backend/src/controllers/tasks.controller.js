@@ -1,5 +1,5 @@
 import { ok, fail } from '../lib/apiResponse.js';
-import { createTaskSchema, updateTaskSchema, statusSchema, listTasksQuerySchema, reviewTaskSchema, forwardTaskSchema } from '../validators/tasks.validators.js';
+import { createTaskSchema, updateTaskSchema, statusSchema, listTasksQuerySchema, reviewTaskSchema, forwardTaskSchema, seenBulkSchema } from '../validators/tasks.validators.js';
 import * as svc from '../services/task.service.js';
 import { Setting } from '../models/Setting.js';
 import { audit } from '../models/AuditLog.js';
@@ -73,7 +73,8 @@ export async function seen(req, res, next) {
 
 export async function seenBulk(req, res, next) {
   try {
-    const result = await svc.markSeenBulk(req.user, req.body?.ids);
+    const { ids } = seenBulkSchema.parse(req.body ?? {});
+    const result = await svc.markSeenBulk(req.user, ids);
     res.json(ok(result));
   } catch (err) {
     handleErr(res, err, next);

@@ -28,7 +28,22 @@ export function ForwardDialog({ task, open, onOpenChange }) {
     queryFn: () => api.get('/tasks/assignable'),
     enabled: open,
   });
-  const people = data?.users ?? []; // forwarding is delegating — same access as assigning
+  // Forwarding is delegating, so it starts from the same access list as assigning —
+  // minus everyone the work has already passed through. Offering them would let it be
+  // handed straight back, or bounced between two people holding sibling copies of the
+  // same request. The server refuses the upstream ones too; this keeps them off screen.
+  const people = React.useMemo(() => {
+    const seen = new Set(
+      [
+        task?.assignedBy?.id,
+        task?.originalAssignedBy?.id,
+        ...(task?.siblings || []).map((s) => s.owner?.id),
+      ]
+        .filter(Boolean)
+        .map(String),
+    );
+    return (data?.users ?? []).filter((p) => !seen.has(String(p.id)));
+  }, [data, task]);
 
   React.useEffect(() => {
     if (!open) return;
@@ -96,7 +111,7 @@ export function ForwardDialog({ task, open, onOpenChange }) {
               })}
             </div>
           ) : (
-            <p className="text-xs text-muted-foreground">No one below you to forward to.</p>
+            <p className="text-xs text-muted-foreground">No one left to forward this to — everyone you can assign has already had it.</p>
           )}
         </div>
 

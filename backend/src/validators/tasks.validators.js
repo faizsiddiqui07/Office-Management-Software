@@ -25,6 +25,14 @@ export const updateTaskSchema = z.object({
 
 export const statusSchema = z.object({ status: z.enum(['PENDING', 'DONE']) });
 
+// Read receipts for a whole screenful at once. The ids come from a list the client
+// just rendered, so a malformed one is a bug rather than an attack — but unchecked it
+// reaches Mongo as a cast error and turns a silent background call into a 500. The cap
+// matches the list endpoint's own limit so a full to-do is never quietly truncated.
+export const seenBulkSchema = z.object({
+  ids: z.array(z.string().regex(/^[a-f\d]{24}$/i, 'Not a task id')).max(10000).optional().default([]),
+});
+
 export const forwardTaskSchema = z.object({
   assignTo: z.string().min(1, 'Pick a person'),
   requiresApproval: z.boolean().optional(),
