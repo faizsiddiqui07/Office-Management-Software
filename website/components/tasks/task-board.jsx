@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Check, CheckCheck, CheckCircle2, ClipboardList, Clock, Download, FolderOpen, ListTodo, Pencil, Search, Send, ThumbsUp, Trash2, Undo2, UserRound, Users, X } from 'lucide-react';
+import { Check, CheckCircle2, ClipboardList, Clock, Download, Eye, EyeOff, FolderOpen, ListTodo, Pencil, Search, Send, ThumbsUp, Trash2, Undo2, UserRound, Users, X } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -130,16 +130,16 @@ function SeenState({ task, myId }) {
   if (task.seenAt) {
     return (
       <span className="inline-flex items-center gap-1 text-primary" title={`Seen ${fmtDate(task.seenAt)}`}>
-        <CheckCheck className="size-3.5" />
+        <Eye className="size-3.5" />
         {mine ? 'You’ve seen this' : `Seen ${fmtDate(task.seenAt)}`}
       </span>
     );
   }
-  // Only the assigner benefits from knowing it hasn't been opened yet.
+  // Only the assigner benefits from knowing it hasn't been read yet.
   if (mine) return null;
   return (
     <span className="inline-flex items-center gap-1">
-      <Check className="size-3.5" /> Delivered · not opened yet
+      <EyeOff className="size-3.5" /> Delivered · not seen yet
     </span>
   );
 }
@@ -321,14 +321,17 @@ function DatedTaskList({ tasks, myId, dateKey, ascending = false, onEdit, onDele
 }
 
 /** A person "folder": name, progress, and (on click) their pending/completed tasks date-wise. */
-function PersonFolder({ folder, myId, onEdit, onDelete, onOpen, onToggle, canToggle = false, allowEdit = () => true, allowDelete = () => true }) {
+function PersonFolder({ folder, myId, onEdit, onDelete, onOpen, onToggle, onExpand, canToggle = false, allowEdit = () => true, allowDelete = () => true }) {
   const [open, setOpen] = React.useState(false);
   const pct = folder.total ? Math.round((folder.done / folder.total) * 100) : 0;
   return (
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          setOpen(true);
+          onExpand?.(folder.tasks); // its titles are on screen now — count them as seen
+        }}
         className="flex w-full items-center gap-3 rounded-2xl bg-foreground/[0.03] p-4 text-left ring-1 ring-border/50 transition-colors hover:bg-foreground/[0.06]"
       >
         <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-sm font-semibold text-primary ring-1 ring-primary/15">
@@ -510,11 +513,11 @@ function TaskDetailDialog({ view, myId, onClose, onToggle, onEdit, onDelete, onA
               <Row label="Read">
                 {task.seenAt ? (
                   <span className="inline-flex items-center gap-1.5 text-primary">
-                    <CheckCheck className="size-3.5" /> Seen {fmtDate(task.seenAt)}
+                    <Eye className="size-3.5" /> Seen {fmtDate(task.seenAt)}
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-1.5 text-muted-foreground">
-                    <Check className="size-3.5" /> Not opened yet
+                    <EyeOff className="size-3.5" /> Not seen yet
                   </span>
                 )}
               </Row>
@@ -732,17 +735,44 @@ export function TaskBoard() {
     onError: (e) => toast.error(e?.message || 'Could not submit your review'),
   });
 
-  // Opening a task you were given is what counts as reading it — the server ignores
-  // everyone else and only records the first time, so this can fire freely.
+  // Having a task listed in front of you counts as having seen it, so the receipt goes
+  // out for whatever the list just showed — one request for the lot, not one per task.
+  // Opening a single task marks it too, for the rare case it wasn't in a list first.
   const seenMut = useMutation({
-    mutationFn: (id) => api.patch(`/tasks/${id}/seen`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['tasks'] }),
+    mutationFn: (ids) => api.patch('/tasks/seen', { ids }),
+    onSuccess: (res) => {
+      if (res?.seen) qc.invalidateQueries({ queryKey: ['tasks'] });
+    },
     onError: () => {}, // a read receipt is never worth interrupting someone for
   });
+
+  // Remember what we've already reported this session, so a re-render or a refetch
+  // doesn't fire the same receipt again.
+  const reported = React.useRef(new Set());
+  const reportSeen = React.useCallback(
+    (list) => {
+      const ids = list
+        .filter((t) => t && !t.seenAt && t.assignedBy && t.owner?.id === user?.id && !reported.current.has(t.id))
+        .map((t) => t.id);
+      if (!ids.length) return;
+      ids.forEach((id) => reported.current.add(id));
+      seenMut.mutate(ids);
+    },
+    [user?.id, seenMut],
+  );
+
+  // Only what is genuinely on screen. In My tasks that's the flat list; work from
+  // several people is tucked inside per-person folders, and a collapsed folder shows
+  // no titles — reporting those as read would be a lie, so a folder reports its own
+  // tasks when it is opened (below).
+  React.useEffect(() => {
+    if (isAssigned) return; // the assigner's own view isn't "reading" anyone's task
+    reportSeen(isMine ? mine.personalPending : tasks);
+  }, [tasks, mine.personalPending, isMine, isAssigned, reportSeen]);
+
   const openTask = (view) => {
     setViewing(view);
-    const t = view?.task;
-    if (t && !t.seenAt && t.assignedBy && t.owner?.id === user?.id) seenMut.mutate(t.id);
+    if (view?.task) reportSeen([view.task]);
   };
 
   const delMut = useMutation({
@@ -939,6 +969,7 @@ export function TaskBoard() {
                           onToggle={(x) => toggleMut.mutate(x)}
                           onEdit={(x) => setEditing(x)}
                           onDelete={(x) => setDeleting(x)}
+                          onExpand={reportSeen}
                           onOpen={(x) => openTask({ task: x, canToggle: true, allowEdit: false, allowDelete: false, assignerView: false })}
                         />
                       ))}

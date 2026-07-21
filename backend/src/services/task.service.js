@@ -270,6 +270,25 @@ export async function markSeen(actor, id) {
   return populated(task);
 }
 
+/**
+ * The same read receipt for a whole screenful at once — seeing a task listed counts as
+ * having seen it, so the list marks everything it just showed you in one request
+ * instead of one per task.
+ *
+ * The filter is the guard: only tasks assigned TO this person, only delegated ones, and
+ * only those not already seen — so passing extra ids can never mark someone else's work
+ * or rewrite a timestamp.
+ */
+export async function markSeenBulk(actor, ids) {
+  const list = (Array.isArray(ids) ? ids : []).filter(Boolean).slice(0, 500);
+  if (!list.length) return { seen: 0 };
+  const res = await Task.updateMany(
+    { _id: { $in: list }, owner: actor._id, assignedBy: { $ne: null }, seenAt: null },
+    { $set: { seenAt: new Date() } },
+  );
+  return { seen: res.modifiedCount || 0 };
+}
+
 export async function updateTask(actor, id, data) {
   const task = await Task.findById(id);
   if (!task) throw httpError(404, 'NOT_FOUND', 'Task not found');

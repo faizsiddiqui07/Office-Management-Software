@@ -1,6 +1,6 @@
 import express from 'express';
 import { requireAuth } from '../middleware/auth.js';
-import { summary, assignable, list, create, setStatus, seen, review, update, remove, exportPdf } from '../controllers/tasks.controller.js';
+import { summary, assignable, list, create, setStatus, seen, seenBulk, review, update, remove, exportPdf } from '../controllers/tasks.controller.js';
 
 export const tasksRouter = express.Router();
 
@@ -14,6 +14,7 @@ tasksRouter.get('/assignable', assignable);
 tasksRouter.get('/export.pdf', exportPdf);
 tasksRouter.get('/', list);
 tasksRouter.post('/', create); // assigning to others is access-checked in the service
+tasksRouter.patch('/seen', seenBulk); // must precede '/:id' — otherwise "seen" is read as an id
 tasksRouter.patch('/:id/status', setStatus);
 tasksRouter.patch('/:id/seen', seen); // assignee opened it — read receipt
 tasksRouter.patch('/:id/review', review); // assigner approves/rejects a submitted task

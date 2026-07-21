@@ -68,6 +68,15 @@ export async function seen(req, res, next) {
   }
 }
 
+export async function seenBulk(req, res, next) {
+  try {
+    const result = await svc.markSeenBulk(req.user, req.body?.ids);
+    res.json(ok(result));
+  } catch (err) {
+    handleErr(res, err, next);
+  }
+}
+
 export async function review(req, res, next) {
   try {
     const { approve, reason } = reviewTaskSchema.parse(req.body);
