@@ -7,7 +7,10 @@ import { renderReportToStream, renderSelfReportToStream } from '../services/repo
 import { audit } from '../models/AuditLog.js';
 
 const TYPES = ['daily', 'weekly', 'monthly', 'yearly', 'custom'];
-const COMPANY_SECTIONS = ['attendance', 'leaves', 'expenses', 'roster', 'dues'];
+// Dues are deliberately absent: what people owe the office is between them and the
+// admin, so it never appears in a company-wide report. Each person still sees their
+// own ledger on the Dues page and in their own report.
+const COMPANY_SECTIONS = ['attendance', 'leaves', 'expenses', 'roster'];
 const SELF_SECTIONS = ['attendance', 'leaves', 'dues'];
 
 const isYMD = (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
@@ -49,7 +52,7 @@ function periodFilename(prefix, type, period) {
  */
 function sectionAccess(user) {
   const all = can(user, 'leadershipDashboard') && can(user, 'viewEveryone');
-  return { attendance: all, leaves: all, roster: all, expenses: all, dues: all };
+  return { attendance: all, leaves: all, roster: all, expenses: all };
 }
 
 export function canCompanyReports(user) {
@@ -73,7 +76,6 @@ export async function preview(req, res, next) {
     const data = await buildReport(req.params.type, dateOrToday(req.query), rangeOf(req.query));
     // Strip sections the user may not see.
     if (!access.expenses) delete data.expenses;
-    if (!access.dues) delete data.dues;
     if (!access.attendance) {
       delete data.attendance;
       delete data.leaves;

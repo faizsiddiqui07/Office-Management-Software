@@ -12,7 +12,7 @@ import { workWindowClosed } from '../lib/schedule.js';
 import { leaveYearOf } from '../lib/leaveYear.js';
 import { holidayYMDSet } from './holiday.service.js';
 import { expenseSummary } from './expense.service.js';
-import { ledgerFor, overview as duesOverview } from './dues.service.js';
+import { ledgerFor } from './dues.service.js';
 
 const pad = (n) => String(n).padStart(2, '0');
 const ymdOf = (d) => `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
@@ -103,7 +103,7 @@ export async function buildReport(type, dateYMD, range) {
   const holidaySet = await holidayYMDSet(from, to);
   const workingDays = from > elapsedTo ? 0 : countWorkingDays(from, elapsedTo, settings.weekendDays, holidaySet);
 
-  const [activeUsers, records, takenLeaves, pendingLeaves, balances, expList, expSummary, dues] = await Promise.all([
+  const [activeUsers, records, takenLeaves, pendingLeaves, balances, expList, expSummary] = await Promise.all([
     User.find({ isActive: true }).select('name employeeId role department dateOfJoining').sort({ name: 1 }),
     // Count attendance only over the window the report actually claims to cover
     // (from → asOf). Today's check-in must not land in the numerator while today is
@@ -114,7 +114,6 @@ export async function buildReport(type, dateYMD, range) {
     LeaveBalance.find({ year: leaveYearOf(from) }).populate('user', 'name employeeId'),
     Expense.find({ dateYMD: { $gte: from, $lte: to } }).sort({ dateYMD: -1 }).limit(300).populate('addedBy', 'name'),
     expenseSummary({ from, to }),
-    duesOverview(),
   ]);
 
   // Leadership don't clock in or apply for leave — keep them OUT of the attendance
@@ -242,17 +241,9 @@ export async function buildReport(type, dateYMD, range) {
     members: activeUsers.map((u) => ({ name: u.name, employeeId: u.employeeId, role: u.role, roleLabel: roleLabel(u.role), department: u.department })),
   };
 
-  // ── Dues ledger (company-wide) ────────────────────────────
-  // Totals only. What a person owes or has taken as an advance is their own business,
-  // so the company report no longer names anyone — each person sees their own dues,
-  // entry by entry, in their own report. The Dues page stays the place to actually
-  // administer them.
-  const duesSection = {
-    currency: settings.currency,
-    totalPending: dues.totalPending,
-    totalAdvance: dues.totalAdvance,
-    owingCount: dues.owingCount,
-  };
+  // No dues in the company report at all — not even totals. What the office is owed
+  // is the admin's ledger, not company reporting. Each person still sees their own
+  // entry by entry in their own report, and the Dues page administers them.
 
   return {
     scope: 'company',
@@ -273,7 +264,6 @@ export async function buildReport(type, dateYMD, range) {
     leaves,
     expenses,
     roster,
-    dues: duesSection,
   };
 }
 

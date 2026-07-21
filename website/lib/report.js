@@ -12,7 +12,6 @@ export const REPORT_SECTIONS = [
   { value: 'leaves', label: 'Leaves' },
   { value: 'expenses', label: 'Expenses' },
   { value: 'roster', label: 'Roster' },
-  { value: 'dues', label: 'Dues' },
 ];
 
 // Self-service report sections (a user's own data).

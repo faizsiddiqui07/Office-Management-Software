@@ -1,6 +1,6 @@
 'use client';
 
-import { CalendarClock, CalendarDays, Clock, HandCoins, UserCheck, UserPlus, UserX, Users, Wallet } from 'lucide-react';
+import { CalendarClock, CalendarDays, Clock, UserCheck, UserPlus, UserX, Users, Wallet } from 'lucide-react';
 import { StatCard } from '@/components/glass/stat-card';
 import { GlassCard } from '@/components/glass/glass-card';
 import { DataTable } from '@/components/glass/data-table';
@@ -158,24 +158,8 @@ function RosterSection({ data }) {
   );
 }
 
-function DuesSection({ data }) {
-  const d = data.dues;
-  return (
-    <ReportSection icon={HandCoins} title="Dues" meta={`${formatMoney(d.totalPending)} pending`}>
-      <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
-        <span>Pending: <span className="font-medium text-destructive">{formatMoney(d.totalPending)}</span></span>
-        <span>Owing: <span className="font-medium text-foreground">{d.owingCount}</span></span>
-        <span>Advance: <span className="font-medium text-foreground">{formatMoney(d.totalAdvance)}</span></span>
-      </div>
-      {/* Deliberately no per-person table: what someone owes is between them and the
-          office. Each person sees their own dues, entry by entry, in their report. */}
-      <p className="rounded-lg bg-foreground/[0.03] p-3 text-sm text-muted-foreground ring-1 ring-border/50">
-        Individual balances are private — each person sees their own in their report. Manage them on the Dues page.
-      </p>
-    </ReportSection>
-  );
-}
-
+/* No dues section here, by design: what the office is owed isn't company reporting.
+   Each person sees their own ledger on the Dues page and in their own report. */
 
 /**
  * Shown when the selected period hasn't finished yet (e.g. a yearly report taken
@@ -237,7 +221,6 @@ export function ReportPreview({ data, sections }) {
       {has('leaves') && data.leaves ? <LeavesSection data={data} /> : null}
       {has('expenses') && data.expenses ? <ExpensesSection data={data} /> : null}
       {has('roster') && data.roster ? <RosterSection data={data} /> : null}
-      {has('dues') && data.dues ? <DuesSection data={data} /> : null}
     </div>
   );
 }

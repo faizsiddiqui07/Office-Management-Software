@@ -285,26 +285,16 @@ function rosterSection(d, accent) {
   );
 }
 
-function companyDuesSection(d, accent) {
-  // Totals only — the report deliberately doesn't name who owes what. A PDF gets
-  // forwarded and printed, so an individual's dues must not travel inside it.
-  return E(
-    View,
-    { key: 'dues' },
-    sectionTitle('Dues ledger', accent),
-    E(Text, { style: styles.muted }, `Outstanding: ${money(d.dues.totalPending)}  ·  Advances held: ${money(d.dues.totalAdvance)}  ·  ${d.dues.owingCount} owing`),
-    E(Text, { style: styles.empty }, 'Individual balances are private — each person sees their own in their report.'),
-  );
-}
-
+// No dues section in the company PDF: a report gets forwarded and printed, and the
+// office ledger has no business travelling inside it. Personal reports still carry
+// the reader's own dues (selfDuesSection below).
 const COMPANY_SECTIONS = {
   attendance: attendanceSection,
   leaves: leavesSection,
   expenses: expensesSection,
   roster: rosterSection,
-  dues: companyDuesSection,
 };
-const COMPANY_ORDER = ['attendance', 'leaves', 'expenses', 'dues', 'roster'];
+const COMPANY_ORDER = ['attendance', 'leaves', 'expenses', 'roster'];
 
 function buildCompanyDoc(data, sections, logo) {
   const accent = data.company.brandColor || DEFAULT_ACCENT;
