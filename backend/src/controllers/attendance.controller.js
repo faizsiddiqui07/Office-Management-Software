@@ -140,7 +140,7 @@ export async function matrixCsv(req, res, next) {
   try {
     const month = String(req.query.month || '');
     if (!/^\d{4}-\d{2}$/.test(month)) return res.status(400).json(fail('BAD_MONTH', 'Expected month=YYYY-MM'));
-    const { days, rows } = await svc.attendanceMatrix(month);
+    const { days, rows, joinedLater } = await svc.attendanceMatrix(month);
 
     const header = [
       'Employee',
@@ -166,7 +166,20 @@ export async function matrixCsv(req, res, next) {
     ]);
     // Legend row at the bottom so the sheet is self-explanatory.
     body.push([]);
-    body.push(['Legend:', 'P present · L late · A absent · OL on leave · H weekend/holiday']);
+    body.push(['Legend:', 'P present · L late · A absent · OL on leave · H weekend/holiday · – not employed yet']);
+    // This file gets read away from the app, so it has to carry its own caveats:
+    // who was left out, and who only counts from part-way through the month.
+    const midMonth = rows.filter((r) => r.startedOn && r.startedOn > `${month}-01`);
+    if (midMonth.length) {
+      body.push([]);
+      body.push(['Joined during this month — counted from their joining date only:']);
+      midMonth.forEach((r) => body.push([r.user.name, `joined ${r.joinedYMD}`]));
+    }
+    if (joinedLater?.length) {
+      body.push([]);
+      body.push(['Not listed — joined after this month:']);
+      joinedLater.forEach((p) => body.push([p.name, `joined ${p.joinedYMD}`]));
+    }
 
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="attendance-${month}.csv"`);

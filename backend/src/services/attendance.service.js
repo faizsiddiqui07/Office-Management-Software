@@ -15,6 +15,7 @@ import {
   computeWork,
 } from '../lib/time.js';
 import { effectiveSchedule, userWeekendDays, workWindowClosed } from '../lib/schedule.js';
+import { splitByJoining, periodStartFor, joinedYMD } from '../lib/joining.js';
 import { leaveYearOf } from '../lib/leaveYear.js';
 import { onCheckIn, onCheckOut } from './bonus.service.js';
 
@@ -296,8 +297,11 @@ export async function attendanceMatrix(monthKey) {
   const holidays = await holidayYMDSet(from, to);
   const now = new Date();
 
-  const allUsers = await User.find({ isActive: true }).select('name employeeId role employmentType schedule').sort({ name: 1 });
-  const users = allUsers.filter((u) => can({ role: u.role }, 'markAttendance'));
+  const allUsers = await User.find({ isActive: true }).select('name employeeId role employmentType schedule dateOfJoining').sort({ name: 1 });
+  const roster = allUsers.filter((u) => can({ role: u.role }, 'markAttendance'));
+  // Anyone who joined after this month has no business on its sheet at all; those who
+  // joined during it keep their row, but only from the day they arrived (below).
+  const { included: users, joinedLater } = splitByJoining(roster, from, to);
   const records = await Attendance.find({
     date: { $gte: companyDayFromYMD(from), $lte: companyDayFromYMD(to) },
   });
@@ -309,8 +313,12 @@ export async function attendanceMatrix(monthKey) {
 
   const rows = users.map((u) => {
     const offDays = userWeekendDays(u, settings); // this employee's non-working weekdays
+    const startedOn = periodStartFor(u, from); // their first day here, if mid-month
     const t = { present: 0, late: 0, absent: 0, onLeave: 0, workedMinutes: 0, overtimeMinutes: 0 };
     const cells = days.map((ymd) => {
+      // Before they joined there is nothing to report — not present, not absent.
+      // A dash keeps the row aligned with the others without inventing an absence.
+      if (ymd < startedOn) return '–';
       const rec = byUserDay.get(`${u._id}|${ymd}`);
       const isOff = offDays.includes(dowOf.get(ymd)) || holidays.has(ymd);
       if (rec?.checkInAt) {
@@ -334,10 +342,10 @@ export async function attendanceMatrix(monthKey) {
       t.absent += 1;
       return 'A';
     });
-    return { user: u.toJSON(), cells, totals: t };
+    return { user: u.toJSON(), cells, totals: t, joinedYMD: joinedYMD(u), startedOn };
   });
 
-  return { monthKey, days, rows };
+  return { monthKey, days, rows, joinedLater };
 }
 
 /**
@@ -353,14 +361,19 @@ export async function attendanceOverview(ymd) {
   const isHoliday = (await holidayYMDSet(dateYMD, dateYMD)).has(dateYMD);
 
   const [allUsers, records] = await Promise.all([
-    User.find({ isActive: true }).select('name email role employeeId department employmentType schedule').sort({ name: 1 }),
+    User.find({ isActive: true }).select('name email role employeeId department employmentType schedule dateOfJoining').sort({ name: 1 }),
     Attendance.find({ date: day }),
   ]);
 
   // Only people who actually mark attendance belong in the roster. Roles without
   // `markAttendance` (e.g. CEO/leadership who don't self-track) are never counted
   // present/absent — they simply aren't part of the daily attendance view.
-  const users = allUsers.filter((u) => can({ role: u.role }, 'markAttendance'));
+  const roster = allUsers.filter((u) => can({ role: u.role }, 'markAttendance'));
+
+  // …and nobody belongs in a day they hadn't joined yet. Marking someone absent for a
+  // date before they were given access is meaningless, so they're left out entirely and
+  // reported separately, which keeps a short roster from looking like missing data.
+  const { included: users, joinedLater } = splitByJoining(roster, dateYMD, dateYMD);
 
   const now = new Date();
   const byUser = new Map(records.map((r) => [String(r.user), r]));
@@ -388,5 +401,5 @@ export async function attendanceOverview(ymd) {
     onLeave: rows.filter((r) => r.status === 'ON_LEAVE').length,
   };
 
-  return { date: ymdInTz(day), isWeekend, isHoliday, rows, summary };
+  return { date: ymdInTz(day), isWeekend, isHoliday, rows, summary, joinedLater };
 }

@@ -15,12 +15,14 @@ import {
   ShieldAlert,
   TriangleAlert,
   UserCircle,
+  UserPlus,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can, roleName } from '@/lib/permissions';
 import { AttendanceStatusBadge, attendanceStatusText } from '@/components/attendance/attendance-status-badge';
 import { formatTime, formatDuration } from '@/lib/time';
+import { formatYMD } from '@/lib/leave';
 import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/glass/page-header';
 import { GlassPanel } from '@/components/glass/glass-panel';
@@ -156,7 +158,15 @@ export default function UserDossierPage() {
           icon={UserCircle}
           description={
             u
-              ? [roleName(u), u.designation, u.department, u.employeeId && `ID ${u.employeeId}`]
+              ? [
+                  roleName(u),
+                  u.designation,
+                  u.department,
+                  u.employeeId && `ID ${u.employeeId}`,
+                  // When they were given access — every figure below is counted from
+                  // this date, so it belongs next to their name.
+                  u.dateOfJoining && `Access since ${formatYMD(String(u.dateOfJoining).slice(0, 10))}`,
+                ]
                   .filter(Boolean)
                   .join(' · ')
               : undefined
@@ -202,6 +212,16 @@ export default function UserDossierPage() {
         <LoadingState label="Loading details…" />
       ) : (
         <>
+          {att.countedFrom ? (
+            <p className="flex items-start gap-2 rounded-xl bg-foreground/[0.03] p-3 text-xs text-muted-foreground ring-1 ring-border/50">
+              <UserPlus className="mt-0.5 size-3.5 shrink-0" />
+              <span>
+                This period starts before they joined — figures are counted from{' '}
+                <span className="font-medium text-foreground">{formatYMD(att.countedFrom)}</span>, the day they got access.
+              </span>
+            </p>
+          ) : null}
+
           {/* Stat cards */}
           <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3 xl:grid-cols-6">
             <StatCard label="Present" value={att.presentDays} hint={`of ${att.workingDays} working days`} icon={CheckCircle2} tone="success" />

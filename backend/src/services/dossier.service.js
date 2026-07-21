@@ -9,6 +9,7 @@ import { can } from '../lib/permissions.js';
 import { userWeekendDays } from '../lib/schedule.js';
 import { computeWorkingDays } from './workingDays.service.js';
 import { holidayYMDSet } from './holiday.service.js';
+import { periodStartFor, joinedYMD } from '../lib/joining.js';
 import { leaveYearOf } from '../lib/leaveYear.js';
 import { getOrCreateBalance } from './leave.service.js';
 
@@ -82,12 +83,15 @@ export async function getUserDossier(userId, { from, to }) {
   // present/absent — mirrors the daily overview. Skip the absent math for them.
   const tracksAttendance = can({ role: user.role }, 'markAttendance');
 
-  // Absent = working days (up to today) with no check-in and not on leave.
+  // Absent = working days (up to today) with no check-in and not on leave — counted
+  // only from the day this person joined, so a period that starts before they had
+  // access never reports them absent for it.
+  const countFrom = periodStartFor(user, from);
   let workingDates = [];
-  if (tracksAttendance && from <= cappedTo) {
-    const holidays = await holidayYMDSet(from, cappedTo);
+  if (tracksAttendance && countFrom <= cappedTo) {
+    const holidays = await holidayYMDSet(countFrom, cappedTo);
     ({ workingDates } = computeWorkingDays({
-      fromYMD: from,
+      fromYMD: countFrom,
       toYMD: cappedTo,
       weekendDays: userWeekendDays(user, settings), // part-timer's off-days aren't absences
       holidays,
@@ -100,6 +104,10 @@ export async function getUserDossier(userId, { from, to }) {
 
   const attendance = {
     tracksAttendance,
+    joinedYMD: joinedYMD(user),
+    // Set when the window reaches back past their joining date, so the UI can say
+    // "counted from 16 Jul" instead of silently showing a smaller number.
+    countedFrom: countFrom > from ? countFrom : '',
     presentDays,
     lateDays,
     excusedLateDays,

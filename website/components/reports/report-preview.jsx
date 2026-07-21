@@ -1,6 +1,6 @@
 'use client';
 
-import { CalendarClock, CalendarDays, Clock, HandCoins, UserCheck, UserX, Users, Wallet } from 'lucide-react';
+import { CalendarClock, CalendarDays, Clock, HandCoins, UserCheck, UserPlus, UserX, Users, Wallet } from 'lucide-react';
 import { StatCard } from '@/components/glass/stat-card';
 import { GlassCard } from '@/components/glass/glass-card';
 import { DataTable } from '@/components/glass/data-table';
@@ -209,6 +209,27 @@ export function OngoingNotice({ data, workingDays }) {
   );
 }
 
+/**
+ * People who joined after this period and so aren't in it. Stated plainly, because a
+ * report that quietly omits names is worse than one that explains the omission.
+ */
+export function JoinedLaterNotice({ data }) {
+  const later = data?.joinedLater ?? [];
+  if (!later.length) return null;
+  return (
+    <div className="flex items-start gap-2.5 rounded-xl bg-foreground/[0.03] p-3 text-sm ring-1 ring-border/50">
+      <UserPlus className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+      <p className="text-muted-foreground">
+        <span className="font-medium text-foreground">
+          {later.length} {later.length > 1 ? 'people are' : 'person is'} not in this report
+        </span>{' '}
+        — they joined after {formatYMD(data.period.to)}:{' '}
+        {later.map((p) => `${p.name} (joined ${formatYMD(p.joinedYMD)})`).join(', ')}.
+      </p>
+    </div>
+  );
+}
+
 export function ReportPreview({ data, sections }) {
   // Warm the role-label cache so the roster's per-role count chips (bare keys)
   // render edited names, and re-render once labels arrive.
@@ -217,6 +238,7 @@ export function ReportPreview({ data, sections }) {
   return (
     <div className="space-y-4">
       <OngoingNotice data={data} workingDays={data.workingDays} />
+      <JoinedLaterNotice data={data} />
       {has('attendance') && data.attendance ? <AttendanceSection data={data} /> : null}
       {has('leaves') && data.leaves ? <LeavesSection data={data} /> : null}
       {has('expenses') && data.expenses ? <ExpensesSection data={data} /> : null}

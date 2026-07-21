@@ -8,6 +8,7 @@ import { LeaveRequest } from '../models/LeaveRequest.js';
 import { can } from '../lib/permissions.js';
 import { ymdInTz, companyDayFromYMD, dayOfWeekInTz } from '../lib/time.js';
 import { userWeekendDays } from '../lib/schedule.js';
+import { hadAccessOn, splitByJoining, periodStartFor } from '../lib/joining.js';
 import { holidayYMDSet } from './holiday.service.js';
 
 const toId = (v) => (typeof v === 'string' ? new mongoose.Types.ObjectId(v) : v);
@@ -290,12 +291,13 @@ async function scanAbsences(b) {
   if (holidays.has(yesterday)) return;
   const s = await Setting.getSingleton();
   const dow = dayOfWeekInTz(companyDayFromYMD(yesterday));
-  const users = (await User.find({ isActive: true }).select('name role employmentType schedule')).filter((u) => can({ role: u.role }, 'markAttendance'));
+  const users = (await User.find({ isActive: true }).select('name role employmentType schedule dateOfJoining')).filter((u) => can({ role: u.role }, 'markAttendance'));
   const day = companyDayFromYMD(yesterday);
   const present = new Set((await Attendance.find({ date: day }).select('user')).map((r) => String(r.user)));
   const onLeave = new Set((await LeaveRequest.find({ status: 'APPROVED', startYMD: { $lte: yesterday }, endYMD: { $gte: yesterday } }).select('user')).map((l) => String(l.user)));
   const month = yesterday.slice(0, 7);
   for (const u of users) {
+    if (!hadAccessOn(u, yesterday)) continue; // they hadn't joined — not an absence
     if (userWeekendDays(u, s).includes(dow)) continue;
     if (present.has(String(u._id)) || onLeave.has(String(u._id))) continue;
     const reason = `Absent · ${yesterday}`;
@@ -319,9 +321,14 @@ async function runMonthRollup(b) {
   const monthEnd = `${target}-${String(lastDay).padStart(2, '0')}`;
   const s = await Setting.getSingleton();
   const holidays = await holidayYMDSet(from, monthEnd);
-  const users = (await User.find({ isActive: true }).select('name role employmentType schedule')).filter((u) => can({ role: u.role }, 'markAttendance'));
+  const roster = (await User.find({ isActive: true }).select('name role employmentType schedule dateOfJoining')).filter((u) => can({ role: u.role }, 'markAttendance'));
+  // Someone who joined after this month never worked it; someone who joined during it
+  // is judged only on their own days, so a mid-month joiner isn't denied a perfect
+  // month for days before they had access.
+  const { included: users } = splitByJoining(roster, from, monthEnd);
 
   for (const u of users) {
+    const startedOn = periodStartFor(u, from);
     // no-leave award
     if (noLeavePts) {
       const took = await LeaveRequest.countDocuments({ user: u._id, status: 'APPROVED', startYMD: { $lte: monthEnd }, endYMD: { $gte: from } });
@@ -339,6 +346,7 @@ async function runMonthRollup(b) {
       let workingDays = 0;
       for (let d = 1; d <= lastDay; d += 1) {
         const ymd = `${target}-${String(d).padStart(2, '0')}`;
+        if (ymd < startedOn) continue; // before they joined
         const dow = dayOfWeekInTz(companyDayFromYMD(ymd));
         if (offDays.includes(dow) || holidays.has(ymd)) continue;
         workingDays += 1;

@@ -3,11 +3,12 @@
 import * as React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Check, Clock, Download, Pencil, TriangleAlert, UserCheck, Users, UserX } from 'lucide-react';
+import { Check, Clock, Download, Pencil, TriangleAlert, UserCheck, UserPlus, Users, UserX } from 'lucide-react';
 import { api, getAuthToken } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can, roleName } from '@/lib/permissions';
 import { effectiveStatus } from '@/lib/attendance';
+import { formatYMD } from '@/lib/leave';
 import { AttendanceStatusBadge, attendanceStatusText } from './attendance-status-badge';
 import { DataTable } from '@/components/glass/data-table';
 import { StatCard } from '@/components/glass/stat-card';
@@ -220,6 +221,9 @@ export function EveryoneTab() {
 
   const rows = React.useMemo(() => data?.rows ?? [], [data]);
   const summary = data?.summary;
+  // People who hadn't joined on this date aren't in the roster at all — say so, so a
+  // short list reads as "they weren't here yet" rather than looking like missing data.
+  const joinedLater = data?.joinedLater ?? [];
   const unexcusedLate = Math.max(0, (summary?.late ?? 0) - (summary?.excused ?? 0));
   const totalOvertime = React.useMemo(
     () => rows.reduce((sum, r) => sum + (r.attendance?.overtimeMinutes || 0), 0),
@@ -316,6 +320,19 @@ export function EveryoneTab() {
       <p className="text-xs text-muted-foreground">
         Tip: tap a card to filter{statusFilter ? ` (showing ${statusFilter})` : ''}, tap a row for full details{canExcuse ? ' or to excuse a late' : ''}.
       </p>
+
+      {joinedLater.length ? (
+        <div className="flex items-start gap-2 rounded-xl bg-foreground/[0.03] p-3 text-xs text-muted-foreground ring-1 ring-border/50">
+          <UserPlus className="mt-0.5 size-3.5 shrink-0" />
+          <p>
+            <span className="font-medium text-foreground">
+              {joinedLater.length} {joinedLater.length > 1 ? 'people are' : 'person is'} not listed
+            </span>{' '}
+            — they hadn&apos;t joined on this date:{' '}
+            {joinedLater.map((p) => `${p.name} (joined ${formatYMD(p.joinedYMD)})`).join(', ')}.
+          </p>
+        </div>
+      ) : null}
 
       {isLoading ? (
         <TableSkeleton rows={6} cols={8} />

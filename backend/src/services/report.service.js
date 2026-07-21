@@ -6,6 +6,7 @@ import { User } from '../models/User.js';
 import { Setting } from '../models/Setting.js';
 import { companyDayFromYMD, ymdInTz, formatCompany } from '../lib/time.js';
 import { roleLabel } from '../lib/roles.js';
+import { splitByJoining, periodStartFor, joinedYMD } from '../lib/joining.js';
 import { can } from '../lib/permissions.js';
 import { workWindowClosed } from '../lib/schedule.js';
 import { leaveYearOf } from '../lib/leaveYear.js';
@@ -95,7 +96,7 @@ export async function buildReport(type, dateYMD, range) {
   const workingDays = from > elapsedTo ? 0 : countWorkingDays(from, elapsedTo, settings.weekendDays, holidaySet);
 
   const [activeUsers, records, takenLeaves, pendingLeaves, balances, expList, expSummary, dues] = await Promise.all([
-    User.find({ isActive: true }).select('name employeeId role department').sort({ name: 1 }),
+    User.find({ isActive: true }).select('name employeeId role department dateOfJoining').sort({ name: 1 }),
     Attendance.find({ date: { $gte: fromDay, $lte: toDay } }),
     LeaveRequest.find({ status: 'APPROVED', startYMD: { $lte: to }, endYMD: { $gte: from } }).populate('user', 'name employeeId'),
     LeaveRequest.find({ status: 'PENDING' }).populate('user', 'name employeeId').sort({ appliedAt: -1 }),
@@ -108,7 +109,11 @@ export async function buildReport(type, dateYMD, range) {
   // Leadership don't clock in or apply for leave — keep them OUT of the attendance
   // table and the leave-balance table, otherwise they read as permanently "absent"
   // or as unused quota, which is nonsense. (They still appear in the roster.)
-  const attendanceUsers = activeUsers.filter((u) => can({ role: u.role }, 'markAttendance'));
+  const attendanceRoster = activeUsers.filter((u) => can({ role: u.role }, 'markAttendance'));
+  // Nobody is accountable for a period they hadn't joined. People who arrived after it
+  // drop out entirely; those who arrived during it are judged only on their own days,
+  // so the report never counts a day against someone who had no access.
+  const { included: attendanceUsers, joinedLater } = splitByJoining(attendanceRoster, from, elapsedTo || to);
   const leaveUserIds = new Set(activeUsers.filter((u) => can({ role: u.role }, 'applyLeave')).map((u) => String(u._id)));
 
   // ── Attendance per employee ───────────────────────────────
@@ -129,9 +134,17 @@ export async function buildReport(type, dateYMD, range) {
   const perEmployee = attendanceUsers.map((u) => {
     const m = byUser.get(String(u._id)) || { present: 0, late: 0, onLeave: 0, workedMinutes: 0, overtimeMinutes: 0 };
     const showed = m.present + m.late;
-    const absent = Math.max(0, workingDays - showed - m.onLeave);
+    // Their own working-day count: the whole period, or from their joining day if they
+    // arrived part-way through.
+    const startedOn = periodStartFor(u, from);
+    const ownWorkingDays =
+      startedOn > elapsedTo ? 0 : countWorkingDays(startedOn, elapsedTo, settings.weekendDays, holidaySet);
+    const absent = Math.max(0, ownWorkingDays - showed - m.onLeave);
     return {
       name: u.name,
+      joinedYMD: joinedYMD(u),
+      startedOn: startedOn > from ? startedOn : '',
+      workingDays: ownWorkingDays,
       employeeId: u.employeeId,
       role: u.role,
       roleLabel: roleLabel(u.role),
@@ -159,7 +172,9 @@ export async function buildReport(type, dateYMD, range) {
     { present: 0, late: 0, absent: 0, onLeave: 0, workedHours: 0, overtimeMinutes: 0 },
   );
   totals.workedHours = round1(totals.workedHours);
-  const denom = attendanceUsers.length * workingDays;
+  // Sum each person's own working days rather than headcount × period, so a mid-period
+  // joiner doesn't drag the company attendance rate down for days they weren't here.
+  const denom = perEmployee.reduce((n, e) => n + (e.workingDays ?? workingDays), 0);
   // `present` already includes late arrivals (they attended).
   totals.attendanceRate = denom > 0 ? Math.round((totals.present / denom) * 100) : 0;
 
@@ -246,6 +261,9 @@ export async function buildReport(type, dateYMD, range) {
     generatedAt: new Date().toISOString(),
     company: { name: settings.companyName, currency: settings.currency, timezone: settings.timezone, brandColor: settings.brandColor, logoUrl: settings.logoUrl, logoLight: settings.logoLight, logoDark: settings.logoDark },
     workingDays,
+    // People left out of this report because they joined after it — surfaced so a
+    // short list reads as "they weren't here yet", not as missing data.
+    joinedLater,
     attendance: { perEmployee, totals },
     leaves,
     expenses,
@@ -262,6 +280,7 @@ const STATUS_LABEL = {
   ON_LEAVE: 'On leave',
   HOLIDAY: 'Holiday',
   WEEKEND: 'Weekend',
+  BEFORE_JOINING: 'Not employed yet',
   UPCOMING: '—',
 };
 
@@ -279,6 +298,7 @@ export async function buildSelfReport({ user, type, dateYMD, range }) {
   const toDay = companyDayFromYMD(to);
   const holidaySet = await holidayYMDSet(from, to);
   const weekendDays = settings.weekendDays || [0];
+  const joinedOn = joinedYMD(user); // days before this never count for or against them
 
   const [records, takenLeaves, pendingLeaves, balanceDoc, due] = await Promise.all([
     Attendance.find({ user: user._id, date: { $gte: fromDay, $lte: toDay } }),
@@ -315,6 +335,9 @@ export async function buildSelfReport({ user, type, dateYMD, range }) {
       overtimeMinutes = rec.overtimeMinutes || 0;
     } else if (holidaySet.has(ymd)) {
       status = 'HOLIDAY';
+    } else if (ymd < joinedOn) {
+      // Days before this person had access aren't theirs to answer for.
+      status = 'BEFORE_JOINING';
     } else if (weekendDays.includes(dow)) {
       status = 'WEEKEND';
     } else if (!workWindowClosed(user, ymd, settings, now)) {
