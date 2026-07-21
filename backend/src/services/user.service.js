@@ -1,4 +1,5 @@
 import { hashPassword } from '../lib/password.js';
+import { companyDayFromYMD } from '../lib/time.js';
 import { generateEmployeeId } from '../lib/employeeId.js';
 import { generateTempPassword } from '../lib/tempPassword.js';
 import { User } from '../models/User.js';
@@ -142,6 +143,11 @@ export async function updateUser(actor, id, data) {
     if (data[f] !== undefined) user[f] = data[f];
   }
   if (data.reportsTo !== undefined) user.reportsTo = data.reportsTo || null;
+
+  // The joining date decides which periods this person appears in at all, so it has to
+  // be correctable — an account created late for someone who started earlier would
+  // otherwise hide their real history for good.
+  if (data.dateOfJoining !== undefined) user.dateOfJoining = companyDayFromYMD(data.dateOfJoining);
 
   if (data.taskAssign !== undefined) {
     const mode = ['NONE', 'ALL', 'SELECTED'].includes(data.taskAssign.mode) ? data.taskAssign.mode : 'NONE';

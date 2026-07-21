@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { getRolePermissionSet } from '../lib/roles.js';
 
 const isRole = (r) => getRolePermissionSet(r) !== null;
+const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD');
 
 // A blank time is allowed — it means "follow the office hours" (custom timing off).
 const hm = z.string().regex(/^\d{2}:\d{2}$/, 'Expected HH:mm').or(z.literal(''));
@@ -56,4 +57,5 @@ export const updateUserSchema = z
     employmentType: employmentType.optional(),
     schedule: scheduleSchema.optional(),
     taskAssign: taskAssignSchema.optional(),
+    dateOfJoining: ymd.optional(),
   });

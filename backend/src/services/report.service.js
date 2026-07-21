@@ -97,7 +97,10 @@ export async function buildReport(type, dateYMD, range) {
 
   const [activeUsers, records, takenLeaves, pendingLeaves, balances, expList, expSummary, dues] = await Promise.all([
     User.find({ isActive: true }).select('name employeeId role department dateOfJoining').sort({ name: 1 }),
-    Attendance.find({ date: { $gte: fromDay, $lte: toDay } }),
+    // Count attendance only over the window the report actually claims to cover
+    // (from → asOf). Today's check-in must not land in the numerator while today is
+    // still missing from the working-day denominator — that produced "18 of 17".
+    Attendance.find({ date: { $gte: fromDay, $lte: companyDayFromYMD(elapsedTo < from ? from : elapsedTo) } }),
     LeaveRequest.find({ status: 'APPROVED', startYMD: { $lte: to }, endYMD: { $gte: from } }).populate('user', 'name employeeId'),
     LeaveRequest.find({ status: 'PENDING' }).populate('user', 'name employeeId').sort({ appliedAt: -1 }),
     LeaveBalance.find({ year: leaveYearOf(from) }).populate('user', 'name employeeId'),

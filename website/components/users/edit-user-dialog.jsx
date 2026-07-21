@@ -33,6 +33,7 @@ export function EditUserDialog({ user: target, open, onOpenChange }) {
   const [name, setName] = React.useState('');
   const [department, setDepartment] = React.useState('');
   const [designation, setDesignation] = React.useState('');
+  const [joiningDate, setJoiningDate] = React.useState('');
   const [role, setRole] = React.useState(''); // filled from the user being edited — never hard-code a role key
   const [isActive, setIsActive] = React.useState(true);
   const [employmentType, setEmploymentType] = React.useState('FULL_TIME');
@@ -57,6 +58,7 @@ export function EditUserDialog({ user: target, open, onOpenChange }) {
     setName(target.name || '');
     setDepartment(target.department || '');
     setDesignation(target.designation || '');
+    setJoiningDate(target.dateOfJoining ? String(target.dateOfJoining).slice(0, 10) : '');
     setRole(target.role || '');
     setIsActive(target.isActive !== false);
     setEmploymentType(target.employmentType || 'FULL_TIME');
@@ -96,6 +98,7 @@ export function EditUserDialog({ user: target, open, onOpenChange }) {
         isActive,
         employmentType,
         schedule, // custom timing is optional for everyone; blank = office hours
+        ...(joiningDate ? { dateOfJoining: joiningDate } : {}),
         taskAssign: { mode: assignMode, users: assignMode === 'SELECTED' ? [...assignUsers] : [] },
       });
       if (canManage) {
@@ -147,6 +150,13 @@ export function EditUserDialog({ user: target, open, onOpenChange }) {
             <Label htmlFor="eu-desg">Designation</Label>
             <Input id="eu-desg" value={designation} onChange={(e) => setDesignation(e.target.value)} className="bg-background/50" />
           </div>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="eu-joined">Joined on</Label>
+          <Input id="eu-joined" type="date" value={joiningDate} onChange={(e) => setJoiningDate(e.target.value)} className="bg-background/50" />
+          <p className="text-xs text-muted-foreground">
+            Attendance, reports and exports only count this person from this date — they don&apos;t appear at all before it.
+          </p>
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="eu-role">Role</Label>
