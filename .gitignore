@@ -25,6 +25,10 @@ backend/uploads/*
 backend/lambda.zip
 skills-repo/
 
+# Written by scripts/package-lambda.mjs from the commit it packaged, so /api/health
+# can report which build is live. Generated, never committed.
+backend/src/build-info.json
+
 # Logs
 *.log
 npm-debug.log*

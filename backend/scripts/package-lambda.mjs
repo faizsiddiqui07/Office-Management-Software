@@ -9,6 +9,7 @@
  * the zip itself. Uses `archiver` so entry paths use forward slashes (required
  * by Lambda — Windows' Compress-Archive can produce backslashes that break it).
  */
+import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,6 +20,32 @@ const root = path.resolve(__dirname, '..');
 const out = path.join(root, 'lambda.zip');
 
 if (fs.existsSync(out)) fs.unlinkSync(out);
+
+/**
+ * Stamp the commit being packaged into src/build-info.json, which /api/health then
+ * reports. Doing it here rather than by hand is the whole point: after an upload you
+ * can tell in one request whether the running function is this build or the last one,
+ * without anyone having to remember to bump a string. The file is gitignored.
+ */
+function stampBuild() {
+  const git = (cmd) => {
+    try { return execSync(cmd, { cwd: root, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(); }
+    catch { return ''; }
+  };
+  const commit = git('git rev-parse --short HEAD') || 'unknown';
+  const dirty = git('git status --porcelain') !== '';
+  const info = {
+    commit: dirty ? `${commit}+local` : commit, // +local = packaged with uncommitted edits
+    subject: git('git log -1 --pretty=%s').slice(0, 120),
+    builtAt: new Date().toISOString(),
+  };
+  fs.writeFileSync(path.join(root, 'src', 'build-info.json'), `${JSON.stringify(info, null, 2)}\n`);
+  console.log(`   Build stamp:     ${info.commit}  (${info.builtAt})`);
+  if (dirty) console.log('   ⚠️  Working tree has uncommitted changes — stamped as +local.');
+  return info;
+}
+
+stampBuild();
 
 const output = fs.createWriteStream(out);
 const archive = archiver('zip', { zlib: { level: 9 } });

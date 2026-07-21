@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { ok } from '../lib/apiResponse.js';
 import { authRouter } from './auth.routes.js';
@@ -26,12 +29,31 @@ import { bonusRouter } from './bonus.routes.js';
  */
 export const apiRouter = express.Router();
 
+/**
+ * Which build is actually running. `src/build-info.json` is written by
+ * scripts/package-lambda.mjs from the commit it packaged, and is gitignored — so this
+ * reports a real commit in a deployed zip and "dev" from a working copy. Read once at
+ * module load; it cannot change while the process lives.
+ */
+const BUILD = (() => {
+  try {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    return JSON.parse(fs.readFileSync(path.join(here, '..', 'build-info.json'), 'utf8'));
+  } catch {
+    return { commit: 'dev', subject: '', builtAt: null };
+  }
+})();
+
 apiRouter.get('/health', (_req, res) => {
   res.json(
     ok({
       status: 'up',
       service: 'office-management-backend',
-      build: 'login-fix-1', // bump to confirm a fresh deploy is live
+      // Compare `build` against `git log -1 --pretty=%h` to tell whether the zip you
+      // just uploaded is the one answering.
+      build: BUILD.commit,
+      builtAt: BUILD.builtAt,
+      subject: BUILD.subject || undefined,
       time: new Date().toISOString(),
     }),
   );
