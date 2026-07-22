@@ -78,7 +78,7 @@ apiRouter.use('/dues', duesRouter);
 apiRouter.use('/push', pushRouter);
 apiRouter.use('/regularizations', regularizationRouter);
 apiRouter.use('/approvals', approvalsRouter);
-apiRouter.use('/my-standing', snapshotRouter);
+apiRouter.use('/my-summary', snapshotRouter);
 apiRouter.use('/roles', rolesRouter);
 apiRouter.use('/visitors', visitorsRouter);
 apiRouter.use('/tasks', tasksRouter);

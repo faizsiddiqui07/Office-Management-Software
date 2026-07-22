@@ -58,8 +58,8 @@ export default function MyStandingPage() {
   const ready = type !== 'custom' || (!!range.from && !!range.to);
 
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['my-standing', qs],
-    queryFn: () => api.get(`/my-standing?${qs}`),
+    queryKey: ['my-summary', qs],
+    queryFn: () => api.get(`/my-summary?${qs}`),
     enabled: ready,
     placeholderData: (prev) => prev,
   });
@@ -73,7 +73,7 @@ export default function MyStandingPage() {
     <div className="space-y-5">
       <PageHeader
         eyebrow="You"
-        title="Where I stand"
+        title="My summary"
         icon={UserRound}
         description="Your own numbers — attendance, hours, leave, work and dues — for whatever stretch of time you pick."
       />

@@ -91,7 +91,7 @@ export const NAV_ITEMS = [
   // permission, but a task comes to whoever handed it out — which can be anyone.
   { label: 'Approvals', href: '/approvals', icon: Inbox },
   // Your own numbers only — no permission needed, and nothing here belongs to anyone else.
-  { label: 'Where I stand', href: '/my-standing', icon: UserRound },
+  { label: 'My Summary', href: '/my-summary', icon: UserRound },
   { label: 'Attendance', href: '/attendance', icon: CalendarClock },
   { label: 'Leaves', href: '/leaves', icon: CalendarDays },
   { label: 'Dues', href: '/dues', icon: HandCoins },
