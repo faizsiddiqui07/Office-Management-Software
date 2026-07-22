@@ -64,10 +64,56 @@ export function computePeriod(type, dateYMD, range) {
       label: new Date(Date.UTC(y, m, 1)).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }),
     };
   }
+  if (type === 'quarterly') {
+    // Quarters run with the FISCAL year, not the calendar: Q1 is Apr–Jun. A quarter
+    // that straddled the year end would make every quarterly total un-addable to the
+    // yearly one.
+    const y0 = d.getUTCFullYear();
+    const m0 = d.getUTCMonth(); // 0-11
+    const fy = m0 + 1 >= 4 ? y0 : y0 - 1;
+    const q = Math.floor(((m0 - 3 + 12) % 12) / 3); // 0-3, Apr–Jun = 0
+    const startMonth = 3 + q * 3; // months since Jan of the fiscal year's start
+    const start = new Date(Date.UTC(fy, startMonth, 1));
+    const end = new Date(Date.UTC(fy, startMonth + 3, 0)); // day 0 = last day of the previous month
+    const ymd = (x) => `${x.getUTCFullYear()}-${pad(x.getUTCMonth() + 1)}-${pad(x.getUTCDate())}`;
+    return { from: ymd(start), to: ymd(end), label: `Q${q + 1} FY ${fy}–${String(fy + 1).slice(2)}` };
+  }
   // Yearly = the company FISCAL year (Apr 1 – Mar 31), matching leave + expenses.
   const y0 = d.getUTCFullYear();
   const fy = d.getUTCMonth() + 1 >= 4 ? y0 : y0 - 1;
   return { from: `${fy}-04-01`, to: `${fy + 1}-03-31`, label: `FY ${fy}–${String(fy + 1).slice(2)} (Apr–Mar)` };
+}
+
+/**
+ * The same period, one step earlier — for "up 18% vs last month".
+ *
+ * Steps the ANCHOR back and re-resolves, so the answer is always a real calendar
+ * month/quarter/fiscal year. Subtracting the current period's length instead would
+ * put "the month before July" at 31 May – 21 Jun, and February would be worse.
+ * A custom window has no calendar predecessor, so it shifts by its own span.
+ */
+export function previousPeriod(type, dateYMD, range) {
+  const cur = computePeriod(type, dateYMD, range);
+  if (type === 'custom') {
+    const from = new Date(`${cur.from}T00:00:00Z`);
+    const to = new Date(`${cur.to}T00:00:00Z`);
+    const span = Math.round((to - from) / 86400000) + 1;
+    const prevTo = new Date(from.getTime() - 86400000);
+    const prevFrom = new Date(prevTo.getTime() - (span - 1) * 86400000);
+    const ymd = (x) => x.toISOString().slice(0, 10);
+    return { from: ymd(prevFrom), to: ymd(prevTo), label: `previous ${span} days` };
+  }
+  const d = new Date(`${cur.from}T00:00:00Z`);
+  const step = { daily: 0, weekly: 0, monthly: 1, quarterly: 3 }[type];
+  const back =
+    type === 'daily'
+      ? new Date(d.getTime() - 86400000)
+      : type === 'weekly'
+        ? new Date(d.getTime() - 7 * 86400000)
+        : step
+          ? new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - step, 1))
+          : new Date(Date.UTC(d.getUTCFullYear() - 1, d.getUTCMonth(), 1)); // yearly
+  return computePeriod(type, back.toISOString().slice(0, 10), range);
 }
 
 function countWorkingDays(fromYMD, toYMD, weekendDays, holidaySet) {

@@ -28,6 +28,15 @@ export const listExpensesQuerySchema = z.object({
 });
 
 export const summaryQuerySchema = z.object({
+  // Either a named period plus an anchor date — resolved on the server so the fiscal
+  // year matches the reports module and a device in the wrong timezone can't shift it
+  // — or a plain from/to window, which is how the older callers ask.
+  period: z.enum(['daily', 'weekly', 'monthly', 'quarterly', 'yearly', 'custom']).optional(),
+  date: ymd.optional(),
   from: ymd.optional(),
   to: ymd.optional(),
+  // The same filters the list takes, so the totals describe the rows underneath them.
+  category: z.string().optional(),
+  paymentMethod: z.string().optional(),
+  search: z.string().optional(),
 });

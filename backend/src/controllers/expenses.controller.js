@@ -6,6 +6,8 @@ import {
   summaryQuerySchema,
 } from '../validators/expenses.validators.js';
 import * as svc from '../services/expense.service.js';
+import { computePeriod, previousPeriod } from '../services/report.service.js';
+import { ymdInTz } from '../lib/time.js';
 import { Setting } from '../models/Setting.js';
 import { audit } from '../models/AuditLog.js';
 import { toCsv } from '../lib/csv.js';
@@ -42,7 +44,28 @@ export async function list(req, res, next) {
 export async function summary(req, res, next) {
   try {
     const q = summaryQuerySchema.parse(req.query);
-    res.json(ok(await svc.expenseSummary(q)));
+    // Resolve the window here rather than trusting dates worked out on the device.
+    // computePeriod already owns the fiscal year (Apr–Mar) and the reports module uses
+    // it, so this cannot drift from them; previousPeriod steps the anchor back a whole
+    // month/quarter/year instead of subtracting a day count, which is the only way
+    // "vs last month" is true in February.
+    // No period named + explicit dates = the old from/to callers, unchanged.
+    const type = q.period || (q.from || q.to ? 'custom' : 'yearly');
+    const anchor = q.date || ymdInTz(new Date());
+    const range = { from: q.from, to: q.to };
+    const period = computePeriod(type, anchor, range);
+    const prev = previousPeriod(type, anchor, range);
+
+    const data = await svc.expenseSummary({
+      category: q.category,
+      paymentMethod: q.paymentMethod,
+      search: q.search,
+      from: period.from,
+      to: period.to,
+      prevFrom: prev.from,
+      prevTo: prev.to,
+    });
+    res.json(ok({ ...data, period: { type, ...period }, previousLabel: prev.label }));
   } catch (err) {
     handleErr(res, err, next);
   }

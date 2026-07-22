@@ -61,3 +61,60 @@ export function todayYMD() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
+
+/**
+ * Period presets. The client only ever sends a NAME and an anchor date — the server
+ * turns those into real dates, so the fiscal year here can't drift from the one the
+ * reports use, and a phone on the wrong timezone can't shift it either.
+ */
+export const EXPENSE_PERIODS = [
+  { value: 'this_month', label: 'This month', period: 'monthly', shift: 0 },
+  { value: 'last_month', label: 'Last month', period: 'monthly', shift: -1 },
+  { value: 'this_quarter', label: 'This quarter', period: 'quarterly', shift: 0 },
+  { value: 'this_fy', label: 'This year', period: 'yearly', shift: 0 },
+  { value: 'custom', label: 'Custom', period: 'custom', shift: 0 },
+];
+
+/** The anchor date a preset should be resolved against (months back from today). */
+export function anchorFor(preset) {
+  const p = EXPENSE_PERIODS.find((x) => x.value === preset);
+  const d = new Date();
+  if (p?.shift) d.setMonth(d.getMonth() + p.shift);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** Minor units (paise) → "₹1.24L" / "₹12,400" — for stat cards, where paise wrap. */
+export function formatMoneyShort(paise) {
+  const r = Math.round((paise || 0) / 100);
+  if (Math.abs(r) >= 10000000) return `₹${(r / 10000000).toFixed(2)}Cr`;
+  if (Math.abs(r) >= 100000) return `₹${(r / 100000).toFixed(2)}L`;
+  return `₹${new Intl.NumberFormat('en-IN').format(r)}`;
+}
+
+/** Axis ticks. Adapts to the range so a ₹3,000 month doesn't read "₹0k" throughout. */
+export function formatAxisMoney(paise) {
+  const r = Math.round((paise || 0) / 100);
+  if (Math.abs(r) >= 100000) return `₹${(r / 100000).toFixed(1)}L`;
+  if (Math.abs(r) >= 1000) return `₹${Math.round(r / 1000)}k`;
+  return `₹${r}`;
+}
+
+const CHART_COLORS = ['#6366f1', '#22c55e', '#f59e0b', '#06b6d4', '#ec4899', '#8b5cf6', '#ef4444', '#14b8a6'];
+
+/**
+ * A category always gets the SAME colour. Keying off the array index instead meant
+ * the donut reshuffled its colours every time a filter changed the ordering.
+ */
+export function categoryColor(key = '') {
+  let h = 0;
+  for (let i = 0; i < key.length; i += 1) h = (h * 31 + key.charCodeAt(i)) >>> 0;
+  return CHART_COLORS[h % CHART_COLORS.length];
+}
+
+/** "up 18%" / "down 4%" / null when there's nothing meaningful to compare against. */
+export function deltaVs(current, previous) {
+  if (previous == null || previous === 0) return null;
+  const pct = Math.round(((current - previous) / previous) * 100);
+  if (!Number.isFinite(pct) || pct === 0) return { pct: 0, dir: 'flat' };
+  return { pct: Math.abs(pct), dir: pct > 0 ? 'up' : 'down' };
+}
