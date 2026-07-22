@@ -181,7 +181,7 @@ export default function ExpensesPage() {
       <ScopeLine filters={filters} onChange={setFilters} summary={summary} loading={isLoading && !summary} />
 
       <ExpenseSummary summary={summary} loading={isLoading && !summary} stale={isPlaceholderData} />
-      <ExpenseCharts summary={summary} filters={filters} onChange={setFilters} />
+      <ExpenseCharts summary={summary} filters={filters} onChange={setFilters} categories={meta?.categories ?? []} />
       <ExpenseTable canManage={canManage} filters={filters} search={debouncedSearch} range={range} />
     </div>
   );

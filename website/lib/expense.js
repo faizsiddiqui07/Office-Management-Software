@@ -91,24 +91,54 @@ export function formatMoneyShort(paise) {
   return `₹${new Intl.NumberFormat('en-IN').format(r)}`;
 }
 
-/** Axis ticks. Adapts to the range so a ₹3,000 month doesn't read "₹0k" throughout. */
+/**
+ * Axis ticks. Adapts to the range so a ₹3,000 month doesn't read "₹0k" on every tick,
+ * and keeps a decimal below ₹10k — rounding ticks of 1512/3025/4537 to whole thousands
+ * printed "₹2k ₹3k ₹5k", which looks like uneven spacing on an evenly spaced axis.
+ */
 export function formatAxisMoney(paise) {
   const r = Math.round((paise || 0) / 100);
-  if (Math.abs(r) >= 100000) return `₹${(r / 100000).toFixed(1)}L`;
-  if (Math.abs(r) >= 1000) return `₹${Math.round(r / 1000)}k`;
+  const a = Math.abs(r);
+  if (a >= 100000) return `₹${(r / 100000).toFixed(1)}L`;
+  if (a >= 10000) return `₹${Math.round(r / 1000)}k`;
+  if (a >= 1000) return `₹${(r / 1000).toFixed(1)}k`;
   return `₹${r}`;
 }
 
-const CHART_COLORS = ['#6366f1', '#22c55e', '#f59e0b', '#06b6d4', '#ec4899', '#8b5cf6', '#ef4444', '#14b8a6'];
+// Ordered so that neighbours are far apart in hue — categories are handed these in
+// sequence, so the two or three biggest slices are always clearly different colours.
+const CHART_COLORS = [
+  '#6366f1', // indigo
+  '#f59e0b', // amber
+  '#10b981', // emerald
+  '#ef4444', // red
+  '#06b6d4', // cyan
+  '#a855f7', // purple
+  '#84cc16', // lime
+  '#ec4899', // pink
+  '#0ea5e9', // sky
+  '#f97316', // orange
+];
 
-/**
- * A category always gets the SAME colour. Keying off the array index instead meant
- * the donut reshuffled its colours every time a filter changed the ordering.
- */
-export function categoryColor(key = '') {
+function hashIndex(key = '') {
   let h = 0;
   for (let i = 0; i < key.length; i += 1) h = (h * 31 + key.charCodeAt(i)) >>> 0;
-  return CHART_COLORS[h % CHART_COLORS.length];
+  return h % CHART_COLORS.length;
+}
+
+/**
+ * A category's colour, stable across every filter and re-order.
+ *
+ * Position in the office's configured category list decides it — that list is fixed
+ * in Settings, so the colour never moves, and consecutive categories get hues that
+ * are easy to tell apart. Hashing the name instead gave stability but not
+ * distinctness: "Utilities" and "Travel" both landed on amber and the donut read as
+ * one colour. The hash survives only as a fallback for a category no longer in the
+ * list, where any stable colour will do.
+ */
+export function categoryColor(key = '', categories) {
+  const i = Array.isArray(categories) ? categories.indexOf(key) : -1;
+  return CHART_COLORS[(i >= 0 ? i : hashIndex(key)) % CHART_COLORS.length];
 }
 
 /** "up 18%" / "down 4%" / null when there's nothing meaningful to compare against. */

@@ -22,8 +22,12 @@ function Empty({ children = 'No spending in this period' }) {
  * tapping a bar drills into that month. Tapping the same one again clears it, and the
  * scope line above carries a removable chip for whatever is active.
  */
-export function ExpenseCharts({ summary, filters, onChange }) {
+export function ExpenseCharts({ summary, filters, onChange, categories = [] }) {
   const set = (patch) => onChange({ ...filters, ...patch });
+
+  // Colour comes from the office's configured category order, so a category keeps the
+  // same colour whatever the filters do to the ordering here.
+  const colorOf = (key) => categoryColor(key, categories);
 
   const byCategory = (summary?.byCategory ?? []).map((c) => ({
     key: c.category,
@@ -70,7 +74,7 @@ export function ExpenseCharts({ summary, filters, onChange }) {
                   {byCategory.map((c) => (
                     <Cell
                       key={c.key}
-                      fill={categoryColor(c.key)}
+                      fill={colorOf(c.key)}
                       stroke="none"
                       fillOpacity={activeCat && activeCat !== c.key ? 0.25 : 1}
                     />
@@ -95,7 +99,7 @@ export function ExpenseCharts({ summary, filters, onChange }) {
                   activeCat === c.key ? 'bg-primary/10 text-primary ring-primary/25' : 'text-muted-foreground ring-transparent hover:bg-foreground/5',
                 )}
               >
-                <span className="size-2 shrink-0 rounded-full" style={{ background: categoryColor(c.key) }} />
+                <span className="size-2 shrink-0 rounded-full" style={{ background: colorOf(c.key) }} />
                 {c.name}
                 <span className="tabular-nums opacity-70">{formatMoneyShort(c.value)}</span>
               </button>
