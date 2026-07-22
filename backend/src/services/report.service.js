@@ -13,6 +13,7 @@ import { leaveYearOf } from '../lib/leaveYear.js';
 import { holidayYMDSet } from './holiday.service.js';
 import { expenseSummary } from './expense.service.js';
 import { ledgerFor } from './dues.service.js';
+import { APP_LIVE_YMD } from '../lib/appLive.js';
 
 const pad = (n) => String(n).padStart(2, '0');
 const ymdOf = (d) => `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
@@ -376,8 +377,12 @@ export async function buildSelfReport({ user, type, dateYMD, range }) {
       overtimeMinutes = rec.overtimeMinutes || 0;
     } else if (holidaySet.has(ymd)) {
       status = 'HOLIDAY';
-    } else if (ymd < joinedOn) {
-      // Days before this person had access aren't theirs to answer for.
+    } else if (ymd < joinedOn || ymd < APP_LIVE_YMD) {
+      // Days before this person had access aren't theirs to answer for — and neither
+      // are days before the office ran on this system at all. The fiscal year opens on
+      // 1 April but nothing was recorded until 1 July, so without this a yearly report
+      // for anyone with a genuine older joining date would mark three months absent
+      // for days that were simply never tracked.
       status = 'BEFORE_JOINING';
     } else if (weekendDays.includes(dow)) {
       status = 'WEEKEND';

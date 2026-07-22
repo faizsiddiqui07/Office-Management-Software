@@ -1,4 +1,5 @@
 import { ymdInTz } from './time.js';
+import { APP_LIVE_YMD } from './appLive.js';
 
 /**
  * Nobody has a history before the day they were given access.
@@ -32,11 +33,18 @@ export function overlapsPeriod(user, fromYMD, toYMD) {
 
 /**
  * The start of the stretch of [fromYMD, toYMD] this person is actually accountable for
- * — their joining day when they arrived mid-period, otherwise the period's own start.
+ * — the LATEST of: the period's own start, their joining day, and the day the office
+ * started running on this system.
+ *
+ * That last one matters for the fiscal year, which opens on 1 April while nothing was
+ * recorded until 1 July. Without it, giving somebody their genuine older joining date
+ * would make a yearly report mark three months absent for days that were never
+ * tracked — punishing them for having been here longer.
  */
 export function periodStartFor(user, fromYMD) {
   const from = joinedYMD(user);
-  return from && from > fromYMD ? from : fromYMD;
+  const start = from && from > fromYMD ? from : fromYMD;
+  return start < APP_LIVE_YMD ? APP_LIVE_YMD : start;
 }
 
 /**
