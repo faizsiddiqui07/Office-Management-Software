@@ -3,13 +3,13 @@ import { LeaveRequest } from '../models/LeaveRequest.js';
 import { LeaveBalance } from '../models/LeaveBalance.js';
 import { User } from '../models/User.js';
 import { Setting } from '../models/Setting.js';
-import { Holiday } from '../models/Holiday.js';
 import { AuditLog } from '../models/AuditLog.js';
 import { can } from '../lib/permissions.js';
 import { roleLabel } from '../lib/roles.js';
 import { companyDayFromYMD, ymdInTz } from '../lib/time.js';
 import { leaveYearOf } from '../lib/leaveYear.js';
 import { getTodayPayload, attendanceOverview } from './attendance.service.js';
+import { listHolidays } from './holiday.service.js';
 import { getOrCreateBalance } from './leave.service.js';
 import { listVisible } from './announcement.service.js';
 import { expenseSummary } from './expense.service.js';
@@ -28,7 +28,11 @@ export async function buildDashboard(user) {
   out.today = await getTodayPayload(user);
   out.balance = (await getOrCreateBalance(user._id, year)).toJSON();
   out.announcements = (await listVisible(user)).slice(0, 5);
-  out.upcomingHolidays = (await Holiday.find({ endYMD: { $gte: todayYMD } }).sort({ startYMD: 1 }).limit(5)).map((h) => h.toJSON());
+  // Goes through the service so yearly repeats are expanded. Querying the table
+  // directly showed a repeating 15 August only in its anchor year and then never again,
+  // because the stored endYMD stays in the past forever. A year's horizon keeps
+  // "the next five, whenever they are" true without an unbounded scan.
+  out.upcomingHolidays = (await listHolidays({ from: todayYMD, to: `${Number(todayYMD.slice(0, 4)) + 1}-12-31` })).slice(0, 5);
   out.myPendingLeaves = (await LeaveRequest.find({ user: user._id, status: 'PENDING' }).sort({ appliedAt: -1 })).map((l) => l.toJSON());
 
   const month = computePeriod('monthly', todayYMD);

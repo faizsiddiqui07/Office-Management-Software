@@ -399,7 +399,7 @@ export default function DashboardPage() {
             <GlassCard className="divide-y divide-border/50 p-2">
               {upcomingHolidays.length ? (
                 upcomingHolidays.map((h) => (
-                  <div key={h.id} className="flex items-center justify-between gap-3 p-3">
+                  <div key={h.occurrenceId || h.id} className="flex items-center justify-between gap-3 p-3">
                     <span className="truncate text-sm font-medium">{h.title}</span>
                     <span className="shrink-0 text-xs text-muted-foreground">
                       {h.startYMD === h.endYMD ? fmtDate(h.startYMD) : `${fmtDate(h.startYMD)}–${fmtDate(h.endYMD)}`}

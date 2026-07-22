@@ -166,7 +166,7 @@ export function HolidayCalendar() {
                 .map((ev) => {
                   const t = EVENT_TYPES[ev.type] ?? EVENT_TYPES.EVENT;
                   return (
-                    <li key={ev.id}>
+                    <li key={ev.occurrenceId || ev.id}>
                       <button
                         type="button"
                         onClick={() => (isAdmin ? setDialog({ mode: 'edit', holiday: ev }) : undefined)}
@@ -235,7 +235,7 @@ export function HolidayCalendar() {
                   </>
                 );
                 return (
-                  <li key={ev.id}>
+                  <li key={ev.occurrenceId || ev.id}>
                     {isAdmin ? (
                       <button
                         type="button"

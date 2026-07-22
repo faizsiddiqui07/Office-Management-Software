@@ -50,11 +50,19 @@ export function expandEventDates(ev) {
   return out;
 }
 
-/** YMD set of mandatory HOLIDAY dates within [fromYMD, toYMD] (for the apply preview). */
+/**
+ * YMD set of mandatory HOLIDAY dates within [fromYMD, toYMD] (for the apply preview).
+ *
+ * Follows the server's own `countsForWorkingDays` rather than deciding for itself. A
+ * yearly repeat is shown on the calendar in every year but only counts as a non-working
+ * day from the date the repeat was switched on — if this guessed instead, the dialog
+ * would promise "3 days" and the server would deduct 4.
+ */
 export function holidayYMDSetFromList(holidays, fromYMD, toYMD) {
   const set = new Set();
   for (const h of holidays || []) {
     if (h.type !== 'HOLIDAY') continue;
+    if (h.countsForWorkingDays === false) continue;
     for (const d of expandEventDates(h)) if (d >= fromYMD && d <= toYMD) set.add(d);
   }
   return set;

@@ -33,7 +33,7 @@ export function UpcomingHolidays() {
           {upcoming.map((h) => {
             const t = EVENT_TYPES[h.type] ?? EVENT_TYPES.EVENT;
             return (
-              <li key={h.id} className="flex items-start gap-3">
+              <li key={h.occurrenceId || h.id} className="flex items-start gap-3">
                 <span className={cn('mt-1.5 size-2 shrink-0 rounded-full', t.dot)} />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">{h.title}</p>
