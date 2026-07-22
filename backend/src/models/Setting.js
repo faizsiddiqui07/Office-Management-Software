@@ -76,6 +76,10 @@ const settingSchema = new mongoose.Schema(
       lastPenaltyRun: { type: String, default: '' }, // YMD — throttles the daily scan
       lastMonthRollup: { type: String, default: '' }, // YYYY-MM — last month whose month-end awards ran
     },
+    // The four national holidays are put in once, on first boot. This flag is what
+    // stops them coming back: delete Christmas and it stays deleted, instead of being
+    // helpfully re-created on the next Lambda cold start.
+    defaultHolidaysSeeded: { type: Boolean, default: false },
   },
   { timestamps: true },
 );

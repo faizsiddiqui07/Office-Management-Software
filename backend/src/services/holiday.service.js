@@ -261,6 +261,87 @@ export async function updateHoliday(id, data) {
   return holiday.toJSON();
 }
 
+/**
+ * The four national holidays every Indian office closes for, put in on first boot so
+ * nobody has to type them in — and, because they repeat, never again in any later year.
+ *
+ * These four are here because they are FIXED-DATE. Diwali, Holi and Eid move with the
+ * lunar calendar and have to be added by hand each year; seeding them would be worse
+ * than useless, because a wrong date on the calendar is trusted.
+ *
+ * Runs exactly once, guarded by a flag on the settings document. Deleting one of these
+ * afterwards must make it stay deleted — a seeder that re-creates rows on every cold
+ * start would be un-overridable, which is the opposite of a default.
+ */
+const DEFAULT_HOLIDAYS = [
+  { monthDay: '01-26', title: 'Republic Day' },
+  { monthDay: '08-15', title: 'Independence Day' },
+  { monthDay: '10-02', title: 'Gandhi Jayanti' },
+  { monthDay: '12-25', title: 'Christmas' },
+];
+
+export async function ensureDefaultHolidays() {
+  const { Setting } = await import('../models/Setting.js');
+  const settings = (await Setting.findOne({ key: 'global' })) || (await Setting.create({ key: 'global' }));
+  if (settings.defaultHolidaysSeeded) return { added: 0, converted: 0, birthdays: 0 };
+
+  // Every birthday already on the calendar starts repeating. There is no such thing as
+  // a birthday that happens once, so this needs no toggle and no judgement — and a
+  // birthday never counts towards working days, so nothing can move because of it.
+  // Their stored year is whatever was typed at the time; correcting it to the real year
+  // of birth is an edit the office can make whenever it likes.
+  const birthdays = await Holiday.updateMany({ type: 'BIRTHDAY', repeatsYearly: { $ne: true } }, { $set: { repeatsYearly: true } });
+
+  const existing = await Holiday.find({ type: 'HOLIDAY' });
+  const today = ymdInTz(new Date());
+  const year = Number(today.slice(0, 4));
+  const toCreate = [];
+  let converted = 0;
+
+  for (const d of DEFAULT_HOLIDAYS) {
+    // Most offices have already typed some of these in for the current year. A second
+    // copy would be noise — but simply skipping would leave the one that IS there still
+    // not repeating, which is the entire thing being asked for. So adopt it instead:
+    // take the most recent entry on that day and switch its repeat on.
+    const already = existing
+      .filter((h) => h.startYMD.slice(5) === d.monthDay)
+      .sort((a, b) => (a.startYMD < b.startYMD ? 1 : -1));
+
+    if (already.length) {
+      const keep = already[0];
+      if (!keep.repeatsYearly) {
+        keep.repeatsYearly = true;
+        keep.repeatsFromYMD = repeatStart(keep.startYMD);
+        await keep.save();
+        converted += 1;
+      }
+      continue;
+    }
+
+    const startYMD = `${year}-${d.monthDay}`;
+    toCreate.push({
+      title: d.title,
+      type: 'HOLIDAY',
+      description: '',
+      startYMD,
+      endYMD: startYMD,
+      startDate: companyDayFromYMD(startYMD),
+      endDate: companyDayFromYMD(startYMD),
+      repeatsYearly: true,
+      // Counts towards working days from today onwards only, exactly like a repeat
+      // switched on by hand — seeding must not restate any month already closed.
+      repeatsFromYMD: repeatStart(startYMD),
+      createdBy: null,
+    });
+  }
+
+  if (toCreate.length) await Holiday.insertMany(toCreate);
+
+  settings.defaultHolidaysSeeded = true;
+  await settings.save();
+  return { added: toCreate.length, converted, birthdays: birthdays.modifiedCount || 0 };
+}
+
 export async function deleteHoliday(id) {
   const holiday = await Holiday.findByIdAndDelete(id);
   if (!holiday) throw httpError(404, 'NOT_FOUND', 'Holiday not found');

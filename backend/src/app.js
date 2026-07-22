@@ -9,6 +9,7 @@ import { connectDB } from './config/db.js';
 import { apiRouter } from './routes/index.js';
 import { errorHandler, notFoundHandler } from './middleware/error.js';
 import { ensureSystemRoles, runRoleMigrations, ensureRoleManagerExists, loadRoles } from './lib/roles.js';
+import { ensureDefaultHolidays } from './services/holiday.service.js';
 
 /**
  * The Express app is built here and shared by BOTH entry points:
@@ -58,6 +59,10 @@ async function runInit() {
   if (repaired) console.log('🛟 Restored role-management access (admin-lockout failsafe)');
   const n = await loadRoles();
   console.log(`🔐 Loaded ${n} roles into the permission cache`);
+  const { added, converted, birthdays } = await ensureDefaultHolidays();
+  if (added || converted || birthdays) {
+    console.log(`🗓️  Calendar: added ${added} national holiday(s), set ${converted} existing one(s) + ${birthdays} birthday(s) to repeat`);
+  }
 }
 
 export function initApp() {
