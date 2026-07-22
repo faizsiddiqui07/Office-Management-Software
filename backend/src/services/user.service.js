@@ -89,7 +89,10 @@ export async function createEmployee({
   // months they're here for — the same rule getOrCreateBalance applies.
   const settings = await Setting.getSingleton();
   const joinedOn = ymdInTz(user.dateOfJoining || new Date());
-  const year = leaveYearOf(joinedOn);
+  // The balance belongs to the leave year we are IN, not the one the person joined in.
+  // Deriving it from the joining date filed anyone hired before this April under a past
+  // year, so the account came out with no balance for the year everything else reads.
+  const year = leaveYearOf(ymdInTz(new Date()));
   const quota = quotaForJoiner(joinedOn, year, settings.annualLeaveQuota);
   await LeaveBalance.findOneAndUpdate(
     { user: user._id, year },
@@ -165,7 +168,11 @@ export async function updateUser(actor, id, data) {
     // hand is a deliberate exception and must survive. `used` is never recalculated.
     if (nowYMD !== wasYMD) {
       const settings = await Setting.getSingleton();
-      const year = leaveYearOf(nowYMD);
+      // Again the CURRENT leave year. Using the corrected joining date's year meant
+      // that setting someone's real start date of 2022 went looking for a 2022 balance,
+      // found nothing, and silently left them on the part-year quota they had been
+      // given while the app still thought they joined this July.
+      const year = leaveYearOf(ymdInTz(new Date()));
       const bal = await LeaveBalance.findOne({ user: user._id, year });
       if (bal) {
         const wasExpected = quotaForJoiner(wasYMD, year, settings.annualLeaveQuota);
