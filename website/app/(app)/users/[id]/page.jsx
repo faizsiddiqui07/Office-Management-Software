@@ -20,6 +20,8 @@ import {
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can, roleName } from '@/lib/permissions';
+import { DatePicker } from '@/components/ui/date-picker';
+import { APP_LIVE_YMD } from '@/lib/app-live';
 import { AttendanceStatusBadge, attendanceStatusText } from '@/components/attendance/attendance-status-badge';
 import { formatTime, formatDuration } from '@/lib/time';
 import { formatYMD } from '@/lib/leave';
@@ -34,7 +36,6 @@ import { LoadingState } from '@/components/glass/skeletons';
 import { DataTable } from '@/components/glass/data-table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
 function localYMD(d) {
@@ -92,7 +93,10 @@ export default function UserDossierPage() {
 
   const applyPreset = (p) => {
     setPreset(p.key);
-    setFrom(p.calendarMonth ? monthStart() : daysAgo(p.days - 1));
+    // "90 days" and "Year" reach back before the system went live; clamp them to the
+    // same floor the date pickers enforce, or the presets sneak past it.
+    const start = p.calendarMonth ? monthStart() : daysAgo(p.days - 1);
+    setFrom(start < APP_LIVE_YMD ? APP_LIVE_YMD : start);
     setTo(daysAgo(0));
   };
 
@@ -195,11 +199,11 @@ export default function UserDossierPage() {
         <div className="flex w-full items-end gap-2 sm:w-auto">
           <div className="min-w-0 flex-1 space-y-1 sm:flex-none">
             <Label htmlFor="d-from" className="text-xs text-muted-foreground">From</Label>
-            <Input id="d-from" type="date" value={from} max={to} onChange={(e) => { setFrom(e.target.value); setPreset('custom'); }} className="h-9 w-full bg-background/50 sm:w-40" />
+            <DatePicker id="d-from" value={from} min={APP_LIVE_YMD} max={to} onChange={(v) => { setFrom(v); setPreset('custom'); }} className="h-9 w-full bg-background/50 sm:w-40" />
           </div>
           <div className="min-w-0 flex-1 space-y-1 sm:flex-none">
             <Label htmlFor="d-to" className="text-xs text-muted-foreground">To</Label>
-            <Input id="d-to" type="date" value={to} min={from} onChange={(e) => { setTo(e.target.value); setPreset('custom'); }} className="h-9 w-full bg-background/50 sm:w-40" />
+            <DatePicker id="d-to" value={to} min={from || APP_LIVE_YMD} onChange={(v) => { setTo(v); setPreset('custom'); }} className="h-9 w-full bg-background/50 sm:w-40" />
           </div>
         </div>
       </GlassPanel>

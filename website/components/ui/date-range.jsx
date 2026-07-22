@@ -2,39 +2,43 @@
 
 import * as React from 'react';
 import { X } from 'lucide-react';
-import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
+import { DatePicker } from '@/components/ui/date-picker';
+import { APP_LIVE_YMD } from '@/lib/app-live';
 
 /**
- * A compact "from → to" date range for filter bars. Two native date pickers
- * (which open the OS calendar on tap), so people can pick "x date se x date tak".
+ * A compact "from → to" date range for filter bars, on the app's own calendar
+ * popover. Controlled: `value = { from, to }` (YMD strings, '' when unset).
  *
- * Controlled: `value = { from, to }` (YMD strings, '' when unset), `onChange(next)`.
- * Clearing both means "no range". `max` caps both (e.g. today).
+ * Every DateRange in the app is a DATA filter (expenses, tasks, reports…), so the
+ * floor defaults to the day the system went live — nothing exists before it, and
+ * offering earlier dates only produced empty months that read as "everyone absent".
+ * Pass a different `min` for the rare screen that needs one.
  */
-export function DateRange({ value, onChange, className, max }) {
+export function DateRange({ value, onChange, className, min = APP_LIVE_YMD, max }) {
   const from = value?.from || '';
   const to = value?.to || '';
   const active = from || to;
   return (
     <div className={cn('flex w-full items-center gap-1.5 sm:w-auto', className)}>
-      <Input
-        type="date"
+      <DatePicker
         aria-label="From date"
         value={from}
+        min={min}
         max={to || max}
-        onChange={(e) => onChange({ from: e.target.value, to })}
-        className="h-9 min-w-0 flex-1 bg-background/50 sm:w-40 sm:flex-none"
+        placeholder="From"
+        onChange={(v) => onChange({ from: v, to })}
+        className="min-w-0 flex-1 bg-background/50 sm:w-40 sm:flex-none"
       />
       <span className="shrink-0 text-xs text-muted-foreground" aria-hidden="true">→</span>
-      <Input
-        type="date"
+      <DatePicker
         aria-label="To date"
         value={to}
-        min={from}
+        min={from || min}
         max={max}
-        onChange={(e) => onChange({ from, to: e.target.value })}
-        className="h-9 min-w-0 flex-1 bg-background/50 sm:w-40 sm:flex-none"
+        placeholder="To"
+        onChange={(v) => onChange({ from, to: v })}
+        className="min-w-0 flex-1 bg-background/50 sm:w-40 sm:flex-none"
       />
       {active ? (
         <button

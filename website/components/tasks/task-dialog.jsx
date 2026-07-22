@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 import { AppDialog } from '@/components/glass/app-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
@@ -198,7 +199,17 @@ export function TaskDialog({ task, open: openProp, onOpenChange, batchCount = 0 
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="t-due">Due date (optional)</Label>
-          <Input id="t-due" type="date" value={dueYMD} min={dueYMD || new Date().toISOString().slice(0, 10)} onChange={(e) => setDueYMD(e.target.value)} className="bg-background/50" />
+          {/* The floor anchors on the SAVED due date, not the live selection — using the
+              selection made every pick a ratchet (choose 10 Aug, and 30 Jul went grey).
+              Anchoring on the saved value only keeps an already-overdue task editable. */}
+          <DatePicker
+            id="t-due"
+            value={dueYMD}
+            min={task?.dueYMD && task.dueYMD < new Date().toISOString().slice(0, 10) ? task.dueYMD : new Date().toISOString().slice(0, 10)}
+            onChange={setDueYMD}
+            clearable
+            className="bg-background/50"
+          />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="t-notes">Notes (optional)</Label>

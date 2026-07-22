@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DateRange } from '@/components/ui/date-range';
 import { EXPENSE_PERIODS, PAYMENT_METHODS, categoryLabel, todayYMD } from '@/lib/expense';
+import { APP_LIVE_YMD } from '@/lib/app-live';
 
 /**
  * Every control that changes what the page is showing, in one place at the top.
@@ -30,9 +31,14 @@ export function ExpenseFilterBar({ filters, onChange, categories = [], onExport,
 
   const pickPreset = (value) => {
     // Landing on Custom with no dates would fetch the whole register on one tap, so
-    // it opens on the window you were already looking at.
-    if (value === 'custom') set({ preset: 'custom', monthKey: '', from: filters.resolvedFrom || '', to: filters.resolvedTo || '' });
-    else set({ preset: value, monthKey: '' });
+    // it opens on the window you were already looking at — clamped to the app's
+    // floor, since "This year" resolves to 1 April and the pickers won't go there.
+    if (value === 'custom') {
+      const seedFrom = filters.resolvedFrom && filters.resolvedFrom < APP_LIVE_YMD ? APP_LIVE_YMD : filters.resolvedFrom || '';
+      set({ preset: 'custom', monthKey: '', from: seedFrom, to: filters.resolvedTo || '' });
+    } else {
+      set({ preset: value, monthKey: '' });
+    }
   };
 
   const searchBox = (id, placeholder) => (

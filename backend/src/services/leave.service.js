@@ -9,6 +9,7 @@ import { can } from '../lib/permissions.js';
 import { rolesWithPermission } from '../lib/roles.js';
 import { companyDayFromYMD } from '../lib/time.js';
 import { leaveYearOf, currentLeaveYear } from '../lib/leaveYear.js';
+import { APP_LIVE_YMD } from '../lib/appLive.js';
 import { computeWorkingDays } from './workingDays.service.js';
 import { holidayYMDSet } from './holiday.service.js';
 import { userWeekendDays } from '../lib/schedule.js';
@@ -31,9 +32,16 @@ function httpError(status, code, message) {
  * before that they joined makes no difference, because the quota resets every 1 April.
  *
  * Leave year `year` runs 1 April `year` → 31 March `year + 1`.
+ *
+ * EXISTING STAFF ARE EXEMPT from pro-rata entirely: anyone whose joining date is on
+ * or before the day this system went live gets the full quota, whatever the date
+ * says. Their stored dates are a mix of real history and "the day they got access",
+ * and editing one back and forth was flipping quotas between 18 and 13.5 — a person's
+ * leave must not depend on which version of their paperwork was typed in last.
+ * Pro-rata applies only to people hired after the office started running on this.
  */
 export function quotaForJoiner(joinedYMD, year, annualQuota) {
-  if (!joinedYMD) return annualQuota;
+  if (!joinedYMD || joinedYMD <= APP_LIVE_YMD) return annualQuota;
   const joinYear = Number(joinedYMD.slice(0, 4));
   const joinMonth = Number(joinedYMD.slice(5, 7));
   // Months elapsed from the April this leave year started (Apr = 0 … Mar = 11).

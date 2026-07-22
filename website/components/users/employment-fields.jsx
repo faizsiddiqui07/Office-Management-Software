@@ -1,6 +1,7 @@
 'use client';
 
 import { Label } from '@/components/ui/label';
+import { TimePicker } from '@/components/ui/time-picker';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -24,6 +25,8 @@ const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 export function EmploymentFields({ employmentType, schedule, onTypeChange, onScheduleChange }) {
   const s = schedule || DEFAULT_SCHEDULE;
   const setSched = (k) => (e) => onScheduleChange({ ...s, [k]: e.target.value });
+  // Same, but for the app's own pickers — they hand back the value, not an event.
+  const setSchedV = (k) => (v) => onScheduleChange({ ...s, [k]: v });
   const workDays = Array.isArray(s.workDays) ? s.workDays : [];
   const toggleDay = (d) =>
     onScheduleChange({
@@ -64,11 +67,11 @@ export function EmploymentFields({ employmentType, schedule, onTypeChange, onSch
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
             <Label htmlFor="emp-in">Check-in</Label>
-            <Input id="emp-in" type="time" value={s.workStart || ''} onChange={setSched('workStart')} className="bg-background/50" />
+            <TimePicker id="emp-in" value={s.workStart || ''} onChange={setSchedV('workStart')} className="bg-background/50" />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="emp-out">Check-out</Label>
-            <Input id="emp-out" type="time" value={s.workEnd || ''} onChange={setSched('workEnd')} className="bg-background/50" />
+            <TimePicker id="emp-out" value={s.workEnd || ''} onChange={setSchedV('workEnd')} className="bg-background/50" />
           </div>
         </div>
         <div className="space-y-1.5">

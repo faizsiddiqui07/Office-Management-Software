@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils';
 import { AppDialog } from '@/components/glass/app-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
@@ -129,7 +130,7 @@ export function AssignDialog() {
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="a-due">Due date (optional)</Label>
-          <Input id="a-due" type="date" value={dueYMD} min={new Date().toISOString().slice(0, 10)} onChange={(e) => setDueYMD(e.target.value)} className="bg-background/50" />
+          <DatePicker id="a-due" value={dueYMD} min={new Date().toISOString().slice(0, 10)} onChange={setDueYMD} clearable className="bg-background/50" />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="a-notes">Notes (optional)</Label>

@@ -13,6 +13,8 @@ import { AppDialog } from '@/components/glass/app-dialog';
 import { COMPANY_TZ } from '@/lib/time';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
+import { APP_LIVE_YMD } from '@/lib/app-live';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -220,11 +222,11 @@ export function VisitorTable({ canManageCategories = false }) {
         </Select>
         <div className="space-y-1">
           <Label className="text-xs text-muted-foreground">From</Label>
-          <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-9 w-full bg-background/50 sm:w-40" />
+          <DatePicker aria-label="From date" value={from} min={APP_LIVE_YMD} max={to || undefined} onChange={setFrom} clearable className="h-9 w-full bg-background/50 sm:w-40" />
         </div>
         <div className="space-y-1">
           <Label className="text-xs text-muted-foreground">To</Label>
-          <Input type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} className="h-9 w-full bg-background/50 sm:w-40" />
+          <DatePicker aria-label="To date" value={to} min={from || APP_LIVE_YMD} onChange={setTo} clearable className="h-9 w-full bg-background/50 sm:w-40" />
         </div>
         <div className="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
           <Button variant="outline" onClick={() => download('csv')} disabled={busy === 'csv'} className="flex-1 sm:flex-none">

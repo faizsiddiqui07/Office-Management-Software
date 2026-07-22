@@ -9,6 +9,7 @@ import { AppDialog } from '@/components/glass/app-dialog';
 import { ConfirmDialog } from '@/components/glass/confirm-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
@@ -130,12 +131,13 @@ export function HolidayDialog({ open, onOpenChange, holiday, defaultStartYMD }) 
         {isBirthday ? (
           <div className="space-y-1.5">
             <Label htmlFor="h-start">Date of birth</Label>
-            <Input
+            <DatePicker
               id="h-start"
-              type="date"
               value={start}
+              min="1940-01-01"
               max={todayYMDLocal()}
-              onChange={(e) => setStart(e.target.value)}
+              onChange={setStart}
+              placeholder="Pick the date of birth"
               className="bg-background/50"
             />
             <p className="text-xs text-muted-foreground">
@@ -146,20 +148,19 @@ export function HolidayDialog({ open, onOpenChange, holiday, defaultStartYMD }) 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="h-start">From</Label>
-              <Input
+              <DatePicker
                 id="h-start"
-                type="date"
                 value={start}
-                onChange={(e) => {
-                  setStart(e.target.value);
-                  if (!end || end < e.target.value) setEnd(e.target.value);
+                onChange={(v) => {
+                  setStart(v);
+                  if (!end || end < v) setEnd(v);
                 }}
                 className="bg-background/50"
               />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="h-end">To</Label>
-              <Input id="h-end" type="date" value={end} min={start || undefined} onChange={(e) => setEnd(e.target.value)} className="bg-background/50" />
+              <DatePicker id="h-end" value={end} min={start || undefined} onChange={setEnd} className="bg-background/50" />
             </div>
           </div>
         )}

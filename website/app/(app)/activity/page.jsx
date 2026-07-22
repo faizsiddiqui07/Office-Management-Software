@@ -6,6 +6,8 @@ import { Activity, ChevronLeft, ChevronRight, ShieldAlert } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can, prettyRole } from '@/lib/permissions';
+import { DatePicker } from '@/components/ui/date-picker';
+import { APP_LIVE_YMD } from '@/lib/app-live';
 import { useRoleOptions } from '@/lib/use-roles';
 import { PageHeader } from '@/components/glass/page-header';
 import { GlassPanel } from '@/components/glass/glass-panel';
@@ -88,11 +90,11 @@ export default function ActivityPage() {
           </div>
           <div className="w-full space-y-1.5 sm:w-auto">
             <Label htmlFor="a-from">From</Label>
-            <Input id="a-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="w-full bg-background/50 sm:w-44" />
+            <DatePicker id="a-from" value={from} min={APP_LIVE_YMD} max={to || undefined} onChange={setFrom} className="w-full bg-background/50 sm:w-44" />
           </div>
           <div className="w-full space-y-1.5 sm:w-auto">
             <Label htmlFor="a-to">To</Label>
-            <Input id="a-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} className="w-full bg-background/50 sm:w-44" />
+            <DatePicker id="a-to" value={to} min={from || APP_LIVE_YMD} onChange={setTo} className="w-full bg-background/50 sm:w-44" />
           </div>
           {(action || from || to) ? (
             <Button variant="ghost" onClick={() => { setAction(''); setFrom(''); setTo(''); }}>Clear</Button>

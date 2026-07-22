@@ -16,6 +16,7 @@ import { EmptyState } from '@/components/glass/empty-state';
 import { LoadingState } from '@/components/glass/skeletons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { TimePicker } from '@/components/ui/time-picker';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { BonusSettings } from '@/components/settings/bonus-settings';
@@ -446,11 +447,11 @@ export default function SettingsPage() {
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <div className="space-y-1.5">
                 <Label htmlFor="s-start">Work start</Label>
-                <Input id="s-start" type="time" value={form.workStart} onChange={(e) => set('workStart', e.target.value)} className="bg-background/50" />
+                <TimePicker id="s-start" value={form.workStart} onChange={(v) => set('workStart', v)} className="bg-background/50" />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="s-end">Work end</Label>
-                <Input id="s-end" type="time" value={form.workEnd} onChange={(e) => set('workEnd', e.target.value)} className="bg-background/50" />
+                <TimePicker id="s-end" value={form.workEnd} onChange={(v) => set('workEnd', v)} className="bg-background/50" />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="s-grace">Grace period (minutes)</Label>

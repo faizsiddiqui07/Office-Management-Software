@@ -8,6 +8,9 @@ import { api } from '@/lib/api';
 import { AppDialog } from '@/components/glass/app-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
+import { TimePicker } from '@/components/ui/time-picker';
+import { APP_LIVE_YMD } from '@/lib/app-live';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -38,6 +41,8 @@ export function VisitorDialog({ visitor, open: openProp, onOpenChange }) {
 
   const [form, setForm] = React.useState({});
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  // Same, but for the app's own pickers — they hand back the value, not an event.
+  const setV = (k) => (v) => setForm((f) => ({ ...f, [k]: v }));
 
   React.useEffect(() => {
     if (!open) return;
@@ -151,15 +156,15 @@ export function VisitorDialog({ visitor, open: openProp, onOpenChange }) {
         <div className="grid gap-4 sm:grid-cols-3">
           <div className="space-y-1.5">
             <Label htmlFor="v-date">Date</Label>
-            <Input id="v-date" type="date" value={form.dateYMD || ''} max={todayYMD()} onChange={set('dateYMD')} className="bg-background/50" />
+            <DatePicker id="v-date" value={form.dateYMD || ''} min={APP_LIVE_YMD} max={todayYMD()} onChange={setV('dateYMD')} className="bg-background/50" />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="v-in">Check-in</Label>
-            <Input id="v-in" type="time" value={form.checkInTime || ''} onChange={set('checkInTime')} disabled={timesLocked} className="bg-background/50 disabled:cursor-not-allowed disabled:opacity-60" />
+            <TimePicker id="v-in" value={form.checkInTime || ''} onChange={setV('checkInTime')} disabled={timesLocked} className="bg-background/50 disabled:cursor-not-allowed disabled:opacity-60" />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="v-out">Check-out</Label>
-            <Input id="v-out" type="time" value={form.checkOutTime || ''} onChange={set('checkOutTime')} disabled={timesLocked} className="bg-background/50 disabled:cursor-not-allowed disabled:opacity-60" />
+            <TimePicker id="v-out" value={form.checkOutTime || ''} onChange={setV('checkOutTime')} disabled={timesLocked} className="bg-background/50 disabled:cursor-not-allowed disabled:opacity-60" />
           </div>
         </div>
         {timesLocked ? (

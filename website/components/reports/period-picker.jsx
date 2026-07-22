@@ -1,7 +1,6 @@
 'use client';
 
 import * as React from 'react';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -11,6 +10,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { DateRange } from '@/components/ui/date-range';
+import { DatePicker } from '@/components/ui/date-picker';
+import { APP_LIVE_YMD, APP_LIVE_MONTH } from '@/lib/app-live';
 import { REPORT_TYPES } from '@/lib/report';
 import { todayYMD } from '@/lib/expense';
 
@@ -29,7 +30,23 @@ function fiscalYearOf(ymd) {
 export function PeriodPicker({ type, onTypeChange, date, onDateChange, range, onRangeChange, idPrefix = 'pp' }) {
   const today = todayYMD();
   const currentFY = fiscalYearOf(today);
-  const fyOptions = [currentFY, currentFY - 1, currentFY - 2, currentFY - 3];
+  // Never offer a fiscal year from before the system went live — those reports would
+  // be a page of "absent" for data that simply doesn't exist.
+  const firstFY = fiscalYearOf(APP_LIVE_YMD);
+  const fyOptions = [];
+  for (let y = currentFY; y >= firstFY; y -= 1) fyOptions.push(y);
+
+  // Every month from go-live to now, newest first.
+  const monthOptions = [];
+  for (let key = today.slice(0, 7); key >= APP_LIVE_MONTH; ) {
+    const [y, m] = key.split('-').map(Number);
+    monthOptions.push({
+      value: key,
+      label: new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' }),
+    });
+    const prev = new Date(Date.UTC(y, m - 2, 1));
+    key = `${prev.getUTCFullYear()}-${String(prev.getUTCMonth() + 1).padStart(2, '0')}`;
+  }
 
   return (
     <>
@@ -52,12 +69,12 @@ export function PeriodPicker({ type, onTypeChange, date, onDateChange, range, on
       {type === 'daily' ? (
         <div className="w-full space-y-1.5 sm:w-auto">
           <Label htmlFor={`${idPrefix}-date`}>Date</Label>
-          <Input
+          <DatePicker
             id={`${idPrefix}-date`}
-            type="date"
             value={date}
+            min={APP_LIVE_YMD}
             max={today}
-            onChange={(e) => onDateChange(e.target.value || today)}
+            onChange={(v) => onDateChange(v || today)}
             className="w-full bg-background/50 sm:w-44"
           />
         </div>
@@ -66,11 +83,12 @@ export function PeriodPicker({ type, onTypeChange, date, onDateChange, range, on
       {type === 'weekly' ? (
         <div className="w-full space-y-1.5 sm:w-auto">
           <Label htmlFor={`${idPrefix}-week`}>Any date in that week</Label>
-          <Input
+          <DatePicker
             id={`${idPrefix}-week`}
-            type="date"
             value={date}
-            onChange={(e) => onDateChange(e.target.value || today)}
+            min={APP_LIVE_YMD}
+            max={today}
+            onChange={(v) => onDateChange(v || today)}
             className="w-full bg-background/50 sm:w-44"
           />
         </div>
@@ -79,14 +97,21 @@ export function PeriodPicker({ type, onTypeChange, date, onDateChange, range, on
       {type === 'monthly' ? (
         <div className="w-full space-y-1.5 sm:w-auto">
           <Label htmlFor={`${idPrefix}-month`}>Month</Label>
-          <Input
-            id={`${idPrefix}-month`}
-            type="month"
-            value={date.slice(0, 7)}
-            max={today.slice(0, 7)}
-            onChange={(e) => onDateChange(e.target.value ? `${e.target.value}-01` : today)}
-            className="w-full bg-background/50 sm:w-44"
-          />
+          {/* A bounded list, not <input type="month">: Firefox and desktop Safari render
+              that as a plain text box and ignore min entirely, which reopened the
+              pre-live months this picker exists to close off. */}
+          <Select value={date.slice(0, 7)} onValueChange={(v) => onDateChange(`${v}-01`)}>
+            <SelectTrigger id={`${idPrefix}-month`} className="w-full bg-background/50 sm:w-44">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {monthOptions.map((m) => (
+                <SelectItem key={m.value} value={m.value}>
+                  {m.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       ) : null}
 

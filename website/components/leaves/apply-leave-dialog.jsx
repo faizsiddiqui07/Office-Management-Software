@@ -8,7 +8,8 @@ import { api } from '@/lib/api';
 import { holidayYMDSetFromList } from '@/lib/calendar';
 import { AppDialog } from '@/components/glass/app-dialog';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
+import { APP_LIVE_YMD } from '@/lib/app-live';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
@@ -136,25 +137,24 @@ export function ApplyLeaveDialog({ leave, open: openProp, onOpenChange }) {
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label htmlFor="lv-start">From</Label>
-            <Input
+            <DatePicker
               id="lv-start"
-              type="date"
               value={start}
-              onChange={(e) => {
-                setStart(e.target.value);
-                if (!end || end < e.target.value) setEnd(e.target.value);
+              min={APP_LIVE_YMD}
+              onChange={(v) => {
+                setStart(v);
+                if (!end || end < v) setEnd(v);
               }}
               className="bg-background/50"
             />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="lv-end">To</Label>
-            <Input
+            <DatePicker
               id="lv-end"
-              type="date"
               value={end}
-              min={start || undefined}
-              onChange={(e) => setEnd(e.target.value)}
+              min={start || APP_LIVE_YMD}
+              onChange={setEnd}
               className="bg-background/50"
             />
           </div>

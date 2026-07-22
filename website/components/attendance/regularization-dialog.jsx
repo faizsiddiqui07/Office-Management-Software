@@ -7,7 +7,9 @@ import { Wrench } from 'lucide-react';
 import { api } from '@/lib/api';
 import { AppDialog } from '@/components/glass/app-dialog';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
+import { TimePicker } from '@/components/ui/time-picker';
+import { APP_LIVE_YMD } from '@/lib/app-live';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { todayYMD } from '@/lib/time';
@@ -71,16 +73,16 @@ export function RegularizationDialog() {
       <div className="max-h-[70vh] space-y-4 overflow-y-auto py-2">
         <div className="space-y-1.5">
           <Label htmlFor="r-date">Date</Label>
-          <Input id="r-date" type="date" value={date} max={todayYMD()} onChange={(e) => setDate(e.target.value)} className="bg-background/50" />
+          <DatePicker id="r-date" value={date} min={APP_LIVE_YMD} max={todayYMD()} onChange={setDate} className="bg-background/50" />
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label htmlFor="r-in">Check-in time</Label>
-            <Input id="r-in" type="time" value={checkIn} onChange={(e) => setCheckIn(e.target.value)} className="bg-background/50" />
+            <TimePicker id="r-in" value={checkIn} onChange={setCheckIn} className="bg-background/50" />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="r-out">Check-out time</Label>
-            <Input id="r-out" type="time" value={checkOut} onChange={(e) => setCheckOut(e.target.value)} className="bg-background/50" />
+            <TimePicker id="r-out" value={checkOut} onChange={setCheckOut} className="bg-background/50" />
           </div>
         </div>
         <p className="text-xs text-muted-foreground">Leave a time blank if it’s already correct.</p>

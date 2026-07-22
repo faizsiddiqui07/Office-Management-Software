@@ -8,6 +8,9 @@ import { api, getAuthToken } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can, roleName } from '@/lib/permissions';
 import { effectiveStatus } from '@/lib/attendance';
+import { DatePicker } from '@/components/ui/date-picker';
+import { TimePicker } from '@/components/ui/time-picker';
+import { APP_LIVE_YMD } from '@/lib/app-live';
 import { formatYMD } from '@/lib/leave';
 import { AttendanceStatusBadge, attendanceStatusText } from './attendance-status-badge';
 import { DataTable } from '@/components/glass/data-table';
@@ -16,7 +19,6 @@ import { TableSkeleton } from '@/components/glass/skeletons';
 import { AppDialog } from '@/components/glass/app-dialog';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -298,12 +300,12 @@ export function EveryoneTab() {
           <Label htmlFor="ov-date" className="text-sm text-muted-foreground">
             Date
           </Label>
-          <Input
+          <DatePicker
             id="ov-date"
-            type="date"
             value={date}
+            min={APP_LIVE_YMD}
             max={todayYMD()}
-            onChange={(e) => setDate(e.target.value || todayYMD())}
+            onChange={(v) => setDate(v || todayYMD())}
             className="w-full bg-background/50 sm:w-44"
           />
           <div className="flex w-full gap-2 sm:w-auto">
@@ -436,11 +438,11 @@ export function EveryoneTab() {
                       <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1.5">
                           <Label htmlFor="ed-in">Check-in</Label>
-                          <Input id="ed-in" type="time" value={editIn} onChange={(e) => setEditIn(e.target.value)} className="bg-background/50" />
+                          <TimePicker id="ed-in" value={editIn} onChange={setEditIn} className="bg-background/50" />
                         </div>
                         <div className="space-y-1.5">
                           <Label htmlFor="ed-out">Check-out</Label>
-                          <Input id="ed-out" type="time" value={editOut} onChange={(e) => setEditOut(e.target.value)} className="bg-background/50" />
+                          <TimePicker id="ed-out" value={editOut} onChange={setEditOut} className="bg-background/50" />
                         </div>
                       </div>
                       <p className="text-xs text-muted-foreground">Late/overtime recompute automatically from their schedule.</p>

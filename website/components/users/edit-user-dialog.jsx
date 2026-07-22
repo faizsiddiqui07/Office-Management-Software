@@ -9,6 +9,7 @@ import { useAuth } from '@/lib/auth';
 import { AppDialog } from '@/components/glass/app-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -160,7 +161,7 @@ export function EditUserDialog({ user: target, open, onOpenChange }) {
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="eu-joined">Joined on</Label>
-          <Input id="eu-joined" type="date" value={joiningDate} onChange={(e) => setJoiningDate(e.target.value)} className="bg-background/50" />
+          <DatePicker id="eu-joined" value={joiningDate} min="2000-01-01" onChange={setJoiningDate} className="bg-background/50" />
           <p className="text-xs text-muted-foreground">
             Attendance, reports and exports only count this person from this date — they don&apos;t appear at all before it.
           </p>
