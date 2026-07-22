@@ -80,9 +80,18 @@ export async function pendingFor(user) {
 }
 
 /**
- * What this person decided, over a window they choose — so "which leave did I approve
- * last month?" is answerable here instead of on three other screens. Their OWN
- * decisions only: this is a record of what you did, not an audit of everyone.
+ * What has been decided, over a window they choose — so "which leave was approved last
+ * month?" is answerable here instead of on another screen.
+ *
+ * Scoped to MATCH THE PENDING SIDE, which is the whole point of the page. Pending
+ * shows every leave awaiting a decision, not only the ones you happen to be named on,
+ * so history shows every leave that was decided — with the decider's name on each row.
+ * Filtering history to your own decisions made the two halves disagree: three leaves
+ * were approved and the page showed two, because a colleague approved the third.
+ *
+ * Tasks are the exception and stay yours alone. A task approval belongs to whoever
+ * handed the work out; listing everybody's would put other people's work on your
+ * screen, which is a different thing from a shared approval queue.
  *
  * `kind` narrows it to one type, because the page shows one type at a time.
  */
@@ -101,20 +110,22 @@ export async function historyFor(user, { fromYMD, toYMD, kind } = {}) {
   const [leaves, regularizations, tasks] = await Promise.all([
     sections.leaves && want('leaves')
       ? // APPROVED/REJECTED only. Cancelling reuses decidedBy and decidedAt on this
-        // model, so without the status filter a leave the person withdrew themselves
-        // would be listed here as something YOU decided.
-        LeaveRequest.find({ decidedBy: user._id, decidedAt: { $gte: since, $lte: until }, status: { $in: ['APPROVED', 'REJECTED'] } })
+        // model, so without the status filter a leave somebody withdrew themselves
+        // would be listed here as though it had been refused.
+        LeaveRequest.find({ decidedAt: { $gte: since, $lte: until }, status: { $in: ['APPROVED', 'REJECTED'] } })
           .select(LEAVE_FIELDS)
           .sort({ decidedAt: -1 })
           .limit(200)
           .populate('user', 'name employeeId')
+          .populate('decidedBy', 'name')
       : [],
     sections.regularizations && want('regularizations')
-      ? Regularization.find({ decidedBy: user._id, decidedAt: { $gte: since, $lte: until } })
+      ? Regularization.find({ decidedAt: { $gte: since, $lte: until }, status: { $ne: 'PENDING' } })
           .select(REG_FIELDS)
           .sort({ decidedAt: -1 })
           .limit(200)
           .populate('user', 'name employeeId')
+          .populate('decidedBy', 'name')
       : [],
     // A rejection sends the task back to PENDING and keeps the reason, so both
     // outcomes are found by "I approved it" or "I left a reason".

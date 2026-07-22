@@ -87,11 +87,12 @@ export default function ApprovalsPage() {
   const sections = data?.sections ?? NO_SECTIONS;
   const counts = data?.counts ?? NO_COUNTS;
 
-  // Only tabs this person can actually act on. Tasks stay only if they have any —
-  // an empty tab nobody can ever fill is just a dead end.
+  // Tabs this person can act on. Work is always here: approvals on work come to
+  // whoever handed it out, so the tab having nothing in it today says something true
+  // — hiding it just made people think the feature was missing.
   const visibleTabs = React.useMemo(
-    () => TABS.filter((t) => (t.key === 'tasks' ? (data?.tasks?.length ?? 0) > 0 || counts.tasks > 0 : sections[t.key])),
-    [sections, data, counts.tasks],
+    () => TABS.filter((t) => t.key === 'tasks' || sections[t.key]),
+    [sections],
   );
 
   // Land on the tab that actually needs attention, not always the first one.
@@ -202,9 +203,11 @@ export default function ApprovalsPage() {
               icon={CheckCheck}
               title={`No ${current?.label.toLowerCase()} waiting`}
               description={
-                counts.total > 0
-                  ? 'Nothing of this kind needs you. Check the other tabs — they have something.'
-                  : 'Nothing is waiting on you right now.'
+                tab === 'tasks'
+                  ? 'Work comes here when someone finishes a task you handed out with “require my approval” switched on. None of yours is waiting.'
+                  : counts.total > 0
+                    ? 'Nothing of this kind needs you. Check the other tabs — they have something.'
+                    : 'Nothing is waiting on you right now.'
               }
             />
           ) : (
@@ -318,16 +321,17 @@ function HistoryList({ history, kind }) {
       return (history.leaves ?? []).map((l) => ({
         id: l.id, when: l.decidedAt, who: l.user?.name,
         what: `${LEAVE_TYPE_LABELS[l.type] ?? l.type} · ${formatRange(l.startYMD, l.endYMD)}`,
-        status: l.status, verb: l.status, note: l.decisionNote,
+        by: l.decidedBy?.name, status: l.status, verb: l.status, note: l.decisionNote,
       }));
     }
     if (kind === 'regularizations') {
       return (history.regularizations ?? []).map((r) => ({
         id: r.id, when: r.decidedAt, who: r.user?.name,
         what: `Correction · ${formatYMD(r.dateYMD)}`,
-        status: r.status, verb: r.status, note: r.decisionNote,
+        by: r.decidedBy?.name, status: r.status, verb: r.status, note: r.decisionNote,
       }));
     }
+    // No `by` here: a task approval is always yours, so naming you on every row is noise.
     return (history.tasks ?? []).map((t) => ({
       id: t.id, when: t.completedAt || t.updatedAt, who: t.owner?.name, what: t.title,
       status: t.status === 'DONE' ? 'APPROVED' : 'REJECTED',
@@ -350,7 +354,10 @@ function HistoryList({ history, kind }) {
           <div key={r.id} className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1.5 py-2.5">
             <div className="min-w-0 basis-full sm:flex-1 sm:basis-auto">
               <p className="break-words text-sm font-medium">{r.who || '—'}</p>
-              <p className="break-words text-xs text-muted-foreground">{r.what}</p>
+              <p className="break-words text-xs text-muted-foreground">
+                {r.what}
+                {r.by ? <span className="text-muted-foreground/70"> · by {r.by}</span> : null}
+              </p>
               {r.note ? <p className="mt-0.5 break-words text-xs italic text-muted-foreground">“{r.note}”</p> : null}
             </div>
             <div className="flex shrink-0 items-center gap-2">
