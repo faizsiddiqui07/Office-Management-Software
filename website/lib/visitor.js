@@ -26,7 +26,7 @@ export function todayYMD() {
 export async function downloadVisitors(format, params = {}) {
   const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
   const url = `${API_BASE}/api/visitors/export.${format}${qs ? `?${qs}` : ''}`;
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${getAuthToken()}` } });
+  const res = await fetch(url, { cache: 'no-store', headers: { Authorization: `Bearer ${getAuthToken()}` } });
   if (!res.ok) throw new Error('Could not download the register');
   const blob = await res.blob();
   const objUrl = URL.createObjectURL(blob);

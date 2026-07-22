@@ -27,7 +27,7 @@ export function isOverdue(dueYMD) {
 
 export async function downloadTasksPdf(scope, view = 'mine') {
   const url = `${API_BASE}/api/tasks/export.pdf?scope=${encodeURIComponent(scope)}&view=${view}`;
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${getAuthToken()}` } });
+  const res = await fetch(url, { cache: 'no-store', headers: { Authorization: `Bearer ${getAuthToken()}` } });
   if (!res.ok) throw new Error('Could not generate the PDF');
   const blob = await res.blob();
   const objUrl = URL.createObjectURL(blob);

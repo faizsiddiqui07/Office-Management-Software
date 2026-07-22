@@ -54,6 +54,12 @@ async function request(path, options = {}) {
   const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
   const init = {
     ...rest,
+    // Never let the browser answer from its own HTTP cache. iOS in particular will
+    // happily serve a stored GET when the response doesn't forbid it, which is how a
+    // deleted task kept reappearing on an iPhone. The server now says no-store too;
+    // this is the same instruction from the other end, so an old cached entry that
+    // predates the server change can't be used either.
+    cache: 'no-store',
     // Auth is via the Bearer token header (not cookies), so we don't send
     // credentials — this keeps CORS simple and works across domains.
     headers: {
@@ -118,7 +124,7 @@ export async function downloadFile(url, filename) {
   const fullUrl = /^https?:\/\//i.test(url) ? url : `${BASE_URL}/api${url}`;
   let res;
   try {
-    res = await fetch(fullUrl, { headers: authToken ? { Authorization: `Bearer ${authToken}` } : {} });
+    res = await fetch(fullUrl, { cache: 'no-store', headers: authToken ? { Authorization: `Bearer ${authToken}` } : {} });
   } catch (err) {
     throw new ApiError(0, 'NETWORK_ERROR', 'Could not reach the server. Is it running?', err);
   }

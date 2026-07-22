@@ -35,6 +35,31 @@ app.use(express.urlencoded({ extended: true }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
 /* ── API routes ──────────────────────────────────────────── */
+
+/**
+ * Nothing this API returns may be cached. Every response is one person's private,
+ * live data — a task list, an attendance sheet, a leave balance — and there is no
+ * such thing as a stale-but-acceptable version of it.
+ *
+ * This is the fix for the iPhone showing work that had already been deleted. iOS
+ * caches a GET aggressively when the response says nothing about caching, so the app
+ * kept being handed an answer from before the change. The service worker was never
+ * the culprit and neither was the query cache: it was the browser's own HTTP cache,
+ * doing exactly what it is allowed to do when nobody tells it otherwise.
+ *
+ * `no-store` rather than `no-cache`: no-cache still stores the response and merely
+ * revalidates, which on a flaky mobile connection is how a stale body gets served.
+ * Pragma and Expires are there for older proxies that ignore Cache-Control.
+ */
+app.use('/api', (_req, res, next) => {
+  res.set({
+    'Cache-Control': 'no-store, no-cache, must-revalidate, private',
+    Pragma: 'no-cache',
+    Expires: '0',
+  });
+  next();
+});
+
 app.use('/api', apiRouter);
 
 /* ── 404 + global error handler (must be last) ───────────── */
