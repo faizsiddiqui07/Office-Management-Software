@@ -87,13 +87,10 @@ export default function ApprovalsPage() {
   const sections = data?.sections ?? NO_SECTIONS;
   const counts = data?.counts ?? NO_COUNTS;
 
-  // Tabs this person can act on. Work is always here: approvals on work come to
-  // whoever handed it out, so the tab having nothing in it today says something true
-  // — hiding it just made people think the feature was missing.
-  const visibleTabs = React.useMemo(
-    () => TABS.filter((t) => t.key === 'tasks' || sections[t.key]),
-    [sections],
-  );
+  // The server decides. Work is a tab here for anyone the module is for, even when
+  // empty — hiding it made people think the feature had never been built — but the
+  // rows inside are only ever work THIS person handed out.
+  const visibleTabs = React.useMemo(() => TABS.filter((t) => sections[t.key]), [sections]);
 
   // Land on the tab that actually needs attention, not always the first one.
   React.useEffect(() => {
@@ -159,12 +156,15 @@ export default function ApprovalsPage() {
         />
       ) : isLoading && !data ? (
         <LoadingState label="Gathering everything…" />
-      ) : !visibleTabs.length ? (
+      ) : !data.allowed ? (
+        // Reachable only by typing the URL — the sidebar link is already hidden.
         <EmptyState
-          icon={CheckCheck}
-          title="Nothing comes to you"
-          description="No approvals are routed to you. If you hand out work with “require my approval” switched on, it’ll appear here."
+          icon={Inbox}
+          title="This page isn’t for your role"
+          description="Approvals here are for leave and attendance corrections. Work you handed out is approved on the To-Do page, next to the task itself."
         />
+      ) : !visibleTabs.length ? (
+        <EmptyState icon={CheckCheck} title="Nothing comes to you" description="No approvals are routed to you." />
       ) : (
         <>
           {/* ── Tabs. Horizontal scroll below sm so three tabs never squash. ── */}

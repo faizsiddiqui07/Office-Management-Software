@@ -24,12 +24,31 @@ import { ymdInTz, companyDayFromYMD } from '../lib/time.js';
 const LEAVE_FIELDS = 'user type startYMD endYMD workingDays halfDay reason status appliedAt decidedBy decidedAt decisionNote';
 const REG_FIELDS = 'user dateYMD requestedCheckIn requestedCheckOut reason status decidedBy decidedAt decisionNote createdAt';
 
-/** Which sections this person can see at all. Drives both the payload and the UI. */
+/**
+ * Whether this module belongs to this person at all.
+ *
+ * It is for people who hold an approval DUTY — leave, attendance corrections, or both.
+ * Approving work you handed out is not such a duty: everybody can delegate a task and
+ * ask to see it finished, and that already happens on the To-Do page where the work
+ * lives. Letting task-ownership alone open this module put an inbox in front of nine
+ * people who have nothing to decide in it.
+ */
+export function canUseApprovals(user) {
+  return can(user, 'approveLeave') || can(user, 'approveRegularization');
+}
+
+/**
+ * Which sections this person can see. Leave and corrections follow the permission;
+ * work follows OWNERSHIP — you only ever see approvals on work you handed out
+ * yourself, so two people with identical permissions still never see each other's.
+ */
 export function sectionsFor(user) {
+  const allowed = canUseApprovals(user);
   return {
     leaves: can(user, 'approveLeave'),
     regularizations: can(user, 'approveRegularization'),
-    tasks: true, // gated by ownership, not permission — always worth checking
+    // Only inside this module, and only ever your own — see pendingFor's assignedBy filter.
+    tasks: allowed,
   };
 }
 
@@ -55,17 +74,26 @@ export async function pendingFor(user) {
     // Only tasks THIS person handed out and asked to approve. `submittedAt` set with
     // no decision yet is exactly what the awaitingApproval virtual means; querying the
     // fields directly keeps it a database filter rather than a scan.
-    Task.find({ assignedBy: user._id, requiresApproval: true, submittedAt: { $ne: null }, status: { $ne: 'DONE' } })
-      .select('title notes dueYMD owner submittedAt completedBy assignBatch')
-      .sort({ submittedAt: 1 })
-      .limit(200)
-      .populate('owner', 'name employeeId')
-      .populate('completedBy', 'name'),
+    //
+    // assignedBy is what keeps two people with identical permissions from ever seeing
+    // each other's work — three CEOs share every leave in the queue, and share none of
+    // their tasks.
+    sections.tasks
+      ? Task.find({ assignedBy: user._id, requiresApproval: true, submittedAt: { $ne: null }, status: { $ne: 'DONE' } })
+          .select('title notes dueYMD owner submittedAt completedBy assignBatch')
+          .sort({ submittedAt: 1 })
+          .limit(200)
+          .populate('owner', 'name employeeId')
+          .populate('completedBy', 'name')
+      : [],
   ]);
 
   const todayYMD = ymdInTz(new Date());
   return {
     sections,
+    // The client hides the whole page on this; the empty sections above are what
+    // actually enforce it, so a hand-built request gets nothing either way.
+    allowed: canUseApprovals(user),
     today: todayYMD,
     leaves: leaves.map((l) => l.toJSON()),
     regularizations: regularizations.map((r) => r.toJSON()),
@@ -129,7 +157,7 @@ export async function historyFor(user, { fromYMD, toYMD, kind } = {}) {
       : [],
     // A rejection sends the task back to PENDING and keeps the reason, so both
     // outcomes are found by "I approved it" or "I left a reason".
-    want('tasks')
+    sections.tasks && want('tasks')
       ? Task.find({
           assignedBy: user._id,
           requiresApproval: true,
@@ -145,6 +173,7 @@ export async function historyFor(user, { fromYMD, toYMD, kind } = {}) {
 
   return {
     sections,
+    allowed: canUseApprovals(user),
     range: { from, to },
     kind: kind || 'all',
     leaves: leaves.map((l) => l.toJSON()),
@@ -159,7 +188,9 @@ export async function pendingCount(user) {
   const [leaves, regularizations, tasks] = await Promise.all([
     sections.leaves ? LeaveRequest.countDocuments({ status: 'PENDING' }) : 0,
     sections.regularizations ? Regularization.countDocuments({ status: 'PENDING' }) : 0,
-    Task.countDocuments({ assignedBy: user._id, requiresApproval: true, submittedAt: { $ne: null }, status: { $ne: 'DONE' } }),
+    sections.tasks
+      ? Task.countDocuments({ assignedBy: user._id, requiresApproval: true, submittedAt: { $ne: null }, status: { $ne: 'DONE' } })
+      : 0,
   ]);
   return { leaves, regularizations, tasks, total: leaves + regularizations + tasks };
 }

@@ -87,9 +87,11 @@ const ALIAS = { viewUserData: 'viewEveryone' };
 export const NAV_ITEMS = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { label: 'To-Do', href: '/todo', icon: ListTodo },
-  // No permission gate: the page scopes itself. Leave and corrections need their
-  // permission, but a task comes to whoever handed it out — which can be anyone.
-  { label: 'Approvals', href: '/approvals', icon: Inbox },
+  // For people who hold an approval DUTY. Approving work you handed out isn't one —
+  // anybody can delegate a task, and that approval already lives on the To-Do page
+  // next to the work itself. Without this gate the inbox appeared for nine people
+  // who had nothing to decide in it.
+  { label: 'Approvals', href: '/approvals', icon: Inbox, anyOf: ['approveLeave', 'approveRegularization'] },
   // Your own numbers only — no permission needed, and nothing here belongs to anyone else.
   { label: 'My Summary', href: '/my-summary', icon: UserRound },
   { label: 'Attendance', href: '/attendance', icon: CalendarClock },
@@ -109,7 +111,12 @@ export const NAV_ITEMS = [
 ];
 
 export function navItemsFor(user) {
-  return NAV_ITEMS.filter((item) => !item.permission || can(user, item.permission));
+  return NAV_ITEMS.filter((item) => {
+    // `anyOf` for the pages that belong to more than one duty — a nav item shouldn't
+    // need a single permission to exist when two different ones both grant it.
+    if (item.anyOf) return item.anyOf.some((p) => can(user, p));
+    return !item.permission || can(user, item.permission);
+  });
 }
 
 /**

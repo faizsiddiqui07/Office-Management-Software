@@ -59,9 +59,12 @@ export async function getBadges(user) {
     leaves: newest(leaveToApprove, myLeaveDecided),
     attendance: newest(fixToApprove, myFixDecided),
     announcements: newest(announcement),
-    // The inbox gathers the three things that need a DECISION from this person, so
-    // its dot is the newest of exactly those — not the same as the leaves or
-    // attendance dots, which also react to your own request being answered.
-    approvals: newest(leaveToApprove, fixToApprove, awaitingMyApproval),
+    // The inbox is only for people holding an approval duty, so its dot has to be
+    // silent for everybody else — including someone whose own delegated work is
+    // waiting, since they approve that in To-Do, where the `todo` dot already covers it.
+    approvals:
+      can(user, 'approveLeave') || can(user, 'approveRegularization')
+        ? newest(leaveToApprove, fixToApprove, awaitingMyApproval)
+        : null,
   };
 }
