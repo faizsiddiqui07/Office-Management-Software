@@ -2,13 +2,15 @@
 
 import * as React from 'react';
 import { Popover } from '@base-ui/react/popover';
-import { CalendarDays, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { buildMonthGrid, todayYMDLocal } from '@/lib/calendar';
 import { APP_LIVE_YMD } from '@/lib/app-live';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const WEEKDAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']; // buildMonthGrid starts weeks on Sunday
+const YEARS_PER_PAGE = 12;
 
 const monthKey = (ymd) => Number(ymd.slice(0, 4)) * 12 + (Number(ymd.slice(5, 7)) - 1);
 
@@ -24,7 +26,11 @@ export function formatPickedDate(ymd) {
  * Two things the native control couldn't give us:
  *  - out-of-range days render greyed out IN the calendar, so "you can't pick before
  *    1 July 2026" is something people see rather than a silent refusal;
- *  - the year is a dropdown, so a 2002 date of birth doesn't take 288 taps to reach.
+ *  - tapping the caption drops into a month grid, and again into a year grid, so a
+ *    2002 date of birth is three taps rather than 288. These are panels INSIDE the
+ *    calendar, not dropdowns: a native <select> renders in OS chrome — white, boxy,
+ *    ignoring the app's theme entirely — and nesting another popup inside a popover
+ *    is a trap on mobile.
  *
  * Controlled: `value` is a yyyy-MM-dd string or ''. `min`/`max` bound both the grid
  * and the month navigation. No default floor here — the caller decides, because a
@@ -44,13 +50,19 @@ export function DatePicker({
   ...rest // aria-label and friends, straight onto the trigger button
 }) {
   const [open, setOpen] = React.useState(false);
+  // 'days' → the calendar; 'months' → pick a month in the shown year; 'years' → a page
+  // of years. Each step back up is one tap on the caption.
+  const [mode, setMode] = React.useState('days');
   const today = todayYMDLocal();
 
   // Where the calendar opens: the picked date, else today clamped into range.
   const anchor = value || (min && today < min ? min : max && today > max ? max : today);
   const [view, setView] = React.useState({ y: Number(anchor.slice(0, 4)), m: Number(anchor.slice(5, 7)) - 1 });
   React.useEffect(() => {
-    if (open) setView({ y: Number(anchor.slice(0, 4)), m: Number(anchor.slice(5, 7)) - 1 });
+    if (open) {
+      setView({ y: Number(anchor.slice(0, 4)), m: Number(anchor.slice(5, 7)) - 1 });
+      setMode('days');
+    }
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const yearFrom = min ? Number(min.slice(0, 4)) : 1950;
@@ -65,8 +77,22 @@ export function DatePicker({
     const k = Math.min(Math.max(viewKey + delta, minKey), maxKey);
     setView({ y: Math.floor(k / 12), m: k % 12 });
   };
-  const years = [];
-  for (let y = yearTo; y >= yearFrom; y -= 1) years.push(y);
+
+  // The year page currently on screen, anchored so the shown year is always in it.
+  // Math.max keeps a value that sits below yearFrom (possible when no min is given)
+  // from paging backwards past the start of the list.
+  const pageStart = yearFrom + Math.max(0, Math.floor((view.y - yearFrom) / YEARS_PER_PAGE)) * YEARS_PER_PAGE;
+  const yearPage = [];
+  for (let y = pageStart; y < pageStart + YEARS_PER_PAGE && y <= yearTo; y += 1) yearPage.push(y);
+
+  // What the ‹ › chevrons step, and whether they can: a month, a year, or a year page.
+  const step = mode === 'days' ? 1 : mode === 'months' ? 12 : YEARS_PER_PAGE * 12;
+  const canPrev = mode === 'years' ? pageStart > yearFrom : viewKey - step >= minKey;
+  const canNext = mode === 'years' ? pageStart + YEARS_PER_PAGE <= yearTo : viewKey + step <= maxKey;
+  const stepBy = (dir) => {
+    if (mode === 'years') setView((v) => ({ ...v, y: Math.min(Math.max(v.y + dir * YEARS_PER_PAGE, yearFrom), yearTo) }));
+    else go(dir * step);
+  };
 
   const cells = buildMonthGrid(view.y, view.m);
   const pick = (ymd) => {
@@ -74,9 +100,6 @@ export function DatePicker({
     setOpen(false);
   };
   const todayAllowed = (!min || today >= min) && (!max || today <= max);
-
-  const selectCls =
-    'rounded-md bg-transparent px-1 py-0.5 text-sm font-semibold text-foreground outline-none transition-colors hover:bg-foreground/5 focus-visible:ring-2 focus-visible:ring-primary/40';
 
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
@@ -107,95 +130,126 @@ export function DatePicker({
             <div className="flex items-center justify-between gap-1">
               <button
                 type="button"
-                onClick={() => go(-1)}
-                disabled={viewKey <= minKey}
-                aria-label="Previous month"
+                onClick={() => stepBy(-1)}
+                disabled={!canPrev}
+                aria-label="Previous"
                 className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
               >
                 <ChevronLeft className="size-4" />
               </button>
-              <div className="flex items-center gap-0.5">
-                <select
-                  aria-label="Month"
-                  value={view.m}
-                  onChange={(e) => {
-                    const m = Number(e.target.value);
-                    const k = Math.min(Math.max(view.y * 12 + m, minKey), maxKey);
-                    setView({ y: Math.floor(k / 12), m: k % 12 });
-                  }}
-                  className={selectCls}
-                >
-                  {MONTHS.map((label, i) => {
-                    const k = view.y * 12 + i;
-                    return (
-                      <option key={label} value={i} disabled={k < minKey || k > maxKey}>
-                        {label}
-                      </option>
-                    );
-                  })}
-                </select>
-                <select
-                  aria-label="Year"
-                  value={view.y}
-                  onChange={(e) => {
-                    const y = Number(e.target.value);
-                    const k = Math.min(Math.max(y * 12 + view.m, minKey), maxKey);
-                    setView({ y: Math.floor(k / 12), m: k % 12 });
-                  }}
-                  className={cn(selectCls, 'tabular-nums')}
-                >
-                  {years.map((y) => (
-                    <option key={y} value={y}>
-                      {y}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {/* The caption is the control: days → months → years, one tap each. */}
               <button
                 type="button"
-                onClick={() => go(1)}
-                disabled={viewKey >= maxKey}
-                aria-label="Next month"
+                onClick={() => setMode(mode === 'days' ? 'months' : mode === 'months' ? 'years' : 'days')}
+                className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-sm font-semibold transition-colors hover:bg-foreground/5"
+              >
+                <span className="tabular-nums">
+                  {mode === 'days' ? `${MONTHS[view.m]} ${view.y}` : mode === 'months' ? view.y : `${yearPage[0]} – ${yearPage[yearPage.length - 1]}`}
+                </span>
+                <ChevronDown className={cn('size-3.5 text-muted-foreground transition-transform', mode !== 'days' && 'rotate-180')} />
+              </button>
+              <button
+                type="button"
+                onClick={() => stepBy(1)}
+                disabled={!canNext}
+                aria-label="Next"
                 className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
               >
                 <ChevronRight className="size-4" />
               </button>
             </div>
 
-            <div className="mt-2 grid grid-cols-7 text-center">
-              {WEEKDAYS.map((d) => (
-                <span key={d} className="py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                  {d}
-                </span>
-              ))}
-              {cells.map((c) => {
-                const off = (min && c.ymd < min) || (max && c.ymd > max);
-                const sel = c.ymd === value;
-                const isToday = c.ymd === today;
-                return (
-                  <button
-                    key={c.ymd}
-                    type="button"
-                    disabled={off}
-                    onClick={() => pick(c.ymd)}
-                    aria-label={c.ymd}
-                    className={cn(
-                      'mx-auto flex size-9 items-center justify-center rounded-lg text-sm tabular-nums transition-colors',
-                      sel
-                        ? 'bg-primary font-semibold text-primary-foreground'
-                        : off
-                          ? 'cursor-not-allowed text-muted-foreground/30'
-                          : c.inMonth
-                            ? 'hover:bg-foreground/8'
-                            : 'text-muted-foreground/50 hover:bg-foreground/5',
-                      isToday && !sel && 'ring-1 ring-inset ring-primary/50',
-                    )}
-                  >
-                    {c.date.getDate()}
-                  </button>
-                );
-              })}
-            </div>
+            {mode === 'days' ? (
+              <div className="mt-2 grid grid-cols-7 text-center">
+                {WEEKDAYS.map((d) => (
+                  <span key={d} className="py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    {d}
+                  </span>
+                ))}
+                {cells.map((c) => {
+                  const off = (min && c.ymd < min) || (max && c.ymd > max);
+                  const sel = c.ymd === value;
+                  const isToday = c.ymd === today;
+                  return (
+                    <button
+                      key={c.ymd}
+                      type="button"
+                      disabled={off}
+                      onClick={() => pick(c.ymd)}
+                      aria-label={c.ymd}
+                      className={cn(
+                        'mx-auto flex size-9 items-center justify-center rounded-lg text-sm tabular-nums transition-colors',
+                        sel
+                          ? 'bg-primary font-semibold text-primary-foreground'
+                          : off
+                            ? 'cursor-not-allowed text-muted-foreground/30'
+                            : c.inMonth
+                              ? 'hover:bg-foreground/8'
+                              : 'text-muted-foreground/50 hover:bg-foreground/5',
+                        isToday && !sel && 'ring-1 ring-inset ring-primary/50',
+                      )}
+                    >
+                      {c.date.getDate()}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
+
+            {mode === 'months' ? (
+              <div className="mt-2 grid grid-cols-3 gap-1.5">
+                {MONTHS_SHORT.map((label, i) => {
+                  const k = view.y * 12 + i;
+                  const off = k < minKey || k > maxKey;
+                  const sel = !!value && Number(value.slice(0, 4)) === view.y && Number(value.slice(5, 7)) - 1 === i;
+                  return (
+                    <button
+                      key={label}
+                      type="button"
+                      disabled={off}
+                      aria-label={`${MONTHS[i]} ${view.y}`}
+                      onClick={() => {
+                        setView({ y: view.y, m: i });
+                        setMode('days');
+                      }}
+                      className={cn(
+                        'rounded-lg py-2 text-sm transition-colors',
+                        sel ? 'bg-primary font-semibold text-primary-foreground' : off ? 'cursor-not-allowed text-muted-foreground/30' : 'hover:bg-foreground/8',
+                      )}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
+
+            {mode === 'years' ? (
+              <div className="mt-2 grid grid-cols-3 gap-1.5">
+                {yearPage.map((y) => {
+                  // A year is reachable if any of its months is.
+                  const off = y * 12 + 11 < minKey || y * 12 > maxKey;
+                  const sel = !!value && Number(value.slice(0, 4)) === y;
+                  return (
+                    <button
+                      key={y}
+                      type="button"
+                      disabled={off}
+                      onClick={() => {
+                        setView((v) => ({ ...v, y }));
+                        setMode('months');
+                      }}
+                      className={cn(
+                        'rounded-lg py-2 text-sm tabular-nums transition-colors',
+                        sel ? 'bg-primary font-semibold text-primary-foreground' : off ? 'cursor-not-allowed text-muted-foreground/30' : 'hover:bg-foreground/8',
+                      )}
+                    >
+                      {y}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
 
             <div className="mt-2 flex items-center justify-between border-t border-border/50 pt-2">
               <div className="flex items-center gap-1">
