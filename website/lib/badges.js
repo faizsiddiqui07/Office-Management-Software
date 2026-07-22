@@ -18,6 +18,7 @@ const SEEN_PREFIX = 'om_seen_';
 /** Nav href → the key the API reports under. */
 export const BADGE_BY_HREF = {
   '/todo': 'todo',
+  '/approvals': 'approvals',
   '/leaves': 'leaves',
   '/attendance': 'attendance',
   '/announcements': 'announcements',

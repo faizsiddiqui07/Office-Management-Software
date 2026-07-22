@@ -7,6 +7,7 @@ import {
   DoorOpen,
   FileText,
   HandCoins,
+  Inbox,
   LayoutDashboard,
   ListTodo,
   Megaphone,
@@ -85,6 +86,9 @@ const ALIAS = { viewUserData: 'viewEveryone' };
 export const NAV_ITEMS = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { label: 'To-Do', href: '/todo', icon: ListTodo },
+  // No permission gate: the page scopes itself. Leave and corrections need their
+  // permission, but a task comes to whoever handed it out — which can be anyone.
+  { label: 'Approvals', href: '/approvals', icon: Inbox },
   { label: 'Attendance', href: '/attendance', icon: CalendarClock },
   { label: 'Leaves', href: '/leaves', icon: CalendarDays },
   { label: 'Dues', href: '/dues', icon: HandCoins },

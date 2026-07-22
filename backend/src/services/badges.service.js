@@ -59,5 +59,9 @@ export async function getBadges(user) {
     leaves: newest(leaveToApprove, myLeaveDecided),
     attendance: newest(fixToApprove, myFixDecided),
     announcements: newest(announcement),
+    // The inbox gathers the three things that need a DECISION from this person, so
+    // its dot is the newest of exactly those — not the same as the leaves or
+    // attendance dots, which also react to your own request being answered.
+    approvals: newest(leaveToApprove, fixToApprove, awaitingMyApproval),
   };
 }
