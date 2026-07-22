@@ -15,10 +15,15 @@ export async function pending(req, res, next) {
   }
 }
 
+const isYMD = (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+const KINDS = ['all', 'leaves', 'regularizations', 'tasks'];
+
 export async function history(req, res, next) {
   try {
-    const days = Number(req.query.days) || 30;
-    res.json(ok(await svc.historyFor(req.user, days)));
+    const fromYMD = isYMD(req.query.from) ? req.query.from : undefined;
+    const toYMD = isYMD(req.query.to) ? req.query.to : undefined;
+    const kind = KINDS.includes(req.query.kind) ? req.query.kind : undefined;
+    res.json(ok(await svc.historyFor(req.user, { fromYMD, toYMD, kind })));
   } catch (err) {
     next(err);
   }

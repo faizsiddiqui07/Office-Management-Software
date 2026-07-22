@@ -2,7 +2,7 @@ import { LeaveRequest } from '../models/LeaveRequest.js';
 import { Regularization } from '../models/Regularization.js';
 import { Task } from '../models/Task.js';
 import { can } from '../lib/permissions.js';
-import { ymdInTz } from '../lib/time.js';
+import { ymdInTz, companyDayFromYMD } from '../lib/time.js';
 
 /**
  * Everything waiting on ONE person's decision, gathered from the three places
@@ -80,49 +80,62 @@ export async function pendingFor(user) {
 }
 
 /**
- * What this person decided recently — so the page can answer "did I already deal with
- * that?" without sending them back to three other screens. Their OWN decisions only:
- * this is a record of what you did, not an audit of everyone.
+ * What this person decided, over a window they choose — so "which leave did I approve
+ * last month?" is answerable here instead of on three other screens. Their OWN
+ * decisions only: this is a record of what you did, not an audit of everyone.
+ *
+ * `kind` narrows it to one type, because the page shows one type at a time.
  */
-export async function historyFor(user, days = 30) {
+export async function historyFor(user, { fromYMD, toYMD, kind } = {}) {
   const sections = sectionsFor(user);
-  const since = new Date(Date.now() - Math.min(Math.max(days, 1), 180) * 86400000);
+
+  // A window is required; default to the last 30 days when none is given.
+  const to = toYMD || ymdInTz(new Date());
+  const from = fromYMD || ymdInTz(new Date(Date.now() - 30 * 86400000));
+  const since = companyDayFromYMD(from);
+  // toYMD is the START of that day, so a decision made later the same day would fall
+  // outside a $lte on it.
+  const until = new Date(companyDayFromYMD(to).getTime() + 86400000 - 1);
+  const want = (k) => !kind || kind === 'all' || kind === k;
 
   const [leaves, regularizations, tasks] = await Promise.all([
-    sections.leaves
+    sections.leaves && want('leaves')
       ? // APPROVED/REJECTED only. Cancelling reuses decidedBy and decidedAt on this
         // model, so without the status filter a leave the person withdrew themselves
         // would be listed here as something YOU decided.
-        LeaveRequest.find({ decidedBy: user._id, decidedAt: { $gte: since }, status: { $in: ['APPROVED', 'REJECTED'] } })
+        LeaveRequest.find({ decidedBy: user._id, decidedAt: { $gte: since, $lte: until }, status: { $in: ['APPROVED', 'REJECTED'] } })
           .select(LEAVE_FIELDS)
           .sort({ decidedAt: -1 })
-          .limit(100)
+          .limit(200)
           .populate('user', 'name employeeId')
       : [],
-    sections.regularizations
-      ? Regularization.find({ decidedBy: user._id, decidedAt: { $gte: since } })
+    sections.regularizations && want('regularizations')
+      ? Regularization.find({ decidedBy: user._id, decidedAt: { $gte: since, $lte: until } })
           .select(REG_FIELDS)
           .sort({ decidedAt: -1 })
-          .limit(100)
+          .limit(200)
           .populate('user', 'name employeeId')
       : [],
     // A rejection sends the task back to PENDING and keeps the reason, so both
     // outcomes are found by "I approved it" or "I left a reason".
-    Task.find({
-      assignedBy: user._id,
-      requiresApproval: true,
-      updatedAt: { $gte: since },
-      $or: [{ approvedBy: user._id }, { rejectionReason: { $nin: ['', null] } }],
-    })
-      .select('title owner status approvedBy rejectionReason completedAt updatedAt')
-      .sort({ updatedAt: -1 })
-      .limit(100)
-      .populate('owner', 'name employeeId'),
+    want('tasks')
+      ? Task.find({
+          assignedBy: user._id,
+          requiresApproval: true,
+          updatedAt: { $gte: since, $lte: until },
+          $or: [{ approvedBy: user._id }, { rejectionReason: { $nin: ['', null] } }],
+        })
+          .select('title owner status approvedBy rejectionReason completedAt updatedAt')
+          .sort({ updatedAt: -1 })
+          .limit(200)
+          .populate('owner', 'name employeeId')
+      : [],
   ]);
 
   return {
     sections,
-    days,
+    range: { from, to },
+    kind: kind || 'all',
     leaves: leaves.map((l) => l.toJSON()),
     regularizations: regularizations.map((r) => r.toJSON()),
     tasks: tasks.map((t) => t.toJSON()),

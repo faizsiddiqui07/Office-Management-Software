@@ -2,7 +2,6 @@
 
 import * as React from 'react';
 import { Check, X } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 
@@ -60,23 +59,24 @@ export function ApprovalCard({ title, subtitle, meta, waiting, children, onAppro
           />
           <div className="flex flex-wrap gap-2">
             <Button
+              className="h-10 sm:h-8"
               variant="destructive"
               disabled={busy || (requireReason && !reason.trim())}
               onClick={() => onReject(reason.trim())}
             >
               <X className="size-4" /> {rejectLabel}
             </Button>
-            <Button variant="ghost" onClick={() => { setRejecting(false); setReason(''); }} disabled={busy}>
+            <Button className="h-10 sm:h-8" variant="ghost" onClick={() => { setRejecting(false); setReason(''); }} disabled={busy}>
               Cancel
             </Button>
           </div>
         </div>
       ) : (
         <div className="mt-3 flex flex-wrap gap-2">
-          <Button onClick={onApprove} disabled={busy}>
+          <Button className="h-10 sm:h-8" onClick={onApprove} disabled={busy}>
             <Check className="size-4" /> Approve
           </Button>
-          <Button variant="outline" onClick={() => setRejecting(true)} disabled={busy}>
+          <Button className="h-10 sm:h-8" variant="outline" onClick={() => setRejecting(true)} disabled={busy}>
             <X className="size-4" /> {rejectLabel}
           </Button>
         </div>
@@ -85,21 +85,3 @@ export function ApprovalCard({ title, subtitle, meta, waiting, children, onAppro
   );
 }
 
-/** A section heading with its own pending count. */
-export function SectionHead({ icon: Icon, title, count, hint }) {
-  return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-1">
-      <Icon className="size-4 shrink-0 text-muted-foreground" />
-      <h2 className="font-semibold tracking-tight">{title}</h2>
-      <span
-        className={cn(
-          'rounded-full px-2 py-0.5 text-xs font-semibold',
-          count ? 'bg-primary/12 text-primary' : 'bg-muted/60 text-muted-foreground',
-        )}
-      >
-        {count}
-      </span>
-      {hint ? <span className="text-xs text-muted-foreground">{hint}</span> : null}
-    </div>
-  );
-}
