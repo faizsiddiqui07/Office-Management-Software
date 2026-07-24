@@ -82,6 +82,20 @@ function fmtDate(d) {
   });
 }
 
+/** Date AND time in company time — for a read receipt, where the minute matters. */
+function fmtDateTime(d) {
+  if (!d) return '';
+  return new Date(d).toLocaleString('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'Asia/Kolkata',
+  });
+}
+
 /** Earliest due date first; undated work sinks to the bottom (newest of those first). */
 function byDueDate(a, b) {
   if (a.dueYMD && b.dueYMD && a.dueYMD !== b.dueYMD) return a.dueYMD < b.dueYMD ? -1 : 1;
@@ -130,9 +144,9 @@ function SeenState({ task, myId }) {
   const mine = task.owner?.id === myId;
   if (task.seenAt) {
     return (
-      <span className="inline-flex items-center gap-1 text-primary" title={`Seen ${fmtDate(task.seenAt)}`}>
+      <span className="inline-flex items-center gap-1 text-primary" title={`Seen ${fmtDateTime(task.seenAt)}`}>
         <Eye className="size-3.5" />
-        {mine ? 'You’ve seen this' : `Seen ${fmtDate(task.seenAt)}`}
+        {mine ? 'You’ve seen this' : `Seen ${fmtDateTime(task.seenAt)}`}
       </span>
     );
   }
@@ -147,13 +161,29 @@ function SeenState({ task, myId }) {
 
 /** Where forwarded work came from and where it went — the chain stays visible so the
  *  original request is never lost behind whoever passed it on. */
-function ForwardTrail({ task }) {
+function ForwardTrail({ task, myId }) {
+  const chain = task.forwardChain || [];
   const origin = task.originalAssignedBy?.name;
   const passedOn = task.forwardedTo || [];
-  if (!origin && !passedOn.length) return null;
+  if (!chain.length && !origin && !passedOn.length) return null;
   return (
     <>
-      {origin ? (
+      {/* The full hand-off path: Khaan Aamir → Priyanshi Patel → You. Shown only when
+          the work actually passed through someone; a plain one-hop assignment falls
+          back to the shorter "from …" line below. */}
+      {chain.length ? (
+        <span className="inline-flex flex-wrap items-center gap-x-1 gap-y-0.5 text-primary">
+          <Forward className="size-3 shrink-0" />
+          {chain.map((n, i) => (
+            <span key={`${n.id ?? n.name}-${i}`} className="inline-flex items-center gap-1">
+              {i > 0 ? <span className="text-muted-foreground">→</span> : null}
+              <span className={i === chain.length - 1 ? 'font-medium text-foreground' : ''}>
+                {n.id && String(n.id) === String(myId) ? 'You' : n.name}
+              </span>
+            </span>
+          ))}
+        </span>
+      ) : origin ? (
         <span className="inline-flex items-center gap-1 text-primary" title={`Originally from ${origin}`}>
           <Forward className="size-3" /> via {task.assignedBy?.name?.split(' ')[0]} · from {origin}
         </span>
@@ -229,7 +259,7 @@ function TaskRow({ task, myId, canToggle, onToggle, onEdit, onDelete, onOpen }) 
           {task.requiresApproval && !done && !awaiting ? <span className="inline-flex items-center gap-1 text-primary"><ThumbsUp className="size-3" /> Needs approval</span> : null}
           {done && task.completedAt ? <span className="text-success">Done {fmtDate(task.completedAt)}{task.completedBy && task.completedBy.id !== myId ? ` · by ${task.completedBy.name}` : ''}</span> : null}
           {task.siblings?.length ? <SiblingProgress siblings={task.siblings} /> : null}
-          <ForwardTrail task={task} />
+          <ForwardTrail task={task} myId={myId} />
           <SeenState task={task} myId={myId} />
           <ApprovalState task={task} />
         </div>
@@ -546,7 +576,7 @@ function TaskDetailDialog({ view, myId, onClose, onToggle, onEdit, onDelete, onA
               <Row label="Read">
                 {task.seenAt ? (
                   <span className="inline-flex items-center gap-1.5 text-primary">
-                    <Eye className="size-3.5" /> Seen {fmtDate(task.seenAt)}
+                    <Eye className="size-3.5" /> Seen {fmtDateTime(task.seenAt)}
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-1.5 text-muted-foreground">

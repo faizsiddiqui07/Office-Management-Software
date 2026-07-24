@@ -421,6 +421,29 @@ async function settleParent(childTask, depth = 0) {
   await settleParent(parent, depth + 1);
 }
 
+/**
+ * Every task forwarded down from these — children, grandchildren, and so on. Used to
+ * carry an assigner's edit or delete all the way down the hand-off chain, so a junior
+ * and a super-junior never end up holding a version the sir has since changed or
+ * removed. Depth-guarded against a malformed loop.
+ */
+async function collectForwardDescendants(rootIds) {
+  const out = [];
+  const seen = new Set(rootIds.map(String));
+  let frontier = rootIds.map(String);
+  let depth = 0;
+  while (frontier.length && depth < 12) {
+    const kids = await Task.find({ forwardedFrom: { $in: frontier } });
+    const fresh = kids.filter((k) => !seen.has(String(k._id)));
+    if (!fresh.length) break;
+    for (const k of fresh) seen.add(String(k._id));
+    out.push(...fresh);
+    frontier = fresh.map((k) => String(k._id));
+    depth += 1;
+  }
+  return out;
+}
+
 export async function updateTask(actor, id, data) {
   const task = await Task.findById(id);
   if (!task) throw httpError(404, 'NOT_FOUND', 'Task not found');
@@ -493,6 +516,7 @@ export async function updateTask(actor, id, data) {
     const applyAll = !!data.applyToAll || data.assignTo !== undefined;
     const editSet = applyAll ? members : members.filter((mm) => String(mm._id) === String(id));
     let changedCount = 0;
+    const cascadeRoots = []; // copies whose CONTENT changed → push the same content down their forward chains
     for (const mm of editSet) {
       let changed = false;
       let contentChanged = false;
@@ -501,6 +525,7 @@ export async function updateTask(actor, id, data) {
       // wording nobody has read. Clear it so it goes back to "delivered" and earns a
       // fresh receipt the next time the assignee's list loads.
       if (contentChanged && mm.assignedBy && mm.seenAt) mm.seenAt = null;
+      if (contentChanged) cascadeRoots.push(mm._id);
       if (data.requiresApproval !== undefined && mm.requiresApproval !== !!data.requiresApproval) {
         mm.requiresApproval = !!data.requiresApproval;
         // Turning the gate OFF: drop any pending submission trail so no orphaned
@@ -513,6 +538,26 @@ export async function updateTask(actor, id, data) {
         changedCount += 1;
         if (mm.status !== 'DONE' && String(mm.owner) !== String(actor._id)) {
           await notify({ user: mm.owner, type: 'TASK_ASSIGNED', title: `${actor.name} updated a task`, message: mm.dueYMD ? `${mm.title} (due ${mm.dueYMD})` : mm.title, link: '/todo' });
+        }
+      }
+    }
+
+    // Carry the content edit down every forward chain hanging off an edited copy. Only
+    // CONTENT travels — never status, approval or who it's assigned to; those belong to
+    // each person's own copy. A DONE copy still gets the corrected wording, but keeps
+    // its completion.
+    if (cascadeRoots.length && Object.keys(patch).length) {
+      const descendants = await collectForwardDescendants(cascadeRoots);
+      for (const d of descendants) {
+        let dChanged = false;
+        for (const f of contentFields) if (patch[f] !== undefined && d[f] !== patch[f]) { d[f] = patch[f]; dChanged = true; }
+        if (dChanged) {
+          if (d.seenAt) d.seenAt = null; // rewritten under them → earn a fresh receipt
+          await d.save();
+          changedCount += 1;
+          if (d.status !== 'DONE') {
+            await notify({ user: d.owner, type: 'TASK_ASSIGNED', title: `${actor.name} updated a task`, message: d.dueYMD ? `${d.title} (due ${d.dueYMD})` : d.title, link: '/todo' });
+          }
         }
       }
     }
@@ -549,9 +594,27 @@ export async function deleteTask(actor, id) {
     throw httpError(403, 'ASSIGNED_TASK', 'This task was assigned to you — only the person who assigned it can delete it');
   }
   if (!isOwner && !isAssigner) throw httpError(403, 'FORBIDDEN', 'You cannot delete this task');
+
+  // Take the whole forward chain with it: if the sir removes a task, the junior and the
+  // super-junior it was passed to shouldn't be left holding a copy of work that no
+  // longer exists. Collected BEFORE the delete so the links are still intact.
+  const descendants = await collectForwardDescendants([task._id]);
+
   await task.deleteOne();
   try { await onAssignedTaskUndone(task._id); } catch (e) { console.error('bonus hook (delete) failed', e?.message); }
-  return { success: true };
+
+  for (const d of descendants) {
+    const ownerId = d.owner;
+    const title = d.title;
+    const wasOpen = d.status !== 'DONE';
+    await d.deleteOne();
+    try { await onAssignedTaskUndone(d._id); } catch (e) { console.error('bonus hook (cascade delete) failed', e?.message); }
+    if (wasOpen && String(ownerId) !== String(actor._id)) {
+      await notify({ user: ownerId, type: 'TASK_ASSIGNED', title: `${actor.name} removed a task`, message: title, link: '/todo' });
+    }
+  }
+
+  return { success: true, cascaded: descendants.length };
 }
 
 function periodMatch(period, field = 'createdAt') {
@@ -634,6 +697,51 @@ export async function listTasks(actor, { scope = 'mine', status, search, period,
         const kidsOf = byParent.get(String(t.id));
         if (kidsOf) t.forwardedTo = kidsOf;
       }
+    }
+  }
+
+  // The full hand-off chain for a forwarded task: who started it, everyone it passed
+  // through, and where it sits now — e.g. Khaan Aamir → Priyanshi Patel → You. The row
+  // only stores its immediate parent (forwardedFrom) and the root originator
+  // (originalAssignedBy), so the middle links are rebuilt by walking up the parents.
+  const forwardedRows = out.filter((t) => t.forwardedFrom);
+  if (forwardedRows.length) {
+    const nodeCache = new Map(); // taskId → { ownerId, ownerName, assignerId, assignerName, forwardedFrom }
+    const loadNode = async (tid) => {
+      const key = String(tid);
+      if (nodeCache.has(key)) return nodeCache.get(key);
+      const doc = await Task.findById(tid).select('owner assignedBy forwardedFrom').populate('owner', 'name').populate('assignedBy', 'name');
+      const n = doc
+        ? {
+            ownerId: doc.owner ? String(doc.owner._id) : null,
+            ownerName: doc.owner?.name || null,
+            assignerId: doc.assignedBy ? String(doc.assignedBy._id) : null,
+            assignerName: doc.assignedBy?.name || null,
+            forwardedFrom: doc.forwardedFrom || null,
+          }
+        : null;
+      nodeCache.set(key, n);
+      return n;
+    };
+
+    for (const t of forwardedRows) {
+      // The originator is authoritative on the row itself (originalAssignedBy is stamped
+      // at forward time), so it's correct no matter how deep the chain — never derived
+      // from the walk, which is only used to collect the OWNERS in between.
+      const originator = { id: t.originalAssignedBy?.id ? String(t.originalAssignedBy.id) : null, name: t.originalAssignedBy?.name || null };
+      const handlers = [{ id: t.owner?.id ? String(t.owner.id) : null, name: t.owner?.name || null }];
+      let parentId = t.forwardedFrom;
+      let depth = 0;
+      while (parentId && depth < 12) {
+        const parent = await loadNode(parentId); // eslint-disable-line no-await-in-loop
+        if (!parent) break;
+        handlers.unshift({ id: parent.ownerId, name: parent.ownerName });
+        parentId = parent.forwardedFrom;
+        depth += 1;
+      }
+      const chain = [originator, ...handlers].filter((n) => n.name);
+      // Only worth showing once it's genuinely a chain (originator + ≥2 handlers).
+      if (chain.length >= 3) t.forwardChain = chain;
     }
   }
 

@@ -31,6 +31,7 @@ import { Button } from '@/components/ui/button';
 import { QuickAttendanceAction } from '@/components/attendance/quick-attendance-action';
 import { PageHeader } from '@/components/glass/page-header';
 import { GlassCard } from '@/components/glass/glass-card';
+import { Leaderboards } from '@/components/dashboard/leaderboards';
 import { GlassPanel } from '@/components/glass/glass-panel';
 import { StatCard } from '@/components/glass/stat-card';
 import { StatusBadge, STATUS_TONES } from '@/components/glass/status-badge';
@@ -50,10 +51,6 @@ const AttendanceDonut = dynamic(() => import('@/components/dashboard/charts').th
 const ExpenseTrendChart = dynamic(() => import('@/components/dashboard/charts').then((m) => m.ExpenseTrendChart), {
   ssr: false,
   loading: () => <ChartFallback h={240} />,
-});
-const OvertimeLeaders = dynamic(() => import('@/components/dashboard/charts').then((m) => m.OvertimeLeaders), {
-  ssr: false,
-  loading: () => <ChartFallback h={150} />,
 });
 
 function greeting() {
@@ -157,7 +154,7 @@ export default function DashboardPage() {
     );
   }
 
-  const { today, balance, announcements, upcomingHolidays, myPendingLeaves, team, expenses, analytics } = data;
+  const { today, balance, announcements, upcomingHolidays, myPendingLeaves, team, expenses, analytics, leaderboards } = data;
   const ts = todayStat(today);
   const isApprover = can(user, 'approveLeave');
   const canAudit = can(user, 'viewAudit'); // Recent activity = the audit feed
@@ -273,6 +270,9 @@ export default function DashboardPage() {
         </section>
       ) : null}
 
+      {/* Leaderboards — shown to everyone, no restriction */}
+      <Leaderboards data={leaderboards} />
+
       {/* Leadership analytics */}
       {analytics ? (
         <section className="space-y-3">
@@ -309,12 +309,9 @@ export default function DashboardPage() {
             </GlassCard>
           </div>
 
-          <div className={cn('grid grid-cols-1 gap-6', canAudit ? 'xl:grid-cols-3' : 'md:grid-cols-2')}>
-            <GlassCard className="p-5">
-              <p className="mb-3 text-sm font-medium">Overtime leaders</p>
-              <OvertimeLeaders leaders={analytics.overtimeLeaders} />
-            </GlassCard>
-
+          {/* Overtime leaders now lives in the common Leaderboards section above, for
+              everyone — so it's not repeated here. */}
+          <div className={cn('grid grid-cols-1 gap-6', canAudit && 'md:grid-cols-2')}>
             <GlassCard className="p-5">
               <div className="mb-3 flex items-center justify-between">
                 <p className="text-sm font-medium">Pending approvals</p>

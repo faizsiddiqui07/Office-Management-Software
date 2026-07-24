@@ -2,6 +2,8 @@ import { Attendance } from '../models/Attendance.js';
 import { LeaveRequest } from '../models/LeaveRequest.js';
 import { LeaveBalance } from '../models/LeaveBalance.js';
 import { User } from '../models/User.js';
+import { Role } from '../models/Role.js';
+import { Task } from '../models/Task.js';
 import { Setting } from '../models/Setting.js';
 import { AuditLog } from '../models/AuditLog.js';
 import { can } from '../lib/permissions.js';
@@ -14,6 +16,104 @@ import { getOrCreateBalance } from './leave.service.js';
 import { listVisible } from './announcement.service.js';
 import { expenseSummary } from './expense.service.js';
 import { computePeriod } from './report.service.js';
+
+const COMPANY_TZ = 'Asia/Kolkata';
+
+/**
+ * The active users in the top-rank role — "CEO & President". Resolved by RANK, not by
+ * a hardcoded key, so renaming the role never breaks it. A task only counts on the
+ * task leaderboard if one of these people is involved in it (see taskLeaderboard).
+ */
+async function ownerTierUserIds() {
+  const roles = await Role.find({}).select('key rank').lean();
+  if (!roles.length) return [];
+  const minRank = Math.min(...roles.map((r) => (typeof r.rank === 'number' ? r.rank : 100)));
+  const topKeys = roles.filter((r) => (typeof r.rank === 'number' ? r.rank : 100) === minRank).map((r) => r.key);
+  const users = await User.find({ role: { $in: topKeys }, isActive: true }).select('_id').lean();
+  return users.map((u) => u._id);
+}
+
+/** [{ name, minutes }] — most overtime first, within a window of company-day instants. */
+async function overtimeLeaderboard(fromDay, toDay) {
+  const agg = await Attendance.aggregate([
+    { $match: { date: { $gte: fromDay, $lte: toDay }, overtimeMinutes: { $gt: 0 } } },
+    { $group: { _id: '$user', overtimeMinutes: { $sum: '$overtimeMinutes' } } },
+    { $sort: { overtimeMinutes: -1 } },
+    { $limit: 5 },
+  ]);
+  return withNames(agg, (o) => ({ overtimeMinutes: o.overtimeMinutes }));
+}
+
+/**
+ * [{ name, count }] — who finished the most delegated work ON TIME.
+ *
+ * A completion counts only when ALL of these hold, and this is deliberately strict so
+ * the board can't be gamed by handing out easy busywork:
+ *   - the task was DELEGATED (assignedBy set) — your own to-dos don't count;
+ *   - it had a due date, and was finished on or before it (a task with no deadline
+ *     can't be "on time", so it's out);
+ *   - a CEO & President is involved — they assigned it, originally assigned it before
+ *     it was forwarded, or are tagged on it. A senior can't inflate a junior's rank
+ *     with private busywork; leadership has to be in the loop.
+ * Credit goes to whoever actually did it (completedBy), falling back to the owner.
+ *
+ * `range` is { from, to } YMD (this month) or null (all-time). Only the leaderboard
+ * uses any of this — nothing else about tasks changes.
+ *
+ * `forwardedParentIds` are the tasks that were passed further down a chain. When a
+ * junior finishes forwarded work, settleParent marks EVERY copy above it done and
+ * credits the same doer — so counting each copy would score one piece of work two or
+ * three times. Excluding the passed-on copies leaves only the copy actually worked, so
+ * each real task counts once.
+ */
+async function taskLeaderboard(ceoIds, forwardedParentIds, range) {
+  if (!ceoIds.length) return [];
+  const agg = await Task.aggregate([
+    {
+      $match: {
+        status: 'DONE',
+        assignedBy: { $ne: null },
+        dueYMD: { $ne: '' },
+        completedAt: { $ne: null },
+        _id: { $nin: forwardedParentIds }, // not a copy that was forwarded onward
+        $or: [
+          { assignedBy: { $in: ceoIds } },
+          { originalAssignedBy: { $in: ceoIds } },
+          { collaborators: { $in: ceoIds } },
+        ],
+      },
+    },
+    // The day the work was DONE, in company time. For an approval-gated task that's the
+    // submit day, not the approval day — the doer met the deadline when they submitted,
+    // and an approver sitting on it must not turn an on-time task late. Matches how the
+    // bonus system judges the same thing. Both this and the month window use IST so they
+    // line up with the due date's calendar, never a UTC day that could shift.
+    { $addFields: { doneYMD: { $dateToString: { date: { $ifNull: ['$submittedAt', '$completedAt'] }, format: '%Y-%m-%d', timezone: COMPANY_TZ } } } },
+    {
+      $match: {
+        $expr: {
+          $and: [
+            { $lte: ['$doneYMD', '$dueYMD'] }, // on or before the deadline
+            ...(range?.from ? [{ $gte: ['$doneYMD', range.from] }] : []),
+            ...(range?.to ? [{ $lte: ['$doneYMD', range.to] }] : []),
+          ],
+        },
+      },
+    },
+    { $group: { _id: { $ifNull: ['$completedBy', '$owner'] }, count: { $sum: 1 } } },
+    { $sort: { count: -1 } },
+    { $limit: 5 },
+  ]);
+  return withNames(agg, (o) => ({ count: o.count }));
+}
+
+/** Attach display names to an aggregation of { _id: userId, ... }. */
+async function withNames(agg, extra) {
+  if (!agg.length) return [];
+  const users = await User.find({ _id: { $in: agg.map((o) => o._id) } }).select('name').lean();
+  const nameOf = new Map(users.map((u) => [String(u._id), u.name]));
+  return agg.map((o) => ({ name: nameOf.get(String(o._id)) ?? '—', ...extra(o) }));
+}
 
 export async function buildDashboard(user) {
   const settings = await Setting.getSingleton();
@@ -38,6 +138,25 @@ export async function buildDashboard(user) {
   const month = computePeriod('monthly', todayYMD);
   const monthStart = companyDayFromYMD(month.from);
   const monthEnd = companyDayFromYMD(month.to);
+
+  // ── Leaderboards — shown to EVERYONE, no restriction ──────
+  // Overtime is this month; task completions come both ways so the card can toggle
+  // between this month and all-time without another request.
+  const ceoIds = await ownerTierUserIds();
+  // Copies that were forwarded onward — excluded from the board so one forwarded piece
+  // of work isn't counted once per link in its chain.
+  const forwardedParentIds = await Task.distinct('forwardedFrom', { forwardedFrom: { $ne: null } });
+  const [overtimeLeaders, taskLeadersMonth, taskLeadersAll] = await Promise.all([
+    overtimeLeaderboard(monthStart, monthEnd),
+    taskLeaderboard(ceoIds, forwardedParentIds, { from: month.from, to: month.to }),
+    taskLeaderboard(ceoIds, forwardedParentIds, null),
+  ]);
+  out.leaderboards = {
+    monthLabel: month.label,
+    overtime: overtimeLeaders,
+    taskMonth: taskLeadersMonth,
+    taskAll: taskLeadersAll,
+  };
 
   // ── Manager+ (view everyone): team snapshot ───────────────
   if (can(user, 'viewEveryone')) {
@@ -70,14 +189,8 @@ export async function buildDashboard(user) {
     // Expenses run on the CALENDAR year (the chart is titled with it) — the
     // fiscal `year` above is only for leave balances.
     const calendarYear = Number(todayYMD.slice(0, 4));
-    const [headcount, otAgg, balances, yearExpenses, pendingApprovals, pendingApprovalsCount, recent] = await Promise.all([
+    const [headcount, balances, yearExpenses, pendingApprovals, pendingApprovalsCount, recent] = await Promise.all([
       User.countDocuments({ isActive: true }),
-      Attendance.aggregate([
-        { $match: { date: { $gte: monthStart, $lte: monthEnd }, overtimeMinutes: { $gt: 0 } } },
-        { $group: { _id: '$user', overtimeMinutes: { $sum: '$overtimeMinutes' } } },
-        { $sort: { overtimeMinutes: -1 } },
-        { $limit: 5 },
-      ]),
       LeaveBalance.find({ year }),
       expenseSummary({ from: `${calendarYear}-01-01`, to: `${calendarYear}-12-31` }),
       LeaveRequest.find({ status: 'PENDING' }).sort({ appliedAt: -1 }).limit(6).populate('user', 'name employeeId'),
@@ -88,9 +201,6 @@ export async function buildDashboard(user) {
         : Promise.resolve([]),
     ]);
 
-    const otUsers = await User.find({ _id: { $in: otAgg.map((o) => o._id) } }).select('name');
-    const otMap = new Map(otUsers.map((u) => [String(u._id), u.name]));
-
     out.analytics = {
       headcount,
       attendanceRate: overview.summary.total ? Math.round(((overview.summary.present + overview.summary.late) / overview.summary.total) * 100) : 0,
@@ -100,7 +210,8 @@ export async function buildDashboard(user) {
         absent: overview.summary.absent,
         onLeave: overview.summary.onLeave,
       },
-      overtimeLeaders: otAgg.map((o) => ({ name: otMap.get(String(o._id)) ?? '—', overtimeMinutes: o.overtimeMinutes })),
+      // The same list the common leaderboard already computed — no second query.
+      overtimeLeaders: out.leaderboards.overtime,
       leaveUtilization: {
         used: balances.reduce((s, b) => s + b.used, 0),
         total: balances.reduce((s, b) => s + b.totalQuota, 0),
