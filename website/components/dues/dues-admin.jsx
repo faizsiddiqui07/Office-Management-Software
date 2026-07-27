@@ -159,7 +159,7 @@ function PersonDetail({ personId, onAddDue, onAddPay }) {
                   key={e.id}
                   role="button"
                   tabIndex={0}
-                  onClick={() => setViewing(e)}
+                  onClick={() => setViewingId(e.id)}
                   onKeyDown={(ev) => {
                     if (ev.key === 'Enter' || ev.key === ' ') {
                       ev.preventDefault();
