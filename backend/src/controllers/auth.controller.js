@@ -10,6 +10,7 @@ import { sendPasswordResetEmail } from '../lib/mailer.js';
 import { publicAppUrl } from '../lib/appUrl.js';
 import { audit } from '../models/AuditLog.js';
 import { permissionsForRole, roleLabel } from '../lib/roles.js';
+import { clientIp, lockedFor, recordFailure, clearFailures } from '../lib/loginGuard.js';
 
 /** User JSON + their effective permission keys (for the cosmetic client `can()`). */
 function userWithPermissions(user) {
@@ -19,14 +20,38 @@ function userWithPermissions(user) {
 export async function login(req, res, next) {
   try {
     const { email, password } = req.body;
+    const ip = clientIp(req);
+
+    // A run of wrong passwords rests THIS account, wherever the attempts come from.
+    // Counted in the database so it holds across every instance, and per account so
+    // one person's typos can't lock out the rest of the office on the shared line.
+    const waitMins = await lockedFor(email);
+    if (waitMins > 0) {
+      return res
+        .status(429)
+        .json(fail('ACCOUNT_LOCKED', `Too many failed attempts. Try again in ${waitMins} minute${waitMins > 1 ? 's' : ''}, or use "Forgot password".`));
+    }
+
     const user = await User.findOne({ email: email.toLowerCase() }).select('+passwordHash');
 
-    const invalid = () => res.status(401).json(fail('INVALID_CREDENTIALS', 'Invalid email or password'));
+    // Wrong password and unknown address answer identically, and both count — so the
+    // response never reveals which addresses exist.
+    const invalid = async () => {
+      const locked = await recordFailure(email, ip);
+      await audit({ actor: user?._id ?? null, action: 'auth.login_failed', entityType: 'User', entityId: user?._id?.toString() ?? '', meta: { email: String(email || '').toLowerCase(), ip, locked: locked > 0 } });
+      if (locked > 0) {
+        return res
+          .status(429)
+          .json(fail('ACCOUNT_LOCKED', `Too many failed attempts. Try again in ${locked} minutes, or use "Forgot password".`));
+      }
+      return res.status(401).json(fail('INVALID_CREDENTIALS', 'Invalid email or password'));
+    };
     if (!user || !user.isActive) return invalid();
 
     const valid = await verifyPassword(password, user.passwordHash);
     if (!valid) return invalid();
 
+    await clearFailures(email); // a correct password wipes the run
     const token = signToken({ sub: user._id.toString(), role: user.role });
     setAuthCookie(res, token); // local/same-origin still uses the cookie
     await audit({ actor: user._id, action: 'auth.login', entityType: 'User', entityId: user._id.toString() });
@@ -73,9 +98,16 @@ export async function changePassword(req, res, next) {
     }
     user.passwordHash = await hashPassword(newPassword);
     user.mustChangePassword = false;
+    // Ends every session opened before now (see requireAuth) — so a device someone
+    // else still has signed in stops working the moment the password changes.
+    user.credentialsChangedAt = new Date();
     await user.save();
     await audit({ actor: user._id, action: 'auth.change_password', entityType: 'User', entityId: user._id.toString() });
-    return res.json(ok({ user: user.toJSON() }));
+    // …including the one making this request, so hand back a replacement token. The
+    // client stores it and stays signed in; every other device has to sign in again.
+    const token = signToken({ sub: user._id.toString(), role: user.role });
+    setAuthCookie(res, token);
+    return res.json(ok({ user: user.toJSON(), token }));
   } catch (err) {
     return next(err);
   }
@@ -122,6 +154,7 @@ export async function resetPassword(req, res, next) {
 
     user.passwordHash = await hashPassword(newPassword);
     user.mustChangePassword = false;
+    user.credentialsChangedAt = new Date(); // old sessions die; they sign in with the new password
     await user.save();
 
     record.usedAt = new Date();

@@ -13,6 +13,7 @@ import { PageHeader } from '@/components/glass/page-header';
 import { GlassPanel } from '@/components/glass/glass-panel';
 import { EmptyState } from '@/components/glass/empty-state';
 import { LoadingState } from '@/components/glass/skeletons';
+import { QueryError } from '@/components/glass/query-error';
 import { StatusBadge } from '@/components/glass/status-badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -53,7 +54,7 @@ export default function ActivityPage() {
   if (from) query.set('from', from);
   if (to) query.set('to', to);
 
-  const { data, isLoading, isFetching } = useQuery({
+  const { data, isLoading, isFetching, isError, error, refetch } = useQuery({
     queryKey: ['audit', action, from, to, page, limit],
     queryFn: () => api.get(`/audit?${query.toString()}`),
     enabled: allowed,
@@ -103,7 +104,9 @@ export default function ActivityPage() {
         </div>
       </GlassPanel>
 
-      {isLoading ? (
+      {isError && !data ? (
+        <QueryError title="Couldn’t load the activity log" error={error} onRetry={refetch} />
+      ) : isLoading ? (
         <LoadingState label="Loading activity…" />
       ) : logs.length === 0 ? (
         <EmptyState icon={Activity} title="No activity" description="No events match these filters." />

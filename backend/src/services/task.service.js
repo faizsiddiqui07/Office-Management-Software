@@ -282,7 +282,13 @@ export async function markSeen(actor, id) {
   const task = await Task.findById(id);
   if (!task) throw httpError(404, 'NOT_FOUND', 'Task not found');
   const isOwner = String(task.owner) === String(actor._id);
-  if (!isOwner || !task.assignedBy || task.seenAt) return populated(task);
+  // Not yours to read. This used to fall through to the silent no-op below and hand
+  // back the fully populated task, so anyone could read any task — title, notes (which
+  // can carry client and site detail), and the whole chain — just by asking to mark it
+  // seen. Every other task endpoint checks ownership; this one has to as well.
+  if (!isOwner) throw httpError(403, 'FORBIDDEN', 'You cannot open a task that was not assigned to you');
+  // Yours, but nothing to record: your own note, or a receipt already stamped.
+  if (!task.assignedBy || task.seenAt) return populated(task);
   task.seenAt = new Date();
   await task.save();
   return populated(task);
@@ -493,9 +499,25 @@ export async function updateTask(actor, id, data) {
           // Preserve completed / submitted work rather than destroying history & bonus.
           if (mm.assignBatch !== batch) { mm.assignBatch = batch; await mm.save(); }
         } else {
+          // Take their forward chain with them, exactly as deleting the task does.
+          // Without this, someone they had passed the work down to kept a copy pointing
+          // at a parent that no longer existed: finishing it settled nothing, so the
+          // assigner never saw it and that person was stuck holding orphaned work.
+          // Collected BEFORE the delete, while the links are still intact.
+          const orphans = await collectForwardDescendants([mm._id]);
           await mm.deleteOne(); // drop a not-yet-started copy for someone taken off the task
           try { await onAssignedTaskUndone(mm._id); } catch (e) { console.error('bonus hook (reassign remove) failed', e?.message); }
           await notify({ user: mm.owner, type: 'TASK_ASSIGNED', title: `${actor.name} removed a task`, message: mm.title, link: '/todo' });
+          for (const d of orphans) {
+            const ownerId = d.owner;
+            const title = d.title;
+            const wasOpen = d.status !== 'DONE';
+            await d.deleteOne();
+            try { await onAssignedTaskUndone(d._id); } catch (e) { console.error('bonus hook (reassign cascade) failed', e?.message); }
+            if (wasOpen && String(ownerId) !== String(actor._id)) {
+              await notify({ user: ownerId, type: 'TASK_ASSIGNED', title: `${actor.name} removed a task`, message: title, link: '/todo' });
+            }
+          }
         }
       }
       const base = {

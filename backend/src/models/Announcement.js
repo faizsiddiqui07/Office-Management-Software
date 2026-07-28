@@ -10,6 +10,10 @@ const announcementSchema = new mongoose.Schema(
     isActive: { type: Boolean, default: true },
     publishAt: { type: Date, default: null },
     expiresAt: { type: Date, default: null },
+    // When the audience was told about it. Set as soon as it's announced — on creation
+    // for an immediate post, or when a scheduled one comes due — so it is announced
+    // exactly once no matter how many instances notice it at the same moment.
+    notifiedAt: { type: Date, default: null },
   },
   { timestamps: true },
 );

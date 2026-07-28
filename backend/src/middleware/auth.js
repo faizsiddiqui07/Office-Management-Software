@@ -36,6 +36,15 @@ export async function requireAuth(req, res, next) {
       res.status(401).json(fail('UNAUTHENTICATED', 'Session is no longer valid'));
       return;
     }
+    // A password change or a leadership credential reset ends every session that was
+    // opened before it. Compared in whole seconds because that is all `iat` records —
+    // the replacement token minted alongside the change is issued in the same second,
+    // so a strict "older than" keeps the device doing the changing signed in while
+    // every other one is cut off.
+    if (user.credentialsChangedAt && payload.iat < Math.floor(user.credentialsChangedAt.getTime() / 1000)) {
+      res.status(401).json(fail('UNAUTHENTICATED', 'Your password was changed — please sign in again'));
+      return;
+    }
     // This instance's role cache may predate a role created on another instance —
     // refresh it when stale so permissions and labels don't lag behind. Best-effort:
     // a hiccup here must never lock anyone out.

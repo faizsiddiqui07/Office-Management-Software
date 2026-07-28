@@ -9,6 +9,7 @@ import { useAuth } from '@/lib/auth';
 import { DataTable } from '@/components/glass/data-table';
 import { StatusBadge, STATUS_TONES } from '@/components/glass/status-badge';
 import { TableSkeleton } from '@/components/glass/skeletons';
+import { QueryError } from '@/components/glass/query-error';
 import { ConfirmDialog } from '@/components/glass/confirm-dialog';
 import { Button } from '@/components/ui/button';
 import { LEAVE_TYPE_LABELS, formatRange } from '@/lib/leave';
@@ -53,7 +54,7 @@ const columns = [
 
 export function LeaveHistory() {
   const qc = useQueryClient();
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['leaves', 'mine'],
     queryFn: () => api.get('/leaves'),
   });
@@ -96,6 +97,7 @@ export function LeaveHistory() {
     onError: (e) => toast.error(e?.message || 'Could not delete'),
   });
 
+  if (isError && !data) return <QueryError title="Couldn’t load your leave history" error={error} onRetry={refetch} />;
   if (isLoading) return <TableSkeleton rows={5} cols={5} />;
 
   const isPending = viewing?.status === 'PENDING';

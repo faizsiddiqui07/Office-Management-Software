@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils';
 import { EmptyState } from '@/components/glass/empty-state';
 import { StatusBadge } from '@/components/glass/status-badge';
 import { LoadingState } from '@/components/glass/skeletons';
+import { QueryError } from '@/components/glass/query-error';
 import { ConfirmDialog } from '@/components/glass/confirm-dialog';
 import { AppDialog } from '@/components/glass/app-dialog';
 import { Button } from '@/components/ui/button';
@@ -644,7 +645,7 @@ export function TaskBoard() {
   // pending AND completed together) and splits/groups client-side.
   const status = tab === 'history' ? 'DONE' : '';
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['tasks', 'list', scope, status, isMine || isAssigned ? '' : debouncedSearch, isMine ? 'all' : period, isMine ? '' : `${range.from}~${range.to}`],
     queryFn: () => {
       const p = new URLSearchParams({ scope, limit: '10000' });
@@ -954,7 +955,12 @@ export function TaskBoard() {
           {canAssign ? <TabsTrigger value="assigned">Assigned by me</TabsTrigger> : null}
         </TabsList>
         <TabsContent value={tab} className="pt-4">
-          {isLoading ? (
+          {isError && !data ? (
+            // Without this the list falls back to [] and the "No pending tasks" empty
+            // state renders — telling someone their work is done when the request
+            // simply never arrived.
+            <QueryError title="Couldn’t load your tasks" error={error} onRetry={refetch} />
+          ) : isLoading ? (
             <LoadingState label="Loading tasks…" />
           ) : isAssigned ? (
             <div className="space-y-6">

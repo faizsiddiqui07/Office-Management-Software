@@ -1,5 +1,6 @@
 import { Regularization } from '../models/Regularization.js';
 import { Attendance } from '../models/Attendance.js';
+import { LeaveRequest } from '../models/LeaveRequest.js';
 import { Setting } from '../models/Setting.js';
 import { User } from '../models/User.js';
 import { notify } from '../models/Notification.js';
@@ -14,12 +15,32 @@ function httpError(status, code, message) {
   return e;
 }
 
+/**
+ * An approved leave covering `dateYMD`, if there is one.
+ *
+ * A day can be leave or it can be worked — never both. The manual attendance editor
+ * already refuses to touch an ON_LEAVE day ("cancel the leave first"); corrections have
+ * to hold the same line, or approving one silently overwrites the ON_LEAVE marker while
+ * the leave request and the deducted balance stay put, counting the day twice.
+ */
+async function approvedLeaveOn(userId, dateYMD) {
+  return LeaveRequest.findOne({
+    user: userId,
+    status: 'APPROVED',
+    startYMD: { $lte: dateYMD },
+    endYMD: { $gte: dateYMD },
+  });
+}
+
 export async function createRequest(user, { dateYMD, checkIn, checkOut, reason }) {
   if (!checkIn && !checkOut) {
     throw httpError(400, 'INVALID', 'Provide a check-in time, a check-out time, or both');
   }
   const dup = await Regularization.findOne({ user: user._id, dateYMD, status: 'PENDING' });
   if (dup) throw httpError(409, 'DUPLICATE', 'You already have a pending correction for this date');
+  if (await approvedLeaveOn(user._id, dateYMD)) {
+    throw httpError(409, 'ON_LEAVE', 'You were on approved leave that day. Ask for the leave to be cancelled first, then request the correction.');
+  }
 
   const reg = await Regularization.create({
     user: user._id,
@@ -84,6 +105,12 @@ async function applyToAttendance(reg) {
   const sched = effectiveSchedule(owner, settings); // part-time uses its own hours
   const day = companyDayFromYMD(reg.dateYMD);
   let record = await Attendance.findOne({ user: reg.user, date: day });
+  // Checked again at approval time, not just when the request was raised: a leave can
+  // be approved in between, and overwriting its ON_LEAVE marker here would leave the
+  // day counted as both leave (balance still spent) and present.
+  if (record?.status === 'ON_LEAVE' || (await approvedLeaveOn(reg.user, reg.dateYMD))) {
+    throw httpError(409, 'ON_LEAVE', 'That day is marked on approved leave — cancel the leave first, then approve this correction.');
+  }
   if (!record) record = new Attendance({ user: reg.user, date: day });
 
   if (reg.requestedCheckIn) {

@@ -32,6 +32,12 @@ const userSchema = new mongoose.Schema(
     dateOfJoining: { type: Date, default: Date.now },
     isActive: { type: Boolean, default: true },
     mustChangePassword: { type: Boolean, default: true },
+    // When this account's password last changed. Sessions are signed for ~10 years, so
+    // without this a password change (or a leadership credential reset for someone who
+    // has left) rotated the hash while every token already on their phone kept working.
+    // requireAuth rejects any token issued before this moment. Null on existing accounts
+    // — nobody is signed out retroactively; it starts mattering at the next change.
+    credentialsChangedAt: { type: Date, default: null },
     reportsTo: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   },

@@ -22,6 +22,50 @@ function visibilityFilter(role, now = new Date()) {
   };
 }
 
+/** Bell + push to everyone the announcement is addressed to, except its author. */
+async function notifyAudience(doc, excludeUserId) {
+  const roleFilter = doc.audienceRoles?.length ? { role: { $in: doc.audienceRoles } } : {};
+  const recipients = await User.find({ isActive: true, ...roleFilter, ...(excludeUserId ? { _id: { $ne: excludeUserId } } : {}) }).select('_id');
+  await Promise.all(
+    recipients.map((u) =>
+      notify({
+        user: u._id,
+        type: 'ANNOUNCEMENT',
+        title: `New announcement: ${doc.title}`,
+        message: doc.priority === 'URGENT' ? 'Marked urgent' : '',
+        link: '/announcements',
+      }),
+    ),
+  );
+}
+
+/**
+ * Announce anything whose scheduled time has arrived. Runs off ordinary reads rather
+ * than a timer (there's no scheduler on Lambda), and claims each one with a stamped
+ * `notifiedAt` before sending, so two instances doing this at once can't both announce
+ * the same post. Best-effort: a failure here must never break the feed.
+ */
+export async function publishDueAnnouncements() {
+  const now = new Date();
+  const due = await Announcement.find({
+    isActive: true,
+    notifiedAt: null,
+    publishAt: { $ne: null, $lte: now },
+    $or: [{ expiresAt: null }, { expiresAt: { $gt: now } }],
+  }).select('_id title priority audienceRoles createdBy').limit(20);
+
+  for (const a of due) {
+    // Claim it first — only the instance whose update matches gets to send.
+    // eslint-disable-next-line no-await-in-loop
+    const claimed = await Announcement.findOneAndUpdate(
+      { _id: a._id, notifiedAt: null },
+      { $set: { notifiedAt: now } },
+    );
+    // eslint-disable-next-line no-await-in-loop
+    if (claimed) await notifyAudience(a, a.createdBy);
+  }
+}
+
 export async function createAnnouncement(creator, data) {
   const doc = await Announcement.create({
     title: data.title,
@@ -34,26 +78,30 @@ export async function createAnnouncement(creator, data) {
     isActive: true,
   });
 
-  // Notify the audience.
-  const roleFilter = doc.audienceRoles.length ? { role: { $in: doc.audienceRoles } } : {};
-  const recipients = await User.find({ isActive: true, ...roleFilter, _id: { $ne: creator._id } }).select('_id');
-  await Promise.all(
-    recipients.map((u) =>
-      notify({
-        user: u._id,
-        type: 'ANNOUNCEMENT',
-        title: `New announcement: ${doc.title}`,
-        message: doc.priority === 'URGENT' ? 'Marked urgent' : '',
-        link: '/announcements',
-      }),
-    ),
-  );
+  // Notify the audience — but only for something they can actually go and read.
+  // An announcement scheduled for later is hidden from the feed until its time
+  // (see visibilityFilter), so announcing it now sent a bell and a phone notification
+  // for a post that showed nothing when tapped. A scheduled one announces itself when
+  // it goes live instead (see publishDueAnnouncements).
+  const scheduled = doc.publishAt && doc.publishAt.getTime() > Date.now();
+  if (!scheduled) {
+    doc.notifiedAt = new Date(); // already announced — publishDueAnnouncements skips it
+    await doc.save();
+    await notifyAudience(doc, creator._id);
+  }
 
   await doc.populate('createdBy', 'name role');
   return doc.toJSON();
 }
 
 export async function listVisible(user) {
+  // Anything scheduled that has come due announces itself here — this runs on every
+  // dashboard and announcements load, which is as close to a timer as Lambda gets.
+  try {
+    await publishDueAnnouncements();
+  } catch (e) {
+    console.error('scheduled announcement publish failed', e?.message);
+  }
   const anns = await Announcement.find(visibilityFilter(user.role))
     .sort({ createdAt: -1 })
     .limit(100)

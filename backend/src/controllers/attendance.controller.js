@@ -50,6 +50,12 @@ export async function setRecord(req, res, next) {
     if (checkIn && checkOut && checkOut <= checkIn) {
       return res.status(400).json(fail('BAD_RANGE', 'Check-out must be after check-in'));
     }
+    // A leaving time with no arriving time isn't a day anyone can read: the record would
+    // be marked absent and still carry a check-out. Clearing the day (both blank) is
+    // still allowed — that's how a day is wiped.
+    if (checkOut && !checkIn) {
+      return res.status(400).json(fail('BAD_INPUT', 'Add a check-in time as well — a check-out on its own would leave the day marked absent. Clear both to wipe the day.'));
+    }
     const result = await svc.setAttendanceRecord(userId, dateYMD, checkIn, checkOut);
     await audit({
       actor: req.user._id,

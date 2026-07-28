@@ -108,7 +108,10 @@ export function ExpenseDialog({ expense, open: openProp, onOpenChange }) {
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="ex-date">Date</Label>
-            <DatePicker id="ex-date" value={date} min={APP_LIVE_YMD} onChange={setDate} className="bg-background/50" />
+            {/* Capped at today, like the dues entry. A future-dated expense can't even
+                be found — the filter's custom range stops at today — so it sits unseen
+                until its date arrives and then lands in that period's total. */}
+            <DatePicker id="ex-date" value={date} min={APP_LIVE_YMD} max={todayYMD()} onChange={setDate} className="bg-background/50" />
           </div>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">

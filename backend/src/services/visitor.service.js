@@ -87,6 +87,13 @@ export async function updateVisitor(id, data) {
     v.dateYMD = data.dateYMD;
     v.date = companyDayFromYMD(data.dateYMD);
   }
+  // A visit can't end before it started. The dialog checks this, but the one-tap
+  // check-out sends the current clock time straight through — on a visit left open
+  // from a previous day that could be earlier than the arrival time, and since setting
+  // a check-out locks both times, the wrong pair would be frozen in permanently.
+  if (v.checkInTime && v.checkOutTime && v.checkOutTime <= v.checkInTime) {
+    throw httpError(400, 'BAD_RANGE', 'Check-out time must be after check-in. Edit the entry to set the time they actually left.');
+  }
   await v.save();
   await v.populate('createdBy', 'name');
   return v.toJSON();

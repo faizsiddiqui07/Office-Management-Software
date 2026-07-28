@@ -183,7 +183,11 @@ export async function buildReport(type, dateYMD, range) {
     else if (r.status === 'LATE') {
       if (r.excused) m.present += 1; // excused (on-duty) late counts as present, not late
       else m.late += 1;
-    } else if (r.status === 'ON_LEAVE') m.onLeave += 1;
+    } else if (r.status === 'ON_LEAVE') {
+      // A half-day leave takes half a day off the balance, so it counts as half a day
+      // away here too — otherwise the report says one day and the balance says 0.5.
+      m.onLeave += r.halfDayLeave ? 0.5 : 1;
+    }
     m.workedMinutes += r.workedMinutes || 0;
     m.overtimeMinutes += r.overtimeMinutes || 0;
   }
@@ -392,7 +396,8 @@ export async function buildSelfReport({ user, type, dateYMD, range }) {
     } else {
       status = 'ABSENT';
     }
-    days.push({ ymd, weekday, status, statusLabel: STATUS_LABEL[status] || status, checkIn, checkOut, workedHours, overtimeMinutes });
+    const statusLabel = status === 'ON_LEAVE' && rec?.halfDayLeave ? 'On leave (half day)' : STATUS_LABEL[status] || status;
+    days.push({ ymd, weekday, status, statusLabel, checkIn, checkOut, workedHours, overtimeMinutes });
     cur = new Date(cur.getTime() + 86400000);
   }
 

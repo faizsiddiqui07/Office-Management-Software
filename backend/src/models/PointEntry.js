@@ -20,11 +20,24 @@ const pointEntrySchema = new mongoose.Schema(
     },
     taskRef: { type: mongoose.Schema.Types.ObjectId, ref: 'Task', default: null, index: true }, // idempotency for task awards
     awardedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }, // who granted a manual award
+    // What this award IS, as a stable string — 'auto_absent:<user>:<date>',
+    // 'auto_noleave:<user>:<month>', 'auto_task:<task>'. Automatic awards used to be
+    // kept unique by looking for an existing row and then creating one, which two
+    // Lambdas running the day's first request at the same moment both passed, handing
+    // the same person the same award twice. The unique index below makes the database
+    // itself refuse the second one. Left unset for manual awards, which are deliberate
+    // and may legitimately repeat (see the partial index).
+    dedupeKey: { type: String },
   },
   { timestamps: true },
 );
 
 pointEntrySchema.index({ user: 1, month: 1 });
+// Unique only for rows that HAVE a key, so any number of manual awards can coexist.
+pointEntrySchema.index(
+  { dedupeKey: 1 },
+  { unique: true, partialFilterExpression: { dedupeKey: { $type: 'string' } } },
+);
 
 pointEntrySchema.set('toJSON', {
   virtuals: true,

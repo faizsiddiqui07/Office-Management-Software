@@ -8,6 +8,7 @@ import { api } from '@/lib/api';
 import { DataTable } from '@/components/glass/data-table';
 import { StatusBadge } from '@/components/glass/status-badge';
 import { TableSkeleton } from '@/components/glass/skeletons';
+import { QueryError } from '@/components/glass/query-error';
 import { ConfirmDialog } from '@/components/glass/confirm-dialog';
 import { Button } from '@/components/ui/button';
 import { ExpenseDialog } from './add-expense-dialog';
@@ -30,7 +31,7 @@ export function ExpenseTable({ canManage = true, filters, search = '', range }) 
   const from = range?.from ?? '';
   const to = range?.to ?? '';
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['expenses', 'list', search, category, payment, from, to],
     queryFn: () => {
       const params = new URLSearchParams({ limit: '100' });
@@ -111,7 +112,9 @@ export function ExpenseTable({ canManage = true, filters, search = '', range }) 
 
   return (
     <div className="space-y-3">
-      {isLoading ? (
+      {isError && !data ? (
+        <QueryError title="Couldn’t load the expenses" error={error} onRetry={refetch} />
+      ) : isLoading ? (
         <TableSkeleton rows={6} cols={6} />
       ) : (
         <>

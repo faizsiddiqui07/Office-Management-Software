@@ -25,6 +25,10 @@ const attendanceSchema = new mongoose.Schema(
     },
     workedMinutes: { type: Number, default: 0 },
     overtimeMinutes: { type: Number, default: 0 },
+    // ON_LEAVE for half the day only — the leave that produced it was a half-day, and
+    // the balance was charged 0.5. Without this the sheet reported a whole day away
+    // against a half-day deduction.
+    halfDayLeave: { type: Boolean, default: false },
     checkInMeta: { type: metaSchema, default: undefined },
     checkOutMeta: { type: metaSchema, default: undefined },
     // Late check-in: optional reason + leadership "excuse" (so on-duty lates
@@ -38,6 +42,11 @@ const attendanceSchema = new mongoose.Schema(
 );
 
 attendanceSchema.index({ user: 1, date: 1 }, { unique: true });
+// A compound index starting with `user` can't answer a query that filters by date
+// alone, and plenty of hot paths do exactly that: the daily roster (every dashboard
+// load), the overtime leaderboard, the payroll matrix, the company report. Those were
+// scanning the whole collection, which grows by roughly a row per person per day.
+attendanceSchema.index({ date: 1 });
 attendanceSchema.set('toJSON', { virtuals: true, versionKey: false });
 
 export const Attendance =

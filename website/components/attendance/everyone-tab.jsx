@@ -16,6 +16,7 @@ import { AttendanceStatusBadge, attendanceStatusText } from './attendance-status
 import { DataTable } from '@/components/glass/data-table';
 import { StatCard } from '@/components/glass/stat-card';
 import { TableSkeleton } from '@/components/glass/skeletons';
+import { QueryError } from '@/components/glass/query-error';
 import { AppDialog } from '@/components/glass/app-dialog';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -161,7 +162,7 @@ export function EveryoneTab() {
     }
   };
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['attendance', 'overview', date],
     queryFn: () => api.get(`/attendance/overview?date=${date}`),
   });
@@ -336,7 +337,9 @@ export function EveryoneTab() {
         </div>
       ) : null}
 
-      {isLoading ? (
+      {isError && !data ? (
+        <QueryError title="Couldn’t load the day’s attendance" error={error} onRetry={refetch} />
+      ) : isLoading ? (
         <TableSkeleton rows={6} cols={8} />
       ) : (
         <DataTable

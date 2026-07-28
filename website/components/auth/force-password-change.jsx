@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { toast } from 'sonner';
 import { Lock, ShieldCheck } from 'lucide-react';
-import { api } from '@/lib/api';
+import { api, setAuthToken } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { PasswordInput } from '@/components/ui/password-input';
 import { Label } from '@/components/ui/label';
@@ -28,7 +28,11 @@ export function ForcePasswordChange({ user }) {
     }
     setLoading(true);
     try {
-      await api.post('/auth/change-password', { currentPassword: current, newPassword: next });
+      // Changing the password signs out every session opened before now — including
+      // this one. The server hands back a replacement token; store it so this device
+      // stays signed in and only the others have to sign in again.
+      const res = await api.post('/auth/change-password', { currentPassword: current, newPassword: next });
+      if (res?.token) setAuthToken(res.token);
       toast.success('Password updated — welcome aboard!');
       await refresh();
     } catch (err) {

@@ -12,6 +12,7 @@ import { useRoleOptions } from '@/lib/use-roles';
 import { DataTable } from '@/components/glass/data-table';
 import { StatusBadge } from '@/components/glass/status-badge';
 import { TableSkeleton } from '@/components/glass/skeletons';
+import { QueryError } from '@/components/glass/query-error';
 import { AppDialog } from '@/components/glass/app-dialog';
 import { ConfirmDialog } from '@/components/glass/confirm-dialog';
 import { Button } from '@/components/ui/button';
@@ -46,7 +47,7 @@ export function UsersDirectory() {
   const canReset = !!user && can(user, 'resetCredentials');
   const canCreate = !!user && can(user, 'createUsers');
 
-  const { data, isLoading } = useQuery({ queryKey: ['users'], queryFn: () => api.get('/users') });
+  const { data, isLoading, isError, error, refetch } = useQuery({ queryKey: ['users'], queryFn: () => api.get('/users') });
   const users = React.useMemo(() => data?.users ?? [], [data]);
   const { data: roleOptions = [] } = useRoleOptions();
 
@@ -214,7 +215,9 @@ export function UsersDirectory() {
         ) : null}
       </div>
 
-      {isLoading ? (
+      {isError && !data ? (
+        <QueryError title="Couldn’t load the team" error={error} onRetry={refetch} />
+      ) : isLoading ? (
         <TableSkeleton rows={6} cols={6} />
       ) : (
         <DataTable columns={columns} data={filtered} searchPlaceholder="Search people…" pageSize={12} emptyMessage="No users found." />

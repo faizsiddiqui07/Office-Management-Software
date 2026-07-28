@@ -1,5 +1,6 @@
 import { createElement as E } from 'react';
 import { Document, Page, View, Text, Image, StyleSheet, renderToStream } from '@react-pdf/renderer';
+import { ymdInTz } from '../lib/time.js';
 
 const DEFAULT_ACCENT = '#E5342B';
 const HEADER_BG = '#1B1F2A';
@@ -47,7 +48,11 @@ const COLS = [
 
 function fmtDate(d) {
   if (!d) return '';
-  return String(d).slice(0, 10);
+  // These are UTC instants. Slicing the ISO string printed the UTC calendar day, so
+  // anything done after 5:30am UTC-offset — i.e. a normal evening in the office —
+  // came out a day early on the PDF while the board, the leaderboard and the bonus
+  // system all read it in company time.
+  return ymdInTz(new Date(d));
 }
 
 function row(cells, key, opts = {}) {

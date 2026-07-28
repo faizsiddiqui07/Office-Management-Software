@@ -33,7 +33,19 @@ import { DuesEntryDetailDialog } from './dues-entry-detail-dialog';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
-function fmtDate(iso) {
+/**
+ * Ledger rows carry `dateYMD` — the day the entry belongs to — alongside the stored
+ * instant, which is IST midnight. Formatting that instant in the viewer's own zone
+ * renders the day before on anything west of India, so a 27 July entry can read 26
+ * July. Read the plain date and pin the formatter to UTC, exactly as the detail
+ * dialog already does.
+ */
+function fmtDate(entry) {
+  const ymd = typeof entry === 'string' ? entry : entry?.dateYMD;
+  if (ymd && /^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
+    return new Date(`${ymd}T00:00:00Z`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  }
+  const iso = typeof entry === 'string' ? entry : entry?.date;
   return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 }
 function initials(name = '') {
@@ -182,7 +194,7 @@ function PersonDetail({ personId, onAddDue, onAddPay }) {
                       {isDue && e.source ? <span className="font-normal text-muted-foreground"> · {e.source}</span> : null}
                     </p>
                     <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
-                      <span className="text-xs text-muted-foreground">{fmtDate(e.date)}</span>
+                      <span className="text-xs text-muted-foreground">{fmtDate(e)}</span>
                       {isDue ? (
                         paid ? (
                           <span className="text-xs font-medium text-success">Paid</span>
@@ -265,7 +277,7 @@ function PersonDetail({ personId, onAddDue, onAddPay }) {
         title="Remove this entry?"
         description={
           pendingDelete
-            ? `${pendingDelete.kind === 'DUE' ? pendingDelete.item || 'Item' : 'Payment'} · ${formatMoney(pendingDelete.amount)} · ${fmtDate(pendingDelete.date)}. This changes ${person.name}'s balance and can't be undone.`
+            ? `${pendingDelete.kind === 'DUE' ? pendingDelete.item || 'Item' : 'Payment'} · ${formatMoney(pendingDelete.amount)} · ${fmtDate(pendingDelete)}. This changes ${person.name}'s balance and can't be undone.`
             : ''
         }
         confirmLabel="Remove"

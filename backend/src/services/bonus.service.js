@@ -9,6 +9,7 @@ import { can } from '../lib/permissions.js';
 import { ymdInTz, companyDayFromYMD, dayOfWeekInTz } from '../lib/time.js';
 import { userWeekendDays } from '../lib/schedule.js';
 import { hadAccessOn, splitByJoining, periodStartFor } from '../lib/joining.js';
+import { APP_LIVE_YMD } from '../lib/appLive.js';
 import { holidayYMDSet } from './holiday.service.js';
 
 const toId = (v) => (typeof v === 'string' ? new mongoose.Types.ObjectId(v) : v);
@@ -82,6 +83,16 @@ export async function updateConfig(patch) {
   const s = await Setting.getSingleton();
   const b = s.bonus || {};
   const num = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d);
+  // Switching the scheme ON starts it from today, never from the past.
+  //
+  // The daily job treats "the previous month hasn't been rolled up" and "yesterday
+  // hasn't been scanned" as work to do. On a first enable that meant the month just
+  // gone — a closed month nobody had been told the rules for — was awarded in full
+  // (everyone with no approved leave in it collected the no-leave points), and
+  // yesterday could hand out absence penalties. Marking both as already handled at
+  // the moment it's turned on means the first thing it scores is today onward.
+  const turningOn = patch.enabled !== undefined && !!patch.enabled && !b.enabled;
+  const today = ymdInTz(new Date());
   s.bonus = {
     enabled: patch.enabled !== undefined ? !!patch.enabled : b.enabled,
     rupeesPerPoint: Math.max(0, num(patch.rupeesPerPoint, b.rupeesPerPoint || 0)),
@@ -94,8 +105,8 @@ export async function updateConfig(patch) {
       ? patch.manualItems.filter((m) => m && String(m.label || '').trim()).slice(0, 100)
           .map((m) => ({ id: m.id || rand(), label: String(m.label).trim().slice(0, 80), points: Math.round(num(m.points, 0)) }))
       : (b.manualItems || []),
-    lastPenaltyRun: b.lastPenaltyRun || '',
-    lastMonthRollup: b.lastMonthRollup || '',
+    lastPenaltyRun: turningOn ? today : b.lastPenaltyRun || '',
+    lastMonthRollup: turningOn ? prevMonth(currentMonth()) : b.lastMonthRollup || '',
   };
   await s.save();
   return getConfig();
@@ -186,6 +197,28 @@ export async function leaderboard(month = currentMonth()) {
   }).filter(Boolean);
 }
 
+/**
+ * Record an automatic award exactly once.
+ *
+ * `key` identifies the award itself (who, what, which day or month). Two Lambdas
+ * running the same scan at the same instant both used to find nothing and both
+ * insert; upserting on the unique dedupeKey means the second one updates the row the
+ * first created instead of adding a duplicate. Returns nothing — callers don't care
+ * which of them won.
+ */
+async function awardOnce(key, { user, month, points, reason, source, taskRef = null }, { replace = false } = {}) {
+  const doc = { user, month, points, reason, source, taskRef };
+  await PointEntry.updateOne(
+    { dedupeKey: key },
+    // Insert-only by default: an award already on the books stays exactly as it was
+    // written, in the month it was written. Re-running a scan must never move a July
+    // penalty into August's total. `replace` is for the two cases that genuinely
+    // recompute — a day's overtime, and a task's result superseding its overdue mark.
+    replace ? { $set: doc, $setOnInsert: { dedupeKey: key } } : { $setOnInsert: { ...doc, dedupeKey: key } },
+    { upsert: true },
+  );
+}
+
 // ── Event hooks (called from other services) ─────────────────────────────────
 
 export async function onAssignedTaskDone(task) {
@@ -201,7 +234,8 @@ export async function onAssignedTaskDone(task) {
   const late = task.dueYMD && completedYMD > addDays(task.dueYMD, b.graceDays || 0);
   const pts = rulePoints(b, late ? 'assignedTaskLate' : 'assignedTaskOnTime');
   if (!pts) return;
-  await PointEntry.create({ user: task.owner, month: completedYMD.slice(0, 7), points: late ? -Math.abs(pts) : Math.abs(pts), reason: `${late ? 'Late completion' : 'Completed'}: ${task.title}`, source: 'auto_task', taskRef: task._id });
+  // replace: the finished result supersedes any overdue penalty already recorded.
+  await awardOnce(`auto_task:${task._id}`, { user: task.owner, month: completedYMD.slice(0, 7), points: late ? -Math.abs(pts) : Math.abs(pts), reason: `${late ? 'Late completion' : 'Completed'}: ${task.title}`, source: 'auto_task', taskRef: task._id }, { replace: true });
 }
 
 export async function onAssignedTaskUndone(taskId) {
@@ -217,10 +251,7 @@ export async function onCheckIn(user, dateYMD, isLate) {
   if (isLate) {
     const pts = rulePoints(b, 'lateArrival');
     if (pts) {
-      const reason = `Late arrival · ${dateYMD}`;
-      if (!(await PointEntry.findOne({ user: user._id, source: 'auto_late', reason }))) {
-        await PointEntry.create({ user: user._id, month: dateYMD.slice(0, 7), points: -Math.abs(pts), reason, source: 'auto_late' });
-      }
+      await awardOnce(`auto_late:${user._id}:${dateYMD}`, { user: user._id, month: dateYMD.slice(0, 7), points: -Math.abs(pts), reason: `Late arrival · ${dateYMD}`, source: 'auto_late' });
     }
     return; // late breaks any streak
   }
@@ -245,10 +276,9 @@ export async function onCheckIn(user, dateYMD, isLate) {
     cur = prevDay(cur);
   }
   if (streak > 0 && streak % N === 0) {
-    const { start, end } = dayRange(dateYMD);
-    if (!(await PointEntry.findOne({ user: user._id, source: 'auto_streak', createdAt: { $gte: start, $lt: end } }))) {
-      await PointEntry.create({ user: user._id, month, points: Math.abs(streakPts), reason: `${N}-day punctual streak`, source: 'auto_streak' });
-    }
+    // Keyed by the day the streak landed, so hitting 10 and later 20 both award, but
+    // the same day can never award twice.
+    await awardOnce(`auto_streak:${user._id}:${dateYMD}`, { user: user._id, month, points: Math.abs(streakPts), reason: `${N}-day punctual streak`, source: 'auto_streak' });
   }
 }
 
@@ -258,12 +288,16 @@ export async function onCheckOut(user, dateYMD, overtimeMinutes) {
   const b = s.bonus || {};
   if (!b.enabled) return;
   const pts = rulePoints(b, 'overtimeHour');
-  // One overtime entry per day — clear any earlier one for this day, then re-add.
-  const { start, end } = dayRange(dateYMD);
-  await PointEntry.deleteMany({ user: user._id, source: 'auto_ot', createdAt: { $gte: start, $lt: end } });
+  // One overtime entry per day. Keyed by the DAY the overtime belongs to rather than
+  // matched on when the row happened to be written, so re-running it just rewrites
+  // that day's award to the new figure.
+  const key = `auto_ot:${user._id}:${dateYMD}`;
   const hours = Math.floor((overtimeMinutes || 0) / 60);
   if (pts && hours > 0) {
-    await PointEntry.create({ user: user._id, month: dateYMD.slice(0, 7), points: Math.abs(pts) * hours, reason: `Overtime · ${dateYMD} (${hours}h)`, source: 'auto_ot' });
+    await awardOnce(key, { user: user._id, month: dateYMD.slice(0, 7), points: Math.abs(pts) * hours, reason: `Overtime · ${dateYMD} (${hours}h)`, source: 'auto_ot' }, { replace: true });
+  } else {
+    // The day no longer earns anything (corrected check-out, rule switched off).
+    await PointEntry.deleteOne({ dedupeKey: key });
   }
 }
 
@@ -273,36 +307,79 @@ async function scanOverdueTasks(b) {
   const pts = rulePoints(b, 'assignedTaskLate');
   if (!pts) return;
   const today = ymdInTz(new Date());
+  // Work that was passed further down is now somebody else's to deliver. Their copy is
+  // the one that gets scored; the copy left behind up the chain stays PENDING until the
+  // bottom is finished, so counting it too penalised two people for one late job. The
+  // task leaderboard already excludes these — the penalty has to agree with it.
+  const forwardedParentIds = await Task.distinct('forwardedFrom', { forwardedFrom: { $ne: null } });
   // Skip tasks already submitted for approval — the assignee did the work; a slow
   // approval must not become an "overdue" penalty on them.
-  const tasks = await Task.find({ assignedBy: { $ne: null }, status: 'PENDING', dueYMD: { $ne: '' }, submittedAt: null }).select('owner dueYMD title');
+  const tasks = await Task.find({ assignedBy: { $ne: null }, status: 'PENDING', dueYMD: { $ne: '' }, submittedAt: null, _id: { $nin: forwardedParentIds } }).select('owner dueYMD title');
   for (const t of tasks) {
     if (addDays(t.dueYMD, b.graceDays || 0) >= today) continue;
-    if (await PointEntry.findOne({ taskRef: t._id, source: 'auto_task' })) continue;
-    await PointEntry.create({ user: t.owner, month: today.slice(0, 7), points: -Math.abs(pts), reason: `Overdue: ${t.title}`, source: 'auto_task', taskRef: t._id });
+    // Same key the completion award uses, so a task carries exactly one auto entry —
+    // the overdue penalty is replaced by the result once it's finished.
+    await awardOnce(`auto_task:${t._id}`, { user: t.owner, month: today.slice(0, 7), points: -Math.abs(pts), reason: `Overdue: ${t.title}`, source: 'auto_task', taskRef: t._id });
   }
 }
 
-async function scanAbsences(b) {
+/**
+ * Absence penalties for every day not scored yet — not just yesterday.
+ *
+ * This runs off whatever request happens to be the day's first, so on a public holiday,
+ * during an outage, or simply on a day nobody opens the app, it doesn't run at all. It
+ * used to look only at "yesterday", so any day it missed was never revisited and its
+ * absences were silently dropped for good. `since` is the day it last ran, so it now
+ * works through every day from there up to yesterday and catches up.
+ */
+async function scanAbsences(b, since) {
   const pts = rulePoints(b, 'absentDay');
   if (!pts) return;
   const yesterday = prevDay(ymdInTz(new Date()));
-  const holidays = await holidayYMDSet(yesterday, yesterday);
-  if (holidays.has(yesterday)) return;
+  // Nothing was tracked before the office started running on this system, so a day
+  // from before it can't be an absence — no matter what joining dates say (real,
+  // older hire dates get entered over time and would otherwise reopen this).
+  if (yesterday < APP_LIVE_YMD) return;
+
+  // Never reach further back than the go-live day, and cap the catch-up so a long
+  // silence (or a first run with no watermark) can't turn into a months-long sweep.
+  const MAX_CATCHUP_DAYS = 31;
+  let start = since && since > APP_LIVE_YMD ? since : APP_LIVE_YMD;
+  let floor = yesterday;
+  for (let i = 0; i < MAX_CATCHUP_DAYS - 1; i += 1) floor = prevDay(floor);
+  if (start < floor) start = floor;
+
+  const days = [];
+  for (let d = yesterday; d >= start && days.length < MAX_CATCHUP_DAYS; d = prevDay(d)) days.push(d);
+  days.reverse(); // oldest first, so the history reads in order
+  if (!days.length) return;
+
   const s = await Setting.getSingleton();
-  const dow = dayOfWeekInTz(companyDayFromYMD(yesterday));
+  const holidays = await holidayYMDSet(days[0], days[days.length - 1]);
   const users = (await User.find({ isActive: true }).select('name role employmentType schedule dateOfJoining')).filter((u) => can({ role: u.role }, 'markAttendance'));
-  const day = companyDayFromYMD(yesterday);
-  const present = new Set((await Attendance.find({ date: day }).select('user')).map((r) => String(r.user)));
-  const onLeave = new Set((await LeaveRequest.find({ status: 'APPROVED', startYMD: { $lte: yesterday }, endYMD: { $gte: yesterday } }).select('user')).map((l) => String(l.user)));
-  const month = yesterday.slice(0, 7);
-  for (const u of users) {
-    if (!hadAccessOn(u, yesterday)) continue; // they hadn't joined — not an absence
-    if (userWeekendDays(u, s).includes(dow)) continue;
-    if (present.has(String(u._id)) || onLeave.has(String(u._id))) continue;
-    const reason = `Absent · ${yesterday}`;
-    if (await PointEntry.findOne({ user: u._id, source: 'auto_absent', reason })) continue;
-    await PointEntry.create({ user: u._id, month, points: -Math.abs(pts), reason, source: 'auto_absent' });
+  // One query for the whole window instead of one per day.
+  const attended = await Attendance.find({ date: { $gte: companyDayFromYMD(days[0]), $lte: companyDayFromYMD(days[days.length - 1]) } }).select('user date');
+  const presentByDay = new Map();
+  for (const r of attended) {
+    const ymd = ymdInTz(r.date);
+    if (!presentByDay.has(ymd)) presentByDay.set(ymd, new Set());
+    presentByDay.get(ymd).add(String(r.user));
+  }
+  const leaves = await LeaveRequest.find({ status: 'APPROVED', startYMD: { $lte: days[days.length - 1] }, endYMD: { $gte: days[0] } }).select('user startYMD endYMD');
+
+  for (const ymd of days) {
+    if (holidays.has(ymd)) continue;
+    const dow = dayOfWeekInTz(companyDayFromYMD(ymd));
+    const present = presentByDay.get(ymd) || new Set();
+    const onLeave = new Set(leaves.filter((l) => l.startYMD <= ymd && l.endYMD >= ymd).map((l) => String(l.user)));
+    const month = ymd.slice(0, 7);
+    for (const u of users) {
+      if (!hadAccessOn(u, ymd)) continue; // they hadn't joined — not an absence
+      if (userWeekendDays(u, s).includes(dow)) continue;
+      if (present.has(String(u._id)) || onLeave.has(String(u._id))) continue;
+      // eslint-disable-next-line no-await-in-loop
+      await awardOnce(`auto_absent:${u._id}:${ymd}`, { user: u._id, month, points: -Math.abs(pts), reason: `Absent · ${ymd}`, source: 'auto_absent' });
+    }
   }
 }
 
@@ -332,8 +409,8 @@ async function runMonthRollup(b) {
     // no-leave award
     if (noLeavePts) {
       const took = await LeaveRequest.countDocuments({ user: u._id, status: 'APPROVED', startYMD: { $lte: monthEnd }, endYMD: { $gte: from } });
-      if (took === 0 && !(await PointEntry.findOne({ user: u._id, month: target, source: 'auto_noleave' }))) {
-        await PointEntry.create({ user: u._id, month: target, points: Math.abs(noLeavePts), reason: 'No leave taken all month', source: 'auto_noleave' });
+      if (took === 0) {
+        await awardOnce(`auto_noleave:${u._id}:${target}`, { user: u._id, month: target, points: Math.abs(noLeavePts), reason: 'No leave taken all month', source: 'auto_noleave' });
       }
     }
     // perfect-attendance award: no absent working days + no unexcused late
@@ -355,8 +432,8 @@ async function runMonthRollup(b) {
         else if (rec.status === 'LATE' && !rec.excused) lateBad += 1;
         else if (rec.status === 'ABSENT') absent += 1;
       }
-      if (workingDays > 0 && absent === 0 && lateBad === 0 && !(await PointEntry.findOne({ user: u._id, month: target, source: 'auto_perfect' }))) {
-        await PointEntry.create({ user: u._id, month: target, points: Math.abs(perfectPts), reason: 'Perfect attendance all month', source: 'auto_perfect' });
+      if (workingDays > 0 && absent === 0 && lateBad === 0) {
+        await awardOnce(`auto_perfect:${u._id}:${target}`, { user: u._id, month: target, points: Math.abs(perfectPts), reason: 'Perfect attendance all month', source: 'auto_perfect' });
       }
     }
   }
@@ -370,10 +447,13 @@ export async function maybeRunDaily() {
   if (!b.enabled) return;
   const today = ymdInTz(new Date());
   if (b.lastPenaltyRun === today) return;
+  // The day this last ran, captured BEFORE the throttle overwrites it (`b` is the same
+  // object as s.bonus). It's the watermark the absence scan catches up from.
+  const lastRun = b.lastPenaltyRun || '';
   s.bonus.lastPenaltyRun = today; // throttle first
   const rolled = await runMonthRollup(b).catch((e) => { console.error('month rollup failed', e?.message); return b.lastMonthRollup; });
   if (rolled) s.bonus.lastMonthRollup = rolled;
   await s.save();
   try { await scanOverdueTasks(b); } catch (e) { console.error('overdue scan failed', e?.message); }
-  try { await scanAbsences(b); } catch (e) { console.error('absence scan failed', e?.message); }
+  try { await scanAbsences(b, lastRun); } catch (e) { console.error('absence scan failed', e?.message); }
 }

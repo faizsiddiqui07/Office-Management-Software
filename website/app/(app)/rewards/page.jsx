@@ -18,12 +18,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { formatRupees } from '@/lib/expense';
 
 function fmtDate(iso) {
   if (!iso) return '';
   return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
 }
-const money = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
+const money = (n) => formatRupees(n);
 const Pts = ({ n }) => <span className={n < 0 ? 'font-medium text-destructive' : 'font-medium text-emerald-600 dark:text-emerald-300'}>{n > 0 ? `+${n}` : n}</span>;
 
 /** Leadership-only: give points to a teammate and see the leaderboard.

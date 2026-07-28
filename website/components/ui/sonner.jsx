@@ -9,7 +9,10 @@ export function Toaster(props) {
   return (
     <Sonner
       theme={theme}
-      position="top-right"
+      // Bottom-centre keeps toasts off the sticky topbar — anchored at the top they
+      // landed straight over the bell, theme and user menu right after an action —
+      // and puts them in thumb reach on the installed phone app.
+      position="bottom-center"
       className="toaster group"
       toastOptions={{
         classNames: {

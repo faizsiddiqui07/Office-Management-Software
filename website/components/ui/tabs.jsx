@@ -30,7 +30,11 @@ function TabsList({
     <TabsPrimitive.List
       data-slot="tabs-list"
       className={cn(
-        "inline-flex w-fit items-center gap-1 rounded-xl border border-border/60 bg-muted/40 p-1 backdrop-blur-sm",
+        // max-w-full + scrolling keeps a long tab row (To-Do has three) inside the
+        // viewport on a narrow phone or at large system text. Without it the row has
+        // nowhere to go and pushes the whole page sideways, since nothing above sets
+        // overflow-x. `w-fit` still keeps short rows hugging their tabs.
+        "inline-flex w-fit max-w-full items-center gap-1 overflow-x-auto rounded-xl border border-border/60 bg-muted/40 p-1 backdrop-blur-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
         "group-data-[orientation=vertical]/tabs:flex-col group-data-[orientation=vertical]/tabs:items-stretch",
         className,
       )}

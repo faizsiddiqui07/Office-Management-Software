@@ -33,6 +33,11 @@ function nowHM() {
   return new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: COMPANY_TZ }).format(new Date());
 }
 
+/** Today in the company timezone — one-tap check-out only applies to today's visits. */
+function todayYMD() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: COMPANY_TZ }).format(new Date());
+}
+
 function DetailRow({ label, value }) {
   return (
     <div className="flex items-start justify-between gap-4 py-2">
@@ -83,7 +88,16 @@ export function VisitorTable({ canManageCategories = false }) {
   const visitors = data?.visitors ?? [];
 
   const checkoutMut = useMutation({
-    mutationFn: (v) => api.put(`/visitors/${v.id}`, { checkOutTime: nowHM() }),
+    // One tap stamps the current time, which only makes sense for someone who is
+    // leaving now. On a visit left open from an earlier day "now" is the wrong day's
+    // clock — and setting a check-out locks both times permanently — so those are sent
+    // to the editor to have the real time entered instead.
+    mutationFn: (v) => {
+      if (v.dateYMD && v.dateYMD !== todayYMD()) {
+        throw new Error('This visit is from an earlier day — open it and enter the time they left.');
+      }
+      return api.put(`/visitors/${v.id}`, { checkOutTime: nowHM() });
+    },
     onSuccess: (_res, v) => {
       toast.success(`${v.name} checked out`);
       qc.invalidateQueries({ queryKey: ['visitors'] });

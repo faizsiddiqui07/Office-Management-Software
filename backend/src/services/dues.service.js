@@ -61,8 +61,15 @@ async function stateFor(personId) {
 
 /** One person's full ledger: per-due status + derived pending/advance. */
 export async function ledgerFor(personId) {
-  const docs = await LedgerEntry.find({ person: personId }).sort({ date: -1, createdAt: -1 }).limit(300).populate('createdBy', 'name');
-  const { pending, advance, remainingById } = computeLedger(docs);
+  // The balance is worked out from EVERY entry, not just the page being shown.
+  // Payments settle the oldest dues first, and the oldest entries are exactly the ones
+  // a "most recent 300" cut drops — so once somebody passed 300 lifetime entries (a
+  // daily lunch ledger gets there in about a year) their pending figure here started
+  // disagreeing with the roster and with what settling actually cleared.
+  const all = await LedgerEntry.find({ person: personId }).sort({ date: -1, createdAt: -1 }).populate('createdBy', 'name');
+  const { pending, advance, remainingById } = computeLedger(all);
+  // Only the displayed list is capped.
+  const docs = all.slice(0, 300);
   const entries = docs.map((d) => {
     const j = d.toJSON();
     if (j.kind === 'DUE') {

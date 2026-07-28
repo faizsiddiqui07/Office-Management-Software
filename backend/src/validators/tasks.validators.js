@@ -1,6 +1,9 @@
 import { z } from 'zod';
 
 const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD').or(z.literal(''));
+// A person's id. Checked here rather than left to reach Mongo, where a malformed one
+// throws a cast error with no status and surfaces as a 500 on what is really bad input.
+const objectId = z.string().regex(/^[a-f\d]{24}$/i, 'Not a valid person');
 
 export const createTaskSchema = z.object({
   title: z.string().min(1, 'Add the work').max(300),
@@ -8,8 +11,8 @@ export const createTaskSchema = z.object({
   dueYMD: ymd.optional().default(''),
   // One id (single delegate) OR a list — assigning the same work to several people
   // at once creates one independent task each.
-  assignTo: z.union([z.string(), z.array(z.string()).max(50)]).optional(),
-  collaborators: z.array(z.string()).max(20).optional(), // tagged teammates on a shared task
+  assignTo: z.union([objectId, z.array(objectId).max(50)]).optional(),
+  collaborators: z.array(objectId).max(20).optional(), // tagged teammates on a shared task
   requiresApproval: z.boolean().optional(), // assigner must approve before it's done
 });
 
@@ -17,9 +20,9 @@ export const updateTaskSchema = z.object({
   title: z.string().min(1).max(300).optional(),
   notes: z.string().max(2000).optional(),
   dueYMD: ymd.optional(),
-  collaborators: z.array(z.string()).max(20).optional(), // owner can retag a shared task
+  collaborators: z.array(objectId).max(20).optional(), // owner can retag a shared task
   applyToAll: z.boolean().optional(), // assigner: push a content edit to every copy of a multi-assigned task
-  assignTo: z.union([z.string(), z.array(z.string()).max(50)]).optional(), // assigner: change who it's assigned to
+  assignTo: z.union([objectId, z.array(objectId).max(50)]).optional(), // assigner: change who it's assigned to
   requiresApproval: z.boolean().optional(),
 });
 
@@ -34,7 +37,7 @@ export const seenBulkSchema = z.object({
 });
 
 export const forwardTaskSchema = z.object({
-  assignTo: z.string().min(1, 'Pick a person'),
+  assignTo: objectId,
   requiresApproval: z.boolean().optional(),
   notes: z.string().max(2000).optional(),
 });

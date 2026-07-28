@@ -1,6 +1,5 @@
 import { Attendance } from '../models/Attendance.js';
 import { Setting } from '../models/Setting.js';
-import { LeaveBalance } from '../models/LeaveBalance.js';
 import { User } from '../models/User.js';
 import { canViewEveryone, can } from '../lib/permissions.js';
 import { haversineMeters } from '../lib/geo.js';
@@ -16,7 +15,6 @@ import {
 } from '../lib/time.js';
 import { effectiveSchedule, userWeekendDays, workWindowClosed } from '../lib/schedule.js';
 import { splitByJoining, periodStartFor, joinedYMD } from '../lib/joining.js';
-import { leaveYearOf } from '../lib/leaveYear.js';
 import { onCheckIn, onCheckOut } from './bonus.service.js';
 
 function httpError(status, code, message) {
@@ -188,24 +186,13 @@ export async function checkOut(user, meta, coords) {
   record.overtimeMinutes = overtimeMinutes;
   await record.save();
 
-  // Accrue overtime into the user's yearly leave balance.
-  if (overtimeMinutes > 0) {
-    const year = leaveYearOf(ymdInTz(day)); // fiscal leave year — same balance as leave
-    await LeaveBalance.findOneAndUpdate(
-      { user: user._id, year },
-      {
-        $inc: { overtimeMinutes },
-        $setOnInsert: {
-          user: user._id,
-          year,
-          totalQuota: settings.annualLeaveQuota,
-          used: 0,
-          remaining: settings.annualLeaveQuota,
-        },
-      },
-      { upsert: true },
-    );
-  }
+  // The day's overtime lives on the attendance record above and nowhere else. There
+  // used to be a running total kept on LeaveBalance as well, but only this path ever
+  // added to it — a correction, a leadership edit or a cleared day changed the day
+  // without touching the total, so the two drifted apart for good. Anything that wants
+  // a period's overtime now sums the records (see dossier.service.js), which can't go
+  // stale. (It also stopped this upsert from creating a balance on the full annual
+  // quota, ignoring the pro-rata a mid-year joiner is due.)
 
   // Bonus (best-effort): reward each full hour of overtime.
   try { await onCheckOut(user, ymdInTz(day), overtimeMinutes); } catch (e) { console.error('bonus check-out hook failed', e?.message); }
@@ -236,6 +223,11 @@ export async function getTodayPayload(user) {
       graceMinutes: sched.graceMinutes,
       timezone: settings.timezone,
       checkOutCooldownMinutes: settings.checkOutCooldownMinutes ?? 30,
+      // THIS person's non-working weekdays (0=Sun…6=Sat) — the office weekend, or a
+      // part-timer's own off-days. Sent so the leave dialog can show the same day
+      // count the server will actually deduct; it used to assume Sunday for everyone,
+      // which quietly misstated the figure people commit to on the phone.
+      weekendDays: userWeekendDays(user, settings),
     },
     gps: {
       enabled: !!(
@@ -332,7 +324,8 @@ export async function attendanceMatrix(monthKey) {
         return 'P';
       }
       if (rec?.status === 'ON_LEAVE') {
-        t.onLeave += 1;
+        // Half-day leave = half a day away, matching the 0.5 taken off the balance.
+        t.onLeave += rec.halfDayLeave ? 0.5 : 1;
         return 'OL';
       }
       if (isOff) return 'H';

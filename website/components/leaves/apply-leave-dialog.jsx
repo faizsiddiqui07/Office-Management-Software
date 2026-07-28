@@ -61,7 +61,18 @@ export function ApplyLeaveDialog({ leave, open: openProp, onOpenChange }) {
     () => holidayYMDSetFromList(holData?.holidays, start, end),
     [holData, start, end],
   );
-  const days = computeWorkingDaysClient(start, end, halfDay && sameDay, [0], holidaySet);
+  // The applicant's OWN off-days, straight from the server (the office weekend, or a
+  // part-timer's own schedule) — the same set the deduction will be worked out from.
+  // Assuming Sunday here meant the "Submit · N days" people read before committing
+  // could differ from what actually came off their balance.
+  const { data: todayData } = useQuery({
+    queryKey: ['attendance', 'today'],
+    queryFn: () => api.get('/attendance/today'),
+    enabled: open,
+    staleTime: 60_000,
+  });
+  const weekendDays = todayData?.settings?.weekendDays ?? [0];
+  const days = computeWorkingDaysClient(start, end, halfDay && sameDay, weekendDays, holidaySet);
 
   const mut = useMutation({
     mutationFn: () => {

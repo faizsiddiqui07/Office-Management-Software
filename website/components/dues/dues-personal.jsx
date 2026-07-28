@@ -13,7 +13,17 @@ import { EmptyState } from '@/components/glass/empty-state';
 import { LoadingState } from '@/components/glass/skeletons';
 import { DuesEntryDetailDialog } from './dues-entry-detail-dialog';
 
-function fmtDate(iso) {
+/**
+ * Uses the entry's plain `dateYMD` rather than its stored instant, which is IST
+ * midnight and renders as the previous day for anyone whose device sits west of
+ * India. (The detail dialog already does it this way.)
+ */
+function fmtDate(entry) {
+  const ymd = typeof entry === 'string' ? entry : entry?.dateYMD;
+  if (ymd && /^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
+    return new Date(`${ymd}T00:00:00Z`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+  }
+  const iso = typeof entry === 'string' ? entry : entry?.date;
   return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
@@ -82,7 +92,7 @@ function EntryRow({ e, onOpen }) {
           {isDue && e.source ? <span className="font-normal text-muted-foreground"> · {e.source}</span> : null}
         </p>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
-          <span>{fmtDate(e.date)}</span>
+          <span>{fmtDate(e)}</span>
           {isDue ? (
             paid ? (
               <span className="font-medium text-success">Paid</span>

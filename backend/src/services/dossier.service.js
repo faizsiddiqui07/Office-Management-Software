@@ -139,13 +139,28 @@ export async function getUserDossier(userId, { from, to }) {
 
   const balYear = leaveYearOf(cappedTo || today);
   const bal = await getOrCreateBalance(user._id, balYear);
+  // Overtime for the leave year, summed from the attendance itself rather than read
+  // from the running total LeaveBalance used to keep. That total was only ever added to
+  // when somebody checked THEMSELVES out, so a corrected check-out time, a leadership
+  // edit or a cleared day changed the day's overtime while the total kept the old
+  // figure — and the gap grew every month. Derived from the days, it simply cannot
+  // disagree with them.
+  const [otAgg] = await Attendance.aggregate([
+    {
+      $match: {
+        user: user._id,
+        date: { $gte: companyDayFromYMD(`${balYear}-04-01`), $lte: companyDayFromYMD(`${balYear + 1}-03-31`) },
+      },
+    },
+    { $group: { _id: null, minutes: { $sum: '$overtimeMinutes' } } },
+  ]);
   const leaves = {
     balance: {
       year: balYear,
       totalQuota: bal.totalQuota,
       used: bal.used,
       remaining: bal.remaining,
-      overtimeMinutes: bal.overtimeMinutes,
+      overtimeMinutes: otAgg?.minutes ?? 0,
     },
     approvedDays,
     pendingCount,

@@ -58,20 +58,31 @@ export async function getOrCreateBalance(userId, year, session = null) {
     const settings = await Setting.getSingleton();
     const user = await User.findById(userId).select('dateOfJoining').session(session);
     const quota = quotaForJoiner(joinedYMD(user), year, settings.annualLeaveQuota);
-    const [created] = await LeaveBalance.create(
-      [
-        {
-          user: userId,
-          year,
-          totalQuota: quota,
-          used: 0,
-          remaining: quota,
-          overtimeMinutes: 0,
-        },
-      ],
-      { session },
-    );
-    bal = created;
+    try {
+      const [created] = await LeaveBalance.create(
+        [
+          {
+            user: userId,
+            year,
+            totalQuota: quota,
+            used: 0,
+            remaining: quota,
+            overtimeMinutes: 0,
+          },
+        ],
+        { session },
+      );
+      bal = created;
+    } catch (err) {
+      // Two requests can look for the same missing balance at once — the PWA fires
+      // several on resume, and on 1 April every one of them finds the new year's row
+      // absent. The unique {user, year} index means the loser of that race gets a
+      // duplicate-key error; the row it wanted now exists, so read it instead of
+      // failing the whole dashboard with a 500.
+      if (err?.code !== 11000) throw err;
+      bal = await LeaveBalance.findOne({ user: userId, year }).session(session);
+      if (!bal) throw err;
+    }
   }
   return bal;
 }
@@ -113,6 +124,25 @@ export async function setLeaveBalance(actor, userId, { totalQuota, used }) {
  * overlap when each starts on or before the other ends. Prevents the same physical
  * absence being applied — and its balance deducted — more than once.
  */
+/**
+ * A leave has to sit inside ONE leave year. The balance it is charged against is
+ * picked from the start date, so a request running 30 March → 3 April would take all
+ * of its days out of the OLD year's quota — it could be refused for want of balance
+ * while the fresh quota that opens on 1 April sits untouched, and the days would be
+ * filed under a year most of them don't belong to. Splitting the deduction across two
+ * balances would make every later step (approve, cancel, restore) ambiguous, so the
+ * request is refused instead, with an explanation of what to do.
+ */
+function assertSingleLeaveYear(startYMD, endYMD) {
+  const y = leaveYearOf(startYMD);
+  if (y === leaveYearOf(endYMD)) return;
+  throw httpError(
+    400,
+    'SPANS_LEAVE_YEAR',
+    `The leave year ends on 31 March, and these dates cross it. Apply twice — up to ${y + 1}-03-31, and again from ${y + 1}-04-01 — so each part comes out of the right year's balance.`,
+  );
+}
+
 async function findOverlappingLeave(userId, startYMD, endYMD, excludeId = null) {
   const filter = {
     user: userId,
@@ -129,6 +159,7 @@ export async function applyLeave(user, { type, startYMD, endYMD, halfDay, halfDa
   if (halfDay && startYMD !== endYMD) {
     throw httpError(400, 'BAD_HALF_DAY', 'Half-day applies to a single date only');
   }
+  assertSingleLeaveYear(startYMD, endYMD);
 
   // Block a second request over days already covered by an active one — otherwise the
   // same absence can be approved twice and the balance charged twice.
@@ -215,6 +246,7 @@ export async function updateLeave(user, id, { type, startYMD, endYMD, halfDay, h
   }
   if (endYMD < startYMD) throw httpError(400, 'BAD_RANGE', 'End date is before the start date');
   if (halfDay && startYMD !== endYMD) throw httpError(400, 'BAD_HALF_DAY', 'Half-day applies to a single date only');
+  assertSingleLeaveYear(startYMD, endYMD);
 
   // Same overlap guard as applyLeave, ignoring THIS request so an edit that keeps the
   // same dates isn't blocked by itself.
@@ -267,6 +299,11 @@ export async function updateLeave(user, id, { type, startYMD, endYMD, halfDay, h
 export async function recordLeaveForUser(actor, userId, { type, startYMD, endYMD, reason }) {
   const target = await User.findById(userId);
   if (!target) throw httpError(404, 'NOT_FOUND', 'User not found');
+  // Recording auto-approves, so recording it for yourself is self-approval by another
+  // door. Apply normally and let another approver decide.
+  if (String(userId) === String(actor._id)) {
+    throw httpError(403, 'SELF_DECISION', 'You cannot record your own leave — apply for it so someone else can approve it');
+  }
   if (endYMD < startYMD) throw httpError(400, 'BAD_RANGE', 'End date is before the start date');
 
   // Don't double-book: block if an active leave already covers any of these days.
@@ -297,11 +334,11 @@ export async function recordLeaveForUser(actor, userId, { type, startYMD, endYMD
     }
   }
 
-  // Overwrite any present/absent record in range so ON_LEAVE applies cleanly.
-  await Attendance.deleteMany({
-    user: userId,
-    date: { $gte: companyDayFromYMD(startYMD), $lte: companyDayFromYMD(endYMD) },
-  });
+  // The existing attendance for these days is cleared as PART OF the approval below
+  // (see decideLeave's `replaceAttendance`), not before it. Deleting it here meant a
+  // failed approval — a balance that changed underneath, a transaction that rolled
+  // back — left the leave unrecorded while the employee's real check-ins for those
+  // days were already gone for good.
 
   // Create as PENDING then approve — reuses the balance + attendance machinery.
   const req = await LeaveRequest.create({
@@ -318,7 +355,9 @@ export async function recordLeaveForUser(actor, userId, { type, startYMD, endYMD
     status: 'PENDING',
     appliedAt: new Date(),
   });
-  return decideLeave(actor, req.id, 'APPROVE', 'Recorded by leadership');
+  // `replaceAttendance` clears whatever was recorded for those days inside the same
+  // transaction, so leadership's "they were on leave" wins over an existing check-in.
+  return decideLeave(actor, req.id, 'APPROVE', 'Recorded by leadership', { replaceAttendance: true });
 }
 
 async function markAttendanceOnLeave(userId, fromYMD, toYMD, halfDay, weekendDays, holidays, session) {
@@ -329,9 +368,13 @@ async function markAttendanceOnLeave(userId, fromYMD, toYMD, halfDay, weekendDay
     const existing = await Attendance.findOne({ user: userId, date: day }).session(session);
     if (!existing) {
       // eslint-disable-next-line no-await-in-loop
-      await Attendance.create([{ user: userId, date: day, status: 'ON_LEAVE' }], { session });
+      await Attendance.create([{ user: userId, date: day, status: 'ON_LEAVE', halfDayLeave: !!halfDay }], { session });
     } else if (!existing.checkInAt) {
       existing.status = 'ON_LEAVE';
+      // Half a day off is half a day off on the sheet too. The balance is charged 0.5
+      // for it, so recording the date as a whole day away had the two records
+      // disagreeing about the same day.
+      existing.halfDayLeave = !!halfDay;
       // eslint-disable-next-line no-await-in-loop
       await existing.save({ session });
     }
@@ -339,24 +382,37 @@ async function markAttendanceOnLeave(userId, fromYMD, toYMD, halfDay, weekendDay
   }
 }
 
-async function revertAttendanceOnLeave(userId, fromYMD, toYMD, halfDay, weekendDays, holidays, session) {
-  const { workingDates } = computeWorkingDays({ fromYMD, toYMD, halfDay, weekendDays, holidays });
-  for (const ymd of workingDates) {
-    const day = companyDayFromYMD(ymd);
-    // eslint-disable-next-line no-await-in-loop
-    const att = await Attendance.findOne({ user: userId, date: day }).session(session);
-    if (att && att.status === 'ON_LEAVE' && !att.checkInAt) {
-      // eslint-disable-next-line no-await-in-loop
-      await att.deleteOne({ session });
-    }
-  }
+/**
+ * Undo the ON_LEAVE marks a leave put down. Sweeps the whole date range rather than
+ * recomputing which days were working days: the holiday set or the person's schedule
+ * may have changed since the approval, and recomputing would then miss a day it had
+ * actually marked, stranding an ON_LEAVE record on a cancelled leave. Only untouched
+ * ON_LEAVE rows are removed, so real attendance is never destroyed.
+ */
+async function revertAttendanceOnLeave(userId, fromYMD, toYMD, session) {
+  await Attendance.deleteMany(
+    {
+      user: userId,
+      date: { $gte: companyDayFromYMD(fromYMD), $lte: companyDayFromYMD(toYMD) },
+      status: 'ON_LEAVE',
+      $or: [{ checkInAt: null }, { checkInAt: { $exists: false } }],
+    },
+    { session },
+  );
 }
 
-export async function decideLeave(approver, id, decision, note) {
+export async function decideLeave(approver, id, decision, note, { replaceAttendance = false } = {}) {
   const request = await LeaveRequest.findById(id);
   if (!request) throw httpError(404, 'NOT_FOUND', 'Leave request not found');
   if (request.status !== 'PENDING') {
     throw httpError(409, 'ALREADY_DECIDED', `This request is already ${request.status.toLowerCase()}`);
+  }
+  // Nobody signs off their own leave. A role that can both apply and approve (an office
+  // manager, say) would otherwise grant itself leave straight from the queue, which is
+  // exactly the oversight this module exists to provide. Their request goes to another
+  // approver — leadership always holds approveLeave.
+  if (String(request.user) === String(approver._id)) {
+    throw httpError(403, 'SELF_DECISION', 'You cannot decide your own leave request — someone else has to review it');
   }
 
   if (decision === 'REJECT') {
@@ -402,16 +458,43 @@ export async function decideLeave(approver, id, decision, note) {
     }
     const year = leaveYearOf(fresh.startYMD);
 
+    // Charge what is ACTUALLY being marked off, not the figure stored at apply time.
+    // markAttendanceOnLeave below marks days using the holiday set and the owner's
+    // schedule as they are NOW; deducting the older stored count meant that a holiday
+    // declared (or a weekend changed) between applying and approving left the balance
+    // and the attendance disagreeing. Same inputs → the two can't drift apart.
+    const { count: days } = computeWorkingDays({
+      fromYMD: fresh.startYMD,
+      toYMD: fresh.endYMD,
+      halfDay: fresh.halfDay,
+      weekendDays: ownerWeekends,
+      holidays,
+    });
+    if (days <= 0) {
+      throw httpError(409, 'NO_WORKING_DAYS', 'Those dates are now all holidays or non-working days, so there is nothing to approve — reject the request instead.');
+    }
+    fresh.workingDays = days; // what cancelling will put back
+
+    // Leadership recording a leave FOR someone overrides whatever was on those days.
+    // Done here, in the transaction, so a failure further down puts the attendance
+    // back instead of destroying real check-ins for a leave that never got recorded.
+    if (replaceAttendance) {
+      await Attendance.deleteMany(
+        { user: fresh.user, date: { $gte: companyDayFromYMD(fresh.startYMD), $lte: companyDayFromYMD(fresh.endYMD) } },
+        { session },
+      );
+    }
+
     if (isPaid(fresh.type)) {
       const bal = await getOrCreateBalance(fresh.user, year, session);
-      if (fresh.workingDays > bal.remaining) {
+      if (days > bal.remaining) {
         throw httpError(
           400,
           'INSUFFICIENT_BALANCE',
-          `Approving exceeds the employee's balance (remaining ${bal.remaining}, requested ${fresh.workingDays}). Reject it, or have them re-apply as unpaid.`,
+          `Approving exceeds the employee's balance (remaining ${bal.remaining}, requested ${days}). Reject it, or have them re-apply as unpaid.`,
         );
       }
-      bal.used += fresh.workingDays;
+      bal.used += days;
       bal.remaining = bal.totalQuota - bal.used;
       await bal.save({ session });
     }
@@ -457,23 +540,31 @@ export async function cancelLeave(viewer, id) {
 
   // APPROVED → only an approver can cancel; restore balance + revert attendance.
   if (!isApprover) throw httpError(403, 'FORBIDDEN', 'Only an approver can cancel an approved leave');
+  // …and not your own: undoing the decision someone else made on your leave (putting the
+  // days back in your own balance) is the same self-dealing as approving it yourself.
+  if (isOwner) {
+    throw httpError(403, 'SELF_DECISION', 'You cannot cancel your own approved leave — ask another approver to do it');
+  }
 
-  const settings = await Setting.getSingleton();
-  const holidays = await holidayYMDSet(request.startYMD, request.endYMD);
-  const owner = await User.findById(request.user).select('employmentType schedule');
-  const ownerWeekends = userWeekendDays(owner, settings);
   const result = await runTransaction(async (session) => {
     const fresh = await LeaveRequest.findById(id).session(session);
+    // Re-check inside the transaction so two cancels racing each other can't each put
+    // the same days back into the balance.
+    if (fresh.status !== 'APPROVED') {
+      throw httpError(409, 'ALREADY_FINAL', `This request is already ${fresh.status.toLowerCase()}`);
+    }
     const year = leaveYearOf(fresh.startYMD);
 
     if (isPaid(fresh.type)) {
       const bal = await getOrCreateBalance(fresh.user, year, session);
+      // workingDays is what the approval actually charged (recomputed and stored then),
+      // so this puts back exactly what was taken.
       bal.used = Math.max(0, bal.used - fresh.workingDays);
       bal.remaining = bal.totalQuota - bal.used;
       await bal.save({ session });
     }
 
-    await revertAttendanceOnLeave(fresh.user, fresh.startYMD, fresh.endYMD, fresh.halfDay, ownerWeekends, holidays, session);
+    await revertAttendanceOnLeave(fresh.user, fresh.startYMD, fresh.endYMD, session);
 
     fresh.status = 'CANCELLED';
     fresh.decidedBy = viewer._id;

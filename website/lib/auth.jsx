@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError, setAuthToken } from './api';
+import { disablePush } from './pwa';
 
 const AuthContext = createContext(null);
 
@@ -63,6 +64,16 @@ export function AuthProvider({ children }) {
       return res.user;
     },
     async logout() {
+      // Hand back the push subscription BEFORE the token goes, while the request can
+      // still be authenticated. A subscription belongs to whoever enabled it, so
+      // without this the person who just signed out kept receiving this device's
+      // notifications — their check-in reminders, dues, announcements — until somebody
+      // else signed in and happened to claim the endpoint back.
+      try {
+        await disablePush();
+      } catch {
+        /* best-effort — never block signing out */
+      }
       try {
         await api.post('/auth/logout');
       } catch {

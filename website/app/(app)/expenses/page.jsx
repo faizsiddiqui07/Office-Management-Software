@@ -11,6 +11,7 @@ import { can } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/glass/page-header';
 import { EmptyState } from '@/components/glass/empty-state';
+import { QueryError } from '@/components/glass/query-error';
 import { ExpenseSummary } from '@/components/expenses/expense-summary';
 import { ExpenseFilterBar } from '@/components/expenses/expense-filter-bar';
 import { ExpenseDialog } from '@/components/expenses/add-expense-dialog';
@@ -128,7 +129,7 @@ export default function ExpensesPage() {
 
   // ONE request for everything above the table. The key keeps the ['expenses', …]
   // prefix so the invalidate after an add/edit/delete still refreshes it.
-  const { data: summary, isLoading, isPlaceholderData } = useQuery({
+  const { data: summary, isLoading, isPlaceholderData, isError, error, refetch } = useQuery({
     queryKey: ['expenses', 'summary', qs],
     queryFn: () => api.get(`/expenses/summary?${qs}`),
     enabled: canView,
@@ -178,11 +179,19 @@ export default function ExpensesPage() {
         addButton={<ExpenseDialog />}
       />
 
-      <ScopeLine filters={filters} onChange={setFilters} summary={summary} loading={isLoading && !summary} />
+      {isError && !summary ? (
+        // The totals, the charts and the table all hang off this one request, so a
+        // failure has to say so — rendering them empty would read as "no spending".
+        <QueryError title="Couldn’t load the expenses" error={error} onRetry={refetch} />
+      ) : (
+        <>
+          <ScopeLine filters={filters} onChange={setFilters} summary={summary} loading={isLoading && !summary} />
 
-      <ExpenseSummary summary={summary} loading={isLoading && !summary} stale={isPlaceholderData} />
-      <ExpenseCharts summary={summary} filters={filters} onChange={setFilters} categories={meta?.categories ?? []} />
-      <ExpenseTable canManage={canManage} filters={filters} search={debouncedSearch} range={range} />
+          <ExpenseSummary summary={summary} loading={isLoading && !summary} stale={isPlaceholderData} />
+          <ExpenseCharts summary={summary} filters={filters} onChange={setFilters} categories={meta?.categories ?? []} />
+          <ExpenseTable canManage={canManage} filters={filters} search={debouncedSearch} range={range} />
+        </>
+      )}
     </div>
   );
 }

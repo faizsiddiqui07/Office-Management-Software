@@ -6,8 +6,9 @@ import { GlassCard } from '@/components/glass/glass-card';
 import { cn } from '@/lib/utils';
 import { formatDuration } from '@/lib/time';
 
-/** Podium tints for the top three; everyone below is quiet. */
-const RANK = ['text-amber-500', 'text-slate-400', 'text-amber-700'];
+// Podium tints for the top three; everyone below is quiet. Bronze needs a lighter
+// tone on the dark card — amber-700 is dark enough to disappear into the glass.
+const RANK = ['text-amber-500', 'text-slate-400', 'text-amber-700 dark:text-amber-500/80'];
 
 function LeaderList({ rows, valueOf, empty }) {
   if (!rows?.length) return <p className="py-6 text-center text-sm text-muted-foreground">{empty}</p>;

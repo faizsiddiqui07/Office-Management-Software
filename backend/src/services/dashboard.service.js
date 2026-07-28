@@ -52,9 +52,11 @@ async function overtimeLeaderboard(fromDay, toDay) {
  *   - the task was DELEGATED (assignedBy set) — your own to-dos don't count;
  *   - it had a due date, and was finished on or before it (a task with no deadline
  *     can't be "on time", so it's out);
- *   - a CEO & President is involved — they assigned it, originally assigned it before
- *     it was forwarded, or are tagged on it. A senior can't inflate a junior's rank
- *     with private busywork; leadership has to be in the loop.
+ *   - a CEO & President is involved — they assigned it, or originally assigned it
+ *     before it was forwarded. A senior can't inflate a junior's rank with private
+ *     busywork; leadership has to be in the loop. (Being tagged as a collaborator
+ *     isn't a third route: tagging only exists on shared personal tasks, which have
+ *     no assigner and are excluded by the rule above.)
  * Credit goes to whoever actually did it (completedBy), falling back to the owner.
  *
  * `range` is { from, to } YMD (this month) or null (all-time). Only the leaderboard
@@ -79,7 +81,6 @@ async function taskLeaderboard(ceoIds, forwardedParentIds, range) {
         $or: [
           { assignedBy: { $in: ceoIds } },
           { originalAssignedBy: { $in: ceoIds } },
-          { collaborators: { $in: ceoIds } },
         ],
       },
     },
@@ -158,9 +159,15 @@ export async function buildDashboard(user) {
     taskAll: taskLeadersAll,
   };
 
+  // Leadership holds BOTH viewEveryone and leadershipDashboard, and each block below
+  // wanted the same roster — so the whole thing (every active user, the day's records,
+  // settings, holidays) was built twice on the app's most-opened screen. Built once
+  // here, only when somebody actually needs it.
+  const needsOverview = can(user, 'viewEveryone') || can(user, 'leadershipDashboard');
+  const overview = needsOverview ? await attendanceOverview(todayYMD) : null;
+
   // ── Manager+ (view everyone): team snapshot ───────────────
   if (can(user, 'viewEveryone')) {
-    const overview = await attendanceOverview(todayYMD);
     out.team = {
       total: overview.summary.total,
       present: overview.summary.present + overview.summary.late, // everyone who showed up
@@ -185,7 +192,6 @@ export async function buildDashboard(user) {
 
   // ── Leadership: rich analytics ────────────────────────────
   if (can(user, 'leadershipDashboard')) {
-    const overview = await attendanceOverview(todayYMD);
     // Expenses run on the CALENDAR year (the chart is titled with it) — the
     // fiscal `year` above is only for leave balances.
     const calendarYear = Number(todayYMD.slice(0, 4));

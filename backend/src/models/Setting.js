@@ -95,10 +95,41 @@ settingSchema.set('toJSON', {
   },
 });
 
+/**
+ * The settings document is read constantly — office hours, weekends, currency, the
+ * bonus rules — from roughly fifty places. A single leadership dashboard walked
+ * through six to ten of them, and every one was its own round trip to Atlas from
+ * Lambda for a document that changes a few times a year.
+ *
+ * So it's held for a few seconds between reads, the same way the role cache works.
+ * The window is deliberately short: a settings change made on one instance shows up on
+ * the others within it, and saving invalidates the cache on the instance that saved so
+ * the writer never reads back its own stale copy.
+ */
+let cached = null;
+let cachedAt = 0;
+const FRESH_MS = 10_000;
+
+function clearSettingCache() {
+  cached = null;
+  cachedAt = 0;
+}
+
 settingSchema.statics.getSingleton = async function getSingleton() {
+  if (cached && Date.now() - cachedAt < FRESH_MS) return cached;
   let doc = await this.findOne({ key: 'global' });
   if (!doc) doc = await this.create({ key: 'global' });
+  cached = doc;
+  cachedAt = Date.now();
   return doc;
 };
+
+/** Drop the cache — call after writing settings through anything but `save()`. */
+settingSchema.statics.invalidateCache = clearSettingCache;
+
+// Any save (including the ones that go through a cached doc) makes the copy suspect.
+settingSchema.post('save', clearSettingCache);
+settingSchema.post('findOneAndUpdate', clearSettingCache);
+settingSchema.post('updateOne', clearSettingCache);
 
 export const Setting = mongoose.models.Setting || mongoose.model('Setting', settingSchema);

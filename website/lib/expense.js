@@ -23,6 +23,18 @@ export function formatMoney(paise, currency = 'INR') {
   );
 }
 
+/**
+ * Whole rupees → "₹1,234". For amounts that are rupees to begin with and have no
+ * paise by construction — a points payout, say. Lives here beside `formatMoney` so
+ * every rupee on screen is formatted by this file rather than by a helper each page
+ * writes for itself.
+ */
+export function formatRupees(rupees, currency = 'INR') {
+  return new Intl.NumberFormat('en-IN', { style: 'currency', currency, maximumFractionDigits: 0 }).format(
+    Number(rupees) || 0,
+  );
+}
+
 export function rupeesToPaise(str) {
   const n = parseFloat(str);
   return Number.isFinite(n) ? Math.round(n * 100) : 0;

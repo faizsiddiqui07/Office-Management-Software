@@ -107,7 +107,11 @@ function DialogFooter({
       className={cn(
         // Negative margins mirror the Popup padding (p-5 mobile / p-6 sm+) so the
         // strip runs edge-to-edge; buttons go full-width on mobile for easy taps.
-        "-mx-5 -mb-[max(1.25rem,env(safe-area-inset-bottom))] flex flex-col-reverse gap-2 rounded-b-[inherit] border-t bg-muted/50 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:-mx-6 sm:-mb-6 sm:flex-row sm:justify-end sm:px-6 sm:pb-4 [&>button]:w-full sm:[&>button]:w-auto",
+        // They also get a proper touch height on mobile: these are the Submit / Save /
+        // Delete buttons, and inheriting the 32px desktop default made the most
+        // consequential controls in the app the smallest targets on a phone, while
+        // everything around them (check-in, task actions, approvals) sits at 40–48px.
+        "-mx-5 -mb-[max(1.25rem,env(safe-area-inset-bottom))] flex flex-col-reverse gap-2 rounded-b-[inherit] border-t bg-muted/50 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:-mx-6 sm:-mb-6 sm:flex-row sm:justify-end sm:px-6 sm:pb-4 [&>button]:h-11 [&>button]:w-full sm:[&>button]:h-8 sm:[&>button]:w-auto",
         className
       )}
       {...props}>

@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useTheme } from 'next-themes';
 import { toast } from 'sonner';
 import { Camera, CircleUser, Gauge, KeyRound, Loader2, Monitor, Moon, Sun, Trash2, UserCog } from 'lucide-react';
-import { api, ApiError } from '@/lib/api';
+import { api, ApiError, setAuthToken } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useLiteMode } from '@/lib/lite-mode';
 import { roleName } from '@/lib/permissions';
@@ -101,12 +101,15 @@ export default function ProfilePage() {
     if (pwd.newPassword !== pwd.confirm) return toast.error('New passwords do not match');
     setSavingPwd(true);
     try {
-      await api.post('/auth/change-password', {
+      // This signs out every other device (sessions opened before the change stop
+      // working). The replacement token keeps THIS one signed in.
+      const res = await api.post('/auth/change-password', {
         currentPassword: pwd.currentPassword,
         newPassword: pwd.newPassword,
       });
+      if (res?.token) setAuthToken(res.token);
       setPwd({ currentPassword: '', newPassword: '', confirm: '' });
-      toast.success('Password changed');
+      toast.success('Password changed — you’re signed out on your other devices');
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Could not change password');
     } finally {

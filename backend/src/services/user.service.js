@@ -130,6 +130,10 @@ export async function resetUserCredentials(actor, userId) {
   const tempPassword = generateTempPassword();
   user.passwordHash = await hashPassword(tempPassword);
   user.mustChangePassword = true;
+  // Cuts off every device this person is still signed in on. This is the point of a
+  // reset for someone who has left — before, their phone kept working for years
+  // because the token, not the password, is what the API trusts.
+  user.credentialsChangedAt = new Date();
   await user.save();
 
   return { user, tempPassword };
