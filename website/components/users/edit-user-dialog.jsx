@@ -41,6 +41,8 @@ export function EditUserDialog({ user: target, open, onOpenChange }) {
   const [schedule, setSchedule] = React.useState({ ...DEFAULT_SCHEDULE });
 
   const canManage = can(actor, 'manageUsers');
+  const canChangeRoles = can(actor, 'changeRoles');
+  const canDeactivate = can(actor, 'deactivateUsers');
   const [quota, setQuota] = React.useState('');
   const [used, setUsed] = React.useState('');
 
@@ -95,20 +97,26 @@ export function EditUserDialog({ user: target, open, onOpenChange }) {
 
   const mut = useMutation({
     mutationFn: async () => {
-      if (schedule.workStart && schedule.workEnd && schedule.workEnd <= schedule.workStart) {
-        throw new Error('Check-out time must be after check-in');
+      // Send only the fields this actor is actually allowed to change, so the granular
+      // permissions hold end to end: profile edits need manageUsers, the role needs
+      // changeRoles, the active status needs deactivateUsers. A role-only steward's
+      // save is just { role }, which the server accepts without manageUsers.
+      const body = {};
+      if (canManage) {
+        if (schedule.workStart && schedule.workEnd && schedule.workEnd <= schedule.workStart) {
+          throw new Error('Check-out time must be after check-in');
+        }
+        body.name = name;
+        body.department = department;
+        body.designation = designation;
+        body.employmentType = employmentType;
+        body.schedule = schedule; // custom timing is optional for everyone; blank = office hours
+        if (joiningDate) body.dateOfJoining = joiningDate;
+        body.taskAssign = { mode: assignMode, users: assignMode === 'SELECTED' ? [...assignUsers] : [] };
       }
-      await api.patch(`/users/${target.id}`, {
-        name,
-        department,
-        designation,
-        role,
-        isActive,
-        employmentType,
-        schedule, // custom timing is optional for everyone; blank = office hours
-        ...(joiningDate ? { dateOfJoining: joiningDate } : {}),
-        taskAssign: { mode: assignMode, users: assignMode === 'SELECTED' ? [...assignUsers] : [] },
-      });
+      if (canChangeRoles && !isSelf) body.role = role;
+      if (canDeactivate && !isSelf) body.isActive = isActive;
+      if (Object.keys(body).length) await api.patch(`/users/${target.id}`, body);
       if (canManage) {
         const payload = {};
         if (quota !== '' && quota !== loadedBal.current.quota) payload.totalQuota = Number(quota);
@@ -145,30 +153,34 @@ export function EditUserDialog({ user: target, open, onOpenChange }) {
       }
     >
       <div className="max-h-[70vh] space-y-4 overflow-y-auto py-2">
-        <div className="space-y-1.5">
-          <Label htmlFor="eu-name">Full name</Label>
-          <Input id="eu-name" value={name} onChange={(e) => setName(e.target.value)} className="bg-background/50" />
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="eu-dept">Department</Label>
-            <Input id="eu-dept" value={department} onChange={(e) => setDepartment(e.target.value)} className="bg-background/50" />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="eu-desg">Designation</Label>
-            <Input id="eu-desg" value={designation} onChange={(e) => setDesignation(e.target.value)} className="bg-background/50" />
-          </div>
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="eu-joined">Joined on</Label>
-          <DatePicker id="eu-joined" value={joiningDate} min="2000-01-01" onChange={setJoiningDate} className="bg-background/50" />
-          <p className="text-xs text-muted-foreground">
-            Attendance, reports and exports only count this person from this date — they don&apos;t appear at all before it.
-          </p>
-        </div>
+        {canManage ? (
+          <>
+            <div className="space-y-1.5">
+              <Label htmlFor="eu-name">Full name</Label>
+              <Input id="eu-name" value={name} onChange={(e) => setName(e.target.value)} className="bg-background/50" />
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="eu-dept">Department</Label>
+                <Input id="eu-dept" value={department} onChange={(e) => setDepartment(e.target.value)} className="bg-background/50" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="eu-desg">Designation</Label>
+                <Input id="eu-desg" value={designation} onChange={(e) => setDesignation(e.target.value)} className="bg-background/50" />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="eu-joined">Joined on</Label>
+              <DatePicker id="eu-joined" value={joiningDate} min="2000-01-01" onChange={setJoiningDate} className="bg-background/50" />
+              <p className="text-xs text-muted-foreground">
+                Attendance, reports and exports only count this person from this date — they don&apos;t appear at all before it.
+              </p>
+            </div>
+          </>
+        ) : null}
         <div className="space-y-1.5">
           <Label htmlFor="eu-role">Role</Label>
-          <Select value={role} onValueChange={setRole} disabled={isSelf}>
+          <Select value={role} onValueChange={setRole} disabled={isSelf || !canChangeRoles}>
             <SelectTrigger id="eu-role" className="w-full bg-background/50">
               <SelectValue />
             </SelectTrigger>
@@ -180,22 +192,30 @@ export function EditUserDialog({ user: target, open, onOpenChange }) {
               ))}
             </SelectContent>
           </Select>
-          {isSelf ? <p className="text-xs text-muted-foreground">You can&apos;t change your own role.</p> : null}
+          {isSelf ? (
+            <p className="text-xs text-muted-foreground">You can&apos;t change your own role.</p>
+          ) : !canChangeRoles ? (
+            <p className="text-xs text-muted-foreground">You don&apos;t have permission to change roles.</p>
+          ) : null}
         </div>
         <div className="flex items-center justify-between rounded-xl bg-foreground/[0.04] p-3 ring-1 ring-border/50">
           <div>
             <Label htmlFor="eu-active">Active</Label>
-            <p className="text-xs text-muted-foreground">Inactive users can&apos;t sign in.</p>
+            <p className="text-xs text-muted-foreground">
+              {isSelf || canDeactivate ? "Inactive users can't sign in." : 'You don’t have permission to change status.'}
+            </p>
           </div>
-          <Switch id="eu-active" checked={isActive} onCheckedChange={setIsActive} disabled={isSelf} />
+          <Switch id="eu-active" checked={isActive} onCheckedChange={setIsActive} disabled={isSelf || !canDeactivate} />
         </div>
 
-        <EmploymentFields
-          employmentType={employmentType}
-          schedule={schedule}
-          onTypeChange={setEmploymentType}
-          onScheduleChange={setSchedule}
-        />
+        {canManage ? (
+          <EmploymentFields
+            employmentType={employmentType}
+            schedule={schedule}
+            onTypeChange={setEmploymentType}
+            onScheduleChange={setSchedule}
+          />
+        ) : null}
 
         {canManage ? (
           <div className="space-y-3 rounded-xl bg-primary/[0.05] p-3 ring-1 ring-primary/15">

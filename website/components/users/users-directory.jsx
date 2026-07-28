@@ -41,6 +41,8 @@ export function UsersDirectory() {
   const { user } = useAuth();
   const qc = useQueryClient();
   const canManage = !!user && can(user, 'manageUsers');
+  const canChangeRoles = !!user && can(user, 'changeRoles');
+  const canDeactivate = !!user && can(user, 'deactivateUsers');
   const canReset = !!user && can(user, 'resetCredentials');
   const canCreate = !!user && can(user, 'createUsers');
 
@@ -137,14 +139,16 @@ export function UsersDirectory() {
         id: 'actions',
         header: '',
         cell: ({ row }) =>
-          canManage || canReset ? (
+          canManage || canChangeRoles || canDeactivate || canReset ? (
             <div className="flex justify-end">
               <DropdownMenu>
                 <DropdownMenuTrigger aria-label="More actions" className="inline-flex size-10 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground sm:size-8">
                   <Ellipsis className="size-4" />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="border-border/60 bg-card/90 ring-1 ring-white/10 backdrop-blur-2xl">
-                  {canManage ? (
+                  {/* Edit opens the full dialog; a role-only steward gets it too, but
+                      only the role field is editable inside (see EditUserDialog). */}
+                  {canManage || canChangeRoles ? (
                     <DropdownMenuItem onClick={() => setEditing(row.original)}>
                       <Pencil /> Edit
                     </DropdownMenuItem>
@@ -154,7 +158,7 @@ export function UsersDirectory() {
                       <KeyRound /> Reset credentials
                     </DropdownMenuItem>
                   ) : null}
-                  {canManage && row.original.id !== user.id ? (
+                  {canDeactivate && row.original.id !== user.id ? (
                     <DropdownMenuItem
                       variant={row.original.isActive ? 'destructive' : 'default'}
                       onClick={() => setToggling(row.original)}
@@ -174,7 +178,7 @@ export function UsersDirectory() {
           ) : null,
       },
     ],
-    [canManage, canReset, user],
+    [canManage, canChangeRoles, canDeactivate, canReset, user],
   );
 
   return (

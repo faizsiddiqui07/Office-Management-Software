@@ -1,6 +1,6 @@
 import express from 'express';
 import { requireAuth } from '../middleware/auth.js';
-import { requirePermission } from '../middleware/requirePermission.js';
+import { requirePermission, requireAnyPermission } from '../middleware/requirePermission.js';
 import { validate } from '../middleware/validate.js';
 import { ensureRolesFresh } from '../lib/roles.js';
 import { createUserSchema, updateUserSchema, leaveBalanceSchema } from '../validators/users.validators.js';
@@ -35,7 +35,10 @@ usersRouter.use(requireAuth);
 usersRouter.get('/', requirePermission('viewEveryone'), listUsers);
 usersRouter.get('/:id/dossier', requirePermission('viewEveryone'), userDossier);
 usersRouter.post('/', requirePermission('createUsers'), freshRoles, validate(createUserSchema), createUser);
-usersRouter.patch('/:id', requirePermission('manageUsers'), freshRoles, validate(updateUserSchema), updateUser);
+// Reachable by any of the three user-editing capabilities; updateUser() enforces
+// which fields each one may actually change (profile → manageUsers, role →
+// changeRoles, active status → deactivateUsers), so the granular toggles are real.
+usersRouter.patch('/:id', requireAnyPermission('manageUsers', 'changeRoles', 'deactivateUsers'), freshRoles, validate(updateUserSchema), updateUser);
 usersRouter.delete('/:id', requirePermission('manageUsers'), deleteUser); // deactivated users only (enforced in service)
 usersRouter.get('/:id/leave-balance', requirePermission('manageUsers'), getLeaveBalance);
 usersRouter.patch('/:id/leave-balance', requirePermission('manageUsers'), validate(leaveBalanceSchema), updateLeaveBalance);

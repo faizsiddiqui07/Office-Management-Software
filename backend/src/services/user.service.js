@@ -14,7 +14,7 @@ import { PasswordResetToken } from '../models/PasswordResetToken.js';
 import { AnnouncementRead } from '../models/AnnouncementRead.js';
 import { LedgerEntry } from '../models/LedgerEntry.js';
 import { Setting } from '../models/Setting.js';
-import { canAssignRole } from '../lib/permissions.js';
+import { can, canAssignRole } from '../lib/permissions.js';
 import { leaveYearOf } from '../lib/leaveYear.js';
 import { quotaForJoiner } from './leave.service.js';
 
@@ -112,10 +112,20 @@ export async function createEmployee({
   return { user, tempPassword };
 }
 
-/** Regenerates a strong temp password and forces a change on next login. */
-export async function resetUserCredentials(userId) {
+/**
+ * Regenerates a strong temp password and forces a change on next login.
+ *
+ * Rank-guarded: an actor may only reset the credentials of someone at their own
+ * tier or BELOW (rank-based, via canAssignRole). Without this, ANY resetCredentials
+ * holder — including a junior custom role granted the permission — could reset the
+ * CEO's password (the fresh temp is shown on screen) and take over the account.
+ */
+export async function resetUserCredentials(actor, userId) {
   const user = await User.findById(userId).select('+passwordHash');
   if (!user) throw httpError(404, 'NOT_FOUND', 'User not found');
+  if (!canAssignRole(actor.role, user.role)) {
+    throw httpError(403, 'FORBIDDEN', 'You cannot reset the credentials of a user senior to you');
+  }
 
   const tempPassword = generateTempPassword();
   user.passwordHash = await hashPassword(tempPassword);
@@ -125,29 +135,51 @@ export async function resetUserCredentials(userId) {
   return { user, tempPassword };
 }
 
+// Profile fields (anything that isn't role or active-status). Editing any of these
+// is what the base "Edit users" (manageUsers) permission covers.
+const PROFILE_FIELDS = ['name', 'department', 'designation', 'phone', 'reportsTo', 'dateOfJoining', 'taskAssign', 'employmentType', 'schedule'];
+
 /**
- * Leadership-only profile / role / status update.
- * Guards: can't change your own role, can't deactivate yourself, and you may
- * only assign a role at your own tier or below it (rank-based, via canAssignRole).
+ * Profile / role / status update, gated per-change so the granular permissions
+ * actually mean something:
+ *   - changing a ROLE needs `changeRoles`;
+ *   - activating / deactivating needs `deactivateUsers`;
+ *   - any other profile edit needs `manageUsers` ("Edit users").
+ * On top of that, a RANK guard applies to every path: you may only act on a user
+ * at your own tier or below — never a senior (rank-based, via canAssignRole). This
+ * stops a junior manageUsers holder from demoting, disabling or editing the CEO.
+ * You still can't change your own role or deactivate yourself.
  */
 export async function updateUser(actor, id, data) {
   const user = await User.findById(id);
   if (!user) throw httpError(404, 'NOT_FOUND', 'User not found');
   const isSelf = String(actor._id) === String(id);
+  // Whether the actor outranks (or ties) the TARGET as they are right now.
+  const canActOnTarget = canAssignRole(actor.role, user.role);
 
   if (data.role !== undefined && data.role !== user.role) {
     if (isSelf) throw httpError(403, 'FORBIDDEN', 'You cannot change your own role');
+    if (!can(actor, 'changeRoles')) throw httpError(403, 'FORBIDDEN', 'You do not have permission to change roles');
+    if (!canActOnTarget) throw httpError(403, 'FORBIDDEN', 'You cannot change the role of a user senior to you');
     if (!canAssignRole(actor.role, data.role)) {
       throw httpError(403, 'FORBIDDEN', 'You cannot assign that role');
     }
     user.role = data.role;
   }
 
-  if (data.isActive !== undefined) {
+  if (data.isActive !== undefined && data.isActive !== user.isActive) {
     if (isSelf && data.isActive === false) {
       throw httpError(403, 'FORBIDDEN', 'You cannot deactivate your own account');
     }
+    if (!can(actor, 'deactivateUsers')) throw httpError(403, 'FORBIDDEN', 'You do not have permission to activate or deactivate users');
+    if (!canActOnTarget) throw httpError(403, 'FORBIDDEN', 'You cannot change the status of a user senior to you');
     user.isActive = data.isActive;
+  }
+
+  // Any remaining profile change needs base edit rights + rank authority.
+  if (PROFILE_FIELDS.some((f) => data[f] !== undefined)) {
+    if (!can(actor, 'manageUsers')) throw httpError(403, 'FORBIDDEN', 'You do not have permission to edit users');
+    if (!canActOnTarget) throw httpError(403, 'FORBIDDEN', 'You cannot edit a user senior to you');
   }
 
   for (const f of ['name', 'department', 'designation', 'phone']) {
@@ -223,6 +255,12 @@ export async function deleteUser(actor, id) {
   }
   const user = await User.findById(id);
   if (!user) throw httpError(404, 'NOT_FOUND', 'User not found');
+  // Rank guard: you may only delete a user at your own tier or below — never a
+  // senior. Deletion wipes their attendance/leave/tasks/dues, so a junior must not
+  // be able to erase someone above them.
+  if (!canAssignRole(actor.role, user.role)) {
+    throw httpError(403, 'FORBIDDEN', 'You cannot delete a user senior to you');
+  }
   if (user.isActive) {
     throw httpError(409, 'STILL_ACTIVE', 'Deactivate the user first, then delete');
   }

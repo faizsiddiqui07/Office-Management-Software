@@ -78,8 +78,14 @@ export const EXPENSE_PERIODS = [
 /** The anchor date a preset should be resolved against (months back from today). */
 export function anchorFor(preset) {
   const p = EXPENSE_PERIODS.find((x) => x.value === preset);
-  const d = new Date();
-  if (p?.shift) d.setMonth(d.getMonth() + p.shift);
+  const now = new Date();
+  // A month-shift preset ("Last month") lands on the 1st of the shifted month.
+  // Mutating a full date with setMonth overflowed FORWARD when today's day-of-month
+  // was longer than the target month — on 31 Jul, "−1 month" fell back into July, so
+  // "Last month" silently showed the CURRENT month. The Date(y, m, 1) constructor
+  // normalises a negative/overflowing month, and the server only reads the anchor's
+  // year+month for a monthly period, so day-1 is exact.
+  const d = p?.shift ? new Date(now.getFullYear(), now.getMonth() + p.shift, 1) : now;
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 

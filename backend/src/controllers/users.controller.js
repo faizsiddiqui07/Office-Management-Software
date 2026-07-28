@@ -46,7 +46,7 @@ export async function createUser(req, res, next) {
 export async function resetCredentials(req, res, next) {
   try {
     const { id } = req.params;
-    const { user, tempPassword } = await resetUserCredentials(id);
+    const { user, tempPassword } = await resetUserCredentials(req.user, id);
     await audit({
       actor: req.user._id,
       action: 'user.reset_credentials',
@@ -106,7 +106,7 @@ export async function getLeaveBalance(req, res, next) {
 /** Leadership override of an employee's quota / already-used leave days. */
 export async function updateLeaveBalance(req, res, next) {
   try {
-    const balance = await setLeaveBalance(req.params.id, req.body || {});
+    const balance = await setLeaveBalance(req.user, req.params.id, req.body || {});
     await audit({ actor: req.user._id, action: 'user.leave_balance', entityType: 'User', entityId: req.params.id, meta: req.body });
     return res.json(ok({ balance }));
   } catch (err) {

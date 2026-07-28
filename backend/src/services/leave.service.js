@@ -5,7 +5,7 @@ import { User } from '../models/User.js';
 import { Setting } from '../models/Setting.js';
 import { joinedYMD } from '../lib/joining.js';
 import { notify } from '../models/Notification.js';
-import { can } from '../lib/permissions.js';
+import { can, canAssignRole } from '../lib/permissions.js';
 import { rolesWithPermission } from '../lib/roles.js';
 import { companyDayFromYMD } from '../lib/time.js';
 import { leaveYearOf, currentLeaveYear } from '../lib/leaveYear.js';
@@ -88,9 +88,15 @@ export async function getBalanceForUser(userId) {
  * onboarding where leaves were taken before the system went live. `remaining`
  * is always recomputed from quota − used.
  */
-export async function setLeaveBalance(userId, { totalQuota, used }) {
+export async function setLeaveBalance(actor, userId, { totalQuota, used }) {
   const user = await User.findById(userId);
   if (!user) throw httpError(404, 'NOT_FOUND', 'User not found');
+  // Same rank guard the Users routes enforce: you may only override the balance of
+  // someone at your own tier or below — never a senior. Without this a junior
+  // manageUsers holder could zero out the CEO's quota (or self-grant unlimited leave).
+  if (!canAssignRole(actor.role, user.role)) {
+    throw httpError(403, 'FORBIDDEN', 'You cannot change the leave balance of a user senior to you');
+  }
 
   const year = currentLeaveYear();
   const bal = await getOrCreateBalance(userId, year);
@@ -101,10 +107,33 @@ export async function setLeaveBalance(userId, { totalQuota, used }) {
   return bal.toJSON();
 }
 
+/**
+ * An active (PENDING/APPROVED) leave for this user that overlaps [startYMD, endYMD].
+ * `excludeId` skips one request (used when editing that same request). Two date ranges
+ * overlap when each starts on or before the other ends. Prevents the same physical
+ * absence being applied — and its balance deducted — more than once.
+ */
+async function findOverlappingLeave(userId, startYMD, endYMD, excludeId = null) {
+  const filter = {
+    user: userId,
+    status: { $in: ['PENDING', 'APPROVED'] },
+    startYMD: { $lte: endYMD },
+    endYMD: { $gte: startYMD },
+  };
+  if (excludeId) filter._id = { $ne: excludeId };
+  return LeaveRequest.findOne(filter);
+}
+
 export async function applyLeave(user, { type, startYMD, endYMD, halfDay, halfDayPart, reason }) {
   if (endYMD < startYMD) throw httpError(400, 'BAD_RANGE', 'End date is before the start date');
   if (halfDay && startYMD !== endYMD) {
     throw httpError(400, 'BAD_HALF_DAY', 'Half-day applies to a single date only');
+  }
+
+  // Block a second request over days already covered by an active one — otherwise the
+  // same absence can be approved twice and the balance charged twice.
+  if (await findOverlappingLeave(user._id, startYMD, endYMD)) {
+    throw httpError(409, 'LEAVE_EXISTS', 'You already have a leave request covering those dates. Cancel or edit it instead of applying again.');
   }
 
   const settings = await Setting.getSingleton();
@@ -186,6 +215,12 @@ export async function updateLeave(user, id, { type, startYMD, endYMD, halfDay, h
   }
   if (endYMD < startYMD) throw httpError(400, 'BAD_RANGE', 'End date is before the start date');
   if (halfDay && startYMD !== endYMD) throw httpError(400, 'BAD_HALF_DAY', 'Half-day applies to a single date only');
+
+  // Same overlap guard as applyLeave, ignoring THIS request so an edit that keeps the
+  // same dates isn't blocked by itself.
+  if (await findOverlappingLeave(user._id, startYMD, endYMD, request._id)) {
+    throw httpError(409, 'LEAVE_EXISTS', 'You already have another leave request covering those dates.');
+  }
 
   const settings = await Setting.getSingleton();
   const holidays = await holidayYMDSet(startYMD, endYMD);
@@ -349,6 +384,21 @@ export async function decideLeave(approver, id, decision, note) {
     const fresh = await LeaveRequest.findById(id).session(session);
     if (fresh.status !== 'PENDING') {
       throw httpError(409, 'ALREADY_DECIDED', `Already ${fresh.status.toLowerCase()}`);
+    }
+    // Safety net for the check-then-act race: two overlapping requests can both slip
+    // past applyLeave's overlap check when submitted concurrently, but only one may be
+    // APPROVED. If another approved leave already covers these days, abort — otherwise
+    // the same absence would deduct balance twice. (Paid approvals also contend on the
+    // shared balance doc, so the loser here retries and sees this clash.)
+    const clash = await LeaveRequest.findOne({
+      _id: { $ne: fresh._id },
+      user: fresh.user,
+      status: 'APPROVED',
+      startYMD: { $lte: fresh.endYMD },
+      endYMD: { $gte: fresh.startYMD },
+    }).session(session);
+    if (clash) {
+      throw httpError(409, 'LEAVE_EXISTS', 'Another approved leave already covers those dates. Cancel it first if this should replace it.');
     }
     const year = leaveYearOf(fresh.startYMD);
 
