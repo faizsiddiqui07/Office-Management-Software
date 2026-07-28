@@ -504,7 +504,13 @@ export async function updateTask(actor, id, data) {
           // at a parent that no longer existed: finishing it settled nothing, so the
           // assigner never saw it and that person was stuck holding orphaned work.
           // Collected BEFORE the delete, while the links are still intact.
-          const orphans = await collectForwardDescendants([mm._id]);
+          // Finished or submitted work down the chain is somebody else's record, and it
+          // is kept for exactly the reason the branch above keeps the member's own
+          // completed copy: deleting it would erase their history and take back the
+          // points they earned, for a removal two hand-offs away from them.
+          const orphans = (await collectForwardDescendants([mm._id])).filter(
+            (d) => d.status !== 'DONE' && !d.awaitingApproval,
+          );
           await mm.deleteOne(); // drop a not-yet-started copy for someone taken off the task
           try { await onAssignedTaskUndone(mm._id); } catch (e) { console.error('bonus hook (reassign remove) failed', e?.message); }
           await notify({ user: mm.owner, type: 'TASK_ASSIGNED', title: `${actor.name} removed a task`, message: mm.title, link: '/todo' });

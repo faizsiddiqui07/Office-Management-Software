@@ -1,6 +1,5 @@
 import { Regularization } from '../models/Regularization.js';
 import { Attendance } from '../models/Attendance.js';
-import { LeaveRequest } from '../models/LeaveRequest.js';
 import { Setting } from '../models/Setting.js';
 import { User } from '../models/User.js';
 import { notify } from '../models/Notification.js';
@@ -16,20 +15,26 @@ function httpError(status, code, message) {
 }
 
 /**
- * An approved leave covering `dateYMD`, if there is one.
+ * Is this day already fully accounted for as leave?
  *
- * A day can be leave or it can be worked — never both. The manual attendance editor
- * already refuses to touch an ON_LEAVE day ("cancel the leave first"); corrections have
- * to hold the same line, or approving one silently overwrites the ON_LEAVE marker while
- * the leave request and the deducted balance stay put, counting the day twice.
+ * The test is the ATTENDANCE ROW, not the leave's date range. A range covers weekends,
+ * holidays and days the person actually came in — none of which the leave marked or
+ * charged — so refusing a correction anywhere inside it blocked corrections that take
+ * nothing away from anybody. What must not happen is a correction overwriting a day the
+ * leave really did claim: that would leave the day counted as leave (balance spent) and
+ * as present at the same time.
+ *
+ * So: blocked only when the day carries an untouched ON_LEAVE marker. Once there is a
+ * real check-in on it — someone came in for the other half of a half-day, or worked and
+ * the leave was approved afterwards (markAttendanceOnLeave deliberately preserves that)
+ * — the day is theirs to correct, and the correction only fills in the missing times.
  */
-async function approvedLeaveOn(userId, dateYMD) {
-  return LeaveRequest.findOne({
+async function leaveClaimsDay(userId, dateYMD) {
+  const record = await Attendance.findOne({
     user: userId,
-    status: 'APPROVED',
-    startYMD: { $lte: dateYMD },
-    endYMD: { $gte: dateYMD },
-  });
+    date: companyDayFromYMD(dateYMD),
+  }).select('status checkInAt');
+  return !!record && record.status === 'ON_LEAVE' && !record.checkInAt;
 }
 
 export async function createRequest(user, { dateYMD, checkIn, checkOut, reason }) {
@@ -38,8 +43,8 @@ export async function createRequest(user, { dateYMD, checkIn, checkOut, reason }
   }
   const dup = await Regularization.findOne({ user: user._id, dateYMD, status: 'PENDING' });
   if (dup) throw httpError(409, 'DUPLICATE', 'You already have a pending correction for this date');
-  if (await approvedLeaveOn(user._id, dateYMD)) {
-    throw httpError(409, 'ON_LEAVE', 'You were on approved leave that day. Ask for the leave to be cancelled first, then request the correction.');
+  if (await leaveClaimsDay(user._id, dateYMD)) {
+    throw httpError(409, 'ON_LEAVE', 'That day is recorded as approved leave. Ask for the leave to be cancelled first, then request the correction.');
   }
 
   const reg = await Regularization.create({
@@ -106,9 +111,9 @@ async function applyToAttendance(reg) {
   const day = companyDayFromYMD(reg.dateYMD);
   let record = await Attendance.findOne({ user: reg.user, date: day });
   // Checked again at approval time, not just when the request was raised: a leave can
-  // be approved in between, and overwriting its ON_LEAVE marker here would leave the
-  // day counted as both leave (balance still spent) and present.
-  if (record?.status === 'ON_LEAVE' || (await approvedLeaveOn(reg.user, reg.dateYMD))) {
+  // be approved in between, and overwriting an untouched ON_LEAVE marker here would
+  // leave the day counted as both leave (balance still spent) and present.
+  if (record?.status === 'ON_LEAVE' && !record.checkInAt) {
     throw httpError(409, 'ON_LEAVE', 'That day is marked on approved leave — cancel the leave first, then approve this correction.');
   }
   if (!record) record = new Attendance({ user: reg.user, date: day });
@@ -133,6 +138,11 @@ export async function decide(approver, id, decision, note) {
   const reg = await Regularization.findById(id).populate('user', 'name');
   if (!reg) throw httpError(404, 'NOT_FOUND', 'Request not found');
   if (reg.status !== 'PENDING') throw httpError(409, 'ALREADY_DECIDED', 'This request has already been decided');
+  // Same rule as leave: you don't sign off your own. A role that can both raise a
+  // correction and approve one would otherwise rewrite its own attendance unchecked.
+  if (String(reg.user?._id ?? reg.user) === String(approver._id)) {
+    throw httpError(403, 'SELF_DECISION', 'You cannot decide your own attendance correction — someone else has to review it');
+  }
 
   reg.status = decision;
   reg.decidedBy = approver._id;

@@ -7,6 +7,10 @@ const schema = new mongoose.Schema(
     totalQuota: { type: Number, required: true, default: 18 },
     used: { type: Number, default: 0 },
     remaining: { type: Number, default: 18 },
+    // DEPRECATED — nothing writes this any more and nothing should read it. Overtime
+    // is summed from the attendance days (leave.service.js overtimeMinutesForYear), so
+    // it can't drift from them the way this running total did. Kept only so existing
+    // documents stay valid.
     overtimeMinutes: { type: Number, default: 0 },
   },
   { timestamps: true },

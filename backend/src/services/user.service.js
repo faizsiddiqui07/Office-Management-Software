@@ -15,6 +15,7 @@ import { AnnouncementRead } from '../models/AnnouncementRead.js';
 import { LedgerEntry } from '../models/LedgerEntry.js';
 import { Setting } from '../models/Setting.js';
 import { can, canAssignRole } from '../lib/permissions.js';
+import { clearFailures } from '../lib/loginGuard.js';
 import { leaveYearOf } from '../lib/leaveYear.js';
 import { quotaForJoiner } from './leave.service.js';
 
@@ -135,6 +136,15 @@ export async function resetUserCredentials(actor, userId) {
   // because the token, not the password, is what the API trusts.
   user.credentialsChangedAt = new Date();
   await user.save();
+
+  // Their phone would otherwise keep receiving push notifications — task assignments,
+  // announcements, dues — because a subscription is tied to the device, not the
+  // session. Cutting the session has to cut these too. Also clears any sign-in lockout,
+  // so the new temporary password works immediately.
+  await Promise.all([
+    PushSubscription.deleteMany({ user: user._id }),
+    clearFailures(user.email),
+  ]);
 
   return { user, tempPassword };
 }

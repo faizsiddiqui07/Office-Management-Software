@@ -11,7 +11,7 @@ import { computeWorkingDays } from './workingDays.service.js';
 import { holidayYMDSet } from './holiday.service.js';
 import { periodStartFor, joinedYMD } from '../lib/joining.js';
 import { leaveYearOf } from '../lib/leaveYear.js';
-import { getOrCreateBalance } from './leave.service.js';
+import { getOrCreateBalance, overtimeMinutesForYear } from './leave.service.js';
 
 function httpError(status, code, message) {
   const e = new Error(message);
@@ -139,28 +139,14 @@ export async function getUserDossier(userId, { from, to }) {
 
   const balYear = leaveYearOf(cappedTo || today);
   const bal = await getOrCreateBalance(user._id, balYear);
-  // Overtime for the leave year, summed from the attendance itself rather than read
-  // from the running total LeaveBalance used to keep. That total was only ever added to
-  // when somebody checked THEMSELVES out, so a corrected check-out time, a leadership
-  // edit or a cleared day changed the day's overtime while the total kept the old
-  // figure — and the gap grew every month. Derived from the days, it simply cannot
-  // disagree with them.
-  const [otAgg] = await Attendance.aggregate([
-    {
-      $match: {
-        user: user._id,
-        date: { $gte: companyDayFromYMD(`${balYear}-04-01`), $lte: companyDayFromYMD(`${balYear + 1}-03-31`) },
-      },
-    },
-    { $group: { _id: null, minutes: { $sum: '$overtimeMinutes' } } },
-  ]);
   const leaves = {
     balance: {
       year: balYear,
       totalQuota: bal.totalQuota,
       used: bal.used,
       remaining: bal.remaining,
-      overtimeMinutes: otAgg?.minutes ?? 0,
+      // Summed from the attendance days — the one place this figure comes from now.
+      overtimeMinutes: await overtimeMinutesForYear(user._id, balYear),
     },
     approvedDays,
     pendingCount,

@@ -46,21 +46,17 @@ const BUILD = (() => {
   }
 })();
 
-apiRouter.get('/health', (req, res) => {
-  // The commit MESSAGE is only useful to whoever deployed the zip, and it describes
-  // what was just changed — including security fixes. Anyone can reach this endpoint,
-  // so the message is shown only to a signed-in user; the short hash stays public
-  // because that's what makes "is my upload live yet?" answerable at a glance.
-  const signedIn = !!(req.headers?.authorization || req.cookies?.om_token);
+apiRouter.get('/health', (_req, res) => {
   res.json(
     ok({
       status: 'up',
       service: 'office-management-backend',
       // Compare `build` against `git log -1 --pretty=%h` to tell whether the zip you
-      // just uploaded is the one answering.
+      // just uploaded is the one answering. The commit MESSAGE is deliberately not
+      // here: this endpoint is public, and the message describes what just changed —
+      // including security fixes. The hash alone answers "is my upload live yet?".
       build: BUILD.commit,
       builtAt: BUILD.builtAt,
-      subject: signedIn ? BUILD.subject || undefined : undefined,
       time: new Date().toISOString(),
     }),
   );

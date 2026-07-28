@@ -1,6 +1,14 @@
 import { z } from 'zod';
+import { ymdInTz } from '../lib/time.js';
 
 const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD');
+/**
+ * A spend date that has already happened. The dialog caps its picker at today, but only
+ * the dialog did — a future-dated expense can't even be found afterwards (the filter's
+ * custom range also stops at today), so it sits unseen until its date arrives and then
+ * lands in that period's total.
+ */
+const pastYmd = ymd.refine((v) => v <= ymdInTz(new Date()), { message: 'The date cannot be in the future' });
 
 export const createExpenseSchema = z.object({
   title: z.string().min(1, 'Title is required').max(200),
@@ -8,7 +16,7 @@ export const createExpenseSchema = z.object({
   amount: z.coerce.number().int('Amount must be a whole number of paise').min(0),
   currency: z.string().optional().default('INR'),
   category: z.string().min(1, 'Category is required'),
-  dateYMD: ymd,
+  dateYMD: pastYmd,
   paymentMethod: z.enum(['CASH', 'CARD', 'UPI', 'BANK_TRANSFER', 'OTHER']).optional().default('CASH'),
   vendor: z.string().max(200).optional().default(''),
   notes: z.string().max(1000).optional().default(''),

@@ -251,6 +251,12 @@ export function EveryoneTab() {
   const cat = a?.lateReason?.category;
   const note = a?.lateReason?.note;
 
+  // A failed request shows the error ALONE. Leaving the tiles above it reading
+  // "Present 0 / Late 0 / Absent 0" states something about the day that isn't known.
+  if (isError && !data) {
+    return <QueryError title="Couldn’t load the day’s attendance" error={error} onRetry={refetch} />;
+  }
+
   return (
     <div className="space-y-4">
       <div className="grid gap-4 grid-cols-2 sm:grid-cols-5">
@@ -337,9 +343,7 @@ export function EveryoneTab() {
         </div>
       ) : null}
 
-      {isError && !data ? (
-        <QueryError title="Couldn’t load the day’s attendance" error={error} onRetry={refetch} />
-      ) : isLoading ? (
+      {isLoading ? (
         <TableSkeleton rows={6} cols={8} />
       ) : (
         <DataTable

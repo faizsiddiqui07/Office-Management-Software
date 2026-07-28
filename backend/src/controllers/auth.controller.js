@@ -156,6 +156,10 @@ export async function resetPassword(req, res, next) {
     user.mustChangePassword = false;
     user.credentialsChangedAt = new Date(); // old sessions die; they sign in with the new password
     await user.save();
+    // Setting a new password clears any lockout — otherwise "use Forgot password",
+    // which is what the lockout message tells people to do, wouldn't actually let
+    // them back in.
+    await clearFailures(user.email);
 
     record.usedAt = new Date();
     await record.save();

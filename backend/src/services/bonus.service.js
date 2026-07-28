@@ -91,7 +91,11 @@ export async function updateConfig(patch) {
   // (everyone with no approved leave in it collected the no-leave points), and
   // yesterday could hand out absence penalties. Marking both as already handled at
   // the moment it's turned on means the first thing it scores is today onward.
-  const turningOn = patch.enabled !== undefined && !!patch.enabled && !b.enabled;
+  // Only the FIRST time it's ever switched on. A later pause-and-resume must not skip
+  // the month in between: those months were scored, and voiding a rollup that is
+  // legitimately still owed would quietly cost everybody their month-end award.
+  const neverRun = !b.lastMonthRollup && !b.lastPenaltyRun;
+  const turningOn = patch.enabled !== undefined && !!patch.enabled && !b.enabled && neverRun;
   const today = ymdInTz(new Date());
   s.bonus = {
     enabled: patch.enabled !== undefined ? !!patch.enabled : b.enabled,

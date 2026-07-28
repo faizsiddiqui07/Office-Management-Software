@@ -12,7 +12,7 @@ import { companyDayFromYMD, ymdInTz } from '../lib/time.js';
 import { leaveYearOf } from '../lib/leaveYear.js';
 import { getTodayPayload, attendanceOverview } from './attendance.service.js';
 import { listHolidays } from './holiday.service.js';
-import { getOrCreateBalance } from './leave.service.js';
+import { balanceJSON } from './leave.service.js';
 import { listVisible } from './announcement.service.js';
 import { expenseSummary } from './expense.service.js';
 import { computePeriod } from './report.service.js';
@@ -127,7 +127,9 @@ export async function buildDashboard(user) {
 
   // ── Common (everyone) ─────────────────────────────────────
   out.today = await getTodayPayload(user);
-  out.balance = (await getOrCreateBalance(user._id, year)).toJSON();
+  // balanceJSON, not the raw document: the "overtime banked" figure is derived from
+  // the attendance days rather than read from a stored total nothing writes any more.
+  out.balance = await balanceJSON(user._id, year);
   out.announcements = (await listVisible(user)).slice(0, 5);
   // Goes through the service so yearly repeats are expanded. Querying the table
   // directly showed a repeating 15 August only in its anchor year and then never again,

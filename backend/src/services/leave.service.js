@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { LeaveRequest } from '../models/LeaveRequest.js';
 import { LeaveBalance } from '../models/LeaveBalance.js';
 import { Attendance } from '../models/Attendance.js';
@@ -87,10 +88,36 @@ export async function getOrCreateBalance(userId, year, session = null) {
   return bal;
 }
 
-export async function getBalanceForUser(userId) {
-  const year = currentLeaveYear();
+/**
+ * Overtime for a leave year, summed from the attendance days themselves.
+ *
+ * LeaveBalance carries an `overtimeMinutes` column, but only self-checkout ever added
+ * to it — a corrected check-out, a leadership edit or a cleared day changed the day and
+ * left the total behind, so it drifted. Nothing writes it any more; every screen that
+ * shows "overtime this year" gets the figure from here, where it cannot disagree with
+ * the days it is meant to summarise.
+ */
+export async function overtimeMinutesForYear(userId, year) {
+  const [agg] = await Attendance.aggregate([
+    {
+      $match: {
+        user: typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId,
+        date: { $gte: companyDayFromYMD(`${year}-04-01`), $lte: companyDayFromYMD(`${year + 1}-03-31`) },
+      },
+    },
+    { $group: { _id: null, minutes: { $sum: '$overtimeMinutes' } } },
+  ]);
+  return agg?.minutes ?? 0;
+}
+
+/** A balance as the UI reads it — with the overtime figure derived, never stored. */
+export async function balanceJSON(userId, year) {
   const bal = await getOrCreateBalance(userId, year);
-  return bal.toJSON();
+  return { ...bal.toJSON(), overtimeMinutes: await overtimeMinutesForYear(userId, year) };
+}
+
+export async function getBalanceForUser(userId) {
+  return balanceJSON(userId, currentLeaveYear());
 }
 
 /**
@@ -305,6 +332,7 @@ export async function recordLeaveForUser(actor, userId, { type, startYMD, endYMD
     throw httpError(403, 'SELF_DECISION', 'You cannot record your own leave — apply for it so someone else can approve it');
   }
   if (endYMD < startYMD) throw httpError(400, 'BAD_RANGE', 'End date is before the start date');
+  assertSingleLeaveYear(startYMD, endYMD); // same rule as applying — one leave year per request
 
   // Don't double-book: block if an active leave already covers any of these days.
   const overlap = await LeaveRequest.findOne({
@@ -360,8 +388,18 @@ export async function recordLeaveForUser(actor, userId, { type, startYMD, endYMD
   return decideLeave(actor, req.id, 'APPROVE', 'Recorded by leadership', { replaceAttendance: true });
 }
 
+/**
+ * Mark the leave's days off, and report how many were ACTUALLY marked.
+ *
+ * A day the person really checked in on is left exactly as it is — they worked it. The
+ * count that comes back is what the approval charges, so the balance can only ever be
+ * charged for days the sheet agrees they were away. Charging the computed total instead
+ * meant somebody who came in anyway (or whose leave was approved after they had already
+ * worked the day) paid for a day the sheet still shows them present for.
+ */
 async function markAttendanceOnLeave(userId, fromYMD, toYMD, halfDay, weekendDays, holidays, session) {
   const { workingDates } = computeWorkingDays({ fromYMD, toYMD, halfDay, weekendDays, holidays });
+  let marked = 0;
   for (const ymd of workingDates) {
     const day = companyDayFromYMD(ymd);
     // eslint-disable-next-line no-await-in-loop
@@ -369,6 +407,7 @@ async function markAttendanceOnLeave(userId, fromYMD, toYMD, halfDay, weekendDay
     if (!existing) {
       // eslint-disable-next-line no-await-in-loop
       await Attendance.create([{ user: userId, date: day, status: 'ON_LEAVE', halfDayLeave: !!halfDay }], { session });
+      marked += 1;
     } else if (!existing.checkInAt) {
       existing.status = 'ON_LEAVE';
       // Half a day off is half a day off on the sheet too. The balance is charged 0.5
@@ -377,9 +416,13 @@ async function markAttendanceOnLeave(userId, fromYMD, toYMD, halfDay, weekendDay
       existing.halfDayLeave = !!halfDay;
       // eslint-disable-next-line no-await-in-loop
       await existing.save({ session });
+      marked += 1;
     }
-    // If the user actually checked in that day, their real attendance is preserved.
+    // If the user actually checked in that day, their real attendance is preserved —
+    // and it isn't charged either.
   }
+  // A half-day is a single date worth 0.5.
+  return halfDay && workingDates.length === 1 ? marked * 0.5 : marked;
 }
 
 /**
@@ -458,23 +501,6 @@ export async function decideLeave(approver, id, decision, note, { replaceAttenda
     }
     const year = leaveYearOf(fresh.startYMD);
 
-    // Charge what is ACTUALLY being marked off, not the figure stored at apply time.
-    // markAttendanceOnLeave below marks days using the holiday set and the owner's
-    // schedule as they are NOW; deducting the older stored count meant that a holiday
-    // declared (or a weekend changed) between applying and approving left the balance
-    // and the attendance disagreeing. Same inputs → the two can't drift apart.
-    const { count: days } = computeWorkingDays({
-      fromYMD: fresh.startYMD,
-      toYMD: fresh.endYMD,
-      halfDay: fresh.halfDay,
-      weekendDays: ownerWeekends,
-      holidays,
-    });
-    if (days <= 0) {
-      throw httpError(409, 'NO_WORKING_DAYS', 'Those dates are now all holidays or non-working days, so there is nothing to approve — reject the request instead.');
-    }
-    fresh.workingDays = days; // what cancelling will put back
-
     // Leadership recording a leave FOR someone overrides whatever was on those days.
     // Done here, in the transaction, so a failure further down puts the attendance
     // back instead of destroying real check-ins for a leave that never got recorded.
@@ -484,6 +510,20 @@ export async function decideLeave(approver, id, decision, note, { replaceAttenda
         { session },
       );
     }
+
+    // Mark the days off FIRST, then charge for exactly what got marked.
+    //
+    // The figure stored at apply time is stale by now — a holiday may have been
+    // declared, or the person's schedule changed. And days they actually checked in on
+    // are deliberately left alone (they worked them), so charging a recomputed total
+    // would still bill for days the sheet shows them present for. Taking the count from
+    // the marking itself is the only version where the balance and the attendance
+    // cannot disagree.
+    const days = await markAttendanceOnLeave(fresh.user, fresh.startYMD, fresh.endYMD, fresh.halfDay, ownerWeekends, holidays, session);
+    if (days <= 0) {
+      throw httpError(409, 'NO_WORKING_DAYS', 'There is nothing left to approve on those dates — they are holidays, non-working days, or days already worked. Reject the request instead.');
+    }
+    fresh.workingDays = days; // what cancelling will put back
 
     if (isPaid(fresh.type)) {
       const bal = await getOrCreateBalance(fresh.user, year, session);
@@ -498,8 +538,6 @@ export async function decideLeave(approver, id, decision, note, { replaceAttenda
       bal.remaining = bal.totalQuota - bal.used;
       await bal.save({ session });
     }
-
-    await markAttendanceOnLeave(fresh.user, fresh.startYMD, fresh.endYMD, fresh.halfDay, ownerWeekends, holidays, session);
 
     fresh.status = 'APPROVED';
     fresh.decidedBy = approver._id;
