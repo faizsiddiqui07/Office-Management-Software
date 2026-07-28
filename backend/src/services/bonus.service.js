@@ -111,6 +111,7 @@ export async function updateConfig(patch) {
       : (b.manualItems || []),
     lastPenaltyRun: turningOn ? today : b.lastPenaltyRun || '',
     lastMonthRollup: turningOn ? prevMonth(currentMonth()) : b.lastMonthRollup || '',
+    lastAbsenceScan: turningOn ? today : b.lastAbsenceScan || '',
   };
   await s.save();
   return getConfig();
@@ -229,6 +230,16 @@ export async function onAssignedTaskDone(task) {
   const s = await Setting.getSingleton();
   const b = s.bonus || {};
   if (!b.enabled || !task.assignedBy) return;
+  // Work that was passed further down belongs to whoever it ended up with. Finishing at
+  // the bottom settles every copy above it (settleParent), and each of those settles
+  // used to score its own holder too — so a single job paid two or three people. The
+  // copy that was actually worked is the one with nothing forwarded off it, and that is
+  // the only one scored. The leaderboard already counts it this way.
+  if (await Task.exists({ forwardedFrom: task._id })) {
+    // Clear anything already on it (an overdue penalty from before it was passed on).
+    await PointEntry.deleteMany({ taskRef: task._id, source: 'auto_task' });
+    return;
+  }
   await PointEntry.deleteMany({ taskRef: task._id, source: 'auto_task' });
   // On-time is judged from when the assignee did the work — for approval-gated tasks
   // that's the submit time, so a slow approval never turns on-time work into "late".
@@ -321,8 +332,14 @@ async function scanOverdueTasks(b) {
   const tasks = await Task.find({ assignedBy: { $ne: null }, status: 'PENDING', dueYMD: { $ne: '' }, submittedAt: null, _id: { $nin: forwardedParentIds } }).select('owner dueYMD title');
   for (const t of tasks) {
     if (addDays(t.dueYMD, b.graceDays || 0) >= today) continue;
+    // Belt and braces on top of the dedupe key: an entry written before keys existed
+    // carries only taskRef, so keying alone would not see it and would penalise the
+    // same task a second time on the first run after an upgrade.
+    // eslint-disable-next-line no-await-in-loop
+    if (await PointEntry.findOne({ taskRef: t._id, source: 'auto_task' })) continue;
     // Same key the completion award uses, so a task carries exactly one auto entry —
     // the overdue penalty is replaced by the result once it's finished.
+    // eslint-disable-next-line no-await-in-loop
     await awardOnce(`auto_task:${t._id}`, { user: t.owner, month: today.slice(0, 7), points: -Math.abs(pts), reason: `Overdue: ${t.title}`, source: 'auto_task', taskRef: t._id });
   }
 }
@@ -451,13 +468,24 @@ export async function maybeRunDaily() {
   if (!b.enabled) return;
   const today = ymdInTz(new Date());
   if (b.lastPenaltyRun === today) return;
-  // The day this last ran, captured BEFORE the throttle overwrites it (`b` is the same
-  // object as s.bonus). It's the watermark the absence scan catches up from.
-  const lastRun = b.lastPenaltyRun || '';
+  // Where the absence catch-up starts. Kept SEPARATE from the once-a-day throttle and
+  // moved forward only after the scan actually succeeds: the throttle has to be written
+  // immediately (it is what stops a second instance running the same day), but if it
+  // doubled as the watermark then a scan that failed would have already declared its
+  // days done and they would never be looked at again — the exact hole this catch-up
+  // was added to close.
+  const scanFrom = b.lastAbsenceScan || b.lastPenaltyRun || '';
   s.bonus.lastPenaltyRun = today; // throttle first
   const rolled = await runMonthRollup(b).catch((e) => { console.error('month rollup failed', e?.message); return b.lastMonthRollup; });
   if (rolled) s.bonus.lastMonthRollup = rolled;
   await s.save();
   try { await scanOverdueTasks(b); } catch (e) { console.error('overdue scan failed', e?.message); }
-  try { await scanAbsences(b, lastRun); } catch (e) { console.error('absence scan failed', e?.message); }
+  try {
+    await scanAbsences(b, scanFrom);
+    // Only now are those days genuinely accounted for.
+    await Setting.updateOne({ key: 'global' }, { $set: { 'bonus.lastAbsenceScan': today } });
+    Setting.invalidateCache();
+  } catch (e) {
+    console.error('absence scan failed', e?.message);
+  }
 }

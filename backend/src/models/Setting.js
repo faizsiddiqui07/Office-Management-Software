@@ -75,6 +75,9 @@ const settingSchema = new mongoose.Schema(
       },
       lastPenaltyRun: { type: String, default: '' }, // YMD — throttles the daily scan
       lastMonthRollup: { type: String, default: '' }, // YYYY-MM — last month whose month-end awards ran
+      // YMD — the last day the absence scan actually FINISHED. Separate from the
+      // throttle above so a failed run doesn't quietly declare its days done.
+      lastAbsenceScan: { type: String, default: '' },
     },
     // The four national holidays are put in once, on first boot. This flag is what
     // stops them coming back: delete Christmas and it stays deleted, instead of being
@@ -108,7 +111,11 @@ settingSchema.set('toJSON', {
  */
 let cached = null;
 let cachedAt = 0;
-const FRESH_MS = 10_000;
+// Short on purpose. It exists to collapse the six-to-ten reads inside ONE request, not
+// to hold settings between them: every instance keeps its own copy, so a change saved
+// on one is invisible to the others until theirs expires, and a longer window would let
+// the settings form read back its own change as if it had reverted.
+const FRESH_MS = 3_000;
 
 function clearSettingCache() {
   cached = null;

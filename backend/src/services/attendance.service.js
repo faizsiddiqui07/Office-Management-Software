@@ -106,6 +106,8 @@ export async function setAttendanceRecord(userId, dateYMD, checkIn, checkOut) {
   // No times → clear the day (becomes absent).
   if (!checkIn && !checkOut) {
     if (record) await record.deleteOne();
+    // The day earns nothing now, so any overtime points for it go too.
+    try { await onCheckOut(user, dateYMD, 0); } catch (e) { console.error('bonus hook (attendance clear) failed', e?.message); }
     return { cleared: true, dateYMD };
   }
 
@@ -131,6 +133,10 @@ export async function setAttendanceRecord(userId, dateYMD, checkIn, checkOut) {
   }
 
   await record.save();
+  // The day's overtime just changed, so the points that were awarded for it have to
+  // change with it — otherwise an inflated award from the original check-out stands
+  // even after the time is corrected. onCheckOut rewrites (or clears) that day's entry.
+  try { await onCheckOut(user, dateYMD, record.overtimeMinutes || 0); } catch (e) { console.error('bonus hook (attendance edit) failed', e?.message); }
   return record.toJSON();
 }
 

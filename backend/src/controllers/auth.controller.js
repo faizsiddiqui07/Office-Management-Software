@@ -25,7 +25,7 @@ export async function login(req, res, next) {
     // A run of wrong passwords rests THIS account, wherever the attempts come from.
     // Counted in the database so it holds across every instance, and per account so
     // one person's typos can't lock out the rest of the office on the shared line.
-    const waitMins = await lockedFor(email);
+    const waitMins = await lockedFor(email, ip);
     if (waitMins > 0) {
       return res
         .status(429)
@@ -36,9 +36,19 @@ export async function login(req, res, next) {
 
     // Wrong password and unknown address answer identically, and both count — so the
     // response never reveals which addresses exist.
+    //
+    // Counting and auditing are best-effort: a hiccup writing them must still produce
+    // a "wrong password" answer. Left unguarded, a rejected write escaped this
+    // function's caller (a bare `return invalid()` doesn't await, so the rejection
+    // never reached the try/catch) and the request simply never answered.
     const invalid = async () => {
-      const locked = await recordFailure(email, ip);
-      await audit({ actor: user?._id ?? null, action: 'auth.login_failed', entityType: 'User', entityId: user?._id?.toString() ?? '', meta: { email: String(email || '').toLowerCase(), ip, locked: locked > 0 } });
+      let locked = 0;
+      try {
+        locked = await recordFailure(email, ip);
+        await audit({ actor: user?._id ?? null, action: 'auth.login_failed', entityType: 'User', entityId: user?._id?.toString() ?? '', meta: { email: String(email || '').toLowerCase(), ip, locked: locked > 0 } });
+      } catch (e) {
+        console.error('login failure bookkeeping failed', e?.message);
+      }
       if (locked > 0) {
         return res
           .status(429)
@@ -46,12 +56,14 @@ export async function login(req, res, next) {
       }
       return res.status(401).json(fail('INVALID_CREDENTIALS', 'Invalid email or password'));
     };
-    if (!user || !user.isActive) return invalid();
+    if (!user || !user.isActive) return await invalid();
 
     const valid = await verifyPassword(password, user.passwordHash);
-    if (!valid) return invalid();
+    if (!valid) return await invalid();
 
-    await clearFailures(email); // a correct password wipes the run
+    // A correct password wipes the run. Best-effort too: a bookkeeping hiccup must
+    // never turn a valid sign-in into an error.
+    try { await clearFailures(email); } catch (e) { console.error('clearing login failures failed', e?.message); }
     const token = signToken({ sub: user._id.toString(), role: user.role });
     setAuthCookie(res, token); // local/same-origin still uses the cookie
     await audit({ actor: user._id, action: 'auth.login', entityType: 'User', entityId: user._id.toString() });

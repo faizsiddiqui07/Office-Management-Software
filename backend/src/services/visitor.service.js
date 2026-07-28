@@ -87,11 +87,14 @@ export async function updateVisitor(id, data) {
     v.dateYMD = data.dateYMD;
     v.date = companyDayFromYMD(data.dateYMD);
   }
-  // A visit can't end before it started. The dialog checks this, but the one-tap
-  // check-out sends the current clock time straight through — on a visit left open
-  // from a previous day that could be earlier than the arrival time, and since setting
-  // a check-out locks both times, the wrong pair would be frozen in permanently.
-  if (v.checkInTime && v.checkOutTime && v.checkOutTime <= v.checkInTime) {
+  // A visit can't end before it started. Checked only when this request is actually
+  // SETTING one of the times: an entry that already holds a bad pair (or a same-minute
+  // in-and-out) must still be editable for its name, company or purpose, and a guard
+  // that fired on every save would have made such a row permanently uneditable. Equal
+  // times are allowed — someone signing in and straight back out inside the same minute
+  // is a real thing, and the times are recorded only to the minute.
+  const touchingTimes = data.checkInTime !== undefined || data.checkOutTime !== undefined;
+  if (touchingTimes && v.checkInTime && v.checkOutTime && v.checkOutTime < v.checkInTime) {
     throw httpError(400, 'BAD_RANGE', 'Check-out time must be after check-in. Edit the entry to set the time they actually left.');
   }
   await v.save();

@@ -1,7 +1,7 @@
 import express from 'express';
 import { requireAuth } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
-import { authLimiter } from '../middleware/rateLimit.js';
+import { authLimiter, passwordResetLimiter } from '../middleware/rateLimit.js';
 import {
   loginSchema,
   changePasswordSchema,
@@ -26,5 +26,6 @@ authRouter.post('/logout', logout);
 authRouter.get('/me', requireAuth, me);
 authRouter.patch('/profile', requireAuth, validate(updateProfileSchema), updateProfile);
 authRouter.post('/change-password', requireAuth, validate(changePasswordSchema), changePassword);
-authRouter.post('/forgot-password', authLimiter, validate(forgotPasswordSchema), forgotPassword);
-authRouter.post('/reset-password', validate(resetPasswordSchema), resetPassword);
+// Both of these send or consume a reset mail — kept on the tighter ceiling.
+authRouter.post('/forgot-password', passwordResetLimiter, validate(forgotPasswordSchema), forgotPassword);
+authRouter.post('/reset-password', passwordResetLimiter, validate(resetPasswordSchema), resetPassword);

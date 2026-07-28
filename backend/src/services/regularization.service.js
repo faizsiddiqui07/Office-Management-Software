@@ -6,6 +6,7 @@ import { notify } from '../models/Notification.js';
 import { LEADERSHIP } from '../lib/permissions.js';
 import { companyDayFromYMD, companyDayInstantAt, isLateCheckIn, computeWork } from '../lib/time.js';
 import { effectiveSchedule } from '../lib/schedule.js';
+import { onCheckOut } from './bonus.service.js';
 
 function httpError(status, code, message) {
   const e = new Error(message);
@@ -132,6 +133,9 @@ async function applyToAttendance(reg) {
     record.overtimeMinutes = overtimeMinutes;
   }
   await record.save();
+  // An approved correction changes the day's overtime, so the points awarded for that
+  // day have to be recomputed — otherwise the figure from the original check-out stands.
+  try { await onCheckOut(owner, reg.dateYMD, record.overtimeMinutes || 0); } catch (e) { console.error('bonus hook (correction) failed', e?.message); }
 }
 
 export async function decide(approver, id, decision, note) {

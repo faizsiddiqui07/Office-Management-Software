@@ -396,8 +396,9 @@ export async function buildSelfReport({ user, type, dateYMD, range }) {
     } else {
       status = 'ABSENT';
     }
-    const statusLabel = status === 'ON_LEAVE' && rec?.halfDayLeave ? 'On leave (half day)' : STATUS_LABEL[status] || status;
-    days.push({ ymd, weekday, status, statusLabel, checkIn, checkOut, workedHours, overtimeMinutes });
+    const halfDayLeave = status === 'ON_LEAVE' && !!rec?.halfDayLeave;
+    const statusLabel = halfDayLeave ? 'On leave (half day)' : STATUS_LABEL[status] || status;
+    days.push({ ymd, weekday, status, statusLabel, halfDayLeave, checkIn, checkOut, workedHours, overtimeMinutes });
     cur = new Date(cur.getTime() + 86400000);
   }
 
@@ -407,8 +408,13 @@ export async function buildSelfReport({ user, type, dateYMD, range }) {
   // A late day is still an attended day — Present counts every day they showed
   // up; `late` stays as the "of which came late" indicator.
   const present = tally('PRESENT') + late + onDuty;
-  const absent = tally('ABSENT');
-  const onLeave = tally('ON_LEAVE');
+  // A half-day leave is half a day away and half a day unaccounted for — the same split
+  // the company report and the payroll matrix make. Counting it as a whole day on leave
+  // had this one document disagreeing with those two, and with its own row, which
+  // already reads "On leave (half day)".
+  const halfLeaveDays = days.filter((d) => d.halfDayLeave).length;
+  const absent = tally('ABSENT') + halfLeaveDays * 0.5;
+  const onLeave = tally('ON_LEAVE') - halfLeaveDays * 0.5;
   const workingDays = present + absent + onLeave;
   const attTotals = {
     present,

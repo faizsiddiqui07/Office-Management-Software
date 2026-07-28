@@ -13,9 +13,8 @@ import { clientIp } from '../lib/loginGuard.js';
  *    At twenty, a handful of people mistyping passwords locked everyone out of the
  *    building's connection — while an attacker simply moved address and carried on.
  */
-export const authLimiter = rateLimit({
+const shared = {
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100,
   standardHeaders: true,
   legacyHeaders: false,
   // Behind API Gateway/Lambda req.ip can be undefined — never throw, and skip the
@@ -26,4 +25,14 @@ export const authLimiter = rateLimit({
     ok: false,
     error: { code: 'RATE_LIMITED', message: 'Too many attempts, please try again later.' },
   },
-});
+};
+
+/** Sign-in. Generous, because the whole office shares one address. */
+export const authLimiter = rateLimit({ ...shared, max: 100 });
+
+/**
+ * Password-reset requests. Kept tight where sign-in is not: each one SENDS AN EMAIL, so
+ * a flood is a way to bury somebody's inbox (or burn the mail quota) rather than a way
+ * to guess a password. Raising the sign-in ceiling must not raise this one with it.
+ */
+export const passwordResetLimiter = rateLimit({ ...shared, max: 20 });

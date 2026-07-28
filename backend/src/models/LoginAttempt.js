@@ -15,6 +15,8 @@ import mongoose from 'mongoose';
  */
 const loginAttemptSchema = new mongoose.Schema(
   {
+    // "<email>|<address>" — a run is counted per account AND per source, so a stranger
+    // guessing at somebody's address can never lock that person out of their own.
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
     fails: { type: Number, default: 0 },
     firstFailAt: { type: Date, default: Date.now },

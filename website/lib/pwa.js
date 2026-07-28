@@ -104,8 +104,16 @@ export async function ensurePushOnLaunch() {
 
 export async function disablePush() {
   if (!pushSupported()) return;
-  const reg = await navigator.serviceWorker.ready;
-  const sub = await reg.pushManager.getSubscription();
+  // `serviceWorker.ready` never settles when no worker has been registered on this
+  // origin — it waits forever rather than rejecting. Signing out awaits this, so an
+  // unresolved promise here left the Sign out button doing nothing at all. Take the
+  // registration if there is one, and give up after a moment either way.
+  const reg = await Promise.race([
+    navigator.serviceWorker.getRegistration(),
+    new Promise((resolve) => { setTimeout(() => resolve(null), 2000); }),
+  ]).catch(() => null);
+  if (!reg?.pushManager) return;
+  const sub = await reg.pushManager.getSubscription().catch(() => null);
   if (sub) {
     await api.post('/push/unsubscribe', { endpoint: sub.endpoint }).catch(() => {});
     await sub.unsubscribe().catch(() => {});
