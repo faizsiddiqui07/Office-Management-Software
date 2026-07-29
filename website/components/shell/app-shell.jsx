@@ -9,6 +9,7 @@ import { ForcePasswordChange } from '@/components/auth/force-password-change';
 import { LoadingState } from '@/components/glass/skeletons';
 import { AnnouncementPopup } from '@/components/announcements/announcement-popup';
 import { BirthdayPopup } from '@/components/calendar/birthday-popup';
+import { EodDigestPopup } from '@/components/tasks/eod-digest-popup';
 import { PwaRegister } from '@/components/pwa/pwa-register';
 import { DocumentTitle } from './document-title';
 import { UpdatePrompt } from './update-prompt';
@@ -58,6 +59,8 @@ export function AppShell({ children }) {
         </main>
       </div>
       <BirthdayPopup />
+      {/* Owners only, after the office cut-off, once a day — see the component. */}
+      <EodDigestPopup />
       <AnnouncementPopup />
       <PwaRegister />
     </div>

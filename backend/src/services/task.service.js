@@ -3,7 +3,7 @@ import { Task } from '../models/Task.js';
 import { User } from '../models/User.js';
 import { notify } from '../models/Notification.js';
 import { roleLabel } from '../lib/roles.js';
-import { companyDayFromYMD } from '../lib/time.js';
+import { companyDayFromYMD, COMPANY_TZ } from '../lib/time.js';
 import { onAssignedTaskDone, onAssignedTaskUndone } from './bonus.service.js';
 
 function httpError(status, code, message) {
@@ -15,6 +15,44 @@ function httpError(status, code, message) {
 
 function escapeRegex(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * The end-of-day round-up: who finished what TODAY, person by person.
+ *
+ * Read live off the tasks every time it's asked for — nothing is stored, nothing is
+ * kept. The owners see it once in the evening and it is gone; the only thing recorded
+ * anywhere is a flag in their own browser saying they've closed today's.
+ *
+ * A task counts on the day the person actually DID it — for an approval task that's the
+ * day they submitted, not the day it was signed off — the same rule the leaderboard and
+ * the bonus system use, so the three never tell different stories. Copies that were
+ * forwarded onward are left out: finishing at the bottom of a chain marks every copy
+ * above it done as well, and one piece of work should appear once.
+ */
+export async function eodDigest(dateYMD) {
+  const forwardedParentIds = await Task.distinct('forwardedFrom', { forwardedFrom: { $ne: null } });
+  const rows = await Task.aggregate([
+    { $match: { status: 'DONE', completedAt: { $ne: null }, _id: { $nin: forwardedParentIds } } },
+    { $addFields: { doneYMD: { $dateToString: { date: { $ifNull: ['$submittedAt', '$completedAt'] }, format: '%Y-%m-%d', timezone: COMPANY_TZ } } } },
+    { $match: { doneYMD: dateYMD } },
+    { $group: { _id: { $ifNull: ['$completedBy', '$owner'] }, titles: { $push: '$title' } } },
+  ]);
+  if (!rows.length) return { dateYMD, people: [], total: 0 };
+
+  const users = await User.find({ _id: { $in: rows.map((r) => r._id) } }).select('name employeeId').lean();
+  const byId = new Map(users.map((u) => [String(u._id), u]));
+  const people = rows
+    .map((r) => ({
+      name: byId.get(String(r._id))?.name ?? '—',
+      employeeId: byId.get(String(r._id))?.employeeId ?? '',
+      tasks: r.titles,
+    }))
+    .filter((p) => p.name !== '—')
+    // Most done first, then alphabetically — the list reads as a ranking, not a dump.
+    .sort((a, b) => b.tasks.length - a.tasks.length || a.name.localeCompare(b.name));
+
+  return { dateYMD, people, total: people.reduce((s, p) => s + p.tasks.length, 0) };
 }
 
 /**

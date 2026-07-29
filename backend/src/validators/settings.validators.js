@@ -42,6 +42,13 @@ export const updateSettingsSchema = z.object({
       radiusMeters: z.coerce.number().int().min(10).max(5000).optional(),
     })
     .optional(),
+  // The evening round-up the owners see once a day, and the time it becomes available.
+  eodDigest: z
+    .object({
+      enabled: z.boolean().optional(),
+      time: hm.optional(),
+    })
+    .optional(),
 });
 
 /**

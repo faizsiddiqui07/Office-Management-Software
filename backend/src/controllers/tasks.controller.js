@@ -2,7 +2,8 @@ import { ok, fail } from '../lib/apiResponse.js';
 import { createTaskSchema, updateTaskSchema, statusSchema, listTasksQuerySchema, reviewTaskSchema, forwardTaskSchema, seenBulkSchema } from '../validators/tasks.validators.js';
 import * as svc from '../services/task.service.js';
 import { Setting } from '../models/Setting.js';
-import { ymdInTz } from '../lib/time.js';
+import { ymdInTz, formatCompany } from '../lib/time.js';
+import { isOwnerRole } from '../lib/roles.js';
 import { audit } from '../models/AuditLog.js';
 import { renderTasksPdf } from '../services/taskPdf.service.js';
 import { loadCompanyLogo } from '../lib/brand.js';
@@ -28,6 +29,36 @@ export async function assignable(req, res, next) {
     res.json(ok({ users, taggable }));
   } catch (err) {
     next(err);
+  }
+}
+
+/**
+ * The evening round-up for the owners: what everyone finished today.
+ *
+ * Returns `ready` so the client doesn't have to know the office's cut-off time, and
+ * never returns anybody else's data to anybody else — it is owner-tier only.
+ */
+export async function eodDigest(req, res, next) {
+  try {
+    if (!isOwnerRole(req.user.role)) {
+      return res.status(403).json(fail('FORBIDDEN', 'Only CEO & President see the daily round-up'));
+    }
+    const s = await Setting.getSingleton();
+    const cfg = s.eodDigest || {};
+    const after = /^\d{2}:\d{2}$/.test(cfg.time || '') ? cfg.time : '19:00';
+    const enabled = cfg.enabled !== false;
+    const today = ymdInTz(new Date());
+    const nowHM = formatCompany(new Date(), 'HH:mm');
+
+    // Before the cut-off there is nothing to show yet — say so rather than sending the
+    // day's half-finished list, which the client would then have to sit on.
+    if (!enabled || nowHM < after) {
+      return res.json(ok({ ready: false, enabled, after, dateYMD: today, people: [], total: 0 }));
+    }
+    const digest = await svc.eodDigest(today);
+    return res.json(ok({ ready: true, enabled, after, ...digest }));
+  } catch (err) {
+    return next(err);
   }
 }
 

@@ -1,6 +1,6 @@
 import express from 'express';
 import { requireAuth } from '../middleware/auth.js';
-import { summary, assignable, list, create, setStatus, seen, seenBulk, forward, review, update, remove, exportPdf } from '../controllers/tasks.controller.js';
+import { summary, assignable, list, create, setStatus, seen, seenBulk, forward, review, update, remove, exportPdf, eodDigest } from '../controllers/tasks.controller.js';
 
 export const tasksRouter = express.Router();
 
@@ -10,6 +10,7 @@ export const tasksRouter = express.Router();
 tasksRouter.use(requireAuth);
 
 tasksRouter.get('/summary', summary);
+tasksRouter.get('/eod-digest', eodDigest); // owner-tier only — enforced in the controller
 tasksRouter.get('/assignable', assignable);
 tasksRouter.get('/export.pdf', exportPdf);
 tasksRouter.get('/', list);

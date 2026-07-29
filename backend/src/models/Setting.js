@@ -86,6 +86,13 @@ const settingSchema = new mongoose.Schema(
     // YMD — the last day the team was pushed a birthday wish. Throttles the once-a-day
     // birthday announcement (no cron on Lambda; it rides on the dashboard load).
     lastBirthdayPing: { type: String, default: '' },
+    // The end-of-day round-up the owners see: after this time, opening the app once
+    // shows what everyone finished today. Nothing is stored — it is read live off the
+    // tasks, and closing it only sets a flag on that device for that day.
+    eodDigest: {
+      enabled: { type: Boolean, default: true },
+      time: { type: String, default: '19:00' }, // 'HH:mm' company time
+    },
     // Days the office has been declared work-from-home for, with the announcement each
     // one posted. Claiming the day here BEFORE announcing keeps a double-press (or a
     // Lambda retry) from posting twice; keeping the announcement id means undoing the

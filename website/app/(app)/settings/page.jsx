@@ -61,6 +61,8 @@ export default function SettingsPage() {
         workEnd: s.workEnd ?? '18:00',
         graceMinutes: s.graceMinutes ?? 0,
         checkOutCooldownMinutes: s.checkOutCooldownMinutes ?? 30,
+        eodDigestTime: s.eodDigest?.time ?? '19:00',
+        eodDigestEnabled: s.eodDigest?.enabled !== false,
         weekendDays: [...(s.weekendDays ?? [0])],
         annualLeaveQuota: s.annualLeaveQuota ?? 18,
         currency: s.currency ?? 'INR',
@@ -223,6 +225,7 @@ export default function SettingsPage() {
         ...form,
         graceMinutes: Number(form.graceMinutes),
         checkOutCooldownMinutes: Number(form.checkOutCooldownMinutes),
+        eodDigest: { enabled: !!form.eodDigestEnabled, time: form.eodDigestTime },
         annualLeaveQuota: Number(form.annualLeaveQuota),
         gpsAttendance: {
           enabled: !!form.gpsAttendance.enabled,
@@ -462,7 +465,26 @@ export default function SettingsPage() {
                 <Input id="s-cooldown" type="number" min={0} max={480} value={form.checkOutCooldownMinutes} onChange={(e) => set('checkOutCooldownMinutes', e.target.value)} className="bg-background/50" />
                 <p className="text-xs text-muted-foreground">After checking in, check-out stays locked this long — stops an accidental double-tap from checking someone out. 0 turns it off.</p>
               </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="s-eod">Daily round-up from</Label>
+                <TimePicker id="s-eod" value={form.eodDigestTime} onChange={(v) => set('eodDigestTime', v)} className="bg-background/50" />
+                <p className="text-xs text-muted-foreground">
+                  After this time, CEO &amp; President see a one-off summary of everything finished that day — once, on opening the app. Nothing is saved; closing it is the end of it.
+                </p>
+              </div>
             </div>
+            <label className="flex cursor-pointer items-start gap-3 rounded-xl bg-foreground/[0.03] p-3 ring-1 ring-border/50">
+              <input
+                type="checkbox"
+                checked={form.eodDigestEnabled}
+                onChange={(e) => set('eodDigestEnabled', e.target.checked)}
+                className="mt-0.5 size-4 accent-primary"
+              />
+              <span className="text-sm">
+                Show the daily round-up
+                <span className="mt-0.5 block text-xs text-muted-foreground">Turn this off and the evening popup never appears for anyone.</span>
+              </span>
+            </label>
             <div className="space-y-2">
               <Label>Weekend days</Label>
               <div className="flex flex-wrap gap-2">
