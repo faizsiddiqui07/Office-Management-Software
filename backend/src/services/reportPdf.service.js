@@ -447,3 +447,76 @@ export async function renderReportToStream(data, sections, logo = null) {
 export async function renderSelfReportToStream(data, sections, logo = null) {
   return renderToStream(buildSelfDoc(data, sections, logo));
 }
+
+/* ── Per-employee leave ledger ───────────────────────────── */
+const LEAVE_STATUS_COLOR = { APPROVED: '#16a34a', PENDING: '#d97706', REJECTED: '#dc2626', CANCELLED: '#9ca3af' };
+const tc = (s) => (s ? s.charAt(0) + s.slice(1).toLowerCase() : '—'); // CASUAL -> Casual
+function dmon(ymd) {
+  if (!ymd) return '—';
+  const d = new Date(`${ymd}T00:00:00Z`);
+  const dd = String(d.getUTCDate()).padStart(2, '0');
+  const mon = d.toLocaleDateString('en-GB', { month: 'short', timeZone: 'UTC' });
+  return `${dd} ${mon} ${d.getUTCFullYear()}`;
+}
+
+function ledgerSubject(d) {
+  const s = d.subject;
+  return E(
+    View,
+    { style: styles.subjectCard },
+    E(View, { style: styles.subjectItem }, E(Text, { style: styles.subjectLabel }, 'Employee'), E(Text, { style: styles.subjectValue }, s.name)),
+    E(View, { style: styles.subjectItem }, E(Text, { style: styles.subjectLabel }, 'Employee ID'), E(Text, { style: styles.subjectValue }, s.employeeId || '—')),
+    E(View, { style: styles.subjectItem }, E(Text, { style: styles.subjectLabel }, 'Role'), E(Text, { style: styles.subjectValue }, cap(s.role))),
+    E(View, { style: styles.subjectItem }, E(Text, { style: styles.subjectLabel }, 'Leave year'), E(Text, { style: styles.subjectValue }, d.period.label)),
+  );
+}
+
+function buildLeaveLedgerDoc(data, logo) {
+  const accent = data.company.brandColor || DEFAULT_ACCENT;
+  const label = 'Leave ledger';
+  const b = data.balance;
+  const stats = [
+    stat('Quota', b.totalQuota, 'l1'),
+    stat('Used', b.used, 'l2'),
+    stat('Remaining', b.remaining, 'l3'),
+    stat('Overtime banked', dur(b.overtimeMinutes || 0), 'l4'),
+  ];
+  const byType = Object.entries(data.byType || {});
+  const headers = [
+    { label: 'Dates', w: '27%' },
+    { label: 'Type', w: '13%' },
+    { label: 'Days', w: '9%', align: 'right' },
+    { label: 'Status', w: '13%' },
+    { label: 'Applied', w: '13%' },
+    { label: 'Reason', w: '25%' },
+  ];
+  const rows = data.leaves.map((l) => [
+    l.startYMD === l.endYMD ? `${dmon(l.startYMD)}${l.halfDay ? ' (half)' : ''}` : `${dmon(l.startYMD)} → ${dmon(l.endYMD)}`,
+    tc(l.type),
+    String(l.days),
+    { text: tc(l.status), color: LEAVE_STATUS_COLOR[l.status] },
+    l.appliedYMD ? dmon(l.appliedYMD) : '—',
+    l.reason || '—',
+  ]);
+  return E(
+    Document,
+    {},
+    E(
+      Page,
+      { size: 'A4', style: styles.page, wrap: true },
+      header(data, logo, accent, label),
+      metaLine(data),
+      ledgerSubject(data),
+      sectionTitle('Balance', accent),
+      E(View, { style: styles.statRow }, ...stats),
+      byType.length ? E(Text, { style: styles.empty }, `Taken by type — ${byType.map(([t, n]) => `${tc(t)}: ${n}`).join('   ·   ')}`) : null,
+      sectionTitle('Leaves this year', accent),
+      rows.length ? table(headers, rows) : E(Text, { style: styles.empty }, 'No leave requests this year.'),
+      footer(data, label),
+    ),
+  );
+}
+
+export async function renderLeaveLedgerToStream(data, logo = null) {
+  return renderToStream(buildLeaveLedgerDoc(data, logo));
+}

@@ -11,7 +11,7 @@ import { roleLabel } from '../lib/roles.js';
 import { companyDayFromYMD, ymdInTz } from '../lib/time.js';
 import { leaveYearOf } from '../lib/leaveYear.js';
 import { getTodayPayload, attendanceOverview } from './attendance.service.js';
-import { listHolidays } from './holiday.service.js';
+import { listHolidays, maybeAnnounceBirthdays } from './holiday.service.js';
 import { balanceJSON } from './leave.service.js';
 import { listVisible } from './announcement.service.js';
 import { expenseSummary } from './expense.service.js';
@@ -52,11 +52,11 @@ async function overtimeLeaderboard(fromDay, toDay) {
  *   - the task was DELEGATED (assignedBy set) — your own to-dos don't count;
  *   - it had a due date, and was finished on or before it (a task with no deadline
  *     can't be "on time", so it's out);
- *   - a CEO & President is involved — they assigned it, or originally assigned it
- *     before it was forwarded. A senior can't inflate a junior's rank with private
- *     busywork; leadership has to be in the loop. (Being tagged as a collaborator
- *     isn't a third route: tagging only exists on shared personal tasks, which have
- *     no assigner and are excluded by the rule above.)
+ *   - a CEO & President is involved — they assigned it, originally assigned it before
+ *     it was forwarded, or were TAGGED on it. A delegated task can now carry tagged
+ *     colleagues (a CEO among them), so "leadership is in the loop" includes work they
+ *     were tagged on — a senior still can't inflate a junior's rank with private
+ *     busywork the leadership never sees.
  * Credit goes to whoever actually did it (completedBy), falling back to the owner.
  *
  * `range` is { from, to } YMD (this month) or null (all-time). Only the leaderboard
@@ -81,6 +81,7 @@ async function taskLeaderboard(ceoIds, forwardedParentIds, range) {
         $or: [
           { assignedBy: { $in: ceoIds } },
           { originalAssignedBy: { $in: ceoIds } },
+          { collaborators: { $in: ceoIds } }, // a CEO tagged on the delegated task
         ],
       },
     },
@@ -124,6 +125,10 @@ export async function buildDashboard(user) {
   const role = user.role;
 
   const out = { role, roleLabel: roleLabel(role), generatedAt: now.toISOString(), company: { name: settings.companyName, currency: settings.currency } };
+
+  // Once a day (claimed atomically), push the team a birthday wish — best-effort, and
+  // must never hold up or break the dashboard.
+  maybeAnnounceBirthdays().catch((e) => console.error('birthday announce failed', e?.message));
 
   // ── Common (everyone) ─────────────────────────────────────
   out.today = await getTodayPayload(user);

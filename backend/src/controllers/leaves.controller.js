@@ -2,11 +2,44 @@ import { ok, fail } from '../lib/apiResponse.js';
 import { can } from '../lib/permissions.js';
 import { applyLeaveSchema, decisionSchema, listLeavesQuerySchema } from '../validators/leaves.validators.js';
 import * as svc from '../services/leave.service.js';
+import { renderLeaveLedgerToStream } from '../services/reportPdf.service.js';
+import { loadCompanyLogo } from '../lib/brand.js';
+import { currentLeaveYear } from '../lib/leaveYear.js';
+import { User } from '../models/User.js';
 import { audit } from '../models/AuditLog.js';
 
 function handleErr(res, err, next) {
   if (err && err.status) return res.status(err.status).json(fail(err.code || 'ERROR', err.message));
   return next(err);
+}
+
+/**
+ * A one-employee leave-ledger PDF for a fiscal year. Anyone can pull their OWN; only a
+ * viewEveryone holder can pull someone else's (via ?userId=). Defaults to this year.
+ */
+export async function leaveLedger(req, res, next) {
+  try {
+    let target = req.user;
+    if (req.query.userId && String(req.query.userId) !== String(req.user._id)) {
+      if (!can(req.user, 'viewEveryone')) return res.status(403).json(fail('FORBIDDEN', 'You can only download your own leave ledger'));
+      target = await User.findById(req.query.userId);
+      if (!target) return res.status(404).json(fail('NOT_FOUND', 'User not found'));
+    }
+    const y = Number(req.query.year);
+    const year = Number.isInteger(y) && y >= 2000 && y <= 2100 ? y : currentLeaveYear();
+
+    const data = await svc.buildLeaveLedger(target, year);
+    await audit({ actor: req.user._id, action: 'leave.ledger_download', entityType: 'User', entityId: String(target._id), meta: { year } });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="leave-ledger-${target.employeeId || target._id}-${data.period.label.replace(/[^\w-]/g, '')}.pdf"`);
+    const stream = await renderLeaveLedgerToStream(data, loadCompanyLogo(data.company.logoDark || data.company.logoUrl || data.company.logoLight));
+    stream.on('error', (err) => next(err));
+    stream.pipe(res);
+    return undefined;
+  } catch (err) {
+    return handleErr(res, err, next);
+  }
 }
 
 export async function balance(req, res, next) {

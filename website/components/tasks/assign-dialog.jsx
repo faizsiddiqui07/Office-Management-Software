@@ -18,6 +18,7 @@ export function AssignDialog() {
   const qc = useQueryClient();
   const [open, setOpen] = React.useState(false);
   const [assignTo, setAssignTo] = React.useState([]); // ids of people to assign to
+  const [collaborators, setCollaborators] = React.useState([]); // tagged (for awareness — anyone)
   const [title, setTitle] = React.useState('');
   const [notes, setNotes] = React.useState('');
   const [dueYMD, setDueYMD] = React.useState('');
@@ -25,10 +26,14 @@ export function AssignDialog() {
 
   const { data } = useQuery({ queryKey: ['tasks', 'assignable'], queryFn: () => api.get('/tasks/assignable'), enabled: open });
   const users = data?.users ?? [];
+  // Everyone in the office — a colleague you tag is just being kept in the loop, so
+  // this includes leadership, unlike the "assign to" list which is only people below you.
+  const taggable = data?.taggable ?? [];
 
   React.useEffect(() => {
     if (open) {
       setAssignTo([]);
+      setCollaborators([]);
       setTitle('');
       setNotes('');
       setDueYMD('');
@@ -37,12 +42,13 @@ export function AssignDialog() {
   }, [open]);
 
   const toggle = (id) => setAssignTo((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  const toggleCollab = (id) => setCollaborators((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   const allIds = users.map((u) => u.id);
   const allSelected = allIds.length > 0 && allIds.every((id) => assignTo.includes(id));
   const toggleAll = () => setAssignTo(allSelected ? [] : allIds);
 
   const mut = useMutation({
-    mutationFn: () => api.post('/tasks', { assignTo, title, notes, dueYMD, requiresApproval }),
+    mutationFn: () => api.post('/tasks', { assignTo, collaborators, title, notes, dueYMD, requiresApproval }),
     onSuccess: (res) => {
       const n = res?.count ?? assignTo.length;
       toast.success(n > 1 ? `Task assigned to ${n} people` : 'Task assigned');
@@ -135,6 +141,46 @@ export function AssignDialog() {
         <div className="space-y-1.5">
           <Label htmlFor="a-notes">Notes (optional)</Label>
           <Textarea id="a-notes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Details…" className="bg-background/50" />
+        </div>
+
+        {/* Tag anyone in the office to keep them in the loop — they'll see it under
+            "Assigned to me" but the assignee is the one who does it. Leadership included. */}
+        <div className="space-y-1.5">
+          <Label className="flex items-center gap-1.5">
+            <Users className="size-3.5" /> Tag people (optional)
+          </Label>
+          {(() => {
+            const options = taggable.filter((p) => !assignTo.includes(p.id));
+            return options.length ? (
+              <div className="flex flex-wrap gap-1.5">
+                {options.map((p) => {
+                  const on = collaborators.includes(p.id);
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => toggleCollab(p.id)}
+                      className={cn(
+                        'inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium ring-1 transition-colors',
+                        on ? 'bg-primary/12 text-primary ring-primary/25' : 'bg-muted/40 text-muted-foreground ring-border hover:text-foreground',
+                      )}
+                    >
+                      {on ? <Check className="size-3" /> : null}
+                      {p.name}
+                      {p.designation ? <span className="opacity-60">· {p.designation}</span> : null}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">No one else to tag.</p>
+            );
+          })()}
+          {collaborators.length ? (
+            <p className="text-xs text-muted-foreground">
+              {collaborators.length} tagged — they’ll see it under “Assigned to me”, but don’t have to do it.
+            </p>
+          ) : null}
         </div>
 
         {/* Approval gate — the assignee's "done" becomes a request you approve first. */}

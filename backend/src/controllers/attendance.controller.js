@@ -113,17 +113,29 @@ export async function exportCsv(req, res, next) {
   try {
     const q = listQuerySchema.parse(req.query);
     const { records } = await svc.listAttendance(req.user, { ...q, all: q.all === 'true', page: 1, limit: 5000 });
-    const header = ['Date', 'Employee', 'Employee ID', 'Status', 'Check In', 'Check Out', 'Worked (min)', 'Overtime (min)'];
-    const rows = records.map((r) => [
-      formatInTimeZone(new Date(r.date), COMPANY_TZ, 'yyyy-MM-dd'),
-      r.user?.name ?? '',
-      r.user?.employeeId ?? '',
-      r.status,
-      r.checkInAt ? formatInTimeZone(new Date(r.checkInAt), COMPANY_TZ, 'HH:mm') : '',
-      r.checkOutAt ? formatInTimeZone(new Date(r.checkOutAt), COMPANY_TZ, 'HH:mm') : '',
-      r.workedMinutes ?? 0,
-      r.overtimeMinutes ?? 0,
-    ]);
+    const header = [
+      'Date', 'Employee', 'Employee ID', 'Status', 'Check In', 'Check Out', 'Worked (min)', 'Overtime (min)',
+      // The audit columns the sheet was dropping: WHY a late day was late, whether
+      // leadership excused it (on-duty), and how far from the office the check-in was.
+      'Late reason', 'On-duty (excused)', 'Distance (m)',
+    ];
+    const rows = records.map((r) => {
+      const reason = r.lateReason ? [r.lateReason.category, r.lateReason.note].filter(Boolean).join(' — ') : '';
+      const dist = r.checkInMeta && typeof r.checkInMeta.distance === 'number' ? Math.round(r.checkInMeta.distance) : '';
+      return [
+        formatInTimeZone(new Date(r.date), COMPANY_TZ, 'yyyy-MM-dd'),
+        r.user?.name ?? '',
+        r.user?.employeeId ?? '',
+        r.status,
+        r.checkInAt ? formatInTimeZone(new Date(r.checkInAt), COMPANY_TZ, 'HH:mm') : '',
+        r.checkOutAt ? formatInTimeZone(new Date(r.checkOutAt), COMPANY_TZ, 'HH:mm') : '',
+        r.workedMinutes ?? 0,
+        r.overtimeMinutes ?? 0,
+        reason,
+        r.excused ? 'Yes' : '',
+        dist,
+      ];
+    });
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="attendance.csv"');
     res.send(toCsv(header, rows));

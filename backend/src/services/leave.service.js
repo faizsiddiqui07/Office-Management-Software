@@ -7,8 +7,8 @@ import { Setting } from '../models/Setting.js';
 import { joinedYMD } from '../lib/joining.js';
 import { notify } from '../models/Notification.js';
 import { can, canAssignRole } from '../lib/permissions.js';
-import { rolesWithPermission } from '../lib/roles.js';
-import { companyDayFromYMD } from '../lib/time.js';
+import { rolesWithPermission, roleLabel } from '../lib/roles.js';
+import { companyDayFromYMD, ymdInTz } from '../lib/time.js';
 import { leaveYearOf, currentLeaveYear } from '../lib/leaveYear.js';
 import { APP_LIVE_YMD } from '../lib/appLive.js';
 import { computeWorkingDays } from './workingDays.service.js';
@@ -118,6 +118,49 @@ export async function balanceJSON(userId, year) {
 
 export async function getBalanceForUser(userId) {
   return balanceJSON(userId, currentLeaveYear());
+}
+
+/**
+ * One employee's leave ledger for a fiscal year (Apr–Mar): the balance, a by-type
+ * summary of what was approved, and every request that touches the year. Shaped for the
+ * PDF renderer (renderLeaveLedgerToStream). `year` is the starting calendar year.
+ */
+export async function buildLeaveLedger(user, year = currentLeaveYear()) {
+  const from = `${year}-04-01`;
+  const to = `${year + 1}-03-31`;
+  const settings = await Setting.getSingleton();
+  const bal = await getOrCreateBalance(user._id, year);
+
+  // Every request that overlaps the year, newest first.
+  const reqs = await LeaveRequest.find({ user: user._id, startYMD: { $lte: to }, endYMD: { $gte: from } }).sort({ startYMD: -1 });
+  const byType = {};
+  for (const l of reqs) {
+    if (l.status === 'APPROVED') byType[l.type] = (byType[l.type] || 0) + (l.workingDays || 0);
+  }
+
+  return {
+    company: { name: settings.companyName, currency: settings.currency, timezone: settings.timezone, brandColor: settings.brandColor, logoUrl: settings.logoUrl, logoLight: settings.logoLight, logoDark: settings.logoDark },
+    generatedAt: new Date().toISOString(),
+    period: { from, to, label: `FY ${year}–${String(year + 1).slice(2)}` },
+    subject: { name: user.name, employeeId: user.employeeId, role: user.role, roleLabel: roleLabel(user.role), department: user.department || '' },
+    balance: {
+      totalQuota: bal.totalQuota,
+      used: bal.used,
+      remaining: bal.remaining,
+      overtimeMinutes: await overtimeMinutesForYear(user._id, year),
+    },
+    byType,
+    leaves: reqs.map((l) => ({
+      type: l.type,
+      status: l.status,
+      startYMD: l.startYMD,
+      endYMD: l.endYMD,
+      halfDay: !!l.halfDay,
+      days: l.workingDays,
+      reason: l.reason || '',
+      appliedYMD: l.appliedAt ? ymdInTz(l.appliedAt) : '',
+    })),
+  };
 }
 
 /**

@@ -1,4 +1,7 @@
 import { Holiday } from '../models/Holiday.js';
+import { User } from '../models/User.js';
+import { Setting } from '../models/Setting.js';
+import { notify } from '../models/Notification.js';
 import { companyDayFromYMD, ymdInTz } from '../lib/time.js';
 
 function httpError(status, code, message) {
@@ -6,6 +9,41 @@ function httpError(status, code, message) {
   e.status = status;
   e.code = code;
   return e;
+}
+
+/**
+ * Once a day, push the team a birthday wish for anyone whose birthday is today.
+ *
+ * Birthdays only showed as a login popup, so whoever didn't open the app that day never
+ * saw it. There's no cron on Lambda, so this rides on the dashboard load (best-effort)
+ * and claims the day atomically via a settings flag, so exactly one instance sends —
+ * everyone gets the bell AND a phone push (notify() mirrors to Web Push).
+ */
+export async function maybeAnnounceBirthdays() {
+  const today = ymdInTz(new Date());
+  const s = await Setting.getSingleton();
+  if (s.lastBirthdayPing === today) return;
+  // Claim the day — only the instance whose update matches gets to send.
+  const claim = await Setting.updateOne({ key: 'global', lastBirthdayPing: { $ne: today } }, { $set: { lastBirthdayPing: today } });
+  if (!claim.modifiedCount && !claim.nModified) return;
+  Setting.invalidateCache();
+
+  // A birthday is a repeating calendar entry keyed on the date of birth; match the
+  // month-and-day, ignoring the birth year. (A 29 Feb birthday simply won't fire in a
+  // non-leap year — a rare edge nobody is likely to hit.)
+  const mmdd = today.slice(5);
+  const birthdays = (await Holiday.find({ type: 'BIRTHDAY' }).select('title startYMD'))
+    .filter((h) => (h.startYMD || '').slice(5) === mmdd);
+  if (!birthdays.length) return;
+
+  const names = birthdays.map((h) => h.title).filter(Boolean).join(', ');
+  if (!names) return;
+  const users = await User.find({ isActive: true }).select('_id');
+  const message = `It's ${names}'s birthday today — wish ${birthdays.length > 1 ? 'them' : 'them'} a wonderful day! 🎂`;
+  for (const u of users) {
+    // eslint-disable-next-line no-await-in-loop
+    await notify({ user: u._id, type: 'BIRTHDAY', title: 'Happy Birthday! 🎉', message, link: '/calendar' });
+  }
 }
 
 function enumerateDays(fromYMD, toYMD) {

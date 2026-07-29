@@ -90,6 +90,12 @@ export async function createTask(actor, data) {
     // all at once. A lone delegate has no siblings, so no batch.
     const batch = targets.length > 1 ? randomUUID() : '';
 
+    // Tagged colleagues are for awareness, not for doing the work — anyone in the
+    // office can be tagged (a CEO too), same rule as a personal task. They ride on
+    // every copy so a tagged person sees the work whoever it was handed to.
+    const collaborators = (await resolveCollaborators(actor, data.collaborators))
+      .filter((cid) => !assigneeIds.includes(String(cid))); // an assignee isn't also a bystander
+
     const created = [];
     for (const target of targets) {
       const task = await Task.create({
@@ -98,7 +104,7 @@ export async function createTask(actor, data) {
         dueYMD: data.dueYMD || '',
         owner: target._id,
         assignedBy: actor._id,
-        collaborators: [],
+        collaborators,
         assignBatch: batch,
         requiresApproval: !!data.requiresApproval,
         status: 'PENDING',
@@ -113,6 +119,16 @@ export async function createTask(actor, data) {
       await task.populate('owner', 'name');
       await task.populate('assignedBy', 'name');
       created.push(task.toJSON());
+    }
+    // Tell each tagged person ONCE, not once per assignee copy.
+    for (const cid of collaborators) {
+      await notify({
+        user: cid,
+        type: 'TASK_ASSIGNED',
+        title: `${actor.name} tagged you on a task`,
+        message: data.title,
+        link: '/todo',
+      });
     }
     return { tasks: created };
   }

@@ -1,13 +1,14 @@
 import express from 'express';
 import { requireAuth } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/requirePermission.js';
-import { balance, apply, update, record, list, decision, cancel, remove } from '../controllers/leaves.controller.js';
+import { balance, apply, update, record, list, decision, cancel, remove, leaveLedger } from '../controllers/leaves.controller.js';
 
 export const leavesRouter = express.Router();
 
 leavesRouter.use(requireAuth);
 
 leavesRouter.get('/balance', balance);
+leavesRouter.get('/ledger.pdf', leaveLedger); // own by default; ?userId= for leadership
 leavesRouter.get('/', list);
 leavesRouter.post('/', requirePermission('applyLeave'), apply);
 leavesRouter.patch('/:id', requirePermission('applyLeave'), update); // owner + pending — enforced in service

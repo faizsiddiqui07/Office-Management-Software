@@ -102,6 +102,37 @@ export async function getUserDossier(userId, { from, to }) {
     if (!presentSet.has(ymd) && !leaveSet.has(ymd)) absentDays += 1;
   }
 
+  // A full day-by-day sheet for the elapsed part of the window. The table used to show
+  // only the Attendance ROWS, and an absent day has no row — so exactly the absent days
+  // (and the weekend/holiday context around them) were invisible, leaving a page that
+  // looked like nothing but "Present". Every day now appears with its real status.
+  const recByYmd = new Map(records.map((r) => [ymdInTz(r.date), r]));
+  let days = attendanceRecords; // non-tracking roles: just their rows (they have no absent math)
+  if (tracksAttendance && countFrom <= cappedTo) {
+    const holidays = await holidayYMDSet(countFrom, cappedTo);
+    const weekend = userWeekendDays(user, settings);
+    days = [];
+    let cur = new Date(`${countFrom}T00:00:00.000Z`);
+    const end = new Date(`${cappedTo}T00:00:00.000Z`);
+    while (cur.getTime() <= end.getTime()) {
+      const ymd = cur.toISOString().slice(0, 10);
+      const rec = recByYmd.get(ymd);
+      if (rec) {
+        days.push({
+          id: rec.id, dateYMD: ymd, checkInAt: rec.checkInAt, checkOutAt: rec.checkOutAt,
+          workedMinutes: rec.workedMinutes || 0, overtimeMinutes: rec.overtimeMinutes || 0,
+          status: rec.status, excused: !!rec.excused, lateReason: rec.lateReason || null, halfDayLeave: !!rec.halfDayLeave,
+        });
+      } else {
+        const dow = cur.getUTCDay();
+        const status = holidays.has(ymd) ? 'HOLIDAY' : weekend.includes(dow) ? 'WEEKEND' : 'ABSENT';
+        days.push({ id: `d-${ymd}`, dateYMD: ymd, checkInAt: null, checkOutAt: null, workedMinutes: 0, overtimeMinutes: 0, status, excused: false, lateReason: null, halfDayLeave: false });
+      }
+      cur = new Date(cur.getTime() + 86400000);
+    }
+    days.reverse(); // newest first, like the raw record list
+  }
+
   const attendance = {
     tracksAttendance,
     joinedYMD: joinedYMD(user),
@@ -117,6 +148,7 @@ export async function getUserDossier(userId, { from, to }) {
     totalWorkedMinutes,
     totalOvertimeMinutes,
     records: attendanceRecords,
+    days,
   };
 
   // ---------------- Leaves ----------------

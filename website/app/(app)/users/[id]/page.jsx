@@ -10,6 +10,7 @@ import {
   CalendarOff,
   CheckCircle2,
   Clock,
+  Download,
   ListTodo,
   Plane,
   ShieldAlert,
@@ -17,7 +18,8 @@ import {
   UserCircle,
   UserPlus,
 } from 'lucide-react';
-import { api } from '@/lib/api';
+import { toast } from 'sonner';
+import { api, downloadFile } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can, roleName } from '@/lib/permissions';
 import { DatePicker } from '@/components/ui/date-picker';
@@ -90,6 +92,7 @@ export default function UserDossierPage() {
   const [preset, setPreset] = React.useState('month');
   const [from, setFrom] = React.useState(monthStart());
   const [to, setTo] = React.useState(daysAgo(0));
+  const [ledgerBusy, setLedgerBusy] = React.useState(false);
 
   const applyPreset = (p) => {
     setPreset(p.key);
@@ -120,6 +123,20 @@ export default function UserDossierPage() {
   const leaves = data?.leaves;
   const tasks = data?.tasks;
   const activity = data?.activity ?? [];
+
+  const downloadLedger = async () => {
+    setLedgerBusy(true);
+    try {
+      const base = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+      const yr = leaves?.balance?.year;
+      await downloadFile(`${base}/api/leaves/ledger.pdf?userId=${id}${yr ? `&year=${yr}` : ''}`, `leave-ledger-${u?.name || id}.pdf`);
+      toast.success('Leave ledger downloaded');
+    } catch (e) {
+      toast.error(e?.message || 'Could not download the ledger');
+    } finally {
+      setLedgerBusy(false);
+    }
+  };
 
   const attColumns = [
     // Search matches both typed forms ("2026-07-01" and "1 Jul") plus the status label.
@@ -252,8 +269,10 @@ export default function UserDossierPage() {
                   This role doesn’t self-track attendance, so present/absent counts aren’t applicable.
                 </p>
               ) : null}
-              {att.records.length ? (
-                <DataTable columns={attColumns} data={att.records} searchPlaceholder="Search by date…" pageSize={15} emptyMessage="No attendance in this range." />
+              {(att.days ?? att.records).length ? (
+                // The full day-by-day sheet — present, late, ABSENT and on-leave days all
+                // show, not just the days that happen to have a check-in row.
+                <DataTable columns={attColumns} data={att.days ?? att.records} searchPlaceholder="Search by date…" pageSize={15} emptyMessage="No attendance in this range." />
               ) : (
                 <EmptyState icon={CalendarClock} title="No attendance records" description="Nothing marked in this date range." />
               )}
@@ -261,11 +280,14 @@ export default function UserDossierPage() {
 
             {/* Leaves */}
             <TabsContent value="leaves">
-              <div className="mb-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
+              <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                 <span className="rounded-full bg-foreground/[0.05] px-2.5 py-1 ring-1 ring-border/50">Balance {leaves.balance.year}: <b className="text-foreground">{leaves.balance.remaining}</b> / {leaves.balance.totalQuota} left</span>
                 {Object.entries(leaves.byType).map(([t, d]) => (
                   <span key={t} className="rounded-full bg-foreground/[0.05] px-2.5 py-1 ring-1 ring-border/50">{t}: {d}d</span>
                 ))}
+                <Button size="sm" variant="outline" className="ml-auto" onClick={downloadLedger} disabled={ledgerBusy}>
+                  <Download className="size-3.5" /> {ledgerBusy ? 'Generating…' : 'Leave ledger (PDF)'}
+                </Button>
               </div>
               {leaves.requests.length ? (
                 <div className="space-y-2.5">

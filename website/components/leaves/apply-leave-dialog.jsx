@@ -38,6 +38,7 @@ export function ApplyLeaveDialog({ leave, open: openProp, onOpenChange }) {
   const [start, setStart] = React.useState('');
   const [end, setEnd] = React.useState('');
   const [halfDay, setHalfDay] = React.useState(false);
+  const [halfDayPart, setHalfDayPart] = React.useState('FIRST'); // FIRST = morning, SECOND = afternoon
   const [reason, setReason] = React.useState('');
 
   // Pre-fill when opening (fresh for a new request, existing values for an edit).
@@ -47,6 +48,7 @@ export function ApplyLeaveDialog({ leave, open: openProp, onOpenChange }) {
     setStart(leave?.startYMD || '');
     setEnd(leave?.endYMD || '');
     setHalfDay(!!leave?.halfDay);
+    setHalfDayPart(leave?.halfDayPart || 'FIRST');
     setReason(leave?.reason || '');
   }, [open, leave]);
 
@@ -76,7 +78,8 @@ export function ApplyLeaveDialog({ leave, open: openProp, onOpenChange }) {
 
   const mut = useMutation({
     mutationFn: () => {
-      const body = { type, startYMD: start, endYMD: end, halfDay: halfDay && sameDay, reason };
+      const isHalf = halfDay && sameDay;
+      const body = { type, startYMD: start, endYMD: end, halfDay: isHalf, halfDayPart: isHalf ? halfDayPart : null, reason };
       return isEdit ? api.patch(`/leaves/${leave.id}`, body) : api.post('/leaves', body);
     },
     onSuccess: () => {
@@ -172,9 +175,33 @@ export function ApplyLeaveDialog({ leave, open: openProp, onOpenChange }) {
         </div>
 
         {sameDay ? (
-          <div className="flex items-center gap-3">
-            <Switch id="lv-half" checked={halfDay} onCheckedChange={setHalfDay} />
-            <Label htmlFor="lv-half">Half day</Label>
+          <div className="space-y-2.5">
+            <div className="flex items-center gap-3">
+              <Switch id="lv-half" checked={halfDay} onCheckedChange={setHalfDay} />
+              <Label htmlFor="lv-half">Half day</Label>
+            </div>
+            {halfDay ? (
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { v: 'FIRST', label: 'Morning', hint: 'first half' },
+                  { v: 'SECOND', label: 'Afternoon', hint: 'second half' },
+                ].map((o) => (
+                  <button
+                    key={o.v}
+                    type="button"
+                    onClick={() => setHalfDayPart(o.v)}
+                    className={
+                      halfDayPart === o.v
+                        ? 'rounded-lg bg-primary/12 px-3 py-2 text-sm font-medium text-primary ring-1 ring-primary/25'
+                        : 'rounded-lg bg-muted/40 px-3 py-2 text-sm font-medium text-muted-foreground ring-1 ring-border transition-colors hover:text-foreground'
+                    }
+                  >
+                    {o.label}
+                    <span className="ml-1 text-xs opacity-60">· {o.hint}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </div>
         ) : null}
 

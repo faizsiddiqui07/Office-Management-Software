@@ -21,6 +21,9 @@ export const metadata = {
   },
   description: 'Internal office management — attendance, leaves, announcements, and more.',
   applicationName: 'Architectus Bureau',
+  // Stop Chrome/Google offering to "translate this page" — the UI is already English
+  // and the auto-translate bar kept popping up on open and garbling the labels.
+  other: { google: 'notranslate' },
   manifest: '/manifest.webmanifest',
   appleWebApp: { capable: true, title: 'Architectus Bureau', statusBarStyle: 'default' },
   // Browser tab uses the custom favicon.ico only (no SVG, which browsers would
@@ -46,7 +49,7 @@ export const viewport = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" translate="no" suppressHydrationWarning>
       <body className={`${inter.variable} min-h-dvh font-sans antialiased`}>
         {/* Apply the per-device "Lite UI" choice before anything paints, so a slow
             phone never flashes the heavy glass version first. */}
