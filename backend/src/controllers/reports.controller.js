@@ -52,7 +52,11 @@ function periodFilename(prefix, type, period) {
  */
 function sectionAccess(user) {
   const all = can(user, 'leadershipDashboard') && can(user, 'viewEveryone');
-  return { attendance: all, leaves: all, roster: all, expenses: all };
+  // Expenses in the company report follow the SAME gate as the Expenses module — the
+  // dedicated viewExpenses permission. Without this, someone given the leadership
+  // dashboard but deliberately NOT expense access could still pull the whole company
+  // expense register out of the report.
+  return { attendance: all, leaves: all, roster: all, expenses: all && can(user, 'viewExpenses') };
 }
 
 export function canCompanyReports(user) {

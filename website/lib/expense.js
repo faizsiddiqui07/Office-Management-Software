@@ -75,6 +75,15 @@ export function todayYMD() {
 }
 
 /**
+ * Today in COMPANY time (IST), regardless of the device's own timezone. Reports resolve
+ * their period from the date the client sends, so a phone set to a zone behind IST was
+ * capping the picker to the wrong day for the first few hours of the Indian day.
+ */
+export function companyTodayYMD() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+}
+
+/**
  * Period presets. The client only ever sends a NAME and an anchor date — the server
  * turns those into real dates, so the fiscal year here can't drift from the one the
  * reports use, and a phone on the wrong timezone can't shift it either.

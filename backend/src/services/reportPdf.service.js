@@ -155,7 +155,9 @@ function header(data, logo, accent, titleLabel) {
 }
 
 function metaLine(data) {
-  const generatedOn = new Date(data.generatedAt).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
+  // Pin to company time — Lambda runs in UTC, so without a timeZone this one line came
+  // out ~5.5h behind every other (IST) date in the document.
+  const generatedOn = new Date(data.generatedAt).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' });
   const wd = data.workingDays ?? data.attendance?.totals?.workingDays;
   const wdText = wd != null ? ` (${wd} working days so far)` : '';
   return E(
@@ -260,7 +262,11 @@ function expensesSection(d, accent) {
     sectionTitle('Expense summary', accent),
     E(Text, { style: styles.muted }, `Total: ${money(d.expenses.total)}  ·  ${d.expenses.count} entries`),
     catRows.length ? table(catHeaders, catRows) : E(Text, { style: styles.empty }, 'No expenses in this period.'),
-    listRows.length ? E(Text, { style: styles.subTitle }, 'Expense list') : null,
+    listRows.length
+      ? E(Text, { style: styles.subTitle }, d.expenses.listCapped ? `Expense list (latest ${d.expenses.listCount} of ${d.expenses.count})` : 'Expense list')
+      : null,
+    // Make it explicit that the itemised rows don't sum to the total above when capped.
+    d.expenses.listCapped ? E(Text, { style: styles.empty }, `Only the ${d.expenses.listCount} most recent entries are listed; the total and category figures above cover all ${d.expenses.count}.`) : null,
     listRows.length ? table(listHeaders, listRows) : null,
   );
 }

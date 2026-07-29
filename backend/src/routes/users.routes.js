@@ -11,6 +11,7 @@ import {
   updateUser,
   deleteUser,
   userDossier,
+  userReport,
   getLeaveBalance,
   updateLeaveBalance,
 } from '../controllers/users.controller.js';
@@ -34,6 +35,7 @@ async function freshRoles(req, _res, next) {
 usersRouter.use(requireAuth);
 usersRouter.get('/', requirePermission('viewEveryone'), listUsers);
 usersRouter.get('/:id/dossier', requirePermission('viewEveryone'), userDossier);
+usersRouter.get('/:id/report.pdf', requirePermission('viewEveryone'), userReport); // full per-user PDF for a range
 usersRouter.post('/', requirePermission('createUsers'), freshRoles, validate(createUserSchema), createUser);
 // Reachable by any of the three user-editing capabilities; updateUser() enforces
 // which fields each one may actually change (profile → manageUsers, role →

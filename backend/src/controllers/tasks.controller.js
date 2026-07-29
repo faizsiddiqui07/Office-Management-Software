@@ -2,6 +2,7 @@ import { ok, fail } from '../lib/apiResponse.js';
 import { createTaskSchema, updateTaskSchema, statusSchema, listTasksQuerySchema, reviewTaskSchema, forwardTaskSchema, seenBulkSchema } from '../validators/tasks.validators.js';
 import * as svc from '../services/task.service.js';
 import { Setting } from '../models/Setting.js';
+import { ymdInTz } from '../lib/time.js';
 import { audit } from '../models/AuditLog.js';
 import { renderTasksPdf } from '../services/taskPdf.service.js';
 import { loadCompanyLogo } from '../lib/brand.js';
@@ -145,7 +146,9 @@ export async function exportPdf(req, res, next) {
       company: { name: s.companyName, brandColor: s.brandColor },
       scopeLabel: (SCOPE_LABELS[scope] || 'All tasks') + (view === 'assigned' ? ' · assigned by me' : ''),
       for: view === 'assigned' ? null : req.user.name,
-      generatedAt: new Date().toISOString().slice(0, 10),
+      // Company-time date — the raw ISO slice printed the UTC day, a day early in the
+      // early-morning IST window, while the table's Created/Completed columns show IST.
+      generatedAt: ymdInTz(new Date()),
       tasks,
     };
     const logo = loadCompanyLogo(s.logoDark || s.logoUrl || s.logoLight);

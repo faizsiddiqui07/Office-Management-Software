@@ -14,13 +14,14 @@ import { Label } from '@/components/ui/label';
 import { ReportPreview } from '@/components/reports/report-preview';
 import { PeriodPicker } from '@/components/reports/period-picker';
 import { REPORT_SECTIONS } from '@/lib/report';
-import { todayYMD } from '@/lib/expense';
+import { companyTodayYMD } from '@/lib/expense';
+import { formatYMD } from '@/lib/leave';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
 export function CompanyReportBuilder() {
   const [type, setType] = React.useState('daily'); // opens on today's report
-  const [date, setDate] = React.useState(todayYMD());
+  const [date, setDate] = React.useState(companyTodayYMD());
   const [range, setRange] = React.useState({ from: '', to: '' }); // for type === 'custom'
   const [sections, setSections] = React.useState(null); // null until allowed sections load
   const [downloading, setDownloading] = React.useState(false);
@@ -105,7 +106,7 @@ export function CompanyReportBuilder() {
         </div>
         {data ? (
           <p className="mt-4 text-sm text-muted-foreground">
-            Period: {data.period.label} ({data.period.from} → {data.period.to})
+            Period: {data.period.label} ({formatYMD(data.period.from)} → {formatYMD(data.period.to)})
           </p>
         ) : null}
       </GlassPanel>

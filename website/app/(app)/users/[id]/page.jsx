@@ -93,6 +93,7 @@ export default function UserDossierPage() {
   const [from, setFrom] = React.useState(monthStart());
   const [to, setTo] = React.useState(daysAgo(0));
   const [ledgerBusy, setLedgerBusy] = React.useState(false);
+  const [reportBusy, setReportBusy] = React.useState(false);
 
   const applyPreset = (p) => {
     setPreset(p.key);
@@ -123,6 +124,20 @@ export default function UserDossierPage() {
   const leaves = data?.leaves;
   const tasks = data?.tasks;
   const activity = data?.activity ?? [];
+
+  const downloadReport = async () => {
+    if (!from || !to || to < from) return toast.error('Pick a valid date range first');
+    setReportBusy(true);
+    try {
+      const base = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+      await downloadFile(`${base}/api/users/${id}/report.pdf?from=${from}&to=${to}`, `report-${u?.name || id}-${from}_to_${to}.pdf`);
+      toast.success('Report downloaded');
+    } catch (e) {
+      toast.error(e?.message || 'Could not download the report');
+    } finally {
+      setReportBusy(false);
+    }
+  };
 
   const downloadLedger = async () => {
     setLedgerBusy(true);
@@ -223,6 +238,10 @@ export default function UserDossierPage() {
             <DatePicker id="d-to" value={to} min={from || APP_LIVE_YMD} onChange={(v) => { setTo(v); setPreset('custom'); }} className="h-9 w-full bg-background/50 sm:w-40" />
           </div>
         </div>
+        {/* Downloads the full attendance + leave report for exactly the range above. */}
+        <Button variant="outline" size="sm" className="w-full sm:w-auto" onClick={downloadReport} disabled={reportBusy}>
+          <Download className="size-4" /> {reportBusy ? 'Generating…' : 'Download report (PDF)'}
+        </Button>
       </GlassPanel>
 
       {from && to && to < from ? (

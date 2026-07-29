@@ -8,7 +8,7 @@ import { companyDayFromYMD, ymdInTz, formatCompany } from '../lib/time.js';
 import { roleLabel } from '../lib/roles.js';
 import { splitByJoining, periodStartFor, joinedYMD } from '../lib/joining.js';
 import { can } from '../lib/permissions.js';
-import { workWindowClosed } from '../lib/schedule.js';
+import { workWindowClosed, userWeekendDays } from '../lib/schedule.js';
 import { leaveYearOf } from '../lib/leaveYear.js';
 import { holidayYMDSet } from './holiday.service.js';
 import { expenseSummary } from './expense.service.js';
@@ -151,11 +151,13 @@ export async function buildReport(type, dateYMD, range) {
   const workingDays = from > elapsedTo ? 0 : countWorkingDays(from, elapsedTo, settings.weekendDays, holidaySet);
 
   const [activeUsers, records, takenLeaves, pendingLeaves, balances, expList, expSummary] = await Promise.all([
-    User.find({ isActive: true }).select('name employeeId role department dateOfJoining').sort({ name: 1 }),
-    // Count attendance only over the window the report actually claims to cover
-    // (from → asOf). Today's check-in must not land in the numerator while today is
-    // still missing from the working-day denominator — that produced "18 of 17".
-    Attendance.find({ date: { $gte: fromDay, $lte: companyDayFromYMD(elapsedTo < from ? from : elapsedTo) } }),
+    // schedule + employmentType so a part-timer's own working days are used, not the
+    // office weekend (which marked their off-days absent).
+    User.find({ isActive: true }).select('name employeeId role department dateOfJoining schedule employmentType').sort({ name: 1 }),
+    // Fetch up to today so a person whose OWN office day has already ended is counted
+    // for it; each employee's numerator is then capped to their own last-finished day
+    // below, so an unfinished today never lands in the numerator ("18 of 17").
+    Attendance.find({ date: { $gte: fromDay, $lte: companyDayFromYMD(todayYMD) } }),
     LeaveRequest.find({ status: 'APPROVED', startYMD: { $lte: to }, endYMD: { $gte: from } }).populate('user', 'name employeeId'),
     LeaveRequest.find({ status: 'PENDING' }).populate('user', 'name employeeId').sort({ appliedAt: -1 }),
     LeaveBalance.find({ year: leaveYearOf(from) }).populate('user', 'name employeeId'),
@@ -174,33 +176,45 @@ export async function buildReport(type, dateYMD, range) {
   const leaveUserIds = new Set(activeUsers.filter((u) => can({ role: u.role }, 'applyLeave')).map((u) => String(u._id)));
 
   // ── Attendance per employee ───────────────────────────────
-  const byUser = new Map();
+  // Keep each person's rows (with their company-day) so the counts can be capped to
+  // that person's OWN last-finished working day — a custom-hours employee's day may end
+  // before or after the office's, and the company and self reports have to agree.
+  const recsByUser = new Map();
   for (const r of records) {
     const uid = String(r.user);
-    if (!byUser.has(uid)) byUser.set(uid, { present: 0, late: 0, onLeave: 0, workedMinutes: 0, overtimeMinutes: 0 });
-    const m = byUser.get(uid);
-    if (r.status === 'PRESENT') m.present += 1;
-    else if (r.status === 'LATE') {
-      if (r.excused) m.present += 1; // excused (on-duty) late counts as present, not late
-      else m.late += 1;
-    } else if (r.status === 'ON_LEAVE') {
-      // A half-day leave takes half a day off the balance, so it counts as half a day
-      // away here too — otherwise the report says one day and the balance says 0.5.
-      m.onLeave += r.halfDayLeave ? 0.5 : 1;
-    }
-    m.workedMinutes += r.workedMinutes || 0;
-    m.overtimeMinutes += r.overtimeMinutes || 0;
+    if (!recsByUser.has(uid)) recsByUser.set(uid, []);
+    recsByUser.get(uid).push(r);
   }
+  const yesterdayYMD = ymdInTz(new Date(now.getTime() - 86400000));
 
   const perEmployee = attendanceUsers.map((u) => {
-    const m = byUser.get(String(u._id)) || { present: 0, late: 0, onLeave: 0, workedMinutes: 0, overtimeMinutes: 0 };
-    const showed = m.present + m.late;
-    // Their own working-day count: the whole period, or from their joining day if they
-    // arrived part-way through.
+    const uWeekend = userWeekendDays(u, settings); // their own off-days (part-time safe)
+    // Their own last FINISHED working day: today if their office hours are over, else
+    // yesterday — then capped to the report window.
+    const uFinished = workWindowClosed(u, todayYMD, settings, now) ? todayYMD : yesterdayYMD;
+    const uElapsedTo = to < uFinished ? to : uFinished;
     const startedOn = periodStartFor(u, from);
-    const ownWorkingDays =
-      startedOn > elapsedTo ? 0 : countWorkingDays(startedOn, elapsedTo, settings.weekendDays, holidaySet);
-    const absent = Math.max(0, ownWorkingDays - showed - m.onLeave);
+    const ownWorkingDays = startedOn > uElapsedTo ? 0 : countWorkingDays(startedOn, uElapsedTo, uWeekend, holidaySet);
+
+    let present = 0;
+    let late = 0;
+    let onLeave = 0;
+    let workedMinutes = 0;
+    let overtimeMinutes = 0;
+    for (const r of recsByUser.get(String(u._id)) || []) {
+      if (ymdInTz(new Date(r.date)) > uElapsedTo) continue; // don't count an unfinished today
+      workedMinutes += r.workedMinutes || 0;
+      overtimeMinutes += r.overtimeMinutes || 0;
+      if (r.status === 'PRESENT') present += 1;
+      else if (r.status === 'LATE') {
+        if (r.excused) present += 1; // excused (on-duty) counts as present
+        else late += 1;
+      } else if (r.status === 'ON_LEAVE') {
+        onLeave += r.halfDayLeave ? 0.5 : 1; // half-day leave = half a day away
+      }
+    }
+    const showed = present + late;
+    const absent = Math.max(0, ownWorkingDays - showed - onLeave);
     return {
       name: u.name,
       joinedYMD: joinedYMD(u),
@@ -212,11 +226,11 @@ export async function buildReport(type, dateYMD, range) {
       // A late employee still showed up — Present counts every attended day;
       // `late` is the "of which came late" indicator, not a separate bucket.
       present: showed,
-      late: m.late,
+      late,
       absent,
-      onLeave: m.onLeave,
-      workedHours: round1(m.workedMinutes / 60),
-      overtimeMinutes: m.overtimeMinutes,
+      onLeave,
+      workedHours: round1(workedMinutes / 60),
+      overtimeMinutes,
     };
   });
 
@@ -271,6 +285,11 @@ export async function buildReport(type, dateYMD, range) {
   const expenses = {
     total: expSummary.total,
     count: expSummary.count,
+    // The itemised list is capped (the totals/category figures above are NOT), so the
+    // PDF can say "showing latest N of M" rather than a list that silently doesn't add
+    // up to the stated total.
+    listCount: expList.length,
+    listCapped: expSummary.count > expList.length,
     currency: settings.currency,
     byCategory: expSummary.byCategory,
     list: expList.map((e) => ({
@@ -343,7 +362,9 @@ export async function buildSelfReport({ user, type, dateYMD, range }) {
   const fromDay = companyDayFromYMD(from);
   const toDay = companyDayFromYMD(to);
   const holidaySet = await holidayYMDSet(from, to);
-  const weekendDays = settings.weekendDays || [0];
+  // THIS person's own off-days — the office weekend, or a part-timer's own schedule.
+  // Using the office weekend for everyone marked a part-timer absent on their own days.
+  const weekendDays = userWeekendDays(user, settings);
   const joinedOn = joinedYMD(user); // days before this never count for or against them
 
   const [records, takenLeaves, pendingLeaves, balanceDoc, due] = await Promise.all([
@@ -425,7 +446,10 @@ export async function buildSelfReport({ user, type, dateYMD, range }) {
     holidays: tally('HOLIDAY'),
     weekends: tally('WEEKEND'),
     workingDays,
-    workedHours: round1(days.reduce((s, d) => s + d.workedHours, 0)),
+    // Sum the raw minutes then round ONCE — matching the company report. Rounding each
+    // day to 0.1h first and then adding drifted the total by up to ~1h over a month, so
+    // the same person's worked hours differed between their own report and the company's.
+    workedHours: round1(records.reduce((s, r) => s + (r.workedMinutes || 0), 0) / 60),
     overtimeMinutes: days.reduce((s, d) => s + d.overtimeMinutes, 0),
     attendanceRate: workingDays > 0 ? Math.round((present / workingDays) * 100) : 0,
   };

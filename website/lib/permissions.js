@@ -104,7 +104,7 @@ export const NAV_ITEMS = [
   { label: 'Expenses', href: '/expenses', icon: Wallet, permission: 'viewExpenses' },
   { label: 'Visitors', href: '/visitors', icon: DoorOpen, permission: 'manageVisitors' },
   { label: 'Users', href: '/users', icon: UserPlus, permission: 'createUsers' },
-  { label: 'Reports', href: '/reports', icon: FileText },
+  { label: 'Reports', href: '/reports', icon: FileText, permission: 'downloadReports' },
   { label: 'Activity', href: '/activity', icon: Activity, permission: 'viewAudit' },
   { label: 'Roles', href: '/roles', icon: ShieldCheck, permission: 'manageRoles' },
   { label: 'Settings', href: '/settings', icon: Settings, permission: 'manageSettings' },

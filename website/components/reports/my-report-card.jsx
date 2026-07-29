@@ -11,10 +11,11 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/lib/auth';
 import { can } from '@/lib/permissions';
+import { QueryError } from '@/components/glass/query-error';
 import { PeriodPicker } from './period-picker';
 import { OngoingNotice } from './report-preview';
 import { SELF_REPORT_SECTIONS } from '@/lib/report';
-import { todayYMD, formatMoney } from '@/lib/expense';
+import { companyTodayYMD, formatMoney } from '@/lib/expense';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
@@ -36,7 +37,7 @@ export function MyReportCard() {
   const availableSections = SELF_REPORT_SECTIONS.filter((s) => selfTracks || s.value === 'dues');
 
   const [type, setType] = React.useState('daily'); // opens on today's report
-  const [date, setDate] = React.useState(todayYMD());
+  const [date, setDate] = React.useState(companyTodayYMD());
   const [range, setRange] = React.useState({ from: '', to: '' }); // for type === 'custom'
   const [sections, setSections] = React.useState(availableSections.map((s) => s.value));
   const [downloading, setDownloading] = React.useState(false);
@@ -44,7 +45,7 @@ export function MyReportCard() {
   // What identifies the chosen period on the API: a from/to range for "custom", else a single date.
   const periodQuery = type === 'custom' ? `type=custom&from=${range.from}&to=${range.to}` : `type=${type}&date=${date}`;
 
-  const { data } = useQuery({
+  const { data, isError, error, refetch } = useQuery({
     queryKey: ['self-report', type, date, range.from, range.to],
     queryFn: () => api.get(`/reports/me/preview?${periodQuery}`),
   });
@@ -115,7 +116,9 @@ export function MyReportCard() {
         </div>
       </div>
 
-      {data ? (
+      {isError && !data ? (
+        <QueryError title="Couldn’t load your report preview" error={error} onRetry={refetch} />
+      ) : data ? (
         <>
           <OngoingNotice data={data} workingDays={data.attendance?.totals?.workingDays} />
           <p className="text-sm text-muted-foreground">

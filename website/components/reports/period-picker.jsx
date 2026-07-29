@@ -13,7 +13,7 @@ import { DateRange } from '@/components/ui/date-range';
 import { DatePicker } from '@/components/ui/date-picker';
 import { APP_LIVE_YMD, APP_LIVE_MONTH } from '@/lib/app-live';
 import { REPORT_TYPES } from '@/lib/report';
-import { todayYMD } from '@/lib/expense';
+import { companyTodayYMD } from '@/lib/expense';
 
 /** Current fiscal year (Apr–Mar) start year for a YMD. */
 function fiscalYearOf(ymd) {
@@ -28,7 +28,7 @@ function fiscalYearOf(ymd) {
  * the API expects); this converts month/year picks into that date.
  */
 export function PeriodPicker({ type, onTypeChange, date, onDateChange, range, onRangeChange, idPrefix = 'pp' }) {
-  const today = todayYMD();
+  const today = companyTodayYMD();
   const currentFY = fiscalYearOf(today);
   // Never offer a fiscal year from before the system went live — those reports would
   // be a page of "absent" for data that simply doesn't exist.
