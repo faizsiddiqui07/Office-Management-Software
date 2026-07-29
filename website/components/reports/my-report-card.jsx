@@ -129,7 +129,9 @@ export function MyReportCard() {
               <Mini
                 label="Attendance"
                 value={`${t.attendanceRate}%`}
-                hint={`${t.present} present${t.late ? ` (${t.late} late)` : ''} · ${t.absent} absent`}
+                // WFH days are inside the rate, so name them — otherwise present + absent
+                // doesn't add up to the percentage shown above it.
+                hint={`${t.present} present${t.late ? ` (${t.late} late)` : ''}${t.wfh ? ` · ${t.wfh} from home` : ''} · ${t.absent} absent`}
               />
             ) : null}
             {selfTracks && bal ? (

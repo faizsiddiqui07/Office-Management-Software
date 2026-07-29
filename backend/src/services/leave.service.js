@@ -5,7 +5,7 @@ import { Attendance } from '../models/Attendance.js';
 import { User } from '../models/User.js';
 import { Setting } from '../models/Setting.js';
 import { joinedYMD, hadAccessOn } from '../lib/joining.js';
-import { createAnnouncement } from './announcement.service.js';
+import { createAnnouncement, retireAnnouncement } from './announcement.service.js';
 import { notify } from '../models/Notification.js';
 import { can, canAssignRole } from '../lib/permissions.js';
 import { rolesWithPermission, roleLabel, isOwnerRole, ownerRoleKeys } from '../lib/roles.js';
@@ -197,8 +197,9 @@ export async function buildLeaveLedger(user, year = currentLeaveYear()) {
     bal = { totalQuota: quota, used: 0, remaining: quota };
   }
 
-  // Every request that overlaps the year, newest first.
-  const reqs = await LeaveRequest.find({ user: user._id, startYMD: { $lte: to }, endYMD: { $gte: from } }).sort({ startYMD: -1 });
+  // Every LEAVE request that overlaps the year, newest first. WFH is excluded: it costs
+  // no balance, so it belongs to neither the ledger's rows nor its by-type totals.
+  const reqs = await LeaveRequest.find({ user: user._id, type: { $ne: WFH }, startYMD: { $lte: to }, endYMD: { $gte: from } }).sort({ startYMD: -1 });
   const byType = {};
   for (const l of reqs) {
     if (l.status === 'APPROVED') byType[l.type] = (byType[l.type] || 0) + (l.workingDays || 0);
@@ -549,13 +550,19 @@ async function markAttendanceOnLeave(userId, fromYMD, toYMD, halfDay, weekendDay
       // eslint-disable-next-line no-await-in-loop
       await Attendance.create([{ user: userId, date: day, status: 'ON_LEAVE', halfDayLeave: !!halfDay }], { session });
       marked += 1;
-    } else if (existing.status === 'WFH') {
-      // A work-from-home day is a WORKED day. Treat it exactly like a real check-in:
-      // leave it alone and don't charge for it. Overwriting it would swallow the WFH
-      // day (its request stays approved and its allowance stays spent) AND bill the
-      // balance for a day the person actually worked.
+    } else if (existing.status === 'WFH' && !existing.wfhOfficeWide) {
+      // A work-from-home day they REQUESTED is a worked day. Treat it exactly like a
+      // real check-in: leave it alone and don't charge for it. Overwriting it would
+      // swallow the day (its request stays approved and its allowance stays spent) AND
+      // bill the balance for a day the person worked. Approving a leave over one is
+      // blocked earlier anyway — an approved WFH request shows up as a clash.
       continue;
     } else if (!existing.checkInAt) {
+      // Anything else with no real check-in — including a day the OFFICE declared
+      // work-from-home — yields to an approved leave. A blanket declaration is not a
+      // statement that this particular person worked; being ill that day outranks it,
+      // and without this their leave could never be approved at all.
+      existing.wfhOfficeWide = false;
       existing.status = 'ON_LEAVE';
       // Half a day off is half a day off on the sheet too. The balance is charged 0.5
       // for it, so recording the date as a whole day away had the two records
@@ -684,7 +691,13 @@ export async function decideLeave(approver, id, decision, note, { replaceAttenda
       endYMD: { $gte: fresh.startYMD },
     }).session(session);
     if (clash) {
-      throw httpError(409, 'LEAVE_EXISTS', 'Another approved leave already covers those dates. Cancel it first if this should replace it.');
+      throw httpError(
+        409,
+        'LEAVE_EXISTS',
+        isWFH(clash.type)
+          ? 'They already have an approved work-from-home day on those dates. Cancel it first if this should replace it.'
+          : 'Another approved leave already covers those dates. Cancel it first if this should replace it.',
+      );
     }
     const year = leaveYearOf(fresh.startYMD);
 
@@ -704,6 +717,13 @@ export async function decideLeave(approver, id, decision, note, { replaceAttenda
     // transaction, because only approved days count towards it — without this, several
     // pending requests could each be approved and quietly pass the cap.
     if (wfh) {
+      // The date is re-checked HERE, not just when it was asked for. A request left
+      // sitting in the queue until after its day has passed must not be approvable:
+      // marking a past day as worked-from-home would silently rewrite an absence that
+      // has already been counted everywhere.
+      if (fresh.startYMD < ymdInTz(new Date())) {
+        throw httpError(400, 'WFH_PAST_DATE', `That day (${fresh.startYMD}) has already passed — reject this request instead.`);
+      }
       const { used, cap } = await wfhUsage(fresh.user, year);
       if (used >= cap) {
         throw httpError(400, 'WFH_CAP_REACHED', `They have already used all ${cap} work-from-home days for this year — reject this one.`);
@@ -807,10 +827,14 @@ export async function declareOfficeWideWFH(actor, dateYMD, note = '') {
   const users = (await User.find({ isActive: true }).select('name role employmentType schedule dateOfJoining'))
     .filter((u) => can({ role: u.role }, 'markAttendance'));
 
-  // Everyone with an active leave covering the day keeps their leave.
+  // Only an APPROVED leave keeps somebody out. A merely PENDING one must NOT: it may be
+  // rejected later, and then the day would have no attendance row at all — the person
+  // would read as absent and collect an absence penalty for a day the office declared.
+  // If the leave is approved afterwards it simply overwrites this row (a real leave
+  // outranks a blanket declaration — see markAttendanceOnLeave).
   const onLeaveIds = new Set(
     (await LeaveRequest.find({
-      status: { $in: ['PENDING', 'APPROVED'] },
+      status: 'APPROVED',
       type: { $ne: WFH },
       startYMD: { $lte: dateYMD },
       endYMD: { $gte: dateYMD },
@@ -824,9 +848,18 @@ export async function declareOfficeWideWFH(actor, dateYMD, note = '') {
     if (userWeekendDays(u, settings).includes(dayOfWeekInTz(day))) { skipped.push({ name: u.name, why: 'not a working day for them' }); continue; }
     if (onLeaveIds.has(String(u._id))) { skipped.push({ name: u.name, why: 'on leave' }); continue; }
     // eslint-disable-next-line no-await-in-loop
-    const existing = await Attendance.findOne({ user: u._id, date: day }).select('status checkInAt');
+    const existing = await Attendance.findOne({ user: u._id, date: day }).select('status checkInAt wfhOfficeWide');
     if (existing?.checkInAt) { skipped.push({ name: u.name, why: 'already checked in' }); continue; }
     if (existing && existing.status === 'ON_LEAVE') { skipped.push({ name: u.name, why: 'on leave' }); continue; }
+    // A day they REQUESTED for themselves stays theirs. Stamping the office flag on it
+    // would hand their day to the declaration — and undoing the declaration would then
+    // delete a day they had spent one of their two on.
+    if (existing && existing.status === 'WFH' && !existing.wfhOfficeWide) {
+      skipped.push({ name: u.name, why: 'already on their own work-from-home day' });
+      continue;
+    }
+    // Already declared (a second press) — nothing to write, and it still counts as covered.
+    if (existing && existing.status === 'WFH' && existing.wfhOfficeWide) { applied.push(u.name); continue; }
     // Upsert, never insert: {user, date} is unique, and a second press must not throw.
     // eslint-disable-next-line no-await-in-loop
     await Attendance.updateOne(
@@ -837,26 +870,32 @@ export async function declareOfficeWideWFH(actor, dateYMD, note = '') {
     applied.push(u.name);
   }
 
-  // Announce once. The flag is claimed before posting so a double press (or a Lambda
-  // retry) can re-run the harmless upserts above without announcing twice.
-  const s = await Setting.getSingleton();
-  const alreadyAnnounced = (s.wfhDaysAnnounced || []).includes(dateYMD);
-  if (!alreadyAnnounced) {
-    await Setting.updateOne({ key: 'global' }, { $addToSet: { wfhDaysAnnounced: dateYMD } });
-    Setting.invalidateCache();
+  // Announce exactly once. The day is CLAIMED atomically first — the update only matches
+  // while no entry for it exists — so a double press (or a Lambda retry) re-runs the
+  // harmless upserts above without posting a second announcement.
+  const claim = await Setting.updateOne(
+    { key: 'global', 'wfhDays.ymd': { $ne: dateYMD } },
+    { $push: { wfhDays: { ymd: dateYMD, announcementId: null } } },
+  );
+  const announced = !!(claim.modifiedCount || claim.nModified);
+  Setting.invalidateCache();
+  if (announced) {
     try {
-      await createAnnouncement(actor, {
+      const ann = await createAnnouncement(actor, {
         title: `Work from home — ${dateYMD}`,
         body: note?.trim() || `The office is working from home on ${dateYMD}. No check-in is needed; your attendance is already marked.`,
         priority: 'IMPORTANT',
         audienceRoles: [],
       });
+      // Remembered so undoing the day can retire the announcement with it.
+      await Setting.updateOne({ key: 'global', 'wfhDays.ymd': dateYMD }, { $set: { 'wfhDays.$.announcementId': ann.id } });
+      Setting.invalidateCache();
     } catch (e) {
       console.error('WFH announcement failed', e?.message);
     }
   }
 
-  return { dateYMD, appliedCount: applied.length, applied, skipped, announced: !alreadyAnnounced };
+  return { dateYMD, appliedCount: applied.length, applied, skipped, announced };
 }
 
 /** Undo an office-wide WFH day — removes only the rows the declaration created. */
@@ -866,14 +905,22 @@ export async function undoOfficeWideWFH(actor, dateYMD) {
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateYMD || '')) throw httpError(400, 'BAD_DATE', 'Pick a valid date');
   const day = companyDayFromYMD(dateYMD);
-  // Only the office's own rows, and only ones nobody has since checked in on.
+  // Only the office's own rows, and only ones nobody has since checked in on. A day
+  // somebody REQUESTED for themselves is never touched — it isn't flagged office-wide.
   const res = await Attendance.deleteMany({
     date: day,
     status: 'WFH',
     wfhOfficeWide: true,
     $or: [{ checkInAt: null }, { checkInAt: { $exists: false } }],
   });
-  await Setting.updateOne({ key: 'global' }, { $pull: { wfhDaysAnnounced: dateYMD } });
+  // Take the announcement down with it, or the office is left told about a day that no
+  // longer exists.
+  const s = await Setting.getSingleton();
+  const entry = (s.wfhDays || []).find((d) => d.ymd === dateYMD);
+  if (entry?.announcementId) {
+    try { await retireAnnouncement(String(entry.announcementId)); } catch (e) { console.error('retiring WFH announcement failed', e?.message); }
+  }
+  await Setting.updateOne({ key: 'global' }, { $pull: { wfhDays: { ymd: dateYMD } } });
   Setting.invalidateCache();
   return { dateYMD, removed: res.deletedCount || 0 };
 }
@@ -881,7 +928,7 @@ export async function undoOfficeWideWFH(actor, dateYMD) {
 /** The office-wide WFH days already declared (so the UI can show/undo them). */
 export async function officeWideWFHDays() {
   const s = await Setting.getSingleton();
-  return [...(s.wfhDaysAnnounced || [])].sort();
+  return (s.wfhDays || []).map((d) => d.ymd).sort();
 }
 
 export async function cancelLeave(viewer, id) {
@@ -895,7 +942,11 @@ export async function cancelLeave(viewer, id) {
   const isApprover = can(viewer, 'approveLeave');
 
   if (request.status === 'PENDING') {
-    if (!isOwner && !isApprover) throw httpError(403, 'FORBIDDEN', 'You cannot cancel this request');
+    // WFH is decided by the owner tier alone, and "cancel" is a decision — a leave
+    // approver who may not approve one must not be able to kill it either. The person
+    // who raised it can always withdraw their own.
+    const mayCancel = isWFH(request.type) ? isOwner || isOwnerRole(viewer.role) : isOwner || isApprover;
+    if (!mayCancel) throw httpError(403, 'FORBIDDEN', 'You cannot cancel this request');
     request.status = 'CANCELLED';
     request.decidedBy = viewer._id;
     request.decidedAt = new Date();

@@ -107,9 +107,10 @@ export async function setAttendanceRecord(userId, dateYMD, checkIn, checkOut) {
   if (record && record.status === 'ON_LEAVE') {
     throw httpError(409, 'ON_LEAVE', 'This day is marked on leave — cancel the leave first to edit attendance');
   }
-  // Same rule for a work-from-home day: it is owned by the WFH request (or the office's
-  // declaration), so it is undone there, not by typing times over it here.
-  if (record && record.status === 'WFH') {
+  // A day the person REQUESTED for themselves is owned by that request, so it is undone
+  // there rather than typed over here. A day the OFFICE declared is different: somebody
+  // may have come in anyway, and this is the only way to record that they did.
+  if (record && record.status === 'WFH' && !record.wfhOfficeWide) {
     throw httpError(409, 'WFH_DAY', 'This day is marked work from home — cancel the work-from-home day first to edit attendance');
   }
 
@@ -122,6 +123,9 @@ export async function setAttendanceRecord(userId, dateYMD, checkIn, checkOut) {
   }
 
   if (!record) record = new Attendance({ user: userId, date: day });
+  // Real times are being recorded, so this is no longer the office's declared day —
+  // clearing the flag also stops "undo the WFH day" from deleting what was just typed in.
+  record.wfhOfficeWide = false;
 
   if (checkIn) {
     const inAt = companyDayInstantAt(day, checkIn);

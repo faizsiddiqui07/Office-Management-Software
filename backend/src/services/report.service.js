@@ -423,7 +423,12 @@ export async function buildSelfReport({ user, type, dateYMD, range }) {
     let workedHours = 0;
     let workedMinutes = 0;
     let overtimeMinutes = 0;
-    if (rec) {
+    // A work-from-home day approved in ADVANCE already has its row, but it hasn't been
+    // worked yet — counting it would put a future day in the attendance rate and make
+    // this report disagree with the company one, which only counts finished days.
+    if (rec && rec.status === 'WFH' && !workWindowClosed(user, ymd, settings, now)) {
+      status = 'UPCOMING';
+    } else if (rec) {
       status = rec.status === 'LATE' && rec.excused ? 'ON_DUTY' : rec.status;
       if (rec.checkInAt) checkIn = formatCompany(rec.checkInAt, 'HH:mm');
       if (rec.checkOutAt) checkOut = formatCompany(rec.checkOutAt, 'HH:mm');
