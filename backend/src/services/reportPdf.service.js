@@ -199,7 +199,7 @@ function attendanceSection(d, accent) {
     stat('Came late', t.late, 's4'),
     stat('Absent', t.absent, 's5'),
     stat('On leave', t.onLeave, 's6'),
-    stat('Worked hours', `${t.workedHours}h`, 's7'),
+    stat('Worked hours', dur(t.workedMinutes), 's7'),
     stat('Overtime', dur(t.overtimeMinutes), 's8'),
   ];
   const headers = [
@@ -212,7 +212,7 @@ function attendanceSection(d, accent) {
     { label: 'Worked', w: '12%', align: 'right' },
     { label: 'OT', w: '10%', align: 'right' },
   ];
-  const rows = d.attendance.perEmployee.map((e) => [e.name, e.employeeId, e.present, e.late, e.absent, e.onLeave, `${e.workedHours}h`, dur(e.overtimeMinutes)]);
+  const rows = d.attendance.perEmployee.map((e) => [e.name, e.employeeId, e.present, e.late, e.absent, e.onLeave, dur(e.workedMinutes), dur(e.overtimeMinutes)]);
   return E(View, { key: 'attendance' }, sectionTitle('Attendance summary', accent), E(View, { style: styles.statRow }, ...stats), table(headers, rows));
 }
 
@@ -356,7 +356,7 @@ function selfAttendanceSection(d, accent) {
     stat('On-duty', t.onDuty ?? 0, 's4b'),
     stat('Absent', t.absent, 's5'),
     stat('On leave', t.onLeave, 's6'),
-    stat('Worked hours', `${t.workedHours}h`, 's7'),
+    stat('Worked hours', dur(t.workedMinutes), 's7'),
     stat('Overtime', dur(t.overtimeMinutes), 's8'),
   ];
   const headers = [
@@ -372,7 +372,7 @@ function selfAttendanceSection(d, accent) {
     { text: day.statusLabel, color: STATUS_COLOR[day.status] },
     day.checkIn || '—',
     day.checkOut || '—',
-    day.workedHours ? `${day.workedHours}h` : '—',
+    day.workedMinutes ? dur(day.workedMinutes) : '—',
     day.overtimeMinutes ? dur(day.overtimeMinutes) : '—',
   ]);
   return E(

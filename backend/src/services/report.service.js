@@ -232,6 +232,9 @@ export async function buildReport(type, dateYMD, range) {
       late,
       absent,
       onLeave,
+      // Raw minutes so the display can show "3h 48m" (like overtime); workedHours (the
+      // decimal) is kept for any older consumer.
+      workedMinutes,
       workedHours: round1(workedMinutes / 60),
       overtimeMinutes,
     };
@@ -243,13 +246,13 @@ export async function buildReport(type, dateYMD, range) {
       acc.late += e.late;
       acc.absent += e.absent;
       acc.onLeave += e.onLeave;
-      acc.workedHours += e.workedHours;
+      acc.workedMinutes += e.workedMinutes;
       acc.overtimeMinutes += e.overtimeMinutes;
       return acc;
     },
-    { present: 0, late: 0, absent: 0, onLeave: 0, workedHours: 0, overtimeMinutes: 0 },
+    { present: 0, late: 0, absent: 0, onLeave: 0, workedMinutes: 0, overtimeMinutes: 0 },
   );
-  totals.workedHours = round1(totals.workedHours);
+  totals.workedHours = round1(totals.workedMinutes / 60);
   // Sum each person's own working days rather than headcount × period, so a mid-period
   // joiner doesn't drag the company attendance rate down for days they weren't here.
   const denom = perEmployee.reduce((n, e) => n + (e.workingDays ?? workingDays), 0);
@@ -400,12 +403,14 @@ export async function buildSelfReport({ user, type, dateYMD, range }) {
     let checkIn = '';
     let checkOut = '';
     let workedHours = 0;
+    let workedMinutes = 0;
     let overtimeMinutes = 0;
     if (rec) {
       status = rec.status === 'LATE' && rec.excused ? 'ON_DUTY' : rec.status;
       if (rec.checkInAt) checkIn = formatCompany(rec.checkInAt, 'HH:mm');
       if (rec.checkOutAt) checkOut = formatCompany(rec.checkOutAt, 'HH:mm');
-      workedHours = round1((rec.workedMinutes || 0) / 60);
+      workedMinutes = rec.workedMinutes || 0;
+      workedHours = round1(workedMinutes / 60);
       overtimeMinutes = rec.overtimeMinutes || 0;
     } else if (holidaySet.has(ymd)) {
       status = 'HOLIDAY';
@@ -426,7 +431,7 @@ export async function buildSelfReport({ user, type, dateYMD, range }) {
     }
     const halfDayLeave = status === 'ON_LEAVE' && !!rec?.halfDayLeave;
     const statusLabel = halfDayLeave ? 'On leave (half day)' : STATUS_LABEL[status] || status;
-    days.push({ ymd, weekday, status, statusLabel, halfDayLeave, checkIn, checkOut, workedHours, overtimeMinutes });
+    days.push({ ymd, weekday, status, statusLabel, halfDayLeave, checkIn, checkOut, workedHours, workedMinutes, overtimeMinutes });
     cur = new Date(cur.getTime() + 86400000);
   }
 
@@ -453,9 +458,11 @@ export async function buildSelfReport({ user, type, dateYMD, range }) {
     holidays: tally('HOLIDAY'),
     weekends: tally('WEEKEND'),
     workingDays,
+    // Raw minutes (for the "3h 48m" display) plus the decimal for any older consumer.
     // Sum the raw minutes then round ONCE — matching the company report. Rounding each
     // day to 0.1h first and then adding drifted the total by up to ~1h over a month, so
     // the same person's worked hours differed between their own report and the company's.
+    workedMinutes: records.reduce((s, r) => s + (r.workedMinutes || 0), 0),
     workedHours: round1(records.reduce((s, r) => s + (r.workedMinutes || 0), 0) / 60),
     overtimeMinutes: days.reduce((s, d) => s + d.overtimeMinutes, 0),
     attendanceRate: workingDays > 0 ? Math.round((present / workingDays) * 100) : 0,

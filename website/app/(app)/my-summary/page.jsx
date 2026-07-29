@@ -187,7 +187,7 @@ export default function MyStandingPage() {
                   <Stat
                     icon={Clock}
                     label="Hours worked"
-                    value={att.workedHours}
+                    value={formatDuration(att.workedMinutes)}
                     hint={att.overtimeMinutes ? `${formatDuration(att.overtimeMinutes)} overtime` : 'No overtime'}
                   />
                 </>
