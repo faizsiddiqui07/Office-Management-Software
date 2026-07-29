@@ -321,8 +321,28 @@ function selfSubject(d) {
     { style: styles.subjectCard },
     E(View, { style: styles.subjectItem }, E(Text, { style: styles.subjectLabel }, 'Employee'), E(Text, { style: styles.subjectValue }, s.name)),
     E(View, { style: styles.subjectItem }, E(Text, { style: styles.subjectLabel }, 'Employee ID'), E(Text, { style: styles.subjectValue }, s.employeeId || '—')),
-    E(View, { style: styles.subjectItem }, E(Text, { style: styles.subjectLabel }, 'Role'), E(Text, { style: styles.subjectValue }, cap(s.role))),
+    E(View, { style: styles.subjectItem }, E(Text, { style: styles.subjectLabel }, 'Role'), E(Text, { style: styles.subjectValue }, s.roleLabel || cap(s.role))),
     E(View, { style: styles.subjectItem }, E(Text, { style: styles.subjectLabel }, 'Department'), E(Text, { style: styles.subjectValue }, s.department || '—')),
+  );
+}
+
+/** Task stats — totals only, no list. */
+function selfTasksSection(d, accent) {
+  const t = d.tasks || { total: 0, pending: 0, done: 0, onTime: 0, late: 0, overdue: 0 };
+  const stats = [
+    stat('Total tasks', t.total, 'tk1'),
+    stat('Pending', t.pending, 'tk2'),
+    stat('Done', t.done, 'tk3'),
+    stat('Done on time', t.onTime, 'tk4'),
+    stat('Done late', t.late, 'tk5'),
+    stat('Overdue', t.overdue, 'tk6'),
+  ];
+  return E(
+    View,
+    { key: 'tasks' },
+    sectionTitle('Tasks', accent),
+    E(View, { style: styles.statRow }, ...stats),
+    t.total === 0 ? E(Text, { style: styles.empty }, 'No tasks in this period.') : null,
   );
 }
 
@@ -422,10 +442,11 @@ function selfDuesSection(d, accent) {
 
 const SELF_SECTIONS = {
   attendance: selfAttendanceSection,
+  tasks: selfTasksSection,
   leaves: selfLeavesSection,
   dues: selfDuesSection,
 };
-const SELF_ORDER = ['attendance', 'leaves', 'dues'];
+const SELF_ORDER = ['attendance', 'tasks', 'leaves', 'dues'];
 
 function buildSelfDoc(data, sections, logo) {
   const accent = data.company.brandColor || DEFAULT_ACCENT;

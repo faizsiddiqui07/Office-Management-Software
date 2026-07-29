@@ -46,7 +46,8 @@ export async function userReport(req, res, next) {
     // at 0%, contradicting the dossier and the company report which both skip them.
     // Dues are deliberately excluded (that ledger is between the person and the admin).
     const tracks = can({ role: user.role }, 'markAttendance');
-    const sections = tracks ? ['attendance', 'leaves'] : ['leaves'];
+    // Attendance only for self-tracking roles; task stats + leaves for everyone.
+    const sections = tracks ? ['attendance', 'tasks', 'leaves'] : ['tasks', 'leaves'];
     const stream = await renderSelfReportToStream(data, sections, loadCompanyLogo(data.company.logoDark || data.company.logoUrl || data.company.logoLight));
     stream.on('error', (err) => next(err));
     stream.pipe(res);

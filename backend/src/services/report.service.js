@@ -2,6 +2,7 @@ import { Attendance } from '../models/Attendance.js';
 import { LeaveRequest } from '../models/LeaveRequest.js';
 import { LeaveBalance } from '../models/LeaveBalance.js';
 import { Expense } from '../models/Expense.js';
+import { Task } from '../models/Task.js';
 import { User } from '../models/User.js';
 import { Setting } from '../models/Setting.js';
 import { companyDayFromYMD, ymdInTz, formatCompany } from '../lib/time.js';
@@ -369,12 +370,16 @@ export async function buildSelfReport({ user, type, dateYMD, range }) {
   const weekendDays = userWeekendDays(user, settings);
   const joinedOn = joinedYMD(user); // days before this never count for or against them
 
-  const [records, takenLeaves, pendingLeaves, balanceDoc, due] = await Promise.all([
+  // Tasks OWNED by this person that were raised in the window — for the stats block.
+  const dFrom = new Date(`${from}T00:00:00.000Z`);
+  const dTo = new Date(`${to}T23:59:59.999Z`);
+  const [records, takenLeaves, pendingLeaves, balanceDoc, due, taskDocs] = await Promise.all([
     Attendance.find({ user: user._id, date: { $gte: fromDay, $lte: toDay } }),
     LeaveRequest.find({ user: user._id, status: 'APPROVED', startYMD: { $lte: to }, endYMD: { $gte: from } }).sort({ startYMD: -1 }),
     LeaveRequest.find({ user: user._id, status: 'PENDING' }).sort({ appliedAt: -1 }),
     LeaveBalance.findOne({ user: user._id, year: leaveYearOf(from) }),
     ledgerFor(user._id),
+    Task.find({ owner: user._id, createdAt: { $gte: dFrom, $lte: dTo } }).select('status dueYMD completedAt submittedAt requiresApproval'),
   ]);
 
   // ── Day-by-day attendance ─────────────────────────────────
@@ -483,6 +488,25 @@ export async function buildSelfReport({ user, type, dateYMD, range }) {
       })),
   };
 
+  // ── Task stats (totals only, no list) ─────────────────────
+  // On-time = finished on or before the due date, judged from the SUBMIT day for an
+  // approval task (a slow approval never turns on-time work late) — same rule the
+  // leaderboard and the bonus system use.
+  const taskStats = { total: taskDocs.length, pending: 0, done: 0, onTime: 0, late: 0, overdue: 0 };
+  for (const t of taskDocs) {
+    if (t.status === 'DONE') {
+      taskStats.done += 1;
+      if (t.dueYMD) {
+        const doneYMD = ymdInTz((t.requiresApproval && t.submittedAt) || t.completedAt || new Date());
+        if (doneYMD <= t.dueYMD) taskStats.onTime += 1;
+        else taskStats.late += 1;
+      }
+    } else {
+      taskStats.pending += 1;
+      if (t.dueYMD && t.dueYMD < todayYMD) taskStats.overdue += 1;
+    }
+  }
+
   return {
     scope: 'me',
     type,
@@ -496,6 +520,7 @@ export async function buildSelfReport({ user, type, dateYMD, range }) {
     company: { name: settings.companyName, currency: settings.currency, timezone: settings.timezone, brandColor: settings.brandColor, logoUrl: settings.logoUrl, logoLight: settings.logoLight, logoDark: settings.logoDark },
     subject: { name: user.name, employeeId: user.employeeId, role: user.role, roleLabel: roleLabel(user.role), department: user.department || '' },
     attendance: { days, totals: attTotals },
+    tasks: taskStats,
     leaves,
     dues,
   };
