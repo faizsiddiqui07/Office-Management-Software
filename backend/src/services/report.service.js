@@ -14,6 +14,7 @@ import { leaveYearOf } from '../lib/leaveYear.js';
 import { holidayYMDSet } from './holiday.service.js';
 import { expenseSummary } from './expense.service.js';
 import { ledgerFor } from './dues.service.js';
+import { wfhUsage } from './leave.service.js';
 import { APP_LIVE_YMD } from '../lib/appLive.js';
 
 const pad = (n) => String(n).padStart(2, '0');
@@ -161,8 +162,10 @@ export async function buildReport(type, dateYMD, range) {
     // below); a PAST period stops at `to` instead of dragging in a year of rows it
     // would only discard.
     Attendance.find({ date: { $gte: fromDay, $lte: companyDayFromYMD(to < todayYMD ? to : todayYMD) } }),
-    LeaveRequest.find({ status: 'APPROVED', startYMD: { $lte: to }, endYMD: { $gte: from } }).populate('user', 'name employeeId'),
-    LeaveRequest.find({ status: 'PENDING' }).populate('user', 'name employeeId').sort({ appliedAt: -1 }),
+    // WFH is excluded from every leave list and count: it rides on the same collection
+    // but it is not leave, and counting it would inflate "days taken" across the report.
+    LeaveRequest.find({ status: 'APPROVED', type: { $ne: 'WFH' }, startYMD: { $lte: to }, endYMD: { $gte: from } }).populate('user', 'name employeeId'),
+    LeaveRequest.find({ status: 'PENDING', type: { $ne: 'WFH' } }).populate('user', 'name employeeId').sort({ appliedAt: -1 }),
     LeaveBalance.find({ year: leaveYearOf(from) }).populate('user', 'name employeeId'),
     Expense.find({ dateYMD: { $gte: from, $lte: to } }).sort({ dateYMD: -1 }).limit(300).populate('addedBy', 'name'),
     expenseSummary({ from, to }),
@@ -202,6 +205,7 @@ export async function buildReport(type, dateYMD, range) {
     let present = 0;
     let late = 0;
     let onLeave = 0;
+    let wfh = 0;
     let workedMinutes = 0;
     let overtimeMinutes = 0;
     for (const r of recsByUser.get(String(u._id)) || []) {
@@ -214,10 +218,14 @@ export async function buildReport(type, dateYMD, range) {
         else late += 1;
       } else if (r.status === 'ON_LEAVE') {
         onLeave += r.halfDayLeave ? 0.5 : 1; // half-day leave = half a day away
+      } else if (r.status === 'WFH') {
+        wfh += 1; // worked, from home
       }
     }
     const showed = present + late;
-    const absent = Math.max(0, ownWorkingDays - showed - onLeave);
+    // WFH days were WORKED, so they are neither absent nor leave — subtract them or
+    // every work-from-home day silently reads as an absence.
+    const absent = Math.max(0, ownWorkingDays - showed - onLeave - wfh);
     return {
       name: u.name,
       joinedYMD: joinedYMD(u),
@@ -232,6 +240,7 @@ export async function buildReport(type, dateYMD, range) {
       late,
       absent,
       onLeave,
+      wfh,
       // Raw minutes so the display can show "3h 48m" (like overtime); workedHours (the
       // decimal) is kept for any older consumer.
       workedMinutes,
@@ -246,18 +255,20 @@ export async function buildReport(type, dateYMD, range) {
       acc.late += e.late;
       acc.absent += e.absent;
       acc.onLeave += e.onLeave;
+      acc.wfh += e.wfh;
       acc.workedMinutes += e.workedMinutes;
       acc.overtimeMinutes += e.overtimeMinutes;
       return acc;
     },
-    { present: 0, late: 0, absent: 0, onLeave: 0, workedMinutes: 0, overtimeMinutes: 0 },
+    { present: 0, late: 0, absent: 0, onLeave: 0, wfh: 0, workedMinutes: 0, overtimeMinutes: 0 },
   );
   totals.workedHours = round1(totals.workedMinutes / 60);
   // Sum each person's own working days rather than headcount × period, so a mid-period
   // joiner doesn't drag the company attendance rate down for days they weren't here.
   const denom = perEmployee.reduce((n, e) => n + (e.workingDays ?? workingDays), 0);
-  // `present` already includes late arrivals (they attended).
-  totals.attendanceRate = denom > 0 ? Math.round((totals.present / denom) * 100) : 0;
+  // `present` already includes late arrivals (they attended); WFH days were worked too,
+  // and they sit in the denominator, so they belong in the numerator as well.
+  totals.attendanceRate = denom > 0 ? Math.round(((totals.present + totals.wfh) / denom) * 100) : 0;
 
   // ── Leaves ────────────────────────────────────────────────
   const leaves = {
@@ -349,6 +360,7 @@ const STATUS_LABEL = {
   ON_DUTY: 'On-duty',
   ABSENT: 'Absent',
   ON_LEAVE: 'On leave',
+  WFH: 'Work from home',
   HOLIDAY: 'Holiday',
   WEEKEND: 'Weekend',
   BEFORE_JOINING: 'Not employed yet',
@@ -376,13 +388,19 @@ export async function buildSelfReport({ user, type, dateYMD, range }) {
   // Tasks OWNED by this person that were raised in the window — for the stats block.
   const dFrom = new Date(`${from}T00:00:00.000Z`);
   const dTo = new Date(`${to}T23:59:59.999Z`);
-  const [records, takenLeaves, pendingLeaves, balanceDoc, due, taskDocs] = await Promise.all([
+  const [records, takenLeaves, pendingLeaves, balanceDoc, due, taskDocs, wfhReqs, wfhAllowance] = await Promise.all([
     Attendance.find({ user: user._id, date: { $gte: fromDay, $lte: toDay } }),
-    LeaveRequest.find({ user: user._id, status: 'APPROVED', startYMD: { $lte: to }, endYMD: { $gte: from } }).sort({ startYMD: -1 }),
-    LeaveRequest.find({ user: user._id, status: 'PENDING' }).sort({ appliedAt: -1 }),
+    // Leave only — WFH is reported separately (no balance, and the day was worked).
+    LeaveRequest.find({ user: user._id, status: 'APPROVED', type: { $ne: 'WFH' }, startYMD: { $lte: to }, endYMD: { $gte: from } }).sort({ startYMD: -1 }),
+    LeaveRequest.find({ user: user._id, status: 'PENDING', type: { $ne: 'WFH' } }).sort({ appliedAt: -1 }),
     LeaveBalance.findOne({ user: user._id, year: leaveYearOf(from) }),
     ledgerFor(user._id),
     Task.find({ owner: user._id, createdAt: { $gte: dFrom, $lte: dTo } }).select('status dueYMD completedAt submittedAt requiresApproval'),
+    // Their own WFH requests touching this period, plus the fiscal-year allowance —
+    // which is a standing figure, so it is anchored to the leave year, never the
+    // (possibly one-day) report window.
+    LeaveRequest.find({ user: user._id, type: 'WFH', startYMD: { $lte: to }, endYMD: { $gte: from } }).sort({ startYMD: -1 }),
+    wfhUsage(user._id, leaveYearOf(from)),
   ]);
 
   // ── Day-by-day attendance ─────────────────────────────────
@@ -448,13 +466,17 @@ export async function buildSelfReport({ user, type, dateYMD, range }) {
   const halfLeaveDays = days.filter((d) => d.halfDayLeave).length;
   const absent = tally('ABSENT') + halfLeaveDays * 0.5;
   const onLeave = tally('ON_LEAVE') - halfLeaveDays * 0.5;
-  const workingDays = present + absent + onLeave;
+  // Worked, from home. Counted as a working day (or the denominator silently shrinks
+  // and the day vanishes from the report altogether) and as attended in the rate.
+  const wfh = tally('WFH');
+  const workingDays = present + absent + onLeave + wfh;
   const attTotals = {
     present,
     late,
     onDuty,
     absent,
     onLeave,
+    wfh,
     holidays: tally('HOLIDAY'),
     weekends: tally('WEEKEND'),
     workingDays,
@@ -465,7 +487,8 @@ export async function buildSelfReport({ user, type, dateYMD, range }) {
     workedMinutes: records.reduce((s, r) => s + (r.workedMinutes || 0), 0),
     workedHours: round1(records.reduce((s, r) => s + (r.workedMinutes || 0), 0) / 60),
     overtimeMinutes: days.reduce((s, d) => s + d.overtimeMinutes, 0),
-    attendanceRate: workingDays > 0 ? Math.round((present / workingDays) * 100) : 0,
+    // WFH days sit in workingDays and were worked, so they belong in the numerator too.
+    attendanceRate: workingDays > 0 ? Math.round(((present + wfh) / workingDays) * 100) : 0,
   };
 
   // ── Leaves ────────────────────────────────────────────────
@@ -529,6 +552,15 @@ export async function buildSelfReport({ user, type, dateYMD, range }) {
     attendance: { days, totals: attTotals },
     tasks: taskStats,
     leaves,
+    // Work from home: what happened in this period, plus where they stand for the year.
+    // `officeWide` days are counted from the ATTENDANCE rows (the office declares those
+    // without a request), which is also why they never touch the allowance.
+    wfh: {
+      ...wfhAllowance,
+      daysInPeriod: attTotals.wfh,
+      officeWideDays: records.filter((r) => r.status === 'WFH' && r.wfhOfficeWide).length,
+      requests: wfhReqs.map((l) => ({ startYMD: l.startYMD, status: l.status, reason: l.reason || '' })),
+    },
     dues,
   };
 }

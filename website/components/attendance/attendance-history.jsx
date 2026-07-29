@@ -54,14 +54,22 @@ export function AttendanceHistory() {
   const summary = React.useMemo(() => {
     const present = records.filter((r) => r.status === 'PRESENT' || r.status === 'LATE').length;
     const late = records.filter((r) => r.status === 'LATE' && !r.excused).length; // excused = on-duty, not late
+    // Worked from home — days that would otherwise appear in no stat at all.
+    const wfh = records.filter((r) => r.status === 'WFH').length;
     const overtime = records.reduce((s, r) => s + (r.overtimeMinutes || 0), 0);
-    return { present, late, overtime };
+    return { present, late, wfh, overtime };
   }, [records]);
 
   return (
     <div className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-3">
-        <StatCard label="Days present" value={summary.present} icon={CalendarDays} tone="success" />
+        <StatCard
+          label="Days present"
+          value={summary.present}
+          icon={CalendarDays}
+          tone="success"
+          hint={summary.wfh ? `+${summary.wfh} from home` : undefined}
+        />
         <StatCard label="Late arrivals" value={summary.late} icon={TriangleAlert} tone="warning" />
         <StatCard label="Total overtime" value={formatDuration(summary.overtime)} icon={Clock} tone="info" />
       </div>

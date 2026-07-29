@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { LEAVE_TYPE_LABELS, formatRange } from '@/lib/leave';
+import { requestTypeLabel, isWFHType, formatRange } from '@/lib/leave';
 import { LeaveDetailDialog } from './leave-detail-dialog';
 
 export function RequestsQueue() {
@@ -59,13 +59,17 @@ export function RequestsQueue() {
         cell: ({ row }) => (
           <div>
             <p className="font-medium">{row.original.user?.name}</p>
+            {/* For a WFH request the leave balance is the wrong number — it comes out of
+                the yearly work-from-home allowance, not the leave quota. */}
             <p className="text-xs text-muted-foreground">
-              Remaining: {row.original.requesterRemaining ?? '—'} / {row.original.requesterQuota ?? '—'}
+              {isWFHType(row.original.type)
+                ? `WFH left: ${row.original.requesterWfhRemaining ?? '—'} / ${row.original.requesterWfhCap ?? 2}`
+                : `Remaining: ${row.original.requesterRemaining ?? '—'} / ${row.original.requesterQuota ?? '—'}`}
             </p>
           </div>
         ),
       },
-      { id: 'type', header: 'Type', accessorFn: (r) => LEAVE_TYPE_LABELS[r.type] ?? r.type, cell: ({ row }) => LEAVE_TYPE_LABELS[row.original.type] ?? row.original.type },
+      { id: 'type', header: 'Type', accessorFn: (r) => requestTypeLabel(r.type), cell: ({ row }) => requestTypeLabel(row.original.type) },
       { id: 'range', header: 'Dates', accessorFn: (r) => r.startYMD, cell: ({ row }) => formatRange(row.original.startYMD, row.original.endYMD) },
       { id: 'days', header: 'Days', accessorFn: (r) => r.workingDays, cell: ({ row }) => <span className="tabular-nums">{row.original.workingDays}</span> },
       {

@@ -112,7 +112,11 @@ export function useAttendanceToday() {
   const lateThreshold = data?.workStartAt
     ? new Date(data.workStartAt).getTime() + (data.settings?.graceMinutes || 0) * 60000
     : null;
-  const wouldBeLate = !checkedIn && lateThreshold != null && now > lateThreshold;
+  // Working from home today: the day is already recorded, so there is nothing to clock
+  // and no lateness to explain. Every caller hides its check-in control on this.
+  const isWFH = data?.isWFH ?? record?.status === 'WFH';
+  const wfhOfficeWide = !!data?.wfhOfficeWide;
+  const wouldBeLate = !isWFH && !checkedIn && lateThreshold != null && now > lateThreshold;
 
   return {
     data,
@@ -121,6 +125,8 @@ export function useAttendanceToday() {
     record,
     checkedIn,
     checkedOut,
+    isWFH,
+    wfhOfficeWide,
     elapsedMin,
     overtimeMin,
     cooldownMin,

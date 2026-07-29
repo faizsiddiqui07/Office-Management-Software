@@ -177,10 +177,13 @@ export async function buildDashboard(user) {
   if (can(user, 'viewEveryone')) {
     out.team = {
       total: overview.summary.total,
-      present: overview.summary.present + overview.summary.late, // everyone who showed up
+      // Everyone who showed up — including those working from home, who are working.
+      // Without them an office-wide WFH day reads as nobody at work.
+      present: overview.summary.present + overview.summary.late + (overview.summary.wfh || 0),
       late: Math.max(0, overview.summary.late - (overview.summary.excused || 0)), // excused = on-duty, not late
       absent: overview.summary.absent,
       onLeave: overview.summary.onLeave,
+      wfh: overview.summary.wfh || 0,
       pendingApprovals: await LeaveRequest.countDocuments({ status: 'PENDING' }),
     };
     // team overtime this month
@@ -216,12 +219,16 @@ export async function buildDashboard(user) {
 
     out.analytics = {
       headcount,
-      attendanceRate: overview.summary.total ? Math.round(((overview.summary.present + overview.summary.late) / overview.summary.total) * 100) : 0,
+      // Working from home is working — counted in the rate, shown as its own slice.
+      attendanceRate: overview.summary.total
+        ? Math.round(((overview.summary.present + overview.summary.late + (overview.summary.wfh || 0)) / overview.summary.total) * 100)
+        : 0,
       breakdown: {
         present: overview.summary.present + (overview.summary.excused || 0), // on-duty counts as present
         late: Math.max(0, overview.summary.late - (overview.summary.excused || 0)),
         absent: overview.summary.absent,
         onLeave: overview.summary.onLeave,
+        wfh: overview.summary.wfh || 0,
       },
       // The same list the common leaderboard already computed — no second query.
       overtimeLeaders: out.leaderboards.overtime,

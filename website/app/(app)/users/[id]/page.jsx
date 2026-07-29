@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   Clock,
   Download,
+  Home,
   ListTodo,
   Plane,
   ShieldAlert,
@@ -266,10 +267,19 @@ export default function UserDossierPage() {
           ) : null}
 
           {/* Stat cards */}
-          <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3 xl:grid-cols-6">
-            <StatCard label="Present" value={att.presentDays} hint={`of ${att.workingDays} working days`} icon={CheckCircle2} tone="success" />
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4 xl:grid-cols-7">
+            {/* WFH days sit inside workingDays, so the hint names them — otherwise the
+                ratio reads short and looks like unexplained absences. */}
+            <StatCard
+              label="Present"
+              value={att.presentDays}
+              hint={att.wfhDays ? `of ${att.workingDays} · +${att.wfhDays} from home` : `of ${att.workingDays} working days`}
+              icon={CheckCircle2}
+              tone="success"
+            />
             <StatCard label="Late" value={att.lateDays} hint={att.excusedLateDays ? `${att.excusedLateDays} on-duty` : undefined} icon={TriangleAlert} tone="warning" />
             <StatCard label="Absent" value={att.tracksAttendance ? att.absentDays : '—'} icon={CalendarOff} tone="destructive" />
+            <StatCard label="From home" value={att.wfhDays ?? 0} icon={Home} tone="default" />
             <StatCard label="Overtime" value={att.totalOvertimeMinutes ? formatDuration(att.totalOvertimeMinutes) : '0m'} icon={Clock} tone="success" />
             <StatCard label="Leaves taken" value={leaves.approvedDays} hint={`${leaves.balance.remaining} left`} icon={Plane} />
             <StatCard label="Tasks done" value={`${tasks.done}/${tasks.total}`} hint={tasks.pending ? `${tasks.pending} pending` : undefined} icon={ListTodo} />

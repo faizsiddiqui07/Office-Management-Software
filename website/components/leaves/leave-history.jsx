@@ -12,12 +12,12 @@ import { TableSkeleton } from '@/components/glass/skeletons';
 import { QueryError } from '@/components/glass/query-error';
 import { ConfirmDialog } from '@/components/glass/confirm-dialog';
 import { Button } from '@/components/ui/button';
-import { LEAVE_TYPE_LABELS, formatRange } from '@/lib/leave';
+import { requestTypeLabel, formatRange } from '@/lib/leave';
 import { LeaveDetailDialog } from './leave-detail-dialog';
 import { ApplyLeaveDialog } from './apply-leave-dialog';
 
 const columns = [
-  { id: 'type', header: 'Type', accessorFn: (r) => r.type, cell: ({ row }) => LEAVE_TYPE_LABELS[row.original.type] ?? row.original.type },
+  { id: 'type', header: 'Type', accessorFn: (r) => r.type, cell: ({ row }) => requestTypeLabel(row.original.type) },
   { id: 'range', header: 'Dates', accessorFn: (r) => r.startYMD, cell: ({ row }) => formatRange(row.original.startYMD, row.original.endYMD) },
   { id: 'days', header: 'Days', accessorFn: (r) => r.workingDays, cell: ({ row }) => <span className="tabular-nums">{row.original.workingDays}</span> },
   {

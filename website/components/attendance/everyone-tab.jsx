@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Check, Clock, Download, Pencil, TriangleAlert, UserCheck, UserPlus, Users, UserX } from 'lucide-react';
+import { Check, Clock, Download, Home, Pencil, TriangleAlert, UserCheck, UserPlus, Users, UserX } from 'lucide-react';
 import { api, getAuthToken } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can, roleName } from '@/lib/permissions';
@@ -237,9 +237,11 @@ export function EveryoneTab() {
   const filteredRows = React.useMemo(() => {
     if (!statusFilter) return rows;
     return rows.filter((r) => {
-      if (statusFilter === 'present') return r.status === 'PRESENT' || r.status === 'LATE'; // everyone who showed up
+      // Everyone who is working today — including from home, who are working.
+      if (statusFilter === 'present') return ['PRESENT', 'LATE', 'WFH'].includes(r.status);
       if (statusFilter === 'late') return r.status === 'LATE' && !r.attendance?.excused; // excused = on-duty, not late
       if (statusFilter === 'absent') return r.status === 'ABSENT';
+      if (statusFilter === 'wfh') return r.status === 'WFH';
       return true;
     });
   }, [rows, statusFilter]);
@@ -259,7 +261,7 @@ export function EveryoneTab() {
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-4 grid-cols-2 sm:grid-cols-5">
+      <div className="grid gap-4 grid-cols-2 sm:grid-cols-6">
         <FilterStat onClick={() => setStatusFilter(null)}>
           <StatCard label="Total staff" value={summary?.total ?? '—'} icon={Users} className="h-full" />
         </FilterStat>
@@ -269,7 +271,17 @@ export function EveryoneTab() {
             value={(summary?.present ?? 0) + (summary?.late ?? 0)}
             icon={UserCheck}
             tone="success"
+            hint={summary?.wfh ? `+${summary.wfh} from home` : undefined}
             className={cn('h-full', statusFilter === 'present' && 'ring-2 ring-primary')}
+          />
+        </FilterStat>
+        <FilterStat onClick={() => toggleFilter('wfh')}>
+          <StatCard
+            label="From home"
+            value={summary?.wfh ?? 0}
+            icon={Home}
+            tone="default"
+            className={cn('h-full', statusFilter === 'wfh' && 'ring-2 ring-primary')}
           />
         </FilterStat>
         <FilterStat onClick={() => toggleFilter('late')}>
@@ -370,7 +382,7 @@ export function EveryoneTab() {
                 <Button variant="outline" onClick={() => setEditing(false)} disabled={saveEditMut.isPending}>
                   Cancel
                 </Button>
-                {sel?.status !== 'ON_LEAVE' ? (
+                {!['ON_LEAVE', 'WFH'].includes(sel?.status) ? (
                   <Button onClick={() => saveEditMut.mutate()} disabled={saveEditMut.isPending}>
                     {saveEditMut.isPending ? 'Saving…' : 'Save'}
                   </Button>
@@ -413,6 +425,10 @@ export function EveryoneTab() {
               sel.status === 'ON_LEAVE' ? (
                 <div className="rounded-xl bg-foreground/[0.04] p-3 text-sm text-muted-foreground ring-1 ring-border/50">
                   This day is on leave. To change it, cancel the leave from the <span className="font-medium text-foreground">Leaves</span> page first.
+                </div>
+              ) : sel.status === 'WFH' ? (
+                <div className="rounded-xl bg-foreground/[0.04] p-3 text-sm text-muted-foreground ring-1 ring-border/50">
+                  This day is <span className="font-medium text-foreground">work from home</span> — there are no office hours to record. To change it, cancel the work-from-home day from the <span className="font-medium text-foreground">Leaves</span> page first.
                 </div>
               ) : (
                 <div className="space-y-3 rounded-xl bg-primary/[0.05] p-3 ring-1 ring-primary/15">

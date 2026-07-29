@@ -45,5 +45,9 @@ export const STATUS_TONES = {
   REJECTED: 'destructive',
   ON_LEAVE: 'info',
   HOLIDAY: 'info',
+  // Worked, from home. Its own tone — it must not read as time off (ON_LEAVE/HOLIDAY
+  // are both 'info'), and without a key here it would fall back to a grey "nothing
+  // happened" badge.
+  WFH: 'primary',
   CANCELLED: 'neutral',
 };

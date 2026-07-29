@@ -51,6 +51,7 @@ function AttendanceSection({ data }) {
     { id: 'late', header: 'Came late', accessorFn: (r) => r.late, cell: ({ row }) => <span className="tabular-nums">{row.original.late}</span> },
     { id: 'absent', header: 'Absent', accessorFn: (r) => r.absent, cell: ({ row }) => <span className="tabular-nums">{row.original.absent}</span> },
     { id: 'onLeave', header: 'On leave', accessorFn: (r) => r.onLeave, cell: ({ row }) => <span className="tabular-nums">{row.original.onLeave}</span> },
+    { id: 'wfh', header: 'WFH', accessorFn: (r) => r.wfh, cell: ({ row }) => <span className="tabular-nums">{row.original.wfh ?? 0}</span> },
     { id: 'worked', header: 'Worked', accessorFn: (r) => r.workedMinutes, cell: ({ row }) => <span className="tabular-nums">{formatDuration(row.original.workedMinutes)}</span> },
     { id: 'ot', header: 'OT', accessorFn: (r) => r.overtimeMinutes, cell: ({ row }) => <span className="tabular-nums">{formatDuration(row.original.overtimeMinutes)}</span> },
   ];
@@ -59,7 +60,7 @@ function AttendanceSection({ data }) {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label="Attendance rate" value={`${t.attendanceRate}%`} icon={UserCheck} tone="success" hint={`${data.workingDays} working days`} />
         <StatCard label="Present" value={t.present} icon={CalendarDays} tone="default" hint={t.late ? `${t.late} came late` : 'nobody late'} />
-        <StatCard label="Absent / Leave" value={`${t.absent} / ${t.onLeave}`} icon={UserX} tone="warning" />
+        <StatCard label="Absent / Leave / WFH" value={`${t.absent} / ${t.onLeave} / ${t.wfh ?? 0}`} icon={UserX} tone="warning" />
         <StatCard label="Overtime" value={formatDuration(t.overtimeMinutes)} icon={Clock} tone="info" hint={`${formatDuration(t.workedMinutes)} worked`} />
       </div>
       <DataTable columns={columns} data={data.attendance.perEmployee} searchPlaceholder="Search employees…" pageSize={8} emptyMessage="No employees." />

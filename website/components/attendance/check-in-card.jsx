@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Clock, LogIn, LogOut, MapPin, ShieldCheck } from 'lucide-react';
+import { Clock, Home, LogIn, LogOut, MapPin, ShieldCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAttendanceToday, fmtCountdown } from './use-attendance-today';
 import { GlassCard } from '@/components/glass/glass-card';
@@ -37,6 +37,8 @@ export function CheckInCard() {
     record,
     checkedIn,
     checkedOut,
+    isWFH,
+    wfhOfficeWide,
     elapsedMin,
     overtimeMin,
     cooldownLeftMs,
@@ -109,7 +111,16 @@ export function CheckInCard() {
             </p>
           ) : null}
 
-          {!checkedIn ? (
+          {isWFH ? (
+            // Already recorded as worked — there is nothing to check in or out of.
+            <div className="rounded-2xl bg-primary/10 p-3 text-center text-sm font-medium text-primary ring-1 ring-primary/20">
+              <Home className="mr-1.5 inline size-4" />
+              {wfhOfficeWide ? 'The office is working from home today' : 'You’re working from home today'}
+              <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
+                Your attendance is already marked — no check-in needed.
+              </span>
+            </div>
+          ) : !checkedIn ? (
             <Button onClick={onCheckIn} disabled={checkInMut.isPending || isLoading} className="h-12 w-full text-base">
               <LogIn /> {checkInMut.isPending ? 'Checking in…' : 'Check in'}
             </Button>

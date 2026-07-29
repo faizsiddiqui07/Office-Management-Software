@@ -2,7 +2,7 @@
 
 import { AppDialog } from '@/components/glass/app-dialog';
 import { StatusBadge, STATUS_TONES } from '@/components/glass/status-badge';
-import { LEAVE_TYPE_LABELS, formatRange, formatYMD } from '@/lib/leave';
+import { requestTypeLabel, isWFHType, formatRange, formatYMD } from '@/lib/leave';
 
 function Row({ label, children }) {
   return (
@@ -25,7 +25,7 @@ export function LeaveDetailDialog({ leave, open, onOpenChange, footer, showAppli
     <AppDialog
       open={open}
       onOpenChange={onOpenChange}
-      title="Leave request"
+      title={isWFHType(leave?.type) ? 'Work-from-home request' : 'Leave request'}
       footer={footer}
     >
       {leave ? (
@@ -34,20 +34,31 @@ export function LeaveDetailDialog({ leave, open, onOpenChange, footer, showAppli
             <StatusBadge tone={STATUS_TONES[leave.status] ?? 'neutral'}>
               {STATUS_LABEL[leave.status] ?? leave.status}
             </StatusBadge>
-            <span className="text-sm font-medium">{LEAVE_TYPE_LABELS[leave.type] ?? leave.type} leave</span>
-            <span className="text-xs text-muted-foreground">
-              · {leave.workingDays} day{leave.workingDays === 1 ? '' : 's'}
-              {leave.halfDay ? ' (half day)' : ''}
+            <span className="text-sm font-medium">
+              {isWFHType(leave.type) ? 'Work from home' : `${requestTypeLabel(leave.type)} leave`}
             </span>
+            {isWFHType(leave.type) ? (
+              <span className="text-xs text-muted-foreground">· one day, no leave deducted</span>
+            ) : (
+              <span className="text-xs text-muted-foreground">
+                · {leave.workingDays} day{leave.workingDays === 1 ? '' : 's'}
+                {leave.halfDay ? ' (half day)' : ''}
+              </span>
+            )}
           </div>
 
           <div className="divide-y divide-border/50 rounded-xl bg-foreground/[0.03] px-3 ring-1 ring-border/50">
             {showApplicant && leave.user?.name ? <Row label="Applicant">{leave.user.name}</Row> : null}
-            <Row label="Dates">{formatRange(leave.startYMD, leave.endYMD)}</Row>
-            <Row label="Working days">{leave.workingDays}</Row>
+            <Row label={isWFHType(leave.type) ? 'Date' : 'Dates'}>{formatRange(leave.startYMD, leave.endYMD)}</Row>
+            {isWFHType(leave.type) ? null : <Row label="Working days">{leave.workingDays}</Row>}
             {leave.appliedAt ? <Row label="Applied on">{formatYMD(String(leave.appliedAt).slice(0, 10))}</Row> : null}
-            {leave.requesterRemaining != null ? (
+            {/* The leave balance is the wrong number to decide a WFH request on — it
+                comes out of the yearly WFH allowance, not the leave balance. */}
+            {!isWFHType(leave.type) && leave.requesterRemaining != null ? (
               <Row label="Their balance">{leave.requesterRemaining} of {leave.requesterQuota ?? '—'} left</Row>
+            ) : null}
+            {isWFHType(leave.type) && leave.requesterWfhRemaining != null ? (
+              <Row label="Their WFH days">{leave.requesterWfhRemaining} of {leave.requesterWfhCap ?? 2} left this year</Row>
             ) : null}
             <Row label="Reason">{leave.reason ? leave.reason : <span className="italic text-muted-foreground">No reason given</span>}</Row>
             {leave.status !== 'PENDING' && (leave.decidedBy?.name || leave.decisionNote) ? (

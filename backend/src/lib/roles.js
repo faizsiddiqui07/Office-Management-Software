@@ -117,6 +117,28 @@ export function getRoleRank(roleKey) {
   return ranks.has(roleKey) ? ranks.get(roleKey) : null;
 }
 
+/**
+ * Is this role in the OWNER tier — the highest-authority roles (lowest rank number)?
+ *
+ * Resolved by rank rather than a hardcoded key, so renaming the owner role (or having
+ * more than one at the same top rank) never silently drops the check. Used where a
+ * decision belongs to the owners alone, e.g. declaring an office-wide work-from-home
+ * day or approving someone's WFH request.
+ */
+export function isOwnerRole(roleKey) {
+  if (!ranks.size) return false;
+  const rank = ranks.get(roleKey);
+  if (rank == null) return false;
+  return rank === Math.min(...ranks.values());
+}
+
+/** Every role key in the owner tier — for addressing a notification to the owners. */
+export function ownerRoleKeys() {
+  if (!ranks.size) return [];
+  const min = Math.min(...ranks.values());
+  return [...ranks.entries()].filter(([, r]) => r === min).map(([k]) => k);
+}
+
 /** Human label for a role key (falls back to the key itself). */
 export function roleLabel(roleKey) {
   return labels.get(roleKey) || roleKey;

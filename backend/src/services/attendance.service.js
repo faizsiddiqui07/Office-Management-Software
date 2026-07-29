@@ -64,6 +64,11 @@ export async function checkIn(user, meta, coords, lateReason) {
   if (existing && existing.checkInAt) {
     throw httpError(409, 'ALREADY_CHECKED_IN', 'You have already checked in today');
   }
+  // A work-from-home day is already recorded as worked — there is nothing to clock, and
+  // checking in would overwrite the WFH marker with PRESENT and lose the day.
+  if (existing && existing.status === 'WFH') {
+    throw httpError(409, 'WFH_DAY', 'You’re working from home today — your attendance is already marked, no check-in needed.');
+  }
 
   const geoMeta = verifyGeofence(settings.gpsAttendance, coords);
   const sched = effectiveSchedule(user, settings); // part-time uses its own hours
@@ -101,6 +106,11 @@ export async function setAttendanceRecord(userId, dateYMD, checkIn, checkOut) {
 
   if (record && record.status === 'ON_LEAVE') {
     throw httpError(409, 'ON_LEAVE', 'This day is marked on leave — cancel the leave first to edit attendance');
+  }
+  // Same rule for a work-from-home day: it is owned by the WFH request (or the office's
+  // declaration), so it is undone there, not by typing times over it here.
+  if (record && record.status === 'WFH') {
+    throw httpError(409, 'WFH_DAY', 'This day is marked work from home — cancel the work-from-home day first to edit attendance');
   }
 
   // No times → clear the day (becomes absent).
@@ -220,6 +230,10 @@ export async function getTodayPayload(user) {
     record: record ? record.toJSON() : null,
     serverNow: now.toISOString(),
     isHoliday,
+    // Today is a work-from-home day — the card shows "no check-in needed" instead of the
+    // button. Sent explicitly so the client doesn't have to re-derive the rule.
+    isWFH: record?.status === 'WFH',
+    wfhOfficeWide: !!record?.wfhOfficeWide,
     employmentType: user.employmentType || 'FULL_TIME',
     workStartAt: companyDayInstantAt(day, sched.workStart).toISOString(),
     workEndAt: companyDayInstantAt(day, sched.workEnd).toISOString(),
@@ -312,7 +326,7 @@ export async function attendanceMatrix(monthKey) {
   const rows = users.map((u) => {
     const offDays = userWeekendDays(u, settings); // this employee's non-working weekdays
     const startedOn = periodStartFor(u, from); // their first day here, if mid-month
-    const t = { present: 0, late: 0, absent: 0, onLeave: 0, workedMinutes: 0, overtimeMinutes: 0 };
+    const t = { present: 0, late: 0, absent: 0, onLeave: 0, wfh: 0, workedMinutes: 0, overtimeMinutes: 0 };
     const cells = days.map((ymd) => {
       // Before they joined there is nothing to report — not present, not absent.
       // A dash keeps the row aligned with the others without inventing an absence.
@@ -333,6 +347,12 @@ export async function attendanceMatrix(monthKey) {
         // Half-day leave = half a day away, matching the 0.5 taken off the balance.
         t.onLeave += rec.halfDayLeave ? 0.5 : 1;
         return 'OL';
+      }
+      // Worked, from home. Its own cell code so payroll can see it, but counted as a day
+      // worked — without this it falls through to the absent branch below.
+      if (rec?.status === 'WFH') {
+        t.wfh += 1;
+        return 'W';
       }
       if (isOff) return 'H';
       // Future days, and today before the person's office day is over, aren't
@@ -398,6 +418,9 @@ export async function attendanceOverview(ymd) {
     absent: rows.filter((r) => r.status === 'ABSENT').length,
     awaited: rows.filter((r) => r.status === 'AWAITED').length,
     onLeave: rows.filter((r) => r.status === 'ON_LEAVE').length,
+    // Working, from home. Kept as its own figure rather than folded into `present` so
+    // the roster can show it distinctly; every "who is working today" total adds it.
+    wfh: rows.filter((r) => r.status === 'WFH').length,
   };
 
   return { date: ymdInTz(day), isWeekend, isHoliday, rows, summary, joinedLater };

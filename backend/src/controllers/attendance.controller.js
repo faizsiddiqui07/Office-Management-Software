@@ -168,6 +168,9 @@ export async function matrixCsv(req, res, next) {
       'Late',
       'Absent',
       'On leave',
+      // Appended AFTER the existing totals, never inserted between them — these sheets
+      // are read outside the app and anything keyed on column position would shift.
+      'WFH',
       'Worked (h)',
       'Overtime (h)',
     ];
@@ -179,12 +182,13 @@ export async function matrixCsv(req, res, next) {
       r.totals.late,
       r.totals.absent,
       r.totals.onLeave,
+      r.totals.wfh ?? 0,
       (r.totals.workedMinutes / 60).toFixed(1),
       (r.totals.overtimeMinutes / 60).toFixed(1),
     ]);
     // Legend row at the bottom so the sheet is self-explanatory.
     body.push([]);
-    body.push(['Legend:', 'P present · L late · A absent · OL on leave · H weekend/holiday · – not employed yet']);
+    body.push(['Legend:', 'P present · L late · A absent · OL on leave · W work from home · H weekend/holiday · – not employed yet']);
     // This file gets read away from the app, so it has to carry its own caveats:
     // who was left out, and who only counts from part-way through the month.
     const midMonth = rows.filter((r) => r.startedOn && r.startedOn > `${month}-01`);

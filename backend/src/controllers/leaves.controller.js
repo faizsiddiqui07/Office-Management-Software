@@ -42,6 +42,38 @@ export async function leaveLedger(req, res, next) {
   }
 }
 
+/** CEO & President: declare one day work-from-home for the whole office. */
+export async function declareWfhDay(req, res, next) {
+  try {
+    const { dateYMD, note } = req.body || {};
+    const result = await svc.declareOfficeWideWFH(req.user, dateYMD, note);
+    await audit({ actor: req.user._id, action: 'wfh.declare', entityType: 'Attendance', entityId: result.dateYMD, meta: { applied: result.appliedCount, skipped: result.skipped.length } });
+    return res.json(ok(result));
+  } catch (err) {
+    return handleErr(res, err, next);
+  }
+}
+
+/** CEO & President: undo an office-wide WFH day (removes only the rows it created). */
+export async function undoWfhDay(req, res, next) {
+  try {
+    const result = await svc.undoOfficeWideWFH(req.user, req.query.dateYMD || req.body?.dateYMD);
+    await audit({ actor: req.user._id, action: 'wfh.undo', entityType: 'Attendance', entityId: result.dateYMD, meta: { removed: result.removed } });
+    return res.json(ok(result));
+  } catch (err) {
+    return handleErr(res, err, next);
+  }
+}
+
+/** The office-wide WFH days declared so far. */
+export async function wfhDays(_req, res, next) {
+  try {
+    return res.json(ok({ days: await svc.officeWideWFHDays() }));
+  } catch (err) {
+    return next(err);
+  }
+}
+
 export async function balance(req, res, next) {
   try {
     const targetId =

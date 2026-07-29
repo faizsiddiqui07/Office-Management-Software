@@ -26,7 +26,7 @@ import { can, roleName } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
 import { formatMoney, categoryLabel } from '@/lib/expense';
 import { formatDuration } from '@/lib/time';
-import { LEAVE_TYPE_LABELS } from '@/lib/leave';
+import { requestTypeLabel } from '@/lib/leave';
 import { Button } from '@/components/ui/button';
 import { QuickAttendanceAction } from '@/components/attendance/quick-attendance-action';
 import { PageHeader } from '@/components/glass/page-header';
@@ -326,7 +326,7 @@ export default function DashboardPage() {
                         <p className="text-xs text-muted-foreground">{fmtDate(p.startYMD)} → {fmtDate(p.endYMD)} · {p.days}d</p>
                       </div>
                       <StatusBadge tone={STATUS_TONES[p.type] ?? 'neutral'} dot={false} className="shrink-0">
-                        {LEAVE_TYPE_LABELS[p.type] ?? p.type}
+                        {requestTypeLabel(p.type)}
                       </StatusBadge>
                     </li>
                   ))}
@@ -416,7 +416,7 @@ export default function DashboardPage() {
                 myPendingLeaves.map((l) => (
                   <div key={l.id} className="flex items-center justify-between gap-3 p-3">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{LEAVE_TYPE_LABELS[l.type] ?? l.type}</p>
+                      <p className="truncate text-sm font-medium">{requestTypeLabel(l.type)}</p>
                       <p className="text-xs text-muted-foreground">{fmtDate(l.startYMD)} → {fmtDate(l.endYMD)} · {l.workingDays}d</p>
                     </div>
                     <StatusBadge tone={STATUS_TONES[l.status] ?? 'warning'} className="shrink-0">Pending</StatusBadge>

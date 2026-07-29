@@ -36,6 +36,9 @@ export async function mySnapshot(user, { type = 'monthly', dateYMD, range } = {}
   const shows = {
     attendance: can(user, 'markAttendance'),
     leave: can(user, 'applyLeave'),
+    // Work from home goes with self-tracked attendance — leadership neither checks in
+    // nor requests WFH days.
+    wfh: can(user, 'markAttendance'),
     tasks: true,
     dues: true,
     points: !!settings.bonus?.enabled,
@@ -106,6 +109,9 @@ export async function mySnapshot(user, { type = 'monthly', dateYMD, range } = {}
     // ── Where you are right now, whatever period is selected ──
     standing: {
       leave: report.leaves?.balance ?? null,
+      // The yearly work-from-home allowance is a standing figure (Apr–Mar), not a
+      // period one — "how many WFH days are left on Tuesday" isn't a thing.
+      wfh: report.wfh ? { used: report.wfh.used, cap: report.wfh.cap, remaining: report.wfh.remaining } : null,
       duesPending: report.dues?.pending ?? 0,
       duesAdvance: report.dues?.advance ?? 0,
       tasksOpen: openNow,

@@ -3,7 +3,9 @@ import { z } from 'zod';
 const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD');
 
 export const applyLeaveSchema = z.object({
-  type: z.enum(['CASUAL', 'SICK', 'PAID', 'UNPAID']),
+  // WFH rides the same request pipeline but is not leave — the service enforces its own
+  // shape (one day, never half, never back-dated) and its yearly allowance.
+  type: z.enum(['CASUAL', 'SICK', 'PAID', 'UNPAID', 'WFH']),
   startYMD: ymd,
   endYMD: ymd,
   halfDay: z.boolean().optional().default(false),

@@ -14,7 +14,7 @@ import { StatusBadge } from '@/components/glass/status-badge';
 import { Button } from '@/components/ui/button';
 import { DateRange } from '@/components/ui/date-range';
 import { ApprovalCard, waitingFor } from '@/components/approvals/approval-card';
-import { LEAVE_TYPE_LABELS, formatRange, formatYMD } from '@/lib/leave';
+import { requestTypeLabel, isWFHType, formatRange, formatYMD } from '@/lib/leave';
 import { APP_LIVE_YMD } from '@/lib/app-live';
 
 /**
@@ -216,9 +216,16 @@ export default function ApprovalsPage() {
                 <ApprovalCard
                   key={l.id}
                   title={l.user?.name || 'Someone'}
-                  subtitle={`${LEAVE_TYPE_LABELS[l.type] ?? l.type} · ${formatRange(l.startYMD, l.endYMD)}`}
+                  subtitle={`${requestTypeLabel(l.type)} · ${formatRange(l.startYMD, l.endYMD)}`}
                   waiting={waitingFor(l.appliedAt)}
-                  meta={[`${l.workingDays} working day${l.workingDays === 1 ? '' : 's'}${l.halfDay ? ' (half)' : ''}`, l.user?.employeeId]}
+                  meta={[
+                    // A WFH day deducts nothing, so "N working days" would be a lie —
+                    // what matters to the decision is their yearly WFH allowance.
+                    isWFHType(l.type)
+                      ? `Work from home · no leave deducted${l.requesterWfhRemaining != null ? ` · ${l.requesterWfhRemaining} of ${l.requesterWfhCap ?? 2} left` : ''}`
+                      : `${l.workingDays} working day${l.workingDays === 1 ? '' : 's'}${l.halfDay ? ' (half)' : ''}`,
+                    l.user?.employeeId,
+                  ]}
                   busy={busy}
                   onApprove={() => decideLeave.mutate({ id: l.id, decision: 'APPROVE', note: '' })}
                   onReject={(reason) => decideLeave.mutate({ id: l.id, decision: 'REJECT', note: reason })}
@@ -320,7 +327,7 @@ function HistoryList({ history, kind }) {
     if (kind === 'leaves') {
       return (history.leaves ?? []).map((l) => ({
         id: l.id, when: l.decidedAt, who: l.user?.name,
-        what: `${LEAVE_TYPE_LABELS[l.type] ?? l.type} · ${formatRange(l.startYMD, l.endYMD)}`,
+        what: `${requestTypeLabel(l.type)} · ${formatRange(l.startYMD, l.endYMD)}`,
         by: l.decidedBy?.name, status: l.status, verb: l.status, note: l.decisionNote,
       }));
     }

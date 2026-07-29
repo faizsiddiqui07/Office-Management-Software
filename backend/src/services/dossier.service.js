@@ -46,10 +46,13 @@ export async function getUserDossier(userId, { from, to }) {
   let lateDays = 0;
   let excusedLateDays = 0;
   let onLeaveDays = 0;
+  let wfhDays = 0;
   let totalWorkedMinutes = 0;
   let totalOvertimeMinutes = 0;
   const presentSet = new Set();
   const leaveSet = new Set();
+  // Days worked from home — accounted for, so they never fall into the absent count.
+  const wfhSet = new Set();
 
   const attendanceRecords = records.map((r) => {
     const ymd = ymdInTz(r.date);
@@ -66,6 +69,10 @@ export async function getUserDossier(userId, { from, to }) {
     if (r.status === 'ON_LEAVE') {
       onLeaveDays += 1;
       leaveSet.add(ymd);
+    }
+    if (r.status === 'WFH') {
+      wfhDays += 1;
+      wfhSet.add(ymd);
     }
     return {
       id: r.id,
@@ -100,7 +107,7 @@ export async function getUserDossier(userId, { from, to }) {
   }
   let absentDays = 0;
   for (const ymd of workingDates) {
-    if (!presentSet.has(ymd) && !leaveSet.has(ymd)) absentDays += 1;
+    if (!presentSet.has(ymd) && !leaveSet.has(ymd) && !wfhSet.has(ymd)) absentDays += 1;
   }
 
   // A full day-by-day sheet for the elapsed part of the window. The table used to show
@@ -123,6 +130,7 @@ export async function getUserDossier(userId, { from, to }) {
           id: rec.id, dateYMD: ymd, checkInAt: rec.checkInAt, checkOutAt: rec.checkOutAt,
           workedMinutes: rec.workedMinutes || 0, overtimeMinutes: rec.overtimeMinutes || 0,
           status: rec.status, excused: !!rec.excused, lateReason: rec.lateReason || null, halfDayLeave: !!rec.halfDayLeave,
+          wfhOfficeWide: !!rec.wfhOfficeWide,
         });
       } else {
         const dow = cur.getUTCDay();
@@ -154,6 +162,7 @@ export async function getUserDossier(userId, { from, to }) {
     excusedLateDays,
     absentDays,
     onLeaveDays,
+    wfhDays,
     workingDays: workingDates.length,
     totalWorkedMinutes,
     totalOvertimeMinutes,
@@ -164,8 +173,11 @@ export async function getUserDossier(userId, { from, to }) {
   // ---------------- Leaves ----------------
   // Overlap semantics: a leave that merely TOUCHES the window counts (e.g. one
   // starting before `from` but ending inside it) — not just leaves that start inside.
+  // Leave only. WFH lives on the same collection but is a worked day, so counting it
+  // here would show up as leave taken, in byType, and in the days total.
   const leaveReqs = await LeaveRequest.find({
     user: user._id,
+    type: { $ne: 'WFH' },
     startYMD: { $lte: to },
     endYMD: { $gte: from },
   }).sort({ startYMD: -1 });

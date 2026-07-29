@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { CalendarX, Clock } from 'lucide-react';
+import { CalendarX, Clock, Home } from 'lucide-react';
 import { api } from '@/lib/api';
 import { GlassCard } from '@/components/glass/glass-card';
 import { StatCard } from '@/components/glass/stat-card';
@@ -18,6 +18,7 @@ export function BalanceCards() {
   const used = bal?.used ?? 0;
   const remaining = bal?.remaining ?? total;
   const overtime = bal?.overtimeMinutes ?? 0;
+  const wfh = bal?.wfh;
 
   const r = 52;
   const circ = 2 * Math.PI * r;
@@ -25,7 +26,7 @@ export function BalanceCards() {
   const offset = circ * (1 - frac);
 
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
       <GlassCard className="flex items-center gap-5 p-5 sm:col-span-2">
         <svg width="120" height="120" viewBox="0 0 120 120" className="-rotate-90 shrink-0">
           <circle cx="60" cy="60" r={r} fill="none" strokeWidth="10" className="stroke-border" />
@@ -53,6 +54,16 @@ export function BalanceCards() {
 
       <StatCard label="Used" value={used} icon={CalendarX} tone="warning" hint={`of ${total} quota`} />
       <StatCard label="Overtime accrued" value={formatDuration(overtime)} icon={Clock} tone="info" />
+      {/* Separate from the leave quota on purpose — WFH deducts nothing from it. */}
+      {wfh ? (
+        <StatCard
+          label="Work from home"
+          value={`${wfh.remaining} left`}
+          icon={Home}
+          tone={wfh.remaining === 0 ? 'warning' : 'default'}
+          hint={`${wfh.used} of ${wfh.cap} used this year`}
+        />
+      ) : null}
     </div>
   );
 }

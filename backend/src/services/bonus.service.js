@@ -284,7 +284,10 @@ export async function onCheckIn(user, dateYMD, isLate) {
   let cur = dateYMD;
   while (cur >= monthStart) {
     const dow = dayOfWeekInTz(companyDayFromYMD(cur));
-    if (!(offDays.includes(dow) || holidays.has(cur))) {
+    // A work-from-home day is skipped like a holiday: nobody checked in, so there is no
+    // punctuality to reward — but it mustn't break a streak either, and it must not be
+    // countable, or the streak could be farmed from home.
+    if (!(offDays.includes(dow) || holidays.has(cur) || byDay.get(cur) === 'WFH')) {
       if (byDay.get(cur) === 'PRESENT') streak += 1;
       else break;
     }
@@ -435,7 +438,9 @@ async function runMonthRollup(b) {
     const startedOn = periodStartFor(u, from);
     // no-leave award
     if (noLeavePts) {
-      const took = await LeaveRequest.countDocuments({ user: u._id, status: 'APPROVED', startYMD: { $lte: monthEnd }, endYMD: { $gte: from } });
+      // WFH is not leave — a work-from-home day must not cost somebody their
+      // "no leave taken all month" award.
+      const took = await LeaveRequest.countDocuments({ user: u._id, status: 'APPROVED', type: { $ne: 'WFH' }, startYMD: { $lte: monthEnd }, endYMD: { $gte: from } });
       if (took === 0) {
         await awardOnce(`auto_noleave:${u._id}:${target}`, { user: u._id, month: target, points: Math.abs(noLeavePts), reason: 'No leave taken all month', source: 'auto_noleave' });
       }

@@ -7,6 +7,17 @@ export const LEAVE_TYPES = [
 
 export const LEAVE_TYPE_LABELS = Object.fromEntries(LEAVE_TYPES.map((t) => [t.value, t.label]));
 
+/**
+ * Work from home. Deliberately NOT in LEAVE_TYPES — that array fills the leave dialog's
+ * type dropdown, and WFH must never be pickable as a kind of leave: it deducts nothing,
+ * it is a worked day, and it has its own one-day / yearly-allowance rules.
+ */
+export const WFH_TYPE = 'WFH';
+export const isWFHType = (t) => t === WFH_TYPE;
+/** Every request type that can appear in a list, for display only. */
+export const REQUEST_TYPE_LABELS = { ...LEAVE_TYPE_LABELS, [WFH_TYPE]: 'Work from home' };
+export const requestTypeLabel = (t) => REQUEST_TYPE_LABELS[t] ?? t;
+
 const PAID_TYPES = ['CASUAL', 'SICK', 'PAID'];
 export const isPaidType = (t) => PAID_TYPES.includes(t);
 

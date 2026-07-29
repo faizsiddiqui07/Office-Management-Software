@@ -22,9 +22,10 @@ const ATT_COLORS = {
   late: 'var(--chart-4)',
   absent: 'var(--chart-5)',
   onLeave: 'var(--chart-2)',
+  wfh: 'var(--chart-1)',
 };
 
-const ATT_LABELS = { present: 'Present', late: 'Late', absent: 'Absent', onLeave: 'On leave' };
+const ATT_LABELS = { present: 'Present', late: 'Late', absent: 'Absent', onLeave: 'On leave', wfh: 'From home' };
 
 function monthShort(ym) {
   const [y, m] = ym.split('-');
@@ -64,7 +65,9 @@ function GlassTooltip({ active, payload, label, formatter }) {
 }
 
 export function AttendanceDonut({ breakdown, rate }) {
-  const data = ['present', 'late', 'absent', 'onLeave'].map((k) => ({
+  // WFH must be a slice of its own, or people working from home vanish from the donut
+  // and its total stops matching the headcount.
+  const data = ['present', 'late', 'absent', 'onLeave', 'wfh'].map((k) => ({
     key: k,
     name: ATT_LABELS[k],
     value: breakdown[k] ?? 0,

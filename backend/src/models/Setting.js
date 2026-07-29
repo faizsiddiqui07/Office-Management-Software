@@ -86,6 +86,10 @@ const settingSchema = new mongoose.Schema(
     // YMD — the last day the team was pushed a birthday wish. Throttles the once-a-day
     // birthday announcement (no cron on Lambda; it rides on the dashboard load).
     lastBirthdayPing: { type: String, default: '' },
+    // YMDs the office has been declared work-from-home for. Claiming the day here before
+    // announcing keeps a double-press (or a Lambda retry) from posting twice, and gives
+    // the UI the list of declared days it can undo.
+    wfhDaysAnnounced: { type: [String], default: [] },
   },
   { timestamps: true },
 );

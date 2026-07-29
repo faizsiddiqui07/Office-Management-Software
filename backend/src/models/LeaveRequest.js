@@ -3,7 +3,11 @@ import mongoose from 'mongoose';
 const leaveRequestSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
-    type: { type: String, enum: ['CASUAL', 'SICK', 'PAID', 'UNPAID'], required: true },
+    // WFH is not leave — the person WORKS that day, so no balance is deducted. It rides
+    // on this model so it flows through the same apply / edit / approve / cancel
+    // machinery and shows up wherever leave does. Its own rules (one day at a time, a
+    // yearly cap) live in leave.service.js.
+    type: { type: String, enum: ['CASUAL', 'SICK', 'PAID', 'UNPAID', 'WFH'], required: true },
     // Company-TZ midnight instants + their yyyy-MM-dd strings (for enumeration/display).
     startDate: { type: Date, required: true },
     endDate: { type: Date, required: true },

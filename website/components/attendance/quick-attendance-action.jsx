@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { toast } from 'sonner';
-import { Check, Clock, LogIn, LogOut } from 'lucide-react';
+import { Check, Clock, Home, LogIn, LogOut } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { AppDialog } from '@/components/glass/app-dialog';
 import { Button } from '@/components/ui/button';
@@ -25,6 +25,7 @@ export function QuickAttendanceAction() {
     record,
     checkedIn,
     checkedOut,
+    isWFH,
     elapsedMin,
     cooldownLeftMs,
     inCooldown,
@@ -67,7 +68,14 @@ export function QuickAttendanceAction() {
   };
 
   let control;
-  if (checkedOut) {
+  if (isWFH) {
+    // Nothing to clock on a work-from-home day — the attendance is already recorded.
+    control = (
+      <span className={cn(base, 'bg-primary/12 text-primary ring-primary/25')}>
+        <Home className="size-4" /> Working from home
+      </span>
+    );
+  } else if (checkedOut) {
     control = (
       <span className={cn(base, 'bg-success/12 text-success ring-success/25')}>
         <Check className="size-4" /> Done at {formatTime(record.checkOutAt)}

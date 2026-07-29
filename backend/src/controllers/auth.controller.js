@@ -9,12 +9,20 @@ import { ok, fail } from '../lib/apiResponse.js';
 import { sendPasswordResetEmail } from '../lib/mailer.js';
 import { publicAppUrl } from '../lib/appUrl.js';
 import { audit } from '../models/AuditLog.js';
-import { permissionsForRole, roleLabel } from '../lib/roles.js';
+import { permissionsForRole, roleLabel, isOwnerRole } from '../lib/roles.js';
 import { clientIp, lockedFor, recordFailure, clearFailures } from '../lib/loginGuard.js';
 
 /** User JSON + their effective permission keys (for the cosmetic client `can()`). */
 function userWithPermissions(user) {
-  return { ...user.toJSON(), permissions: permissionsForRole(user.role), roleLabel: roleLabel(user.role) };
+  return {
+    ...user.toJSON(),
+    permissions: permissionsForRole(user.role),
+    roleLabel: roleLabel(user.role),
+    // Are they in the top (owner) tier? Resolved by RANK on the server, because the
+    // client has no idea what the owner role is called — and a rename must not quietly
+    // hide an owners-only control. Cosmetic only; every such route re-checks server-side.
+    isOwner: isOwnerRole(user.role),
+  };
 }
 
 export async function login(req, res, next) {

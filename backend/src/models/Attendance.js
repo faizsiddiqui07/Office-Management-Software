@@ -20,7 +20,10 @@ const attendanceSchema = new mongoose.Schema(
     checkOutAt: { type: Date, default: null },
     status: {
       type: String,
-      enum: ['PRESENT', 'LATE', 'ABSENT', 'ON_LEAVE', 'HOLIDAY'],
+      // WFH: an approved work-from-home day. The person WORKED, so it counts as attended
+      // everywhere a rate is calculated — it is simply recorded distinctly, and carries
+      // no check-in/check-out because there is nothing to clock.
+      enum: ['PRESENT', 'LATE', 'ABSENT', 'ON_LEAVE', 'HOLIDAY', 'WFH'],
       default: 'ABSENT',
     },
     workedMinutes: { type: Number, default: 0 },
@@ -29,6 +32,11 @@ const attendanceSchema = new mongoose.Schema(
     // the balance was charged 0.5. Without this the sheet reported a whole day away
     // against a half-day deduction.
     halfDayLeave: { type: Boolean, default: false },
+    // This WFH day was DECLARED BY THE OFFICE for everyone, not requested by the person.
+    // It is what lets the declaration be undone again, and what keeps an office day out
+    // of anybody's personal yearly WFH allowance (which is counted from their requests,
+    // never from these rows).
+    wfhOfficeWide: { type: Boolean, default: false },
     checkInMeta: { type: metaSchema, default: undefined },
     checkOutMeta: { type: metaSchema, default: undefined },
     // Late check-in: optional reason + leadership "excuse" (so on-duty lates

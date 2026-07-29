@@ -23,6 +23,7 @@ const STATUS_COLOR = {
   LATE: '#d97706',
   ABSENT: '#dc2626',
   ON_LEAVE: '#2563eb',
+  WFH: '#0891b2', // worked, from home — distinct from leave's blue and present's green
   HOLIDAY: '#7c3aed',
   WEEKEND: '#9ca3af',
   UPCOMING: '#9ca3af',
@@ -199,20 +200,23 @@ function attendanceSection(d, accent) {
     stat('Came late', t.late, 's4'),
     stat('Absent', t.absent, 's5'),
     stat('On leave', t.onLeave, 's6'),
-    stat('Worked hours', dur(t.workedMinutes), 's7'),
-    stat('Overtime', dur(t.overtimeMinutes), 's8'),
+    stat('From home', t.wfh ?? 0, 's7'),
+    stat('Worked hours', dur(t.workedMinutes), 's8'),
+    stat('Overtime', dur(t.overtimeMinutes), 's9'),
   ];
+  // Widths must total 100% — re-proportioned to fit the WFH column in.
   const headers = [
-    { label: 'Employee', w: '26%' },
-    { label: 'ID', w: '14%' },
-    { label: 'Present', w: '10%', align: 'right' },
-    { label: 'Late', w: '9%', align: 'right' },
-    { label: 'Absent', w: '10%', align: 'right' },
-    { label: 'Leave', w: '9%', align: 'right' },
-    { label: 'Worked', w: '12%', align: 'right' },
+    { label: 'Employee', w: '23%' },
+    { label: 'ID', w: '12%' },
+    { label: 'Present', w: '9%', align: 'right' },
+    { label: 'Late', w: '8%', align: 'right' },
+    { label: 'Absent', w: '9%', align: 'right' },
+    { label: 'Leave', w: '8%', align: 'right' },
+    { label: 'WFH', w: '8%', align: 'right' },
+    { label: 'Worked', w: '13%', align: 'right' },
     { label: 'OT', w: '10%', align: 'right' },
   ];
-  const rows = d.attendance.perEmployee.map((e) => [e.name, e.employeeId, e.present, e.late, e.absent, e.onLeave, dur(e.workedMinutes), dur(e.overtimeMinutes)]);
+  const rows = d.attendance.perEmployee.map((e) => [e.name, e.employeeId, e.present, e.late, e.absent, e.onLeave, e.wfh ?? 0, dur(e.workedMinutes), dur(e.overtimeMinutes)]);
   return E(View, { key: 'attendance' }, sectionTitle('Attendance summary', accent), E(View, { style: styles.statRow }, ...stats), table(headers, rows));
 }
 
@@ -356,6 +360,7 @@ function selfAttendanceSection(d, accent) {
     stat('On-duty', t.onDuty ?? 0, 's4b'),
     stat('Absent', t.absent, 's5'),
     stat('On leave', t.onLeave, 's6'),
+    stat('From home', t.wfh ?? 0, 's6b'),
     stat('Worked hours', dur(t.workedMinutes), 's7'),
     stat('Overtime', dur(t.overtimeMinutes), 's8'),
   ];

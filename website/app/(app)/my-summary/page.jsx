@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  Award, CalendarCheck, CalendarDays, Clock, HandCoins, ListTodo, TriangleAlert, UserRound,
+  Award, CalendarCheck, CalendarDays, Clock, HandCoins, Home, ListTodo, TriangleAlert, UserRound,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -135,6 +135,15 @@ export default function MyStandingPage() {
                   tone={now.leave.remaining <= 2 ? 'warn' : 'default'}
                 />
               ) : null}
+              {shows.wfh && now.wfh ? (
+                <Stat
+                  icon={Home}
+                  label="WFH left this year"
+                  value={`${now.wfh.remaining} of ${now.wfh.cap}`}
+                  hint={`${now.wfh.used} used · resets 1 April`}
+                  tone={now.wfh.remaining === 0 ? 'warn' : 'default'}
+                />
+              ) : null}
               <Stat
                 icon={HandCoins}
                 label={now.duesAdvance > 0 ? 'Advance with the office' : 'You owe the office'}
@@ -180,7 +189,9 @@ export default function MyStandingPage() {
                     hint={
                       att.workingDays === 0
                         ? 'No working days in this stretch'
-                        : `${att.attendanceRate}%${att.late ? ` · ${att.late} late` : ''}${att.absent ? ` · ${att.absent} absent` : ''}`
+                        // WFH days are inside workingDays, so say so — otherwise the
+                        // ratio reads short and looks like unexplained absences.
+                        : `${att.attendanceRate}%${att.late ? ` · ${att.late} late` : ''}${att.wfh ? ` · ${att.wfh} from home` : ''}${att.absent ? ` · ${att.absent} absent` : ''}`
                     }
                     tone={att.workingDays > 0 && att.attendanceRate < 80 ? 'warn' : 'default'}
                   />

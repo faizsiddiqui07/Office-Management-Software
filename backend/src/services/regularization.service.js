@@ -30,12 +30,21 @@ function httpError(status, code, message) {
  * the leave was approved afterwards (markAttendanceOnLeave deliberately preserves that)
  * — the day is theirs to correct, and the correction only fills in the missing times.
  */
+/**
+ * Which kind of day already owns this date — 'ON_LEAVE', 'WFH', or null if it's free.
+ *
+ * A work-from-home day is claimed the same way a leave day is: there are no office hours
+ * to correct on it, and writing a check-in over it would erase the record. The status is
+ * returned rather than a boolean so each case can keep its own error code — the leave
+ * one has been ON_LEAVE since before WFH existed and callers may rely on it.
+ */
 async function leaveClaimsDay(userId, dateYMD) {
   const record = await Attendance.findOne({
     user: userId,
     date: companyDayFromYMD(dateYMD),
   }).select('status checkInAt');
-  return !!record && record.status === 'ON_LEAVE' && !record.checkInAt;
+  if (!record || record.checkInAt) return null;
+  return ['ON_LEAVE', 'WFH'].includes(record.status) ? record.status : null;
 }
 
 export async function createRequest(user, { dateYMD, checkIn, checkOut, reason }) {
@@ -44,7 +53,11 @@ export async function createRequest(user, { dateYMD, checkIn, checkOut, reason }
   }
   const dup = await Regularization.findOne({ user: user._id, dateYMD, status: 'PENDING' });
   if (dup) throw httpError(409, 'DUPLICATE', 'You already have a pending correction for this date');
-  if (await leaveClaimsDay(user._id, dateYMD)) {
+  const claimedBy = await leaveClaimsDay(user._id, dateYMD);
+  if (claimedBy === 'WFH') {
+    throw httpError(409, 'WFH_DAY', 'That day is recorded as work from home — there are no office hours to correct on it.');
+  }
+  if (claimedBy) {
     throw httpError(409, 'ON_LEAVE', 'That day is recorded as approved leave. Ask for the leave to be cancelled first, then request the correction.');
   }
 
@@ -114,8 +127,14 @@ async function applyToAttendance(reg) {
   // Checked again at approval time, not just when the request was raised: a leave can
   // be approved in between, and overwriting an untouched ON_LEAVE marker here would
   // leave the day counted as both leave (balance still spent) and present.
-  if (record?.status === 'ON_LEAVE' && !record.checkInAt) {
-    throw httpError(409, 'ON_LEAVE', 'That day is marked on approved leave — cancel the leave first, then approve this correction.');
+  if (['ON_LEAVE', 'WFH'].includes(record?.status) && !record.checkInAt) {
+    throw httpError(
+      409,
+      record.status === 'WFH' ? 'WFH_DAY' : 'ON_LEAVE',
+      record.status === 'WFH'
+        ? 'That day is marked work from home — there are no office hours to correct on it.'
+        : 'That day is marked on approved leave — cancel the leave first, then approve this correction.',
+    );
   }
   if (!record) record = new Attendance({ user: reg.user, date: day });
 
