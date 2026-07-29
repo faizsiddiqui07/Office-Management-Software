@@ -154,10 +154,12 @@ export async function buildReport(type, dateYMD, range) {
     // schedule + employmentType so a part-timer's own working days are used, not the
     // office weekend (which marked their off-days absent).
     User.find({ isActive: true }).select('name employeeId role department dateOfJoining schedule employmentType').sort({ name: 1 }),
-    // Fetch up to today so a person whose OWN office day has already ended is counted
-    // for it; each employee's numerator is then capped to their own last-finished day
-    // below, so an unfinished today never lands in the numerator ("18 of 17").
-    Attendance.find({ date: { $gte: fromDay, $lte: companyDayFromYMD(todayYMD) } }),
+    // Fetch up to the report's end OR today, whichever is earlier. A current/ongoing
+    // period reaches to today so a person whose own office day has already ended is
+    // counted for it (each employee's numerator is capped to their last-finished day
+    // below); a PAST period stops at `to` instead of dragging in a year of rows it
+    // would only discard.
+    Attendance.find({ date: { $gte: fromDay, $lte: companyDayFromYMD(to < todayYMD ? to : todayYMD) } }),
     LeaveRequest.find({ status: 'APPROVED', startYMD: { $lte: to }, endYMD: { $gte: from } }).populate('user', 'name employeeId'),
     LeaveRequest.find({ status: 'PENDING' }).populate('user', 'name employeeId').sort({ appliedAt: -1 }),
     LeaveBalance.find({ year: leaveYearOf(from) }).populate('user', 'name employeeId'),

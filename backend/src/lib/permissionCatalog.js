@@ -86,6 +86,9 @@ const LEADERSHIP_PERMS = ALL_PERMISSION_KEYS.filter(
   (k) => !['manageDues', 'markAttendance', 'applyLeave'].includes(k),
 );
 
+// Reports (your own attendance/leave record) are self-service — every built-in role
+// gets 'downloadReports' by default, so the module gate on it hides reports only where
+// leadership DELIBERATELY revokes it, never by omission on a fresh install.
 /** Default permission sets for the built-in roles. */
 export const SYSTEM_ROLES = [
   { key: 'CEO', label: 'CEO', rank: 1, permissions: LEADERSHIP_PERMS },
@@ -94,10 +97,10 @@ export const SYSTEM_ROLES = [
     key: 'ADMIN_MANAGER',
     label: 'Admin Manager',
     rank: 3,
-    permissions: ['markAttendance', 'applyLeave', 'viewEveryone', 'createUsers', 'editCalendar', 'resetCredentials', 'manageExpenses', 'viewExpenses', 'manageDues'],
+    permissions: ['markAttendance', 'applyLeave', 'viewEveryone', 'createUsers', 'editCalendar', 'resetCredentials', 'manageExpenses', 'viewExpenses', 'manageDues', 'downloadReports'],
   },
-  { key: 'MANAGER', label: 'Manager', rank: 5, permissions: ['markAttendance', 'applyLeave', 'viewEveryone', 'approveLeave', 'viewExpenses'] },
-  { key: 'EMPLOYEE', label: 'Employee', rank: 6, permissions: ['markAttendance', 'applyLeave'] },
-  { key: 'OFFICE_BOY', label: 'Office Boy', rank: 7, permissions: ['markAttendance', 'applyLeave'] },
-  { key: 'SECURITY', label: 'Security Guard', rank: 8, permissions: ['markAttendance', 'applyLeave'] },
+  { key: 'MANAGER', label: 'Manager', rank: 5, permissions: ['markAttendance', 'applyLeave', 'viewEveryone', 'approveLeave', 'viewExpenses', 'downloadReports'] },
+  { key: 'EMPLOYEE', label: 'Employee', rank: 6, permissions: ['markAttendance', 'applyLeave', 'downloadReports'] },
+  { key: 'OFFICE_BOY', label: 'Office Boy', rank: 7, permissions: ['markAttendance', 'applyLeave', 'downloadReports'] },
+  { key: 'SECURITY', label: 'Security Guard', rank: 8, permissions: ['markAttendance', 'applyLeave', 'downloadReports'] },
 ];

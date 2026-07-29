@@ -1,5 +1,6 @@
 import { ok, fail } from '../lib/apiResponse.js';
-import { canAssignRole } from '../lib/permissions.js';
+import { can, canAssignRole } from '../lib/permissions.js';
+import { companyDayFromYMD } from '../lib/time.js';
 import { User } from '../models/User.js';
 import { createEmployee, resetUserCredentials, updateUser as updateUserService, deleteUser as deleteUserService } from '../services/user.service.js';
 import { getBalanceForUser, setLeaveBalance } from '../services/leave.service.js';
@@ -29,15 +30,24 @@ export async function userReport(req, res, next) {
     const { from, to } = req.query;
     if (!isYMD(from) || !isYMD(to)) return res.status(400).json(fail('BAD_RANGE', 'from and to dates are required'));
     if (to < from) return res.status(400).json(fail('BAD_RANGE', 'End date is before the start date'));
+    // Bound the span so a crafted range (e.g. to=9999-12-31, which passes the YMD regex)
+    // can't make the day-by-day builder allocate millions of rows and OOM the Lambda.
+    if ((companyDayFromYMD(to).getTime() - companyDayFromYMD(from).getTime()) / 86400000 > 400) {
+      return res.status(400).json(fail('RANGE_TOO_WIDE', 'Pick a range of at most about a year.'));
+    }
 
     const data = await buildSelfReport({ user, type: 'custom', dateYMD: to, range: { from, to } });
     await audit({ actor: req.user._id, action: 'report.download', entityType: 'User', entityId: String(user._id), meta: { scope: 'user', from, to } });
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="report-${user.employeeId || user._id}-${from}_to_${to}.pdf"`);
-    // Attendance + leaves only — a person's dues ledger is between them and the admin,
-    // and the dossier doesn't surface it either.
-    const stream = await renderSelfReportToStream(data, ['attendance', 'leaves'], loadCompanyLogo(data.company.logoDark || data.company.logoUrl || data.company.logoLight));
+    // Attendance only for someone who actually self-tracks it — leadership have no
+    // check-ins, so an attendance section would print them "absent" every working day
+    // at 0%, contradicting the dossier and the company report which both skip them.
+    // Dues are deliberately excluded (that ledger is between the person and the admin).
+    const tracks = can({ role: user.role }, 'markAttendance');
+    const sections = tracks ? ['attendance', 'leaves'] : ['leaves'];
+    const stream = await renderSelfReportToStream(data, sections, loadCompanyLogo(data.company.logoDark || data.company.logoUrl || data.company.logoLight));
     stream.on('error', (err) => next(err));
     stream.pipe(res);
     return undefined;

@@ -235,13 +235,16 @@ export default function UserDossierPage() {
           </div>
           <div className="min-w-0 flex-1 space-y-1 sm:flex-none">
             <Label htmlFor="d-to" className="text-xs text-muted-foreground">To</Label>
-            <DatePicker id="d-to" value={to} min={from || APP_LIVE_YMD} onChange={(v) => { setTo(v); setPreset('custom'); }} className="h-9 w-full bg-background/50 sm:w-40" />
+            <DatePicker id="d-to" value={to} min={from || APP_LIVE_YMD} max={daysAgo(0)} onChange={(v) => { setTo(v); setPreset('custom'); }} className="h-9 w-full bg-background/50 sm:w-40" />
           </div>
         </div>
-        {/* Downloads the full attendance + leave report for exactly the range above. */}
-        <Button variant="outline" size="sm" className="w-full sm:w-auto" onClick={downloadReport} disabled={reportBusy}>
-          <Download className="size-4" /> {reportBusy ? 'Generating…' : 'Download report (PDF)'}
-        </Button>
+        {/* Downloads the full attendance + leave report for exactly the range above.
+            Only for roles that self-track — a leader has no attendance to report. */}
+        {att?.tracksAttendance ? (
+          <Button variant="outline" size="sm" className="w-full sm:w-auto" onClick={downloadReport} disabled={reportBusy}>
+            <Download className="size-4" /> {reportBusy ? 'Generating…' : 'Download report (PDF)'}
+          </Button>
+        ) : null}
       </GlassPanel>
 
       {from && to && to < from ? (
