@@ -177,9 +177,14 @@ export async function setStatus(actor, id, status) {
   const isOwner = String(task.owner) === String(actor._id);
   const isCollaborator = (task.collaborators || []).some((c) => String(c) === String(actor._id));
   const isAssigner = task.assignedBy && String(task.assignedBy) === String(actor._id);
-  // The owner (or a tagged collaborator) marks their OWN copy. Each multi-assign copy
-  // is independent now — completing one does NOT complete the others.
-  if (!isOwner && !isCollaborator) throw httpError(403, 'FORBIDDEN', 'Only the task owner or a tagged teammate can update it');
+  // On a shared PERSONAL task (no assigner) a tagged teammate co-owns it — whoever
+  // finishes it closes it for everyone. But on a DELEGATED task, tagging is only for
+  // awareness: the assignee does the work, so a collaborator must NOT be able to
+  // complete it (bypassing the assignee and the approval gate) or reopen it.
+  const sharedPersonal = !task.assignedBy;
+  if (!isOwner && !(isCollaborator && sharedPersonal)) {
+    throw httpError(403, 'FORBIDDEN', 'Only the task owner can update this task');
+  }
 
   const wantDone = status === 'DONE';
 

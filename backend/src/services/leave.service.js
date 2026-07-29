@@ -129,7 +129,15 @@ export async function buildLeaveLedger(user, year = currentLeaveYear()) {
   const from = `${year}-04-01`;
   const to = `${year + 1}-03-31`;
   const settings = await Setting.getSingleton();
-  const bal = await getOrCreateBalance(user._id, year);
+  // Read-only: a DOWNLOAD must never create or lock a balance row. Creating one here
+  // would freeze that year's quota at today's setting — and let anyone pre-seed a future
+  // year's balance just by requesting its ledger. If no row exists yet (a year with no
+  // activity), show the quota it WOULD open with, without persisting anything.
+  let bal = await LeaveBalance.findOne({ user: user._id, year });
+  if (!bal) {
+    const quota = quotaForJoiner(joinedYMD(user), year, settings.annualLeaveQuota);
+    bal = { totalQuota: quota, used: 0, remaining: quota };
+  }
 
   // Every request that overlaps the year, newest first.
   const reqs = await LeaveRequest.find({ user: user._id, startYMD: { $lte: to }, endYMD: { $gte: from } }).sort({ startYMD: -1 });

@@ -79,7 +79,7 @@ export function ApplyLeaveDialog({ leave, open: openProp, onOpenChange }) {
   const mut = useMutation({
     mutationFn: () => {
       const isHalf = halfDay && sameDay;
-      const body = { type, startYMD: start, endYMD: end, halfDay: isHalf, halfDayPart: isHalf ? halfDayPart : null, reason };
+      const body = { type, startYMD: start, endYMD: end, halfDay: isHalf, reason, ...(isHalf ? { halfDayPart } : {}) };
       return isEdit ? api.patch(`/leaves/${leave.id}`, body) : api.post('/leaves', body);
     },
     onSuccess: () => {

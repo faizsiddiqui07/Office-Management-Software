@@ -7,7 +7,9 @@ export const applyLeaveSchema = z.object({
   startYMD: ymd,
   endYMD: ymd,
   halfDay: z.boolean().optional().default(false),
-  halfDayPart: z.enum(['FIRST', 'SECOND']).optional(),
+  // The apply dialog sends null for anything that isn't a same-day half-day, so null
+  // has to be accepted — otherwise every full-day and multi-day request is rejected.
+  halfDayPart: z.enum(['FIRST', 'SECOND']).nullable().optional(),
   reason: z.string().max(500).optional().default(''),
 });
 

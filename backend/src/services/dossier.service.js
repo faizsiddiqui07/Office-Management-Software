@@ -6,7 +6,7 @@ import { User } from '../models/User.js';
 import { Setting } from '../models/Setting.js';
 import { companyDayFromYMD, ymdInTz } from '../lib/time.js';
 import { can } from '../lib/permissions.js';
-import { userWeekendDays } from '../lib/schedule.js';
+import { userWeekendDays, workWindowClosed } from '../lib/schedule.js';
 import { computeWorkingDays } from './workingDays.service.js';
 import { holidayYMDSet } from './holiday.service.js';
 import { periodStartFor, joinedYMD } from '../lib/joining.js';
@@ -32,7 +32,8 @@ export async function getUserDossier(userId, { from, to }) {
   if (!user) throw httpError(404, 'NOT_FOUND', 'User not found');
 
   const settings = await Setting.getSingleton();
-  const today = ymdInTz(new Date());
+  const now = new Date();
+  const today = ymdInTz(now);
   const cappedTo = to > today ? today : to; // don't count the future as absent
 
   // ---------------- Attendance ----------------
@@ -125,7 +126,16 @@ export async function getUserDossier(userId, { from, to }) {
         });
       } else {
         const dow = cur.getUTCDay();
-        const status = holidays.has(ymd) ? 'HOLIDAY' : weekend.includes(dow) ? 'WEEKEND' : 'ABSENT';
+        // A working day with no check-in is only ABSENT once the office day is over —
+        // today, before their window closes, is UPCOMING (matches the company report and
+        // the daily roster), not a red "absent".
+        const status = holidays.has(ymd)
+          ? 'HOLIDAY'
+          : weekend.includes(dow)
+            ? 'WEEKEND'
+            : workWindowClosed(user, ymd, settings, now)
+              ? 'ABSENT'
+              : 'UPCOMING';
         days.push({ id: `d-${ymd}`, dateYMD: ymd, checkInAt: null, checkOutAt: null, workedMinutes: 0, overtimeMinutes: 0, status, excused: false, lateReason: null, halfDayLeave: false });
       }
       cur = new Date(cur.getTime() + 86400000);

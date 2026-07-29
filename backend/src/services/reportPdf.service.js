@@ -466,7 +466,7 @@ function ledgerSubject(d) {
     { style: styles.subjectCard },
     E(View, { style: styles.subjectItem }, E(Text, { style: styles.subjectLabel }, 'Employee'), E(Text, { style: styles.subjectValue }, s.name)),
     E(View, { style: styles.subjectItem }, E(Text, { style: styles.subjectLabel }, 'Employee ID'), E(Text, { style: styles.subjectValue }, s.employeeId || '—')),
-    E(View, { style: styles.subjectItem }, E(Text, { style: styles.subjectLabel }, 'Role'), E(Text, { style: styles.subjectValue }, cap(s.role))),
+    E(View, { style: styles.subjectItem }, E(Text, { style: styles.subjectLabel }, 'Role'), E(Text, { style: styles.subjectValue }, s.roleLabel || cap(s.role))),
     E(View, { style: styles.subjectItem }, E(Text, { style: styles.subjectLabel }, 'Leave year'), E(Text, { style: styles.subjectValue }, d.period.label)),
   );
 }
