@@ -307,6 +307,12 @@ export async function onCheckOut(user, dateYMD, overtimeMinutes) {
   // matched on when the row happened to be written, so re-running it just rewrites
   // that day's award to the new figure.
   const key = `auto_ot:${user._id}:${dateYMD}`;
+  // An overtime row written before keys existed carries none, so the keyed upsert below
+  // wouldn't see it — correcting a pre-key day would leave the old award standing beside
+  // the new one. Those legacy rows were only ever written by a self-checkout, so their
+  // createdAt IS the overtime day; clear that day's keyless row first.
+  const { start, end } = dayRange(dateYMD);
+  await PointEntry.deleteMany({ user: user._id, source: 'auto_ot', dedupeKey: { $exists: false }, createdAt: { $gte: start, $lt: end } });
   const hours = Math.floor((overtimeMinutes || 0) / 60);
   if (pts && hours > 0) {
     await awardOnce(key, { user: user._id, month: dateYMD.slice(0, 7), points: Math.abs(pts) * hours, reason: `Overtime · ${dateYMD} (${hours}h)`, source: 'auto_ot' }, { replace: true });
