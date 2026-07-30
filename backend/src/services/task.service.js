@@ -93,13 +93,21 @@ export async function taggableUsers(actor) {
  * this with me", which is a fact about who is involved, not an instruction — so anyone
  * in the office can be tagged, while handing work TO someone still needs assign access.
  * Drops self, dedupes, and rejects the whole set if an id isn't a real active person.
+ *
+ * `alreadyOn` — people already tagged on this task. They stay even if they have since
+ * been deactivated: an edit dialog sends the whole list back, so demanding that every
+ * name still be active meant one departed colleague froze the task forever ("one of the
+ * people you tagged was not found", with nothing on screen to tell you who). Same rule
+ * the reassignment path already uses for existing assignees. Newly added names must of
+ * course be real and active.
  */
-async function resolveCollaborators(actor, ids) {
+async function resolveCollaborators(actor, ids, alreadyOn = []) {
   if (!Array.isArray(ids) || !ids.length) return [];
   const uniq = [...new Set(ids.map(String))].filter((id) => id !== String(actor._id));
   if (!uniq.length) return [];
-  const users = await User.find({ _id: { $in: uniq }, isActive: true });
-  if (users.length !== uniq.length) {
+  const users = await User.find({ _id: { $in: uniq } }).select('_id isActive');
+  const keep = new Set(alreadyOn.map(String));
+  if (users.length !== uniq.length || users.some((u) => !u.isActive && !keep.has(String(u._id)))) {
     throw httpError(404, 'NOT_FOUND', 'One of the people you tagged was not found');
   }
   return users.map((u) => u._id);
@@ -532,6 +540,13 @@ export async function updateTask(actor, id, data) {
     const batchQuery = task.assignBatch ? { assignBatch: task.assignBatch, assignedBy: actor._id } : { _id: task._id };
     let members = await Task.find(batchQuery);
 
+    // Resolved up front because a reassignment creates fresh copies below, and those need
+    // the tag list too — they used to be created with `collaborators: []`, quietly
+    // dropping everyone who was tagged the moment the work was reassigned.
+    const nextCollabs = data.collaborators !== undefined
+      ? await resolveCollaborators(actor, data.collaborators, task.collaborators || [])
+      : null;
+
     // (a) Reassignment — make the set of people match `assignTo` (add / remove copies).
     if (data.assignTo !== undefined) {
       const desired = [...new Set((Array.isArray(data.assignTo) ? data.assignTo : [data.assignTo]).map(String))].filter((x) => x && x !== String(actor._id));
@@ -591,11 +606,40 @@ export async function updateTask(actor, id, data) {
         dueYMD: patch.dueYMD ?? task.dueYMD,
         requiresApproval: data.requiresApproval !== undefined ? !!data.requiresApproval : task.requiresApproval,
       };
+      const baseCollabs = (nextCollabs ?? task.collaborators ?? []).filter((cid) => !desired.includes(String(cid)));
       for (const t of addedUsers) {
-        await Task.create({ ...base, owner: t._id, assignedBy: actor._id, collaborators: [], assignBatch: batch, status: 'PENDING' });
+        await Task.create({ ...base, owner: t._id, assignedBy: actor._id, collaborators: baseCollabs, assignBatch: batch, status: 'PENDING' });
         await notify({ user: t._id, type: 'TASK_ASSIGNED', title: `New task from ${actor.name}`, message: base.dueYMD ? `${base.title} (due ${base.dueYMD})` : base.title, link: '/todo' });
       }
       members = await Task.find({ assignBatch: batch, assignedBy: actor._id });
+    }
+
+    // (a2) Tagged people. Tags describe the piece of WORK, not one person's copy —
+    //      createTask puts the same list on every copy so a tagged colleague sees the job
+    //      whoever it was handed to. Editing follows that rule: the tag list applies to
+    //      the whole batch even when a content edit is scoped to a single copy.
+    if (nextCollabs) {
+      const ownerIds = new Set(members.map((mm) => String(mm.owner)));
+      const finalTags = nextCollabs.filter((cid) => !ownerIds.has(String(cid))); // an assignee isn't also a bystander
+      const before = new Set((task.collaborators || []).map(String));
+      const key = (list) => [...new Set(list.map(String))].sort().join(',');
+      for (const mm of members) {
+        if (key(mm.collaborators || []) !== key(finalTags)) {
+          mm.collaborators = finalTags;
+          await mm.save();
+        }
+      }
+      // Once per newly tagged person, not once per copy of the task.
+      for (const cid of finalTags) {
+        if (before.has(String(cid))) continue;
+        await notify({
+          user: cid,
+          type: 'TASK_ASSIGNED',
+          title: `${actor.name} tagged you on a task`,
+          message: task.dueYMD ? `${task.title} (due ${task.dueYMD})` : task.title,
+          link: '/todo',
+        });
+      }
     }
 
     // (b) Content + approval edits — to every copy when scoped to all (applyToAll or a
@@ -658,7 +702,7 @@ export async function updateTask(actor, id, data) {
   for (const f of contentFields) if (patch[f] !== undefined) task[f] = patch[f];
   if (data.collaborators !== undefined && isOwner && !task.assignedBy) {
     const before = new Set((task.collaborators || []).map(String));
-    const resolved = await resolveCollaborators(actor, data.collaborators);
+    const resolved = await resolveCollaborators(actor, data.collaborators, task.collaborators || []);
     task.collaborators = resolved;
     for (const cid of resolved) {
       if (!before.has(String(cid))) {

@@ -143,8 +143,8 @@ export function AssignDialog() {
           <Textarea id="a-notes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Details…" className="bg-background/50" />
         </div>
 
-        {/* Tag anyone in the office to keep them in the loop — they'll see it under
-            "Assigned to me" but the assignee is the one who does it. Leadership included. */}
+        {/* Tag anyone in the office to keep them in the loop — it shows under "Shared with
+            me" for them, and the assignee is the one who does it. Leadership included. */}
         <div className="space-y-1.5">
           <Label className="flex items-center gap-1.5">
             <Users className="size-3.5" /> Tag people (optional)
@@ -178,7 +178,7 @@ export function AssignDialog() {
           })()}
           {collaborators.length ? (
             <p className="text-xs text-muted-foreground">
-              {collaborators.length} tagged — they’ll see it under “Assigned to me”, but don’t have to do it.
+              {collaborators.length} tagged — it shows under “Shared with me” for them, but they don’t have to do it.
             </p>
           ) : null}
         </div>

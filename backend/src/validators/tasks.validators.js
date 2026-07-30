@@ -20,7 +20,7 @@ export const updateTaskSchema = z.object({
   title: z.string().min(1).max(300).optional(),
   notes: z.string().max(2000).optional(),
   dueYMD: ymd.optional(),
-  collaborators: z.array(objectId).max(20).optional(), // owner can retag a shared task
+  collaborators: z.array(objectId).max(20).optional(), // retag: the owner of a personal task, or the assigner of a delegated one
   applyToAll: z.boolean().optional(), // assigner: push a content edit to every copy of a multi-assigned task
   assignTo: z.union([objectId, z.array(objectId).max(50)]).optional(), // assigner: change who it's assigned to
   requiresApproval: z.boolean().optional(),

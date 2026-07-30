@@ -67,6 +67,20 @@ const RANGE_WORDS = {
   next30: 'due in the next 30 days',
 };
 
+// "My tasks" and History return work I OWN plus work someone tagged me on. Telling the
+// two apart is the difference between "this is yours to do" and "you're being kept in the
+// loop" — and getting it wrong showed a tagged colleague somebody else's assignment as
+// their own, complete with a Done button the server would refuse.
+const iOwnTask = (t, myId) => !!myId && String(t?.owner?.id) === String(myId);
+const onlyTagged = (t, myId) => !!myId && !!t?.owner?.id && !iOwnTask(t, myId);
+/**
+ * Can I tick this off? Mine to do, or a shared PERSONAL task I'm tagged on — whoever
+ * finishes one of those finishes it for everyone. Never delegated work I'm only tagged
+ * on: the assignee does that, and the approval gate is theirs. Mirrors setStatus() on the
+ * server, which 403s the same cases.
+ */
+const canCompleteTask = (t, myId) => iOwnTask(t, myId) || !t?.assignedBy;
+
 const STAT_TONE = {
   warning: 'bg-warning/15 text-amber-600 ring-warning/25 dark:text-amber-300',
   success: 'bg-success/12 text-success ring-success/25',
@@ -237,13 +251,19 @@ function TaskRow({ task, myId, canToggle, onToggle, onEdit, onDelete, onOpen, as
   const done = task.status === 'DONE';
   const awaiting = task.awaitingApproval;
   const overdue = !done && !awaiting && isOverdue(task.dueYMD);
-  // Where the task comes from (delegator, or a shared task's owner if it's not me).
-  const from = assignerView ? null : task.assignedBy || (myId && task.owner && task.owner.id && task.owner.id !== myId ? task.owner : null);
+  // I'm on this row because I was tagged, not because it's mine to do.
+  const tagged = !assignerView && onlyTagged(task, myId);
+  // Where the task comes from. For a tagged row that is its OWNER — the person actually
+  // doing it. Reading `assignedBy` there named the person who handed the work out, which
+  // made a task I'm merely watching read exactly like one assigned to me.
+  const from = assignerView ? null : tagged ? task.owner : task.assignedBy || null;
   // Only my OWN, non-delegated task can be edited/deleted here. A delegated or
   // shared-with-me task: I can complete it, but not change or remove it. Work I handed
   // out is mine to change, so the assigner's view keeps both.
   const canManage = assignerView || (task.owner?.id === myId && !task.assignedBy);
   const sharedWith = canManage && task.collaborators?.length ? task.collaborators : [];
+  // Never offer a button the server will refuse.
+  const mayToggle = canToggle && canCompleteTask(task, myId);
   return (
     <div
       onClick={() => onOpen(task)}
@@ -252,20 +272,20 @@ function TaskRow({ task, myId, canToggle, onToggle, onEdit, onDelete, onOpen, as
       {/* 40px touch target; the visual 20px circle sits inside (negative margins keep layout). */}
       <button
         type="button"
-        disabled={!canToggle}
+        disabled={!mayToggle}
         onClick={(e) => {
           e.stopPropagation();
-          if (canToggle) onToggle(task);
+          if (mayToggle) onToggle(task);
         }}
-        aria-label={done ? 'Mark as not done' : awaiting ? 'Withdraw submission' : 'Mark as done'}
-        className={cn('group/tgl -m-2.5 -mt-2 flex size-10 shrink-0 items-center justify-center', !canToggle && 'cursor-default')}
+        aria-label={!mayToggle ? 'Not yours to complete' : done ? 'Mark as not done' : awaiting ? 'Withdraw submission' : 'Mark as done'}
+        className={cn('group/tgl -m-2.5 -mt-2 flex size-10 shrink-0 items-center justify-center', !mayToggle && 'cursor-default')}
       >
         <span
           className={cn(
             'flex size-5 items-center justify-center rounded-full ring-1 transition-colors',
             done ? 'bg-success text-white ring-success' : awaiting ? 'bg-warning/20 text-amber-600 ring-warning dark:text-amber-300' : 'ring-border',
-            canToggle && !done && !awaiting && 'group-hover/tgl:ring-primary',
-            !canToggle && 'opacity-70',
+            mayToggle && !done && !awaiting && 'group-hover/tgl:ring-primary',
+            !mayToggle && 'opacity-70',
           )}
         >
           {done ? <Check className="size-3.5" /> : awaiting ? <Clock className="size-3" /> : null}
@@ -275,7 +295,13 @@ function TaskRow({ task, myId, canToggle, onToggle, onEdit, onDelete, onOpen, as
         <p className={cn('font-medium leading-snug', done && 'text-muted-foreground line-through')}>{task.title}</p>
         {task.notes ? <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-muted-foreground">{task.notes}</p> : null}
         <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-          {from ? (
+          {tagged && from ? (
+            <span className="inline-flex items-center gap-1">
+              <Users className="size-3" /> Tagged on{' '}
+              <span className="font-medium text-foreground">{from.name}</span>’s task
+              {task.assignedBy?.name ? <span className="opacity-70">· from {task.assignedBy.name}</span> : null}
+            </span>
+          ) : from ? (
             <span>
               From: <span className="font-medium text-foreground">{from.name}</span>
             </span>
@@ -354,13 +380,16 @@ function DatedTaskList({ tasks, myId, dateKey, ascending = false, onEdit, onDele
             const done = t.status === 'DONE';
             const awaiting = t.awaitingApproval;
             const overdue = !done && !awaiting && isOverdue(t.dueYMD);
+            // Per row, not per folder: a folder can hold work that is mine to finish
+            // alongside work I'm only tagged on, and the server refuses the second.
+            const rowToggle = canToggle && canCompleteTask(t, myId);
             return (
               <div
                 key={t.id}
                 onClick={() => onOpen(t)}
                 className="flex cursor-pointer items-start gap-2.5 rounded-lg bg-foreground/[0.03] p-2.5 ring-1 ring-border/50 transition-colors hover:bg-foreground/[0.06]"
               >
-                {canToggle ? (
+                {rowToggle ? (
                   /* 40px touch target on mobile; the visual 20px circle sits inside. */
                   <button
                     type="button"
@@ -488,7 +517,11 @@ function TaskDetailDialog({ view, myId, onClose, onToggle, onEdit, onDelete, onA
   const awaiting = task?.awaitingApproval;
   const overdue = task && !done && !awaiting && isOverdue(task.dueYMD);
   const iOwn = task && task.owner?.id === myId && !task.assignedBy;
-  const sharedWith = iOwn && task?.collaborators?.length ? task.collaborators : [];
+  // Somebody else's task that I was tagged on (never in the assigner's own view, where
+  // every row belongs to someone else by definition).
+  const tagged = !!task && !view?.assignerView && onlyTagged(task, myId);
+  // Who else is on it. Worth showing to a tagged colleague too — they are one of them.
+  const sharedWith = (iOwn || tagged) && task?.collaborators?.length ? task.collaborators : [];
   // The assigner reviewing a submitted task can approve or reject it here.
   const canReview = !!view?.assignerView && awaiting;
 
@@ -588,9 +621,16 @@ function TaskDetailDialog({ view, myId, onClose, onToggle, onEdit, onDelete, onA
 
           <div className="divide-y divide-border/50 rounded-xl bg-foreground/[0.03] px-3 ring-1 ring-border/50">
             <Row label="Type">
-              {/* Opened from "Assigned by me", the assigner IS me — printing "Assigned by
-                  <my own name>" told them nothing. There, name who it went to instead. */}
-              {task.assignedBy?.name && !(view.assignerView && String(task.assignedBy.id) === String(myId)) ? (
+              {/* Tagged first. Reading `assignedBy` before this printed "Assigned by
+                  <boss>" on a task that belongs to a colleague — so being kept in the loop
+                  was indistinguishable from being given the work. */}
+              {tagged ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Users className="size-3.5 text-primary" /> Shared — you’re tagged on {task.owner?.name}’s task
+                </span>
+              ) : /* Opened from "Assigned by me", the assigner IS me — printing "Assigned by
+                    <my own name>" told them nothing. There, name who it went to instead. */
+              task.assignedBy?.name && !(view.assignerView && String(task.assignedBy.id) === String(myId)) ? (
                 <span className="inline-flex items-center gap-1.5">
                   <UserRound className="size-3.5 text-primary" /> Assigned by {task.assignedBy.name}
                 </span>
@@ -598,16 +638,20 @@ function TaskDetailDialog({ view, myId, onClose, onToggle, onEdit, onDelete, onA
                 <span className="inline-flex items-center gap-1.5">
                   <UserRound className="size-3.5 text-primary" /> Assigned to {task.owner.name}
                 </span>
-              ) : task.owner?.name && task.owner.id !== myId ? (
-                <span className="inline-flex items-center gap-1.5">
-                  <Users className="size-3.5 text-primary" /> Shared by {task.owner.name}
-                </span>
               ) : sharedWith.length ? (
                 'Shared task'
               ) : (
                 'Personal task'
               )}
             </Row>
+            {/* A tagged colleague still needs the origin: whose request it was.  */}
+            {tagged && task.assignedBy?.name ? (
+              <Row label="Assigned by">
+                <span className="inline-flex items-center gap-1.5">
+                  <UserRound className="size-3.5 text-primary" /> {task.assignedBy.name}
+                </span>
+              </Row>
+            ) : null}
             {/* The full hand-off path — who started it, everyone it went through, and
                 where it sits now. The row shows this too; it belongs here as well
                 because the detail sheet is where you go to understand a task. */}
@@ -641,9 +685,10 @@ function TaskDetailDialog({ view, myId, onClose, onToggle, onEdit, onDelete, onA
               </Row>
             ) : null}
             {sharedWith.length ? (
-              <Row label="Shared with">
+              <Row label={tagged ? 'Also tagged' : 'Shared with'}>
                 <span className="inline-flex items-center gap-1.5">
-                  <Users className="size-3.5 text-primary" /> {sharedWith.map((c) => c.name).join(', ')}
+                  <Users className="size-3.5 text-primary" />
+                  {sharedWith.map((c) => (String(c.id) === String(myId) ? 'You' : c.name)).join(', ')}
                 </span>
               </Row>
             ) : null}
@@ -775,17 +820,13 @@ export function TaskBoard() {
   // when 2+ people have delegated work to me, one folder per assigner. A lone
   // assigner's pending tasks fold into the flat list (no folder tap for one person).
   const mine = React.useMemo(() => {
-    if (!isMine) return { personalPending: [], folders: [], searching: false };
+    if (!isMine) return { personalPending: [], folders: [], tagged: [], searching: false };
     const myId = user?.id;
     const q = search.toLowerCase().trim();
     const textHit = (t) => t.title.toLowerCase().includes(q) || (t.notes || '').toLowerCase().includes(q);
-    // Who a task "comes from" (for grouping into a folder): the person who delegated
-    // it, or — for a shared task I'm only tagged on — its owner. My own tasks: none.
-    const fromOf = (t) => {
-      if (t.assignedBy) return t.assignedBy;
-      if (myId && t.owner && t.owner.id && t.owner.id !== myId) return t.owner;
-      return null;
-    };
+    // Who a task "comes from": the person who delegated it, or — for one I'm only tagged
+    // on — whoever it actually belongs to. My own tasks: nobody.
+    const fromOf = (t) => (onlyTagged(t, myId) ? t.owner : t.assignedBy) || null;
     const matchesRow = (t) => {
       const f = fromOf(t);
       return !q || textHit(t) || (f?.name || '').toLowerCase().includes(q);
@@ -794,9 +835,15 @@ export function TaskBoard() {
     const byPerson = new Map();
     const personal = [];
     const personalDone = []; // kept aside only so a search can still reach them
+    const tagged = [];       // somebody else's task, mine only to watch
     for (const t of tasks) {
-      const from = fromOf(t);
-      if (from) {
+      // Being tagged is not being assigned. These used to be filed under the assigner's
+      // "Assigned to me" folder, so a colleague kept in the loop saw the work as their
+      // own — the whole complaint. They get their own section instead.
+      if (onlyTagged(t, myId)) {
+        tagged.push(t);
+      } else if (t.assignedBy) {
+        const from = t.assignedBy;
         const id = from.id || String(from);
         if (!byPerson.has(id)) byPerson.set(id, { id, name: from.name || 'Unknown', tasks: [] });
         byPerson.get(id).tasks.push(t);
@@ -819,12 +866,12 @@ export function TaskBoard() {
       // Finished work is in here too. A folder lists its completed tasks, so leaving them
       // out of the search would mean a task you can SEE by opening a folder can't be
       // found by typing its name — which is the whole complaint.
-      const all = [...personal, ...personalDone, ...[...byPerson.values()].flatMap((f) => f.tasks)];
+      const all = [...personal, ...personalDone, ...tagged, ...[...byPerson.values()].flatMap((f) => f.tasks)];
       const hits = all
         .filter((t) => textHit(t) || (fromOf(t)?.name || '').toLowerCase().includes(q))
         // Open work first — it's what needs doing; finished rows follow, struck through.
         .sort((a, b) => (a.status === 'DONE') - (b.status === 'DONE') || byDueDate(a, b));
-      return { personalPending: hits, folders: [], searching: true };
+      return { personalPending: hits, folders: [], tagged: [], searching: true };
     }
 
     let personalPending = personal;
@@ -850,7 +897,9 @@ export function TaskBoard() {
     }
 
     personalPending = personalPending.filter(matchesRow).sort(byDueDate);
-    return { personalPending, folders, searching: false };
+    // Finished work someone tagged me on lives in History, same as everything else.
+    const taggedOpen = tagged.filter((t) => t.status !== 'DONE').sort(byDueDate);
+    return { personalPending, folders, tagged: taggedOpen, searching: false };
   }, [isMine, tasks, search, user?.id]);
 
   // My OWN task (not delegated to me, not just shared with me) → I can edit/delete it.
@@ -1234,7 +1283,7 @@ export function TaskBoard() {
               ) : null}
             </div>
           ) : isMine ? (
-            !mine.personalPending.length && !mine.folders.length ? (
+            !mine.personalPending.length && !mine.folders.length && !mine.tagged.length ? (
               <EmptyState
                 icon={ListTodo}
                 title={search.trim() ? 'No matching tasks' : 'No pending tasks'}
@@ -1266,7 +1315,34 @@ export function TaskBoard() {
                         onToggle={(x) => toggleMut.mutate(x)}
                         onEdit={(x) => setEditing(x)}
                         onDelete={(x) => setDeleting(x)}
-                        onOpen={(x) => openTask({ task: x, canToggle: true, allowEdit: canMgr(x), allowDelete: canMgr(x), assignerView: false, canForward: canForwardTask(x) })}
+                        onOpen={(x) => openTask({ task: x, canToggle: canCompleteTask(x, user?.id), allowEdit: canMgr(x), allowDelete: canMgr(x), assignerView: false, canForward: canForwardTask(x) })}
+                      />
+                    ))}
+                  </div>
+                ) : null}
+
+                {/* Work I'm tagged on — somebody else's to do, mine to keep an eye on.
+                    Deliberately its own section: filed under "Assigned to me" it read as
+                    work handed to me, which is what was being reported. */}
+                {mine.tagged.length ? (
+                  <div className="space-y-2.5">
+                    <h3 className="flex items-center gap-2 text-sm font-semibold">
+                      <Users className="size-4 text-primary" /> Shared with me
+                      <span className="font-normal text-muted-foreground">({mine.tagged.length})</span>
+                    </h3>
+                    <p className="-mt-1 px-1 text-xs text-muted-foreground">
+                      You’re tagged on these so you can follow them. The person they’re assigned to does the work.
+                    </p>
+                    {mine.tagged.map((t) => (
+                      <TaskRow
+                        key={t.id}
+                        task={t}
+                        myId={user?.id}
+                        canToggle
+                        onToggle={(x) => toggleMut.mutate(x)}
+                        onEdit={(x) => setEditing(x)}
+                        onDelete={(x) => setDeleting(x)}
+                        onOpen={(x) => openTask({ task: x, canToggle: canCompleteTask(x, user?.id), allowEdit: false, allowDelete: false, assignerView: false })}
                       />
                     ))}
                   </div>
@@ -1293,7 +1369,7 @@ export function TaskBoard() {
                           onEdit={(x) => setEditing(x)}
                           onDelete={(x) => setDeleting(x)}
                           onExpand={reportSeen}
-                          onOpen={(x) => openTask({ task: x, canToggle: true, allowEdit: false, allowDelete: false, assignerView: false, canForward: canForwardTask(x) })}
+                          onOpen={(x) => openTask({ task: x, canToggle: canCompleteTask(x, user?.id), allowEdit: false, allowDelete: false, assignerView: false, canForward: canForwardTask(x) })}
                         />
                       ))}
                     </div>
@@ -1320,7 +1396,7 @@ export function TaskBoard() {
                   onToggle={(x) => toggleMut.mutate(x)}
                   onEdit={(x) => setEditing(x)}
                   onDelete={(x) => setDeleting(x)}
-                  onOpen={(x) => openTask({ task: x, canToggle: true, allowEdit: canMgr(x), allowDelete: canMgr(x), assignerView: false, canForward: canForwardTask(x) })}
+                  onOpen={(x) => openTask({ task: x, canToggle: canCompleteTask(x, user?.id), allowEdit: canMgr(x), allowDelete: canMgr(x), assignerView: false, canForward: canForwardTask(x) })}
                 />
               ))}
               {(data?.total ?? 0) > tasks.length ? (

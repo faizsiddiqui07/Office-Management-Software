@@ -82,10 +82,11 @@ export function TaskDialog({ task, open: openProp, onOpenChange, batchCount = 0 
         body.requiresApproval = requiresApproval;
         if (reassigned) body.assignTo = assignees; // reconcile people (content applies to all)
         else if (showBatchSwitch) body.applyToAll = applyToAll;
-      } else {
-        // Anyone can say who's working with them — tagging isn't handing out work.
-        body.collaborators = collaborators;
       }
+      // Tags are editable on delegated work too. They weren't sent here at all, so once a
+      // task was assigned its tagged people were frozen — you could see them on the task
+      // but never add or remove one.
+      body.collaborators = collaborators;
       return isEdit ? api.patch(`/tasks/${task.id}`, body) : api.post('/tasks', body);
     },
     onSuccess: (res) => {
@@ -229,15 +230,20 @@ export function TaskDialog({ task, open: openProp, onOpenChange, batchCount = 0 
           </div>
         ) : null}
 
-        {/* Tag teammates onto a personal task (whoever finishes it, it's done for everyone). */}
-        {!isAssignedByMe ? (
-          <div className="space-y-1.5">
-            <Label className="flex items-center gap-1.5">
-              <Users className="size-3.5" /> Also working on this (optional)
-            </Label>
-            {taggablePeople.length ? (
+        {/* Tagging. On a personal task it means "also working on this" — whoever finishes
+            it finishes it for everyone. On delegated work it means "keep them in the
+            loop": the assignee does the job, the tagged people just see it.
+            The person it is ASSIGNED to is never offered here — they already have it. */}
+        <div className="space-y-1.5">
+          <Label className="flex items-center gap-1.5">
+            <Users className="size-3.5" />
+            {isAssignedByMe ? 'Tag people (optional)' : 'Also working on this (optional)'}
+          </Label>
+          {(() => {
+            const options = taggablePeople.filter((p) => !isAssignedByMe || !assignees.includes(p.id));
+            return options.length ? (
               <div className="flex flex-wrap gap-1.5">
-                {taggablePeople.map((p) => {
+                {options.map((p) => {
                   const on = collaborators.includes(p.id);
                   return (
                     <button
@@ -251,18 +257,23 @@ export function TaskDialog({ task, open: openProp, onOpenChange, batchCount = 0 
                     >
                       {on ? <Check className="size-3" /> : null}
                       {p.name}
+                      {p.designation ? <span className="opacity-60">· {p.designation}</span> : null}
                     </button>
                   );
                 })}
               </div>
             ) : (
-              <p className="text-xs text-muted-foreground">No teammates available to tag.</p>
-            )}
-            {collaborators.length ? (
-              <p className="text-xs text-muted-foreground">Shows in {collaborators.length} teammate{collaborators.length > 1 ? 's' : ''}’ “Assigned to me”.</p>
-            ) : null}
-          </div>
-        ) : null}
+              <p className="text-xs text-muted-foreground">No one else to tag.</p>
+            );
+          })()}
+          {collaborators.length ? (
+            <p className="text-xs text-muted-foreground">
+              {isAssignedByMe
+                ? `${collaborators.length} tagged — it shows under “Shared with me” for them, on every copy. They don’t have to do it.`
+                : `Shows under “Shared with me” for ${collaborators.length} teammate${collaborators.length > 1 ? 's' : ''}.`}
+            </p>
+          ) : null}
+        </div>
       </div>
     </AppDialog>
   );
