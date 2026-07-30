@@ -87,16 +87,29 @@ const STAT_TONE = {
   default: 'bg-primary/12 text-primary ring-primary/20',
 };
 
-/** Compact stat that fits three-across on a phone with a clearly visible icon. */
-function StatMini({ label, value, icon: Icon, tone = 'default' }) {
-  return (
-    <div className="glass glass-highlight rounded-2xl p-3 text-center sm:p-4">
+/** Compact stat that fits three-across on a phone with a clearly visible icon. When
+ *  `onClick` is given it becomes a button that drills into that slice of the list. */
+function StatMini({ label, value, icon: Icon, tone = 'default', onClick, hint }) {
+  const base = 'glass glass-highlight rounded-2xl p-3 text-center sm:p-4';
+  const body = (
+    <>
       <span className={cn('mx-auto flex size-9 items-center justify-center rounded-xl ring-1', STAT_TONE[tone])}>
         <Icon className="size-[18px]" />
       </span>
       <p className="mt-2 text-2xl font-semibold tabular-nums">{value}</p>
       <p className="text-xs text-muted-foreground">{label}</p>
-    </div>
+    </>
+  );
+  if (!onClick) return <div className={base}>{body}</div>;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={hint}
+      className={cn(base, 'w-full cursor-pointer transition-colors hover:bg-foreground/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50')}
+    >
+      {body}
+    </button>
   );
 }
 
@@ -754,8 +767,20 @@ export function TaskBoard() {
   const [editing, setEditing] = React.useState(null);
   const [viewing, setViewing] = React.useState(null);
   const [forwarding, setForwarding] = React.useState(null); // task being passed further down
+  // Stat-card drill-down: a flat, ungrouped list. null = the normal grouped view.
+  const [flat, setFlat] = React.useState(null); // null | 'pending' | 'all'
 
   const isAssigned = tab === 'assigned';
+
+  // A stat card jumps to "My tasks" and shows exactly that slice, flat — no folders, no
+  // date filter, no search in the way. Completed has no flat mode of its own; it just
+  // opens History, which already is that list.
+  const showFlat = (mode) => {
+    setSearch('');
+    setPeriod('all');
+    setTab('mine');
+    setFlat(mode);
+  };
 
   // Reset the search box when switching tabs (task-text vs person name).
   React.useEffect(() => setSearch(''), [tab]);
@@ -1117,12 +1142,21 @@ export function TaskBoard() {
     return note;
   }, [period, range, tasks.length, dateBasis, search, data?.noDueHidden]);
 
+  // The stat-card drill-down: one flat list, no folders. 'pending' = everything not done;
+  // 'all' = every task, finished ones after the open ones. Due-date first, undated last
+  // (byDueDate). Stands down while there's a search, which takes over the same space.
+  const flatList = React.useMemo(() => {
+    if (!isMine || !flat || search.trim()) return null;
+    const rows = flat === 'pending' ? tasks.filter((t) => t.status !== 'DONE') : [...tasks];
+    return rows.sort((a, b) => (a.status === 'DONE') - (b.status === 'DONE') || byDueDate(a, b));
+  }, [isMine, flat, search, tasks]);
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-3 gap-3 sm:gap-4">
-        <StatMini label="Pending" value={m.pending} icon={ListTodo} tone={m.pending ? 'warning' : 'default'} />
-        <StatMini label="Completed" value={m.done} icon={CheckCircle2} tone="success" />
-        <StatMini label="Total" value={m.total} icon={ClipboardList} />
+        <StatMini label="Pending" value={m.pending} icon={ListTodo} tone={m.pending ? 'warning' : 'default'} onClick={() => showFlat('pending')} hint="Show every pending task, flat" />
+        <StatMini label="Completed" value={m.done} icon={CheckCircle2} tone="success" onClick={() => { setFlat(null); setTab('history'); }} hint="See completed tasks" />
+        <StatMini label="Total" value={m.total} icon={ClipboardList} onClick={() => showFlat('all')} hint="Show every task, flat" />
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -1143,7 +1177,7 @@ export function TaskBoard() {
           </div>
           {/* One date filter, and the option labels themselves say which date it means —
               deadlines on the two work lists, completion date on History. */}
-          <Select value={period} onValueChange={setPeriod}>
+          <Select value={period} onValueChange={(v) => { setPeriod(v); setFlat(null); }}>
             <SelectTrigger className="h-9 w-full bg-background/50 sm:w-48">
               <span className="line-clamp-1">
                 {period === 'custom' && dateBasis === 'due'
@@ -1185,7 +1219,7 @@ export function TaskBoard() {
         {filterNote ? <p className="px-1 text-xs text-muted-foreground">{filterNote}</p> : null}
       </div>
 
-      <Tabs value={tab} onValueChange={setTab}>
+      <Tabs value={tab} onValueChange={(v) => { setTab(v); setFlat(null); }}>
         <TabsList>
           <TabsTrigger value="mine">My tasks</TabsTrigger>
           <TabsTrigger value="history">History</TabsTrigger>
@@ -1283,7 +1317,42 @@ export function TaskBoard() {
               ) : null}
             </div>
           ) : isMine ? (
-            !mine.personalPending.length && !mine.folders.length && !mine.tagged.length ? (
+            flatList ? (
+              flatList.length ? (
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="flex items-center gap-2 text-sm font-semibold">
+                      {flat === 'pending' ? (
+                        <><ListTodo className="size-4 text-warning" /> All pending</>
+                      ) : (
+                        <><ClipboardList className="size-4 text-primary" /> All tasks</>
+                      )}
+                      <span className="font-normal text-muted-foreground">({flatList.length})</span>
+                    </h3>
+                    {/* A way back to the folders/sections view. */}
+                    <Button variant="ghost" size="sm" onClick={() => setFlat(null)}>Grouped view</Button>
+                  </div>
+                  {flatList.map((t) => (
+                    <TaskRow
+                      key={t.id}
+                      task={t}
+                      myId={user?.id}
+                      canToggle
+                      onToggle={(x) => toggleMut.mutate(x)}
+                      onEdit={(x) => setEditing(x)}
+                      onDelete={(x) => setDeleting(x)}
+                      onOpen={(x) => openTask({ task: x, canToggle: canCompleteTask(x, user?.id), allowEdit: canMgr(x), allowDelete: canMgr(x), assignerView: false, canForward: canForwardTask(x) })}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <EmptyState
+                  icon={flat === 'pending' ? ListTodo : ClipboardList}
+                  title={flat === 'pending' ? 'No pending tasks' : 'No tasks yet'}
+                  description=""
+                />
+              )
+            ) : !mine.personalPending.length && !mine.folders.length && !mine.tagged.length ? (
               <EmptyState
                 icon={ListTodo}
                 title={search.trim() ? 'No matching tasks' : 'No pending tasks'}
