@@ -55,6 +55,8 @@ export const listTasksQuerySchema = z.object({
   // Custom date range (overrides `period` when both are given). YMD strings.
   from: ymd.optional(),
   to: ymd.optional(),
+  // Just the submissions waiting on me to approve — exempt from the date filter.
+  awaiting: z.enum(['1', 'true']).optional(),
   page: z.coerce.number().int().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(10000).optional(),
 });

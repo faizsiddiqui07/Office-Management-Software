@@ -3,7 +3,7 @@ import { Task } from '../models/Task.js';
 import { User } from '../models/User.js';
 import { notify } from '../models/Notification.js';
 import { roleLabel } from '../lib/roles.js';
-import { companyDayFromYMD, COMPANY_TZ } from '../lib/time.js';
+import { companyDayFromYMD, ymdInTz, COMPANY_TZ } from '../lib/time.js';
 import { onAssignedTaskDone, onAssignedTaskUndone } from './bonus.service.js';
 
 function httpError(status, code, message) {
@@ -704,21 +704,47 @@ export async function deleteTask(actor, id) {
   return { success: true, cascaded: descendants.length };
 }
 
+/**
+ * "Last N days" counted in WHOLE COMPANY DAYS — today plus the N-1 before it, from
+ * midnight IST. A rolling `Date.now() - N*86400000` window cut the earliest day in
+ * half, so a task added on the 7th-day morning fell outside "Last 7 days" while one
+ * added that afternoon stayed in. The custom from/to branch below already works in
+ * whole days; this keeps both readings of the same control identical.
+ */
 function periodMatch(period, field = 'createdAt') {
   const days = period === 'week' ? 7 : period === 'month' ? 30 : period === 'year' ? 365 : 0;
-  return days ? { [field]: { $gte: new Date(Date.now() - days * 86400000) } } : {};
+  if (!days) return {};
+  const start = new Date(companyDayFromYMD(ymdInTz(new Date())).getTime() - (days - 1) * 86400000);
+  return { [field]: { $gte: start } };
 }
 
-export async function listTasks(actor, { scope = 'mine', status, search, period, from, to, page = 1, limit = 200 }) {
+export async function listTasks(actor, { scope = 'mine', status, search, period, from, to, awaiting, page = 1, limit = 200 }) {
   const and = [];
   // "mine" now also includes shared tasks I'm tagged on (a collaborator), not just
   // ones I own — so multiple $or blocks may stack; combine them with $and.
   if (scope === 'assigned') and.push({ assignedBy: actor._id });
-  else and.push({ $or: [{ owner: actor._id }, { collaborators: actor._id }] });
+  else {
+    and.push({ $or: [{ owner: actor._id }, { collaborators: actor._id }] });
+    // Work I have PASSED ON is no longer mine to do, so it leaves my own list. It shows
+    // up under "Assigned by me" instead — as the copy I handed over, which is the one
+    // carrying the live status — and that copy's hand-off trail says the work came from
+    // above me and where I sent it. Keeping the old copy here too made one job appear
+    // as both my task and my delegated work.
+    //
+    // The children I created by forwarding are exactly the tasks whose assigner is me,
+    // so their `forwardedFrom` values are precisely my own passed-on copies.
+    const passedOn = await Task.distinct('forwardedFrom', { assignedBy: actor._id, forwardedFrom: { $ne: null } });
+    if (passedOn.length) and.push({ _id: { $nin: passedOn } });
+  }
   if (status && ['PENDING', 'DONE'].includes(status)) and.push({ status });
   // Completed work filters on when it was completed; open work on when it was created.
   const dateField = status === 'DONE' ? 'completedAt' : 'createdAt';
-  if (from || to) {
+  // The approval queue is work sitting and waiting on the actor — it is never "out of
+  // range". A date filter that hid a submission from three weeks ago would leave the
+  // assignee blocked with no way for the assigner to notice, so this scope ignores it.
+  if (awaiting) {
+    and.push({ requiresApproval: true, status: 'PENDING', submittedAt: { $ne: null } });
+  } else if (from || to) {
     // A custom date range (x → y) takes precedence over the preset period.
     const r = {};
     if (from) r.$gte = companyDayFromYMD(from);
@@ -730,13 +756,24 @@ export async function listTasks(actor, { scope = 'mine', status, search, period,
   }
   if (search) {
     const rx = new RegExp(escapeRegex(search), 'i');
-    and.push({ $or: [{ title: rx }, { notes: rx }] });
+    // Match the PEOPLE too, not just the words. My tasks and Assigned search the loaded
+    // list client-side and there a name counts as a hit ("show me everything Priyanshi
+    // gave me"); History and the PDF go through here, so typing a name had to mean the
+    // same thing in all three places or the same query gave different answers per tab.
+    const people = await User.find({ name: rx }).select('_id').lean();
+    const ids = people.map((p) => p._id);
+    const or = [{ title: rx }, { notes: rx }];
+    if (ids.length) or.push({ owner: { $in: ids } }, { assignedBy: { $in: ids } }, { collaborators: { $in: ids } });
+    and.push({ $or: or });
   }
   const filter = and.length === 1 ? and[0] : { $and: and };
 
   const skip = (page - 1) * limit;
   const [tasks, total] = await Promise.all([
-    Task.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).populate('owner', 'name').populate('assignedBy', 'name').populate('collaborators', 'name').populate('completedBy', 'name').populate('approvedBy', 'name').populate('originalAssignedBy', 'name'),
+    // Order by whatever the date filter narrowed on. History filtered on `completedAt`
+    // but listed by `createdAt`, so picking a range reshuffled nothing visible and the
+    // filter read as dead. `submittedAt` first for the approval queue: longest wait on top.
+    Task.find(filter).sort(awaiting ? { submittedAt: 1 } : { [dateField]: -1 }).skip(skip).limit(limit).populate('owner', 'name').populate('assignedBy', 'name').populate('collaborators', 'name').populate('completedBy', 'name').populate('approvedBy', 'name').populate('originalAssignedBy', 'name'),
     Task.countDocuments(filter),
   ]);
 
@@ -836,8 +873,14 @@ export async function listTasks(actor, { scope = 'mine', status, search, period,
 }
 
 export async function taskSummary(actor) {
+  // The same exclusion listTasks applies: work I passed on isn't counted as mine, or the
+  // badge would promise more rows than the list shows.
+  const passedOn = await Task.distinct('forwardedFrom', { assignedBy: actor._id, forwardedFrom: { $ne: null } });
   const [mine, assigned] = await Promise.all([
-    Task.aggregate([{ $match: { $or: [{ owner: actor._id }, { collaborators: actor._id }] } }, { $group: { _id: '$status', n: { $sum: 1 } } }]),
+    Task.aggregate([
+      { $match: { $or: [{ owner: actor._id }, { collaborators: actor._id }], ...(passedOn.length ? { _id: { $nin: passedOn } } : {}) } },
+      { $group: { _id: '$status', n: { $sum: 1 } } },
+    ]),
     Task.aggregate([{ $match: { assignedBy: actor._id } }, { $group: { _id: '$status', n: { $sum: 1 } } }]),
   ]);
   const pick = (agg, st) => agg.find((a) => a._id === st)?.n ?? 0;

@@ -31,7 +31,7 @@ import { DateRange } from '@/components/ui/date-range';
 import { PDF_SCOPES, downloadTasksPdf, isOverdue, todayYMD } from '@/lib/task';
 
 const PERIODS = [
-  { value: 'all', label: 'All Time' },
+  { value: 'all', label: 'All time' },
   { value: 'week', label: 'Last 7 days' },
   { value: 'month', label: 'Last 30 days' },
   { value: 'year', label: 'Last year' },
@@ -39,6 +39,15 @@ const PERIODS = [
 ];
 const PERIOD_LABELS = Object.fromEntries(PERIODS.map((p) => [p.value, p.label]));
 const PDF_LABELS = Object.fromEntries(PDF_SCOPES.map((s) => [s.value, s.label]));
+
+// What the date filter actually measures on each tab, spelled out on the control itself.
+// The server ranges finished work on when it was completed and open work on when it was
+// added; without the word on screen, two tabs applied the same dropdown to different
+// dates and neither said so.
+const PERIOD_BASIS = { history: 'Completed', mine: 'Added', assigned: 'Added' };
+// Read out under the row, so picking a range visibly does something even when the office
+// only has a few weeks of data and "last 30 days" happens to hold everything.
+const RANGE_WORDS = { week: 'in the last 7 days', month: 'in the last 30 days', year: 'in the last year' };
 
 const STAT_TONE = {
   warning: 'bg-warning/15 text-amber-600 ring-warning/25 dark:text-amber-300',
@@ -200,16 +209,22 @@ function ForwardTrail({ task, myId }) {
   );
 }
 
-/** Personal / history task row — tap the row for full details, the circle to complete. */
-function TaskRow({ task, myId, canToggle, onToggle, onEdit, onDelete, onOpen }) {
+/**
+ * Personal / history task row — tap the row for full details, the circle to complete.
+ *
+ * `assignerView` flips it round for "Assigned by me": the interesting person is who the
+ * work went TO, not who it came from (which is me), and I may edit or withdraw it.
+ */
+function TaskRow({ task, myId, canToggle, onToggle, onEdit, onDelete, onOpen, assignerView = false }) {
   const done = task.status === 'DONE';
   const awaiting = task.awaitingApproval;
   const overdue = !done && !awaiting && isOverdue(task.dueYMD);
   // Where the task comes from (delegator, or a shared task's owner if it's not me).
-  const from = task.assignedBy || (myId && task.owner && task.owner.id && task.owner.id !== myId ? task.owner : null);
+  const from = assignerView ? null : task.assignedBy || (myId && task.owner && task.owner.id && task.owner.id !== myId ? task.owner : null);
   // Only my OWN, non-delegated task can be edited/deleted here. A delegated or
-  // shared-with-me task: I can complete it, but not change or remove it.
-  const canManage = task.owner?.id === myId && !task.assignedBy;
+  // shared-with-me task: I can complete it, but not change or remove it. Work I handed
+  // out is mine to change, so the assigner's view keeps both.
+  const canManage = assignerView || (task.owner?.id === myId && !task.assignedBy);
   const sharedWith = canManage && task.collaborators?.length ? task.collaborators : [];
   return (
     <div
@@ -245,6 +260,10 @@ function TaskRow({ task, myId, canToggle, onToggle, onEdit, onDelete, onOpen }) 
           {from ? (
             <span>
               From: <span className="font-medium text-foreground">{from.name}</span>
+            </span>
+          ) : assignerView && task.owner?.name ? (
+            <span>
+              To: <span className="font-medium text-foreground">{task.owner.name}</span>
             </span>
           ) : null}
           {sharedWith.length ? (
@@ -352,6 +371,10 @@ function DatedTaskList({ tasks, myId, dateKey, ascending = false, onEdit, onDele
                     {t.dueYMD ? <span className={cn(overdue && 'font-medium text-destructive')}>Due {fmtDate(t.dueYMD)}</span> : null}
                     {done && t.completedAt ? <span className="text-success">Done {fmtDate(t.completedAt)}{t.completedBy?.name ? ` · by ${t.completedBy.name}` : ''}</span> : null}
                     {t.siblings?.length ? <SiblingProgress siblings={t.siblings} /> : null}
+                    {/* The hand-off trail belongs here too. It only rendered in the flat
+                        row, so a task that had come down a chain lost its origin the
+                        moment it landed inside a person's folder. */}
+                    <ForwardTrail task={t} myId={myId} />
                     <SeenState task={t} myId={myId} />
                     <ApprovalState task={t} />
                   </div>
@@ -543,7 +566,9 @@ function TaskDetailDialog({ view, myId, onClose, onToggle, onEdit, onDelete, onA
 
           <div className="divide-y divide-border/50 rounded-xl bg-foreground/[0.03] px-3 ring-1 ring-border/50">
             <Row label="Type">
-              {task.assignedBy?.name ? (
+              {/* Opened from "Assigned by me", the assigner IS me — printing "Assigned by
+                  <my own name>" told them nothing. There, name who it went to instead. */}
+              {task.assignedBy?.name && !(view.assignerView && String(task.assignedBy.id) === String(myId)) ? (
                 <span className="inline-flex items-center gap-1.5">
                   <UserRound className="size-3.5 text-primary" /> Assigned by {task.assignedBy.name}
                 </span>
@@ -561,6 +586,38 @@ function TaskDetailDialog({ view, myId, onClose, onToggle, onEdit, onDelete, onA
                 'Personal task'
               )}
             </Row>
+            {/* The full hand-off path — who started it, everyone it went through, and
+                where it sits now. The row shows this too; it belongs here as well
+                because the detail sheet is where you go to understand a task. */}
+            {task.forwardChain?.length ? (
+              <Row label="Hand-off">
+                <span className="inline-flex flex-wrap items-center justify-end gap-x-1 gap-y-0.5">
+                  {task.forwardChain.map((n, i) => (
+                    <span key={`${n.id ?? n.name}-${i}`} className="inline-flex items-center gap-1">
+                      {i > 0 ? <span className="text-muted-foreground">→</span> : null}
+                      <span className={i === task.forwardChain.length - 1 ? 'font-semibold text-foreground' : 'text-muted-foreground'}>
+                        {n.id && String(n.id) === String(myId) ? 'You' : n.name}
+                      </span>
+                    </span>
+                  ))}
+                </span>
+              </Row>
+            ) : task.originalAssignedBy?.name ? (
+              <Row label="Originally from">
+                <span className="inline-flex items-center gap-1.5">
+                  <Forward className="size-3.5 text-primary" /> {task.originalAssignedBy.name}
+                </span>
+              </Row>
+            ) : null}
+            {task.forwardedTo?.length ? (
+              <Row label="Passed on to">
+                <span className="inline-flex items-center gap-1.5">
+                  <Forward className="size-3.5 text-primary" />
+                  {task.forwardedTo.map((f) => f.owner?.name).filter(Boolean).join(', ')}
+                  {task.forwardedTo.every((f) => f.status === 'DONE') ? <span className="text-success">· done</span> : null}
+                </span>
+              </Row>
+            ) : null}
             {sharedWith.length ? (
               <Row label="Shared with">
                 <span className="inline-flex items-center gap-1.5">
@@ -636,6 +693,12 @@ export function TaskBoard() {
   // Reset the search box when switching tabs (task-text vs person name).
   React.useEffect(() => setSearch(''), [tab]);
 
+  // Leaving "Custom range" drops the dates with it — otherwise they sit in the query key
+  // invisibly and a later return to Custom silently re-applies a range nobody re-picked.
+  React.useEffect(() => {
+    if (period !== 'custom') setRange({ from: '', to: '' });
+  }, [period]);
+
   const { data: sum } = useQuery({ queryKey: ['tasks', 'summary'], queryFn: () => api.get('/tasks/summary') });
   const m = sum?.mine ?? { pending: 0, done: 0, total: 0 };
 
@@ -646,20 +709,20 @@ export function TaskBoard() {
   const status = tab === 'history' ? 'DONE' : '';
 
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['tasks', 'list', scope, status, isMine || isAssigned ? '' : debouncedSearch, isMine ? 'all' : period, isMine ? '' : `${range.from}~${range.to}`],
+    queryKey: ['tasks', 'list', scope, status, isMine || isAssigned ? '' : debouncedSearch, period, `${range.from}~${range.to}`],
     queryFn: () => {
       const p = new URLSearchParams({ scope, limit: '10000' });
       if (status) p.set('status', status);
       // My tasks & Assigned search client-side (task text + person name); History uses the server.
       if (!isMine && !isAssigned && debouncedSearch) p.set('search', debouncedSearch);
-      // My tasks always shows each assigner's full history, so no period trimming there.
-      if (!isMine) {
-        if (period === 'custom') {
-          if (range.from) p.set('from', range.from);
-          if (range.to) p.set('to', range.to);
-        } else if (period && period !== 'all') {
-          p.set('period', period);
-        }
+      // The date filter applies to every tab. It used to be suppressed on "My tasks" —
+      // which is the tab everyone lands on, so the control was missing exactly where it
+      // was being reached for, and picking a range there did nothing at all.
+      if (period === 'custom') {
+        if (range.from) p.set('from', range.from);
+        if (range.to) p.set('to', range.to);
+      } else if (period && period !== 'all') {
+        p.set('period', period);
       }
       return api.get(`/tasks?${p.toString()}`);
     },
@@ -681,7 +744,7 @@ export function TaskBoard() {
   // when 2+ people have delegated work to me, one folder per assigner. A lone
   // assigner's pending tasks fold into the flat list (no folder tap for one person).
   const mine = React.useMemo(() => {
-    if (!isMine) return { personalPending: [], folders: [] };
+    if (!isMine) return { personalPending: [], folders: [], searching: false };
     const myId = user?.id;
     const q = search.toLowerCase().trim();
     const textHit = (t) => t.title.toLowerCase().includes(q) || (t.notes || '').toLowerCase().includes(q);
@@ -699,6 +762,7 @@ export function TaskBoard() {
 
     const byPerson = new Map();
     const personal = [];
+    const personalDone = []; // kept aside only so a search can still reach them
     for (const t of tasks) {
       const from = fromOf(t);
       if (from) {
@@ -707,12 +771,30 @@ export function TaskBoard() {
         byPerson.get(id).tasks.push(t);
       } else if (t.status !== 'DONE') {
         personal.push(t); // my own pending tasks (completed ones live in History)
+      } else {
+        personalDone.push(t);
       }
     }
 
     // A person only anchors a folder while they have PENDING work for me. Once it's
     // all done, that relationship lives in History — not this pending-focused view.
     const active = [...byPerson.values()].filter((f) => f.tasks.some((t) => t.status !== 'DONE'));
+
+    // SEARCHING flattens everything. A folder is a person, so folders were only ever
+    // matched on the person's NAME — which meant a task sitting inside one could not be
+    // found by typing its title at all. When there's a search term the grouping is
+    // dropped and every matching task is listed, wherever it lives.
+    if (q) {
+      // Finished work is in here too. A folder lists its completed tasks, so leaving them
+      // out of the search would mean a task you can SEE by opening a folder can't be
+      // found by typing its name — which is the whole complaint.
+      const all = [...personal, ...personalDone, ...[...byPerson.values()].flatMap((f) => f.tasks)];
+      const hits = all
+        .filter((t) => textHit(t) || (fromOf(t)?.name || '').toLowerCase().includes(q))
+        // Open work first — it's what needs doing; finished rows follow, struck through.
+        .sort((a, b) => (a.status === 'DONE') - (b.status === 'DONE') || byDueDate(a, b));
+      return { personalPending: hits, folders: [], searching: true };
+    }
 
     let personalPending = personal;
     let folders = [];
@@ -725,8 +807,6 @@ export function TaskBoard() {
           const nextDue = pendingTasks.map((t) => t.dueYMD).filter(Boolean).sort()[0] || '';
           return { ...f, pendingTasks, doneTasks, pending: pendingTasks.length, done: doneTasks.length, total: f.tasks.length, nextDue };
         })
-        // A folder is a person — search it by name (task text filters the flat list).
-        .filter((f) => !q || f.name.toLowerCase().includes(q))
         // Soonest deadline first, then most pending, then name (deterministic).
         .sort((a, b) => {
           if (a.nextDue && b.nextDue && a.nextDue !== b.nextDue) return a.nextDue < b.nextDue ? -1 : 1;
@@ -739,7 +819,7 @@ export function TaskBoard() {
     }
 
     personalPending = personalPending.filter(matchesRow).sort(byDueDate);
-    return { personalPending, folders };
+    return { personalPending, folders, searching: false };
   }, [isMine, tasks, search, user?.id]);
 
   // My OWN task (not delegated to me, not just shared with me) → I can edit/delete it.
@@ -754,18 +834,19 @@ export function TaskBoard() {
   }, [tasks]);
   const batchCountOf = (t) => (t?.assignBatch ? batchCounts[t.assignBatch] || 0 : 0);
 
-  // Group assigned tasks into per-person folders (filtered by the name search).
+  // Assigned work, grouped into a folder per person. A search term matches the person OR
+  // the task itself and flattens the grouping — see `assignedHits` below.
   const folders = React.useMemo(() => {
     if (!isAssigned) return [];
+    const q = search.toLowerCase().trim();
+    if (q) return []; // searching shows a flat list instead
     const byOwner = new Map();
     for (const t of tasks) {
       const id = t.owner?.id || String(t.owner);
       if (!byOwner.has(id)) byOwner.set(id, { id, name: t.owner?.name || 'Unknown', tasks: [] });
       byOwner.get(id).tasks.push(t);
     }
-    const q = search.toLowerCase().trim();
     return [...byOwner.values()]
-      .filter((f) => !q || f.name.toLowerCase().includes(q))
       .map((f) => {
         const pendingTasks = f.tasks.filter((t) => t.status !== 'DONE');
         const doneTasks = f.tasks.filter((t) => t.status === 'DONE');
@@ -774,13 +855,47 @@ export function TaskBoard() {
       .sort((a, b) => b.pending - a.pending || a.name.localeCompare(b.name));
   }, [isAssigned, tasks, search]);
 
+  // Flat search results for "Assigned by me": any task whose title, notes or assignee
+  // matches — folders can't hide it.
+  const assignedHits = React.useMemo(() => {
+    if (!isAssigned) return null;
+    const q = search.toLowerCase().trim();
+    if (!q) return null;
+    return tasks
+      .filter((t) =>
+        t.title.toLowerCase().includes(q)
+        || (t.notes || '').toLowerCase().includes(q)
+        || (t.owner?.name || '').toLowerCase().includes(q),
+      )
+      .sort(byDueDate);
+  }, [isAssigned, tasks, search]);
+
   // Everything submitted and waiting for the assigner to approve/reject — surfaced at
   // the top of "Assigned by me" so nothing sits in limbo.
+  //
+  // Deliberately its OWN query, not a slice of the list above: someone waiting on an
+  // approval is blocked, and a date range picked for browsing must not be able to hide
+  // them. Longest wait first, straight from the server.
+  const { data: awaitingData } = useQuery({
+    queryKey: ['tasks', 'awaiting'],
+    queryFn: () => api.get('/tasks?scope=assigned&awaiting=1&limit=500'),
+    enabled: isAssigned,
+    refetchInterval: isAssigned ? 20_000 : false,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+    staleTime: 0,
+  });
   const awaitingList = React.useMemo(() => {
     if (!isAssigned) return [];
     const q = search.toLowerCase().trim();
-    return tasks.filter((t) => t.awaitingApproval && (!q || (t.owner?.name || '').toLowerCase().includes(q)));
-  }, [isAssigned, tasks, search]);
+    return (awaitingData?.tasks ?? []).filter(
+      (t) => t.awaitingApproval
+        && (!q
+          || (t.owner?.name || '').toLowerCase().includes(q)
+          || t.title.toLowerCase().includes(q)
+          || (t.notes || '').toLowerCase().includes(q)),
+    );
+  }, [isAssigned, awaitingData, search]);
 
   // Each person completes their OWN copy. Marking "done" on an approval-gated task
   // submits it for review; tapping again on a submitted one withdraws it.
@@ -882,13 +997,38 @@ export function TaskBoard() {
   const downloadPdf = async () => {
     setPdfBusy(true);
     try {
-      await downloadTasksPdf(pdfScope, scope);
+      // The PDF prints the rows currently on screen — same range, same search — so the
+      // download can never disagree with what was just read.
+      await downloadTasksPdf(pdfScope, scope, {
+        period,
+        from: period === 'custom' ? range.from : '',
+        to: period === 'custom' ? range.to : '',
+        search: debouncedSearch,
+      });
     } catch (e) {
       toast.error(e?.message || 'Could not download');
     } finally {
       setPdfBusy(false);
     }
   };
+
+  // Spell out the range that is in force, with the count, right under the controls.
+  // Suppressed while searching: the results list prints its own "N matches" heading and
+  // two counts side by side, measuring different things, would read as a contradiction.
+  const filterNote = React.useMemo(() => {
+    if (search.trim()) return '';
+    let when = RANGE_WORDS[period] || '';
+    if (period === 'custom') {
+      if (!range.from && !range.to) return '';
+      when = range.from && range.to
+        ? `between ${fmtDate(range.from)} and ${fmtDate(range.to)}`
+        : range.from ? `from ${fmtDate(range.from)}` : `up to ${fmtDate(range.to)}`;
+    }
+    if (!when) return '';
+    const n = tasks.length;
+    const basis = tab === 'history' ? 'completed' : 'added';
+    return `${n} ${n === 1 ? 'task' : 'tasks'} ${basis} ${when}.`;
+  }, [period, range, tasks.length, tab, search]);
 
   return (
     <div className="space-y-6">
@@ -903,21 +1043,22 @@ export function TaskBoard() {
         {canAssign ? <AssignDialog /> : null}
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative w-full sm:max-w-xs">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder={isAssigned ? 'Search by person…' : isMine ? 'Search tasks or people…' : 'Search tasks…'}
-            className="h-9 bg-background/50 pl-9"
-          />
-        </div>
-        {/* My tasks always shows every assigner's full history, so the period filter doesn't apply there. */}
-        {!isMine ? (
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative w-full sm:max-w-xs">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search tasks or people…"
+              className="h-9 bg-background/50 pl-9"
+            />
+          </div>
           <Select value={period} onValueChange={setPeriod}>
-            <SelectTrigger className="h-9 w-full bg-background/50 sm:w-36">
-              <span className="line-clamp-1">{PERIOD_LABELS[period] ?? 'All Time'}</span>
+            <SelectTrigger className="h-9 w-full bg-background/50 sm:w-48">
+              <span className="line-clamp-1">
+                {period === 'all' ? 'All time' : `${PERIOD_BASIS[tab] ?? 'Added'}: ${PERIOD_LABELS[period]}`}
+              </span>
             </SelectTrigger>
             <SelectContent>
               {PERIODS.map((p) => (
@@ -927,25 +1068,28 @@ export function TaskBoard() {
               ))}
             </SelectContent>
           </Select>
-        ) : null}
-        {!isMine && period === 'custom' ? <DateRange value={range} onChange={setRange} max={todayYMD()} /> : null}
-        <div className="flex w-full items-center gap-2 sm:ml-auto sm:w-auto">
-          <Select value={pdfScope} onValueChange={setPdfScope}>
-            <SelectTrigger className="h-9 flex-1 bg-background/50 sm:w-40">
-              <span className="line-clamp-1">{PDF_LABELS[pdfScope] ?? 'All Work'}</span>
-            </SelectTrigger>
-            <SelectContent>
-              {PDF_SCOPES.map((s) => (
-                <SelectItem key={s.value} value={s.value}>
-                  {s.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button variant="outline" onClick={downloadPdf} disabled={pdfBusy} className="shrink-0">
-            <Download className="size-4" /> {pdfBusy ? '…' : 'PDF'}
-          </Button>
+          {period === 'custom' ? <DateRange value={range} onChange={setRange} max={todayYMD()} /> : null}
+          <div className="flex w-full items-center gap-2 sm:ml-auto sm:w-auto">
+            {/* This one picks WHAT goes in the download, never a date range — the dropdown
+                on the left is the only place a date range is chosen, and the PDF follows it. */}
+            <Select value={pdfScope} onValueChange={setPdfScope}>
+              <SelectTrigger className="h-9 flex-1 bg-background/50 sm:w-44">
+                <span className="line-clamp-1">Include: {PDF_LABELS[pdfScope] ?? 'All work'}</span>
+              </SelectTrigger>
+              <SelectContent>
+                {PDF_SCOPES.map((s) => (
+                  <SelectItem key={s.value} value={s.value}>
+                    {s.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button variant="outline" onClick={downloadPdf} disabled={pdfBusy} className="shrink-0">
+              <Download className="size-4" /> {pdfBusy ? '…' : 'PDF'}
+            </Button>
+          </div>
         </div>
+        {filterNote ? <p className="px-1 text-xs text-muted-foreground">{filterNote}</p> : null}
       </div>
 
       <Tabs value={tab} onValueChange={setTab}>
@@ -999,12 +1143,42 @@ export function TaskBoard() {
                 </div>
               ) : null}
 
-              {folders.length ? (
+              {/* Searching lists every match flat — a task can't be hidden inside a
+                  person's folder just because their name doesn't match what was typed. */}
+              {assignedHits ? (
+                assignedHits.length ? (
+                  <div className="space-y-2.5">
+                    <h3 className="text-sm font-medium text-muted-foreground">
+                      {assignedHits.length} {assignedHits.length === 1 ? 'match' : 'matches'} for “{search.trim()}”
+                    </h3>
+                    <div className="space-y-2">
+                      {assignedHits.map((t) => (
+                        <TaskRow
+                          key={t.id}
+                          task={t}
+                          myId={user?.id}
+                          assignerView
+                          canToggle={false}
+                          onToggle={() => {}}
+                          onEdit={(x) => setEditing(x)}
+                          onDelete={(x) => setDeleting(x)}
+                          onOpen={(x) => openTask({ task: x, canToggle: false, allowEdit: true, allowDelete: true, assignerView: true, batchCount: batchCountOf(x) })}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <EmptyState icon={Users} title="No matching work" description="Nothing you assigned matches that — try a different word." />
+                )
+              ) : folders.length ? (
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   {folders.map((f) => (
                     <PersonFolder
                       key={f.id}
                       folder={f}
+                      // Without this the hand-off trail inside the folder prints my own
+                      // name instead of "You".
+                      myId={user?.id}
                       onEdit={(x) => setEditing(x)}
                       onDelete={(x) => setDeleting(x)}
                       onOpen={(x) => openTask({ task: x, canToggle: false, allowEdit: true, allowDelete: true, assignerView: true, batchCount: batchCountOf(x) })}
@@ -1012,7 +1186,7 @@ export function TaskBoard() {
                   ))}
                 </div>
               ) : !awaitingList.length ? (
-                <EmptyState icon={Users} title={search ? 'No one matches that name' : 'You haven’t assigned any work'} description={search ? '' : 'Use “Assign work” to give a task to someone below you.'} />
+                <EmptyState icon={Users} title="You haven’t assigned any work" description="Use “Assign work” to give a task to someone below you." />
               ) : null}
             </div>
           ) : isMine ? (
@@ -1026,8 +1200,14 @@ export function TaskBoard() {
               <div className="space-y-6">
                 {mine.personalPending.length ? (
                   <div className="space-y-2.5">
-                    {/* Heading only appears once there are folders below to distinguish the two. */}
-                    {mine.folders.length ? (
+                    {/* Searching drops the folders and lists every hit flat, so say so —
+                        otherwise it reads as though the folders just vanished. */}
+                    {mine.searching ? (
+                      <h3 className="text-sm font-medium text-muted-foreground">
+                        {mine.personalPending.length} {mine.personalPending.length === 1 ? 'match' : 'matches'} for “{search.trim()}”
+                      </h3>
+                    ) : mine.folders.length ? (
+                      /* Heading only appears once there are folders below to distinguish the two. */
                       <h3 className="flex items-center gap-2 text-sm font-semibold">
                         <ListTodo className="size-4 text-warning" /> My tasks
                         <span className="font-normal text-muted-foreground">({mine.personalPending.length})</span>

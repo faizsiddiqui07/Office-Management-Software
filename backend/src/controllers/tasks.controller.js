@@ -162,6 +162,12 @@ const SCOPE_LABELS = {
   year: 'Last year',
 };
 
+const PERIOD_LABELS = {
+  week: 'last 7 days',
+  month: 'last 30 days',
+  year: 'last year',
+};
+
 export async function exportPdf(req, res, next) {
   try {
     const scope = req.query?.scope || 'all';
@@ -171,11 +177,32 @@ export async function exportPdf(req, res, next) {
     else if (scope === 'completed') q.status = 'DONE';
     else if (['week', 'month', 'year'].includes(scope)) q.period = scope;
 
+    // The PDF prints what the page is showing. The date range and the search box on the
+    // To-Do page are sent along, so the download can't quietly disagree with the list
+    // the person is looking at.
+    const parts = [(SCOPE_LABELS[scope] || 'All tasks')];
+    const { period, search } = req.query || {};
+    const ymdOnly = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(v || '') ? v : '');
+    const from = ymdOnly(req.query?.from);
+    const to = ymdOnly(req.query?.to);
+    if (from || to) {
+      if (from) q.from = from;
+      if (to) q.to = to;
+      parts.push(from && to ? `${from} → ${to}` : from ? `from ${from}` : `up to ${to}`);
+    } else if (PERIOD_LABELS[period] && !q.period) {
+      q.period = period;
+      parts.push(PERIOD_LABELS[period]);
+    }
+    if (search) {
+      q.search = String(search).slice(0, 200);
+      parts.push(`matching “${q.search}”`);
+    }
+
     const { tasks } = await svc.listTasks(req.user, q);
     const s = await Setting.getSingleton();
     const data = {
       company: { name: s.companyName, brandColor: s.brandColor },
-      scopeLabel: (SCOPE_LABELS[scope] || 'All tasks') + (view === 'assigned' ? ' · assigned by me' : ''),
+      scopeLabel: parts.join(' · ') + (view === 'assigned' ? ' · assigned by me' : ''),
       for: view === 'assigned' ? null : req.user.name,
       // Company-time date — the raw ISO slice printed the UTC day, a day early in the
       // early-morning IST window, while the table's Created/Completed columns show IST.

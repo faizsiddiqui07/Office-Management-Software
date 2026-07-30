@@ -26,6 +26,10 @@ async function latest(model, filter, field) {
  */
 export async function getBadges(user) {
   const mine = user._id;
+  // Work I've passed on isn't waiting on me any more, and it no longer appears in my
+  // list — so it must not light the dot either, or the dot points at nothing.
+  const passedOn = await Task.distinct('forwardedFrom', { assignedBy: mine, forwardedFrom: { $ne: null } });
+  const notPassedOn = passedOn.length ? { _id: { $nin: passedOn } } : {};
 
   const [
     assignedToMe,
@@ -37,7 +41,7 @@ export async function getBadges(user) {
     announcement,
   ] = await Promise.all([
     // A task someone delegated to me that I haven't finished.
-    latest(Task, { owner: mine, assignedBy: { $ne: null }, status: 'PENDING' }, 'createdAt'),
+    latest(Task, { owner: mine, assignedBy: { $ne: null }, status: 'PENDING', ...notPassedOn }, 'createdAt'),
     // Work I assigned that's now submitted and waiting for my approval.
     latest(Task, { assignedBy: mine, requiresApproval: true, status: 'PENDING', submittedAt: { $ne: null } }, 'submittedAt'),
 
