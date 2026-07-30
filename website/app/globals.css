@@ -261,24 +261,27 @@
    Glass utilities
    ──────────────────────────────────────────────────────────── */
 @layer components {
+  /* Write ONLY the standard `backdrop-filter`. Lightning CSS (Tailwind v4's minifier)
+     adds the `-webkit-` prefix itself from the build targets. When both were written by
+     hand, the production build collapsed them and kept ONLY `-webkit-backdrop-filter` —
+     so Chrome/Firefox/Android (which read the unprefixed property) got no blur and the
+     glass fell flat on the live site, while dev (unminified) still had both and looked
+     glassy. Letting the compiler prefix keeps the standard property in the output. */
   .glass {
     background-color: color-mix(in oklch, var(--card) calc(var(--glass-bg) * 100%), transparent);
     backdrop-filter: blur(20px) saturate(165%);
-    -webkit-backdrop-filter: blur(20px) saturate(165%);
     border: 1px solid var(--glass-border);
     box-shadow: var(--glass-shadow);
   }
   .glass-strong {
     background-color: color-mix(in oklch, var(--card) calc(var(--glass-bg-strong) * 100%), transparent);
     backdrop-filter: blur(28px) saturate(180%);
-    -webkit-backdrop-filter: blur(28px) saturate(180%);
     border: 1px solid var(--glass-border);
     box-shadow: var(--glass-shadow);
   }
   .glass-subtle {
     background-color: color-mix(in oklch, var(--card) calc(var(--glass-bg-subtle) * 100%), transparent);
     backdrop-filter: blur(14px) saturate(150%);
-    -webkit-backdrop-filter: blur(14px) saturate(150%);
     border: 1px solid var(--glass-border);
   }
   /* Top hairline highlight that sells the "frosted glass" look */
@@ -342,15 +345,16 @@
 :root[data-lite='true'] .glass,
 :root[data-lite='true'] .glass-strong,
 :root[data-lite='true'] .glass-subtle {
+  /* Standard only — the compiler prefixes it. Hand-writing both made the prod build keep
+     only `-webkit-`, so on Chrome this `none` didn't apply and Lite mode failed to drop
+     the blur at all. */
   backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
   background-color: var(--card);
   box-shadow: none;
 }
 
 :root[data-lite='true'] [class*='backdrop-blur'] {
   backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
 }
 
 /* The blur is what made these surfaces read as solid — a dialog is only
@@ -409,8 +413,8 @@
   }
 
   .spotlight-nav {
+    /* Standard only — see the .glass note above; the compiler adds the -webkit- prefix. */
     backdrop-filter: blur(16px) saturate(160%);
-    -webkit-backdrop-filter: blur(16px) saturate(160%);
   }
   .spotlight-nav-bg {
     background-color: rgba(255, 255, 255, 0.7);
