@@ -41,11 +41,22 @@ export function AssignDialog() {
     }
   }, [open]);
 
-  const toggle = (id) => setAssignTo((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  const toggle = (id) =>
+    setAssignTo((prev) => {
+      if (prev.includes(id)) return prev.filter((x) => x !== id);
+      // Giving someone the work stops them being a bystander on it — drop the tag so the
+      // count below matches the chips, and matches what the server will save.
+      setCollaborators((tags) => tags.filter((x) => x !== id));
+      return [...prev, id];
+    });
   const toggleCollab = (id) => setCollaborators((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   const allIds = users.map((u) => u.id);
   const allSelected = allIds.length > 0 && allIds.every((id) => assignTo.includes(id));
-  const toggleAll = () => setAssignTo(allSelected ? [] : allIds);
+  const toggleAll = () => {
+    if (allSelected) return setAssignTo([]);
+    setCollaborators((tags) => tags.filter((x) => !allIds.includes(x)));
+    setAssignTo(allIds);
+  };
 
   const mut = useMutation({
     mutationFn: () => api.post('/tasks', { assignTo, collaborators, title, notes, dueYMD, requiresApproval }),

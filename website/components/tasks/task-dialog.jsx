@@ -67,7 +67,16 @@ export function TaskDialog({ task, open: openProp, onOpenChange, batchCount = 0 
   const taggablePeople = assignData?.taggable ?? [];
 
   const toggleCollab = (id) => setCollaborators((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-  const toggleAssignee = (id) => setAssignees((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  const toggleAssignee = (id) =>
+    setAssignees((prev) => {
+      if (prev.includes(id)) return prev.filter((x) => x !== id);
+      // Handing the work TO someone stops them being a bystander on it. Their tag chip
+      // disappears from the list below either way, but the id lingered in state — so the
+      // count read "2 tagged" with one chip lit, and the server (which drops assignees
+      // from the tag list) then saved a different number than the screen showed.
+      setCollaborators((tags) => tags.filter((x) => x !== id));
+      return [...prev, id];
+    });
 
   // Did the assigner change who it's assigned to? (drives whether we reconcile the batch)
   const reassigned = isAssignedByMe && (assignees.length !== currentAssignees.length || assignees.some((id) => !currentAssignees.includes(id)));
