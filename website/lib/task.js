@@ -34,6 +34,7 @@ export async function downloadTasksPdf(scope, view = 'mine', filters = {}) {
   if (!filters.from && !filters.to && filters.period && filters.period !== 'all' && filters.period !== 'custom') {
     p.set('period', filters.period);
   }
+  if (filters.dateBasis) p.set('dateBasis', filters.dateBasis);
   if (filters.search) p.set('search', filters.search);
   const url = `${API_BASE}/api/tasks/export.pdf?${p.toString()}`;
   const res = await fetch(url, { cache: 'no-store', headers: { Authorization: `Bearer ${getAuthToken()}` } });

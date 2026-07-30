@@ -30,24 +30,42 @@ import { ForwardDialog } from './forward-dialog';
 import { DateRange } from '@/components/ui/date-range';
 import { PDF_SCOPES, downloadTasksPdf, isOverdue, todayYMD } from '@/lib/task';
 
-const PERIODS = [
+// WHICH date a range means, per tab. My tasks and Assigned are lists of work still to be
+// done: every date on them is a DEADLINE, they group and sort by it, so that is what a
+// range has to mean. Filtering them on when each row happened to be created is what made
+// "27–30 July" drop a task plainly marked "Due 27 Jul". History is finished work, where
+// the only date that means anything is when it was completed.
+const DATE_BASIS = { mine: 'due', assigned: 'due', history: 'completed' };
+
+// Presets follow the basis. A deadline window looks FORWARD (what is coming up, what is
+// already late); a completion window looks back. Nothing on either list is a no-op.
+const DUE_PERIODS = [
+  { value: 'all', label: 'Any due date' },
+  { value: 'overdue', label: 'Overdue' },
+  { value: 'next7', label: 'Due in next 7 days' },
+  { value: 'next30', label: 'Due in next 30 days' },
+  { value: 'custom', label: 'Custom range' },
+];
+const DONE_PERIODS = [
   { value: 'all', label: 'All time' },
   { value: 'week', label: 'Last 7 days' },
   { value: 'month', label: 'Last 30 days' },
   { value: 'year', label: 'Last year' },
   { value: 'custom', label: 'Custom range' },
 ];
-const PERIOD_LABELS = Object.fromEntries(PERIODS.map((p) => [p.value, p.label]));
+const PERIODS_FOR = (tab) => (DATE_BASIS[tab] === 'due' ? DUE_PERIODS : DONE_PERIODS);
 const PDF_LABELS = Object.fromEntries(PDF_SCOPES.map((s) => [s.value, s.label]));
 
-// What the date filter actually measures on each tab, spelled out on the control itself.
-// The server ranges finished work on when it was completed and open work on when it was
-// added; without the word on screen, two tabs applied the same dropdown to different
-// dates and neither said so.
-const PERIOD_BASIS = { history: 'Completed', mine: 'Added', assigned: 'Added' };
 // Read out under the row, so picking a range visibly does something even when the office
 // only has a few weeks of data and "last 30 days" happens to hold everything.
-const RANGE_WORDS = { week: 'in the last 7 days', month: 'in the last 30 days', year: 'in the last year' };
+const RANGE_WORDS = {
+  week: 'completed in the last 7 days',
+  month: 'completed in the last 30 days',
+  year: 'completed in the last year',
+  overdue: 'overdue',
+  next7: 'due in the next 7 days',
+  next30: 'due in the next 30 days',
+};
 
 const STAT_TONE = {
   warning: 'bg-warning/15 text-amber-600 ring-warning/25 dark:text-amber-300',
@@ -445,7 +463,11 @@ function PersonFolder({ folder, myId, onEdit, onDelete, onOpen, onToggle, onExpa
             <h3 className="flex items-center gap-2 text-sm font-semibold">
               <ListTodo className="size-4 text-warning" /> Pending ({folder.pending})
             </h3>
-            <DatedTaskList myId={myId} tasks={folder.pendingTasks} dateKey={(t) => t.dueYMD || t.createdAt} ascending onEdit={onEdit} onDelete={onDelete} onOpen={onOpen} onToggle={onToggle} canToggle={canToggle} allowEdit={allowEdit} allowDelete={allowDelete} />
+            {/* Grouped by DEADLINE only. Falling back to the creation date filed a task
+                with no deadline under a heading that reads exactly like a due date — so
+                "Tag list…", which has no due date at all, appeared under 30 Jul. Undated
+                work now collects under "No date", where it belongs. */}
+            <DatedTaskList myId={myId} tasks={folder.pendingTasks} dateKey={(t) => t.dueYMD} ascending onEdit={onEdit} onDelete={onDelete} onOpen={onOpen} onToggle={onToggle} canToggle={canToggle} allowEdit={allowEdit} allowDelete={allowDelete} />
           </section>
           <section className="space-y-2">
             <h3 className="flex items-center gap-2 text-sm font-semibold">
@@ -699,6 +721,13 @@ export function TaskBoard() {
     if (period !== 'custom') setRange({ from: '', to: '' });
   }, [period]);
 
+  // The two preset lists don't overlap ("Overdue" means nothing on finished work), so a
+  // preset that doesn't exist on the tab being opened falls back to no filter rather than
+  // being sent to the server as a value it would reject. A custom range carries over.
+  React.useEffect(() => {
+    setPeriod((p) => (p === 'custom' || PERIODS_FOR(tab).some((x) => x.value === p) ? p : 'all'));
+  }, [tab]);
+
   const { data: sum } = useQuery({ queryKey: ['tasks', 'summary'], queryFn: () => api.get('/tasks/summary') });
   const m = sum?.mine ?? { pending: 0, done: 0, total: 0 };
 
@@ -708,10 +737,12 @@ export function TaskBoard() {
   // pending AND completed together) and splits/groups client-side.
   const status = tab === 'history' ? 'DONE' : '';
 
+  const dateBasis = DATE_BASIS[tab] ?? 'added';
+
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['tasks', 'list', scope, status, isMine || isAssigned ? '' : debouncedSearch, period, `${range.from}~${range.to}`],
+    queryKey: ['tasks', 'list', scope, status, isMine || isAssigned ? '' : debouncedSearch, period, `${range.from}~${range.to}`, dateBasis],
     queryFn: () => {
-      const p = new URLSearchParams({ scope, limit: '10000' });
+      const p = new URLSearchParams({ scope, limit: '10000', dateBasis });
       if (status) p.set('status', status);
       // My tasks & Assigned search client-side (task text + person name); History uses the server.
       if (!isMine && !isAssigned && debouncedSearch) p.set('search', debouncedSearch);
@@ -1001,6 +1032,7 @@ export function TaskBoard() {
       // download can never disagree with what was just read.
       await downloadTasksPdf(pdfScope, scope, {
         period,
+        dateBasis,
         from: period === 'custom' ? range.from : '',
         to: period === 'custom' ? range.to : '',
         search: debouncedSearch,
@@ -1020,15 +1052,21 @@ export function TaskBoard() {
     let when = RANGE_WORDS[period] || '';
     if (period === 'custom') {
       if (!range.from && !range.to) return '';
+      const word = dateBasis === 'due' ? 'due' : 'completed';
       when = range.from && range.to
-        ? `between ${fmtDate(range.from)} and ${fmtDate(range.to)}`
-        : range.from ? `from ${fmtDate(range.from)}` : `up to ${fmtDate(range.to)}`;
+        ? `${word} between ${fmtDate(range.from)} and ${fmtDate(range.to)}`
+        : range.from ? `${word} from ${fmtDate(range.from)}` : `${word} up to ${fmtDate(range.to)}`;
     }
     if (!when) return '';
     const n = tasks.length;
-    const basis = tab === 'history' ? 'completed' : 'added';
-    return `${n} ${n === 1 ? 'task' : 'tasks'} ${basis} ${when}.`;
-  }, [period, range, tasks.length, tab, search]);
+    let note = `${n} ${n === 1 ? 'task' : 'tasks'} ${when}.`;
+    // Work with no deadline can't be inside a deadline window, so it isn't listed. Say
+    // how much — a task that vanishes without a word is how a filter gets blamed for
+    // losing things.
+    const hidden = data?.noDueHidden ?? 0;
+    if (hidden) note += ` ${hidden} more with no due date ${hidden === 1 ? 'is' : 'are'} not shown.`;
+    return note;
+  }, [period, range, tasks.length, dateBasis, search, data?.noDueHidden]);
 
   return (
     <div className="space-y-6">
@@ -1054,21 +1092,27 @@ export function TaskBoard() {
               className="h-9 bg-background/50 pl-9"
             />
           </div>
+          {/* One date filter, and the option labels themselves say which date it means —
+              deadlines on the two work lists, completion date on History. */}
           <Select value={period} onValueChange={setPeriod}>
             <SelectTrigger className="h-9 w-full bg-background/50 sm:w-48">
               <span className="line-clamp-1">
-                {period === 'all' ? 'All time' : `${PERIOD_BASIS[tab] ?? 'Added'}: ${PERIOD_LABELS[period]}`}
+                {period === 'custom' && dateBasis === 'due'
+                  ? 'Due in a date range'
+                  : PERIODS_FOR(tab).find((p) => p.value === period)?.label ?? 'All time'}
               </span>
             </SelectTrigger>
             <SelectContent>
-              {PERIODS.map((p) => (
+              {PERIODS_FOR(tab).map((p) => (
                 <SelectItem key={p.value} value={p.value}>
                   {p.label}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-          {period === 'custom' ? <DateRange value={range} onChange={setRange} max={todayYMD()} /> : null}
+          {/* No upper bound on a deadline range — most deadlines are in the future. A
+              completion range still can't run past today. */}
+          {period === 'custom' ? <DateRange value={range} onChange={setRange} max={dateBasis === 'due' ? undefined : todayYMD()} /> : null}
           <div className="flex w-full items-center gap-2 sm:ml-auto sm:w-auto">
             {/* This one picks WHAT goes in the download, never a date range — the dropdown
                 on the left is the only place a date range is chosen, and the PDF follows it. */}

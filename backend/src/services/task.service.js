@@ -718,7 +718,33 @@ function periodMatch(period, field = 'createdAt') {
   return { [field]: { $gte: start } };
 }
 
-export async function listTasks(actor, { scope = 'mine', status, search, period, from, to, awaiting, page = 1, limit = 200 }) {
+/** Shift a YYYY-MM-DD by whole days, staying in the company day grid. */
+function shiftYMD(ymd, days) {
+  return new Date(companyDayFromYMD(ymd).getTime() + days * 86400000).toISOString().slice(0, 10);
+}
+
+/**
+ * A window on the DEADLINE, for the two tabs that are about work still to be done.
+ *
+ * `dueYMD` is a plain YYYY-MM-DD, so a lexical range is exact and index-friendly. Every
+ * branch carries `$gt: ''` because an unset deadline is stored as the empty string, and
+ * '' compares BELOW every real date — so a plain `$lt: today` would quietly pull in every
+ * task that has no deadline at all.
+ */
+function dueMatch(period, status) {
+  const today = ymdInTz(new Date());
+  if (period === 'overdue') {
+    // Only work that is still OPEN can be late. A finished task with a deadline in the
+    // past was delivered — listing it under "Overdue" buried the three things actually
+    // outstanding under sixteen that were already done.
+    return { dueYMD: { $gt: '', $lt: today }, ...(status ? {} : { status: 'PENDING' }) };
+  }
+  const days = period === 'next7' ? 7 : period === 'next30' ? 30 : 0;
+  if (!days) return {};
+  return { dueYMD: { $gt: '', $gte: today, $lte: shiftYMD(today, days - 1) } };
+}
+
+export async function listTasks(actor, { scope = 'mine', status, search, period, from, to, dateBasis, awaiting, page = 1, limit = 200 }) {
   const and = [];
   // "mine" now also includes shared tasks I'm tagged on (a collaborator), not just
   // ones I own — so multiple $or blocks may stack; combine them with $and.
@@ -737,8 +763,21 @@ export async function listTasks(actor, { scope = 'mine', status, search, period,
     if (passedOn.length) and.push({ _id: { $nin: passedOn } });
   }
   if (status && ['PENDING', 'DONE'].includes(status)) and.push({ status });
-  // Completed work filters on when it was completed; open work on when it was created.
-  const dateField = status === 'DONE' ? 'completedAt' : 'createdAt';
+  // WHICH date a range means. The caller says so explicitly, because the answer differs
+  // per tab and guessing it was the bug: a list whose every visible date is a DEADLINE
+  // was being filtered on when each row happened to be created, so picking "27–30 July"
+  // dropped work that was plainly due on the 27th. Older callers that say nothing keep
+  // the previous behaviour — completed work by completion, open work by creation.
+  const basis = ['due', 'added', 'completed'].includes(dateBasis)
+    ? dateBasis
+    : (status === 'DONE' ? 'completed' : 'added');
+  const onDue = basis === 'due';
+  const dateField = basis === 'completed' ? 'completedAt' : 'createdAt';
+  // Kept so the caller can say how many rows a deadline window pushed out of sight.
+  let noDueHidden = 0;
+  let dateClauseApplied = false;
+  const andBeforeDate = [...and];
+
   // The approval queue is work sitting and waiting on the actor — it is never "out of
   // range". A date filter that hid a submission from three weeks ago would leave the
   // assignee blocked with no way for the assigner to notice, so this scope ignores it.
@@ -746,14 +785,32 @@ export async function listTasks(actor, { scope = 'mine', status, search, period,
     and.push({ requiresApproval: true, status: 'PENDING', submittedAt: { $ne: null } });
   } else if (from || to) {
     // A custom date range (x → y) takes precedence over the preset period.
-    const r = {};
-    if (from) r.$gte = companyDayFromYMD(from);
-    if (to) r.$lt = new Date(companyDayFromYMD(to).getTime() + 86400000); // through end of `to` day
-    and.push({ [dateField]: r });
+    dateClauseApplied = true;
+    if (onDue) {
+      const r = { $gt: '' }; // never let an unset deadline slip in through a one-sided range
+      if (from) r.$gte = from;
+      if (to) r.$lte = to;
+      and.push({ dueYMD: r });
+    } else {
+      const r = {};
+      if (from) r.$gte = companyDayFromYMD(from);
+      if (to) r.$lt = new Date(companyDayFromYMD(to).getTime() + 86400000); // through end of `to` day
+      and.push({ [dateField]: r });
+    }
   } else {
-    const pm = periodMatch(period, dateField);
-    if (Object.keys(pm).length) and.push(pm);
+    const pm = onDue ? dueMatch(period, status) : periodMatch(period, dateField);
+    if (Object.keys(pm).length) {
+      and.push(pm);
+      dateClauseApplied = true;
+      // "Overdue" also narrows to open work; the undated count below has to narrow the
+      // same way, or it would offer to show finished work as "hidden".
+      const { dueYMD: _dueRange, ...rest } = pm;
+      if (Object.keys(rest).length) andBeforeDate.push(rest);
+    }
   }
+  // A deadline window is in force only if the date clause actually narrowed anything.
+  const dueWindowOn = onDue && !awaiting && dateClauseApplied;
+
   if (search) {
     const rx = new RegExp(escapeRegex(search), 'i');
     // Match the PEOPLE too, not just the words. My tasks and Assigned search the loaded
@@ -765,15 +822,26 @@ export async function listTasks(actor, { scope = 'mine', status, search, period,
     const or = [{ title: rx }, { notes: rx }];
     if (ids.length) or.push({ owner: { $in: ids } }, { assignedBy: { $in: ids } }, { collaborators: { $in: ids } });
     and.push({ $or: or });
+    andBeforeDate.push({ $or: or });
   }
   const filter = and.length === 1 ? and[0] : { $and: and };
+
+  // Work with no deadline at all can't sit inside a deadline window, so it drops out.
+  // Count it, so the page can say "2 with no due date hidden" instead of letting a task
+  // disappear with no explanation — which is how a filter earns a reputation for eating
+  // things.
+  if (dueWindowOn) {
+    const noDueFilter = { $and: [...andBeforeDate, { $or: [{ dueYMD: '' }, { dueYMD: null }, { dueYMD: { $exists: false } }] }] };
+    noDueHidden = await Task.countDocuments(noDueFilter);
+  }
 
   const skip = (page - 1) * limit;
   const [tasks, total] = await Promise.all([
     // Order by whatever the date filter narrowed on. History filtered on `completedAt`
     // but listed by `createdAt`, so picking a range reshuffled nothing visible and the
-    // filter read as dead. `submittedAt` first for the approval queue: longest wait on top.
-    Task.find(filter).sort(awaiting ? { submittedAt: 1 } : { [dateField]: -1 }).skip(skip).limit(limit).populate('owner', 'name').populate('assignedBy', 'name').populate('collaborators', 'name').populate('completedBy', 'name').populate('approvedBy', 'name').populate('originalAssignedBy', 'name'),
+    // filter read as dead. A deadline window sorts soonest-first; `submittedAt` first for
+    // the approval queue, so the longest wait is on top.
+    Task.find(filter).sort(awaiting ? { submittedAt: 1 } : onDue ? { dueYMD: 1 } : { [dateField]: -1 }).skip(skip).limit(limit).populate('owner', 'name').populate('assignedBy', 'name').populate('collaborators', 'name').populate('completedBy', 'name').populate('approvedBy', 'name').populate('originalAssignedBy', 'name'),
     Task.countDocuments(filter),
   ]);
 
@@ -869,7 +937,7 @@ export async function listTasks(actor, { scope = 'mine', status, search, period,
     }
   }
 
-  return { tasks: out, total, page, limit };
+  return { tasks: out, total, page, limit, noDueHidden };
 }
 
 export async function taskSummary(actor) {

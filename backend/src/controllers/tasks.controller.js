@@ -163,9 +163,12 @@ const SCOPE_LABELS = {
 };
 
 const PERIOD_LABELS = {
-  week: 'last 7 days',
-  month: 'last 30 days',
-  year: 'last year',
+  week: 'completed in the last 7 days',
+  month: 'completed in the last 30 days',
+  year: 'completed in the last year',
+  overdue: 'overdue',
+  next7: 'due in the next 7 days',
+  next30: 'due in the next 30 days',
 };
 
 export async function exportPdf(req, res, next) {
@@ -181,14 +184,16 @@ export async function exportPdf(req, res, next) {
     // To-Do page are sent along, so the download can't quietly disagree with the list
     // the person is looking at.
     const parts = [(SCOPE_LABELS[scope] || 'All tasks')];
-    const { period, search } = req.query || {};
+    const { period, search, dateBasis } = req.query || {};
+    if (['due', 'added', 'completed'].includes(dateBasis)) q.dateBasis = dateBasis;
+    const basisWord = dateBasis === 'due' ? 'due' : dateBasis === 'completed' ? 'completed' : 'added';
     const ymdOnly = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(v || '') ? v : '');
     const from = ymdOnly(req.query?.from);
     const to = ymdOnly(req.query?.to);
     if (from || to) {
       if (from) q.from = from;
       if (to) q.to = to;
-      parts.push(from && to ? `${from} → ${to}` : from ? `from ${from}` : `up to ${to}`);
+      parts.push(from && to ? `${basisWord} ${from} → ${to}` : from ? `${basisWord} from ${from}` : `${basisWord} up to ${to}`);
     } else if (PERIOD_LABELS[period] && !q.period) {
       q.period = period;
       parts.push(PERIOD_LABELS[period]);

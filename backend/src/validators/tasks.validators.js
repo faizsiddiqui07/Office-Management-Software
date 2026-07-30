@@ -51,10 +51,15 @@ export const listTasksQuerySchema = z.object({
   scope: z.enum(['mine', 'assigned']).optional(),
   status: z.enum(['PENDING', 'DONE']).optional(),
   search: z.string().optional(),
-  period: z.enum(['all', 'week', 'month', 'year']).optional(),
+  // Backward-looking presets go with `added`/`completed`; the forward-looking ones and
+  // `overdue` go with `due`. The client offers only the set that fits the active tab.
+  period: z.enum(['all', 'week', 'month', 'year', 'overdue', 'next7', 'next30']).optional(),
   // Custom date range (overrides `period` when both are given). YMD strings.
   from: ymd.optional(),
   to: ymd.optional(),
+  // WHICH date the range means. Omitted = the old implicit rule (completed work by
+  // completion, everything else by creation).
+  dateBasis: z.enum(['due', 'added', 'completed']).optional(),
   // Just the submissions waiting on me to approve — exempt from the date filter.
   awaiting: z.enum(['1', 'true']).optional(),
   page: z.coerce.number().int().min(1).optional(),
