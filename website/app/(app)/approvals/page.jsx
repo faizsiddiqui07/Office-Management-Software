@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { CalendarDays, CheckCheck, ClipboardCheck, History, Inbox, TriangleAlert, Wrench } from 'lucide-react';
@@ -69,6 +70,9 @@ const decidedOn = (when) => (when ? ymd(new Date(when)) : '');
 
 export default function ApprovalsPage() {
   const qc = useQueryClient();
+  // A notification deep-links here with ?kind=leaves|regularizations so the queue it's
+  // about opens straight away, instead of whichever tab happens to have work.
+  const requestedKind = useSearchParams().get('kind');
   const [tab, setTab] = React.useState(null); // null until we know which tabs exist
   const [rangeKey, setRangeKey] = React.useState('this_month');
   const [custom, setCustom] = React.useState({ from: '', to: '' });
@@ -92,12 +96,13 @@ export default function ApprovalsPage() {
   // rows inside are only ever work THIS person handed out.
   const visibleTabs = React.useMemo(() => TABS.filter((t) => sections[t.key]), [sections]);
 
-  // Land on the tab that actually needs attention, not always the first one.
+  // Land on the tab a notification asked for; else the one that needs attention.
   React.useEffect(() => {
     if (!data || tab) return;
+    const wanted = visibleTabs.find((t) => t.key === requestedKind);
     const withWork = visibleTabs.find((t) => (counts[t.key] ?? 0) > 0);
-    setTab((withWork ?? visibleTabs[0])?.key ?? 'tasks');
-  }, [data, tab, visibleTabs, counts]);
+    setTab((wanted ?? withWork ?? visibleTabs[0])?.key ?? 'tasks');
+  }, [data, tab, visibleTabs, counts, requestedKind]);
 
   const range = rangeFor(rangeKey, custom);
   const historyReady = rangeKey !== 'custom' || (!!custom.from && !!custom.to);

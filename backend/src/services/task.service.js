@@ -18,6 +18,15 @@ function escapeRegex(s) {
 }
 
 /**
+ * A notification link that opens the EXACT task, not just the To-Do page. The client
+ * reads `?task=<id>` and pops that task's detail dialog on the right tab. `assigned` picks
+ * the "Assigned by me" tab (for the person who handed the work out); everyone else lands
+ * on "My tasks". A removed task has no id to open, so it falls back to the plain page.
+ */
+const todoLink = (id, assigned = false) =>
+  (id ? `/todo?${assigned ? 'tab=assigned&' : ''}task=${id}` : assigned ? '/todo?tab=assigned' : '/todo');
+
+/**
  * The end-of-day round-up: who finished what TODAY, person by person.
  *
  * Read live off the tasks every time it's asked for — nothing is stored, nothing is
@@ -160,20 +169,21 @@ export async function createTask(actor, data) {
         type: 'TASK_ASSIGNED',
         title: `New task from ${actor.name}`,
         message: data.dueYMD ? `${data.title} (due ${data.dueYMD})` : data.title,
-        link: '/todo',
+        link: todoLink(task._id),
       });
       await task.populate('owner', 'name');
       await task.populate('assignedBy', 'name');
       created.push(task.toJSON());
     }
-    // Tell each tagged person ONCE, not once per assignee copy.
+    // Tell each tagged person ONCE, not once per assignee copy. They see it in "Shared
+    // with me"; open the first copy (the tag rides every copy of a multi-assign batch).
     for (const cid of collaborators) {
       await notify({
         user: cid,
         type: 'TASK_ASSIGNED',
         title: `${actor.name} tagged you on a task`,
         message: data.title,
-        link: '/todo',
+        link: todoLink(created[0]?.id),
       });
     }
     return { tasks: created };
@@ -197,7 +207,7 @@ export async function createTask(actor, data) {
       type: 'TASK_ASSIGNED',
       title: `${actor.name} tagged you on a task`,
       message: data.dueYMD ? `${data.title} (due ${data.dueYMD})` : data.title,
-      link: '/todo',
+      link: todoLink(task._id),
     });
   }
 
@@ -247,7 +257,7 @@ export async function setStatus(actor, id, status) {
       type: 'TASK_ASSIGNED',
       title: `${actor.name} submitted work for approval`,
       message: task.title,
-      link: '/todo?tab=assigned',
+      link: todoLink(task._id, true),
     });
     return populated(task);
   }
@@ -268,13 +278,13 @@ export async function setStatus(actor, id, status) {
 
   if (task.status === 'DONE') {
     if (task.assignedBy && !isAssigner) {
-      await notify({ user: task.assignedBy, type: 'TASK_DONE', title: `${actor.name} completed a task`, message: task.title, link: '/todo?tab=assigned' });
+      await notify({ user: task.assignedBy, type: 'TASK_DONE', title: `${actor.name} completed a task`, message: task.title, link: todoLink(task._id, true) });
     }
     // Legacy shared "collaborator" task (single doc, tagged teammates) → tell the others.
     const involved = new Set([String(task.owner), ...(task.collaborators || []).map(String)]);
     involved.delete(String(actor._id));
     for (const uid of involved) {
-      await notify({ user: uid, type: 'TASK_DONE', title: `${actor.name} completed a shared task`, message: task.title, link: '/todo' });
+      await notify({ user: uid, type: 'TASK_DONE', title: `${actor.name} completed a shared task`, message: task.title, link: todoLink(task._id) });
     }
   }
 
@@ -317,7 +327,7 @@ export async function reviewTask(actor, id, approve, reason) {
     task.approvedBy = actor._id;
     task.rejectionReason = '';
     await task.save();
-    await notify({ user: task.owner, type: 'TASK_DONE', title: `${actor.name} approved your task`, message: task.title, link: '/todo' });
+    await notify({ user: task.owner, type: 'TASK_DONE', title: `${actor.name} approved your task`, message: task.title, link: todoLink(task._id) });
     try { await onAssignedTaskDone(task); } catch (e) { console.error('bonus hook (approve) failed', e?.message); }
     // An approval can be the last link needed to settle the copy above it.
     try { await settleParent(task); } catch (e) { console.error('forward settle failed', e?.message); }
@@ -330,7 +340,7 @@ export async function reviewTask(actor, id, approve, reason) {
       type: 'TASK_ASSIGNED',
       title: `${actor.name} sent your task back`,
       message: task.rejectionReason ? `${task.title} — ${task.rejectionReason}` : task.title,
-      link: '/todo',
+      link: todoLink(task._id),
     });
   }
   return populated(task);
@@ -428,7 +438,7 @@ export async function forwardTask(actor, id, { assignTo, requiresApproval, notes
     type: 'TASK_ASSIGNED',
     title: `${actor.name} forwarded a task to you`,
     message: parent.dueYMD ? `${parent.title} (due ${parent.dueYMD})` : parent.title,
-    link: '/todo',
+    link: todoLink(child._id),
   });
   return populated(child);
 }
@@ -471,7 +481,7 @@ async function settleParent(childTask, depth = 0) {
         type: 'TASK_ASSIGNED',
         title: 'Forwarded work is ready for your approval',
         message: parent.title,
-        link: '/todo?tab=assigned',
+        link: todoLink(parent._id, true),
       });
     }
     return;
@@ -488,7 +498,7 @@ async function settleParent(childTask, depth = 0) {
       type: 'TASK_DONE',
       title: 'A task you assigned is done',
       message: parent.title,
-      link: '/todo?tab=assigned',
+      link: todoLink(parent._id, true),
     });
   }
   await settleParent(parent, depth + 1);
@@ -608,8 +618,8 @@ export async function updateTask(actor, id, data) {
       };
       const baseCollabs = (nextCollabs ?? task.collaborators ?? []).filter((cid) => !desired.includes(String(cid)));
       for (const t of addedUsers) {
-        await Task.create({ ...base, owner: t._id, assignedBy: actor._id, collaborators: baseCollabs, assignBatch: batch, status: 'PENDING' });
-        await notify({ user: t._id, type: 'TASK_ASSIGNED', title: `New task from ${actor.name}`, message: base.dueYMD ? `${base.title} (due ${base.dueYMD})` : base.title, link: '/todo' });
+        const nt = await Task.create({ ...base, owner: t._id, assignedBy: actor._id, collaborators: baseCollabs, assignBatch: batch, status: 'PENDING' });
+        await notify({ user: t._id, type: 'TASK_ASSIGNED', title: `New task from ${actor.name}`, message: base.dueYMD ? `${base.title} (due ${base.dueYMD})` : base.title, link: todoLink(nt._id) });
       }
       members = await Task.find({ assignBatch: batch, assignedBy: actor._id });
     }
@@ -637,7 +647,7 @@ export async function updateTask(actor, id, data) {
           type: 'TASK_ASSIGNED',
           title: `${actor.name} tagged you on a task`,
           message: task.dueYMD ? `${task.title} (due ${task.dueYMD})` : task.title,
-          link: '/todo',
+          link: todoLink(members[0]?._id),
         });
       }
     }
@@ -668,7 +678,7 @@ export async function updateTask(actor, id, data) {
         await mm.save();
         changedCount += 1;
         if (mm.status !== 'DONE' && String(mm.owner) !== String(actor._id)) {
-          await notify({ user: mm.owner, type: 'TASK_ASSIGNED', title: `${actor.name} updated a task`, message: mm.dueYMD ? `${mm.title} (due ${mm.dueYMD})` : mm.title, link: '/todo' });
+          await notify({ user: mm.owner, type: 'TASK_ASSIGNED', title: `${actor.name} updated a task`, message: mm.dueYMD ? `${mm.title} (due ${mm.dueYMD})` : mm.title, link: todoLink(mm._id) });
         }
       }
     }
@@ -687,7 +697,7 @@ export async function updateTask(actor, id, data) {
           await d.save();
           changedCount += 1;
           if (d.status !== 'DONE') {
-            await notify({ user: d.owner, type: 'TASK_ASSIGNED', title: `${actor.name} updated a task`, message: d.dueYMD ? `${d.title} (due ${d.dueYMD})` : d.title, link: '/todo' });
+            await notify({ user: d.owner, type: 'TASK_ASSIGNED', title: `${actor.name} updated a task`, message: d.dueYMD ? `${d.title} (due ${d.dueYMD})` : d.title, link: todoLink(d._id) });
           }
         }
       }
@@ -706,7 +716,7 @@ export async function updateTask(actor, id, data) {
     task.collaborators = resolved;
     for (const cid of resolved) {
       if (!before.has(String(cid))) {
-        await notify({ user: cid, type: 'TASK_ASSIGNED', title: `${actor.name} tagged you on a task`, message: task.dueYMD ? `${task.title} (due ${task.dueYMD})` : task.title, link: '/todo' });
+        await notify({ user: cid, type: 'TASK_ASSIGNED', title: `${actor.name} tagged you on a task`, message: task.dueYMD ? `${task.title} (due ${task.dueYMD})` : task.title, link: todoLink(task._id) });
       }
     }
   }

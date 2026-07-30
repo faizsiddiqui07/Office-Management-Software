@@ -78,7 +78,8 @@ export async function createRequest(user, { dateYMD, checkIn, checkOut, reason }
         type: 'REGULARIZATION',
         title: `${user.name} requested an attendance correction`,
         message: `For ${dateYMD}`,
-        link: '/attendance?tab=corrections',
+        // The approver decides these on the Approvals queue.
+        link: '/approvals?kind=regularizations',
       }),
     ),
   );

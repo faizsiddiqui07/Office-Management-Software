@@ -382,7 +382,9 @@ async function notifyApprovers(request, applicant) {
         type: 'LEAVE_REQUEST',
         title: wfh ? 'New work-from-home request' : 'New leave request',
         message,
-        link: '/leaves',
+        // Straight to the approval queue where they act on it — not the "My leaves" page
+        // an approver lands on by default, which is their own leaves, not this request.
+        link: '/approvals?kind=leaves',
       }),
     ),
   );

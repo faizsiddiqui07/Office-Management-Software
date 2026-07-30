@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Check, CheckCircle2, ClipboardList, Clock, Download, Eye, EyeOff, FolderOpen, Forward, ListTodo, Pencil, Search, Send, ThumbsUp, Trash2, Undo2, UserRound, Users, X } from 'lucide-react';
@@ -747,7 +747,9 @@ export function TaskBoard() {
 
   // Honour deep links like /todo?tab=assigned (used by task notifications).
   const params = useSearchParams();
+  const router = useRouter();
   const requestedTab = params.get('tab');
+  const focusTaskId = params.get('task'); // a notification asking to open one exact task
   const [tab, setTab] = React.useState(() =>
     ['mine', 'history', 'assigned'].includes(requestedTab) ? requestedTab : 'mine',
   );
@@ -1078,6 +1080,32 @@ export function TaskBoard() {
     setViewing(view);
     if (view?.task) reportSeen([view.task]);
   };
+
+  // Deep link from a notification: /todo?task=<id> opens that exact task's dialog, the
+  // same one a click on its row would. The link already carries the right tab, so the
+  // task is in this tab's loaded list. Once opened, strip ?task= from the URL so closing
+  // the dialog (or a refresh) doesn't reopen it; the ref guards against a re-open in the
+  // gap before the URL settles.
+  const focusedRef = React.useRef(null);
+  React.useEffect(() => {
+    if (!focusTaskId || focusedRef.current === focusTaskId) return;
+    const t = tasks.find((x) => String(x.id) === String(focusTaskId));
+    if (!t) return; // list still loading, or not on this tab — try again on the next render
+    focusedRef.current = focusTaskId;
+    const assignerView = isAssigned;
+    openTask({
+      task: t,
+      canToggle: assignerView ? false : canCompleteTask(t, user?.id),
+      allowEdit: assignerView ? true : canMgr(t),
+      allowDelete: assignerView ? true : canMgr(t),
+      assignerView,
+      canForward: assignerView ? false : canForwardTask(t),
+      batchCount: batchCountOf(t),
+    });
+    const sp = new URLSearchParams(Array.from(params.entries()));
+    sp.delete('task');
+    router.replace(`/todo${sp.toString() ? `?${sp}` : ''}`, { scroll: false });
+  }, [focusTaskId, tasks, isAssigned, user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // `viewing` holds the task as it was when the row was tapped. An assigner watching
   // for a receipt sits on exactly this dialog, so a snapshot would stay frozen on

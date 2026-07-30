@@ -29,6 +29,10 @@ function DropdownMenuContent({
   alignOffset = 0,
   side = "bottom",
   sideOffset = 4,
+  // Keep a small gap from the viewport edges. A wide, right-anchored panel (e.g. the
+  // notifications box on a phone) is then shifted inward instead of sitting flush against
+  // the edge or spilling off it.
+  collisionPadding = 8,
   className,
   ...props
 }) {
@@ -39,7 +43,8 @@ function DropdownMenuContent({
         align={align}
         alignOffset={alignOffset}
         side={side}
-        sideOffset={sideOffset}>
+        sideOffset={sideOffset}
+        collisionPadding={collisionPadding}>
         <MenuPrimitive.Popup
           data-slot="dropdown-menu-content"
           className={cn(

@@ -1,5 +1,6 @@
 'use client';
 
+import * as React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { Bell, CheckCheck } from 'lucide-react';
@@ -15,6 +16,9 @@ import { formatDateTime } from '@/lib/announcement';
 export function NotificationsBell() {
   const qc = useQueryClient();
   const router = useRouter();
+  // Controlled so a click can close the panel itself — an item is a plain button, not a
+  // menu item, so the dropdown didn't dismiss on its own.
+  const [open, setOpen] = React.useState(false);
 
   const { data } = useQuery({
     queryKey: ['notifications'],
@@ -34,12 +38,17 @@ export function NotificationsBell() {
   });
 
   const onClickItem = (n) => {
+    // Close the panel, then go where it points. The panel is unmounted the moment `open`
+    // flips false (see the conditional render below), so it never lingers waiting on an
+    // exit animation — the case that left it hanging when a task dialog opened at the same
+    // time, or on a device with reduced motion where that animation never fires.
+    setOpen(false);
     if (!n.isRead) markRead.mutate(n.id);
     if (n.link) router.push(n.link);
   };
 
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger className="glass-subtle relative inline-flex size-8 items-center justify-center rounded-xl text-foreground/80 ring-1 ring-border/60 transition-colors hover:text-foreground">
         <Bell className="size-4" />
         {unread > 0 ? (
@@ -48,9 +57,13 @@ export function NotificationsBell() {
           </span>
         ) : null}
       </DropdownMenuTrigger>
+      {open ? (
       <DropdownMenuContent
         align="end"
-        className="w-[calc(100vw-2rem)] max-w-80 border-border/60 bg-card/90 p-0 ring-1 ring-white/10 backdrop-blur-2xl sm:w-80"
+        // On a phone the panel is nearly the full width and the positioner keeps even
+        // gutters (collisionPadding), so it never hugs the bell with a dead gap on the
+        // right or runs off the edge. From sm up it's a tidy fixed-width panel.
+        className="w-[calc(100vw-1rem)] max-w-sm border-border/60 bg-card/90 p-0 ring-1 ring-white/10 backdrop-blur-2xl sm:w-96"
       >
         <div className="flex items-center justify-between px-3 py-2.5">
           <p className="text-sm font-medium">Notifications</p>
@@ -89,6 +102,7 @@ export function NotificationsBell() {
           )}
         </div>
       </DropdownMenuContent>
+      ) : null}
     </DropdownMenu>
   );
 }
