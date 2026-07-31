@@ -124,6 +124,35 @@ export async function activeUnseen(user) {
   return visible.filter((a) => !seen.has(String(a._id))).map((a) => a.toJSON());
 }
 
+/**
+ * Who has (and hasn't) seen an announcement — for the author to chase the stragglers.
+ * The audience is the active users its roles address (everyone if unrestricted), minus
+ * the author, who obviously knows about their own post. Reads come from AnnouncementRead
+ * (written when a person pages through the popup).
+ */
+export async function readReceipts(announcementId) {
+  const ann = await Announcement.findById(announcementId).select('audienceRoles createdBy');
+  if (!ann) throw httpError(404, 'NOT_FOUND', 'Announcement not found');
+
+  const roleFilter = ann.audienceRoles?.length ? { role: { $in: ann.audienceRoles } } : {};
+  const [audience, reads] = await Promise.all([
+    User.find({ isActive: true, ...roleFilter, _id: { $ne: ann.createdBy } }).select('name role').sort({ name: 1 }),
+    AnnouncementRead.find({ announcement: announcementId }).select('user readAt'),
+  ]);
+
+  const readAtByUser = new Map(reads.map((r) => [String(r.user), r.readAt]));
+  const seen = [];
+  const unseen = [];
+  for (const u of audience) {
+    const at = readAtByUser.get(String(u._id));
+    if (at) seen.push({ name: u.name, readAt: at });
+    else unseen.push({ name: u.name });
+  }
+  // Most-recent readers first; unseen already alphabetical from the sorted query.
+  seen.sort((a, b) => new Date(b.readAt) - new Date(a.readAt));
+  return { total: audience.length, seenCount: seen.length, seen, unseen };
+}
+
 export async function markRead(user, announcementId) {
   await AnnouncementRead.findOneAndUpdate(
     { announcement: announcementId, user: user._id },

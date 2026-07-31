@@ -8,6 +8,7 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can } from '@/lib/permissions';
 import { AnnouncementCard } from './announcement-card';
+import { AnnouncementReceipts } from './announcement-receipts';
 import { CreateAnnouncementDialog } from './create-announcement-dialog';
 import { EmptyState } from '@/components/glass/empty-state';
 import { CardSkeleton } from '@/components/glass/skeletons';
@@ -61,6 +62,7 @@ export function AnnouncementFeed() {
           <AnnouncementCard
             key={a.id}
             announcement={a}
+            receipts={isLeader ? <AnnouncementReceipts announcementId={a.id} /> : null}
             actions={
               isLeader ? (
                 <DropdownMenu>

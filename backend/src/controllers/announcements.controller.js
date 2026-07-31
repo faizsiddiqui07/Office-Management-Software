@@ -50,6 +50,15 @@ export async function read(req, res, next) {
   }
 }
 
+/** Author-only: who has / hasn't seen this announcement yet. */
+export async function reads(req, res, next) {
+  try {
+    res.json(ok(await svc.readReceipts(req.params.id)));
+  } catch (err) {
+    handleErr(res, err, next);
+  }
+}
+
 export async function update(req, res, next) {
   try {
     const body = updateAnnouncementSchema.parse(req.body);

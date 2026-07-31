@@ -3,7 +3,7 @@ import { GlassCard } from '@/components/glass/glass-card';
 import { StatusBadge } from '@/components/glass/status-badge';
 import { PRIORITY, formatDateTime } from '@/lib/announcement';
 
-export function AnnouncementCard({ announcement, actions }) {
+export function AnnouncementCard({ announcement, actions, receipts }) {
   const a = announcement;
   const p = PRIORITY[a.priority] ?? PRIORITY.NORMAL;
 
@@ -24,6 +24,7 @@ export function AnnouncementCard({ announcement, actions }) {
         {actions ? <div className="shrink-0">{actions}</div> : null}
       </div>
       {a.body ? <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-foreground/90">{a.body}</p> : null}
+      {receipts}
     </GlassCard>
   );
 }
