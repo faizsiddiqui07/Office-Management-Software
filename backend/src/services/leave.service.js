@@ -577,9 +577,21 @@ async function markAttendanceOnLeave(userId, fromYMD, toYMD, halfDay, weekendDay
       // eslint-disable-next-line no-await-in-loop
       await existing.save({ session });
       marked += 1;
+    } else if (halfDay) {
+      // A real check-in AND a half-day request is not a contradiction — it is the
+      // canonical half-day: worked the morning, emergency in the afternoon, applied and
+      // left. Skipping it (like the full-day rule below) made such a request
+      // unapprovable — "nothing left to approve" — the moment the person had checked
+      // in. Keep the worked record exactly as it is (status, times, minutes) and only
+      // flag the half-day, so the sheet says "present" (true) while the balance is
+      // charged 0.5 (also true).
+      existing.halfDayLeave = true;
+      // eslint-disable-next-line no-await-in-loop
+      await existing.save({ session });
+      marked += 1;
     }
-    // If the user actually checked in that day, their real attendance is preserved —
-    // and it isn't charged either.
+    // A FULL day the user actually checked in on stays untouched — they worked it, so
+    // it isn't overwritten and it isn't charged either.
   }
   // A half-day is a single date worth 0.5.
   return halfDay && workingDates.length === 1 ? marked * 0.5 : marked;
@@ -635,6 +647,21 @@ async function revertAttendanceOnLeave(userId, fromYMD, toYMD, session, type = n
     },
     { session },
   );
+  if (status === 'ON_LEAVE') {
+    // A half-day approved over a worked morning only FLAGGED the real record (see
+    // markAttendanceOnLeave) — cancelling clears the flag, never the attendance itself.
+    // Approved leaves can't overlap, so any flag inside this range belongs to this one.
+    await Attendance.updateMany(
+      {
+        user: userId,
+        date: { $gte: companyDayFromYMD(fromYMD), $lte: companyDayFromYMD(toYMD) },
+        halfDayLeave: true,
+        checkInAt: { $ne: null },
+      },
+      { $set: { halfDayLeave: false } },
+      { session },
+    );
+  }
 }
 
 export async function decideLeave(approver, id, decision, note, { replaceAttendance = false } = {}) {
