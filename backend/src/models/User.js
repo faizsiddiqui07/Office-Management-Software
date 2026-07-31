@@ -30,6 +30,9 @@ const userSchema = new mongoose.Schema(
     phone: { type: String, default: '' },
     avatarUrl: { type: String, default: '' },
     dateOfJoining: { type: Date, default: Date.now },
+    // Offboarding: the person's last working day (YYYY-MM-DD, company TZ). Set when winding
+    // an account down; the exit summary is reviewed before deactivating. Blank = not leaving.
+    lastWorkingYMD: { type: String, default: '' },
     isActive: { type: Boolean, default: true },
     mustChangePassword: { type: Boolean, default: true },
     // When this account's password last changed. Sessions are signed for ~10 years, so

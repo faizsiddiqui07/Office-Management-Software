@@ -58,4 +58,6 @@ export const updateUserSchema = z
     schedule: scheduleSchema.optional(),
     taskAssign: taskAssignSchema.optional(),
     dateOfJoining: ymd.optional(),
+    // Offboarding last working day; '' clears it.
+    lastWorkingYMD: ymd.or(z.literal('')).optional(),
   });

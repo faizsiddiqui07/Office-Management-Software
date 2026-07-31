@@ -20,6 +20,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { LEADERSHIP, can } from '@/lib/permissions';
+import { cn } from '@/lib/utils';
+import { formatMoney } from '@/lib/expense';
 import { useRoleOptions } from '@/lib/use-roles';
 import { EmploymentFields, DEFAULT_SCHEDULE } from './employment-fields';
 
@@ -35,6 +37,7 @@ export function EditUserDialog({ user: target, open, onOpenChange }) {
   const [department, setDepartment] = React.useState('');
   const [designation, setDesignation] = React.useState('');
   const [joiningDate, setJoiningDate] = React.useState('');
+  const [lastWorkingYMD, setLastWorkingYMD] = React.useState('');
   const [role, setRole] = React.useState(''); // filled from the user being edited — never hard-code a role key
   const [isActive, setIsActive] = React.useState(true);
   const [employmentType, setEmploymentType] = React.useState('FULL_TIME');
@@ -62,6 +65,7 @@ export function EditUserDialog({ user: target, open, onOpenChange }) {
     setDepartment(target.department || '');
     setDesignation(target.designation || '');
     setJoiningDate(target.dateOfJoining ? String(target.dateOfJoining).slice(0, 10) : '');
+    setLastWorkingYMD(target.lastWorkingYMD || '');
     setRole(target.role || '');
     setIsActive(target.isActive !== false);
     setEmploymentType(target.employmentType || 'FULL_TIME');
@@ -80,6 +84,14 @@ export function EditUserDialog({ user: target, open, onOpenChange }) {
     queryKey: ['user-leave-balance', target.id],
     queryFn: () => api.get(`/users/${target.id}/leave-balance`),
     enabled: open && canManage,
+  });
+
+  // Offboarding checklist — open items to clear before turning the account off. Only
+  // fetched for someone who can deactivate, and only while the account is still active.
+  const { data: exitData } = useQuery({
+    queryKey: ['user-exit', target.id],
+    queryFn: () => api.get(`/users/${target.id}/exit-summary`),
+    enabled: open && canDeactivate && !isSelf && target.isActive !== false,
   });
   // Keep what was loaded so we only send figures leadership actually edited. Sending
   // the untouched values back would immediately overwrite the quota the server just
@@ -112,6 +124,7 @@ export function EditUserDialog({ user: target, open, onOpenChange }) {
         body.employmentType = employmentType;
         body.schedule = schedule; // custom timing is optional for everyone; blank = office hours
         if (joiningDate) body.dateOfJoining = joiningDate;
+        body.lastWorkingYMD = lastWorkingYMD; // '' = not leaving
         body.taskAssign = { mode: assignMode, users: assignMode === 'SELECTED' ? [...assignUsers] : [] };
       }
       if (canChangeRoles && !isSelf) body.role = role;
@@ -176,6 +189,13 @@ export function EditUserDialog({ user: target, open, onOpenChange }) {
                 Attendance, reports and exports only count this person from this date — they don&apos;t appear at all before it.
               </p>
             </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="eu-lastday">Last working day <span className="font-normal text-muted-foreground">(optional)</span></Label>
+              <DatePicker id="eu-lastday" value={lastWorkingYMD} min="2000-01-01" onChange={setLastWorkingYMD} className="bg-background/50" />
+              <p className="text-xs text-muted-foreground">
+                Set when someone is leaving. Review the open items below, then turn the account off on or after this day. Clear it if they&apos;re staying.
+              </p>
+            </div>
           </>
         ) : null}
         <div className="space-y-1.5">
@@ -207,6 +227,34 @@ export function EditUserDialog({ user: target, open, onOpenChange }) {
           </div>
           <Switch id="eu-active" checked={isActive} onCheckedChange={setIsActive} disabled={isSelf || !canDeactivate} />
         </div>
+
+        {/* Offboarding checklist — open items to clear before the account goes off. Shown
+            to whoever can deactivate, only while the account is still active. Informational:
+            nothing here blocks turning the switch off. */}
+        {canDeactivate && !isSelf && target.isActive !== false && exitData ? (
+          <div className="space-y-2 rounded-xl bg-warning/[0.06] p-3 ring-1 ring-warning/20">
+            <p className="text-sm font-medium">Before offboarding — open items</p>
+            <ul className="space-y-1 text-sm">
+              {[
+                { label: 'Open tasks (theirs)', value: exitData.openTasksOwned, warn: exitData.openTasksOwned > 0 },
+                { label: 'Delegated work still open', value: exitData.openTasksDelegated, warn: exitData.openTasksDelegated > 0 },
+                { label: 'Pending leave requests', value: exitData.pendingLeaves, warn: exitData.pendingLeaves > 0 },
+                {
+                  label: 'Unsettled dues',
+                  value: exitData.duesPending > 0 ? formatMoney(exitData.duesPending) : exitData.duesAdvance > 0 ? `${formatMoney(exitData.duesAdvance)} advance` : 'None',
+                  warn: exitData.duesPending > 0,
+                },
+                { label: 'Points this month', value: exitData.pointsThisMonth, warn: false },
+              ].map((it) => (
+                <li key={it.label} className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">{it.label}</span>
+                  <span className={cn('font-medium tabular-nums', it.warn ? 'text-amber-600 dark:text-amber-300' : 'text-foreground')}>{it.value}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="text-xs text-muted-foreground">Reassign or settle these first. Nothing here blocks deactivation.</p>
+          </div>
+        ) : null}
 
         {canManage ? (
           <EmploymentFields

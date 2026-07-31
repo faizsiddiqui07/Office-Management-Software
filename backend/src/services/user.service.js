@@ -13,11 +13,13 @@ import { PushSubscription } from '../models/PushSubscription.js';
 import { PasswordResetToken } from '../models/PasswordResetToken.js';
 import { AnnouncementRead } from '../models/AnnouncementRead.js';
 import { LedgerEntry } from '../models/LedgerEntry.js';
+import { PointEntry } from '../models/PointEntry.js';
 import { Setting } from '../models/Setting.js';
 import { can, canAssignRole } from '../lib/permissions.js';
 import { clearFailures } from '../lib/loginGuard.js';
 import { leaveYearOf } from '../lib/leaveYear.js';
 import { quotaForJoiner } from './leave.service.js';
+import { ledgerFor } from './dues.service.js';
 
 function httpError(status, code, message) {
   const e = new Error(message);
@@ -151,7 +153,7 @@ export async function resetUserCredentials(actor, userId) {
 
 // Profile fields (anything that isn't role or active-status). Editing any of these
 // is what the base "Edit users" (manageUsers) permission covers.
-const PROFILE_FIELDS = ['name', 'department', 'designation', 'phone', 'reportsTo', 'dateOfJoining', 'taskAssign', 'employmentType', 'schedule'];
+const PROFILE_FIELDS = ['name', 'department', 'designation', 'phone', 'reportsTo', 'dateOfJoining', 'lastWorkingYMD', 'taskAssign', 'employmentType', 'schedule'];
 
 /**
  * Profile / role / status update, gated per-change so the granular permissions
@@ -200,6 +202,7 @@ export async function updateUser(actor, id, data) {
     if (data[f] !== undefined) user[f] = data[f];
   }
   if (data.reportsTo !== undefined) user.reportsTo = data.reportsTo || null;
+  if (data.lastWorkingYMD !== undefined) user.lastWorkingYMD = data.lastWorkingYMD || '';
 
   // The joining date decides which periods this person appears in at all, so it has to
   // be correctable — an account created late for someone who started earlier would
@@ -254,6 +257,37 @@ export async function updateUser(actor, id, data) {
 
   await user.save();
   return user.toJSON();
+}
+
+/**
+ * The open items to clear before someone is offboarded — so nothing is silently
+ * orphaned when their account goes inactive. Read-only; blocks nothing (the numbers are
+ * shown as a checklist next to the deactivate switch). The dues balance is real money
+ * (the admin manager fronts cash), and open delegated work needs reassigning.
+ */
+export async function exitSummary(userId) {
+  const user = await User.findById(userId).select('name');
+  if (!user) throw httpError(404, 'NOT_FOUND', 'User not found');
+  const month = ymdInTz(new Date()).slice(0, 7);
+
+  const [openTasksOwned, openTasksDelegated, pendingLeaves, dues, pts] = await Promise.all([
+    Task.countDocuments({ owner: userId, status: 'PENDING' }),
+    // Work they handed to OTHERS that's still open — the assigner is leaving, so it may
+    // need re-homing. Excludes their own copies (counted above).
+    Task.countDocuments({ assignedBy: userId, status: 'PENDING', owner: { $ne: userId } }),
+    LeaveRequest.countDocuments({ user: userId, status: 'PENDING' }),
+    ledgerFor(userId), // { pending, advance }
+    PointEntry.find({ user: userId, month }).select('points'),
+  ]);
+
+  return {
+    openTasksOwned,
+    openTasksDelegated,
+    pendingLeaves,
+    duesPending: dues.pending,
+    duesAdvance: dues.advance,
+    pointsThisMonth: pts.reduce((s, p) => s + p.points, 0),
+  };
 }
 
 /**

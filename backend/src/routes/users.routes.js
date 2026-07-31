@@ -10,6 +10,7 @@ import {
   listUsers,
   updateUser,
   deleteUser,
+  exitSummary,
   userDossier,
   userReport,
   getLeaveBalance,
@@ -35,6 +36,7 @@ async function freshRoles(req, _res, next) {
 usersRouter.use(requireAuth);
 usersRouter.get('/', requirePermission('viewEveryone'), listUsers);
 usersRouter.get('/:id/dossier', requirePermission('viewEveryone'), userDossier);
+usersRouter.get('/:id/exit-summary', requirePermission('deactivateUsers'), exitSummary); // offboarding checklist
 usersRouter.get('/:id/report.pdf', requirePermission('viewEveryone'), userReport); // full per-user PDF for a range
 usersRouter.post('/', requirePermission('createUsers'), freshRoles, validate(createUserSchema), createUser);
 // Reachable by any of the three user-editing capabilities; updateUser() enforces
