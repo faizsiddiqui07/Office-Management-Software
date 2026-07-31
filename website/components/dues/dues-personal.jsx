@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowDownLeft, ArrowUpRight, CheckCircle2, HandCoins, Wallet } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, Check, CheckCircle2, Copy, HandCoins, Smartphone, Wallet } from 'lucide-react';
 import { api } from '@/lib/api';
 import { formatMoney } from '@/lib/expense';
 import { cn } from '@/lib/utils';
@@ -64,6 +64,58 @@ function BalanceHero({ pending, advance }) {
         <p className="text-3xl font-semibold tracking-tight tabular-nums">{value}</p>
         <p className="mt-1 text-sm text-muted-foreground">{hint}</p>
       </div>
+    </GlassPanel>
+  );
+}
+
+/**
+ * "Pay via UPI" — only when you actually owe and the admin has set a UPI id. The button
+ * opens the phone's UPI app (GPay/PhonePe/Paytm) prefilled with the exact pending amount;
+ * the id is also copyable for desktop. Nothing settles automatically — the admin records
+ * the payment when it lands.
+ */
+function UpiPay({ pending, upi }) {
+  const [copied, setCopied] = React.useState(false);
+  if (!(pending > 0) || !upi?.id) return null;
+
+  const amount = (pending / 100).toFixed(2);
+  const link = `upi://pay?${[
+    `pa=${encodeURIComponent(upi.id)}`,
+    upi.name ? `pn=${encodeURIComponent(upi.name)}` : null,
+    `am=${amount}`,
+    'cu=INR',
+    `tn=${encodeURIComponent('Office dues')}`,
+  ].filter(Boolean).join('&')}`;
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(upi.id);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard blocked — the id is visible to type manually */
+    }
+  };
+
+  return (
+    <GlassPanel className="space-y-3 p-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <p className="text-sm font-medium">Pay the admin manager</p>
+          <button type="button" onClick={copy} className="mt-0.5 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
+            <span className="truncate font-medium tabular-nums">{upi.id}</span>
+            {copied ? <Check className="size-3.5 shrink-0 text-success" /> : <Copy className="size-3.5 shrink-0" />}
+            <span className="shrink-0 text-xs">{copied ? 'Copied' : 'Copy'}</span>
+          </button>
+        </div>
+        <a
+          href={link}
+          className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+        >
+          <Smartphone className="size-4" /> Pay {formatMoney(pending)} via UPI
+        </a>
+      </div>
+      <p className="text-xs text-muted-foreground">Opens your UPI app (GPay / PhonePe / Paytm). The admin marks it paid once the money arrives.</p>
     </GlassPanel>
   );
 }
@@ -134,6 +186,8 @@ export function DuesPersonal() {
       ) : (
         <>
           <BalanceHero pending={data.pending} advance={data.advance} />
+
+          <UpiPay pending={data.pending} upi={data.upi} />
 
           <section className="space-y-3">
             <h2 className="px-1 text-lg font-semibold tracking-tight">History</h2>

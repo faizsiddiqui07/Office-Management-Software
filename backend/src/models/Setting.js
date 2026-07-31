@@ -23,6 +23,11 @@ const settingSchema = new mongoose.Schema(
     weekendDays: { type: [Number], default: [0] },
     annualLeaveQuota: { type: Number, default: 18 },
     currency: { type: String, default: 'INR' },
+    // UPI account that personal dues are paid into. Owned by the Admin Manager (who
+    // fronts the cash), so it is edited from the Dues page under `manageDues` — NOT the
+    // leadership Settings screen. Everyone's "Pay via UPI" button targets this one id.
+    duesUpiId: { type: String, default: '' }, // VPA, e.g. name@bank
+    duesUpiName: { type: String, default: '' }, // optional payee display name
     expenseCategories: {
       type: [String],
       default: ['OFFICE_SUPPLIES', 'UTILITIES', 'TRAVEL', 'FOOD', 'MAINTENANCE', 'SALARY', 'MISC'],

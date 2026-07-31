@@ -28,3 +28,10 @@ export const settleSchema = z.object({
 export const settleEntrySchema = z.object({
   entryId: objectId,
 });
+
+// The Admin Manager's UPI for collecting dues. Empty upiId clears it (hides the button).
+const vpa = z.string().trim().regex(/^[a-zA-Z0-9.\-_]{2,}@[a-zA-Z0-9.\-_]{2,}$/, 'Enter a valid UPI ID like name@bank');
+export const setUpiSchema = z.object({
+  upiId: z.union([vpa, z.literal('')]).default(''),
+  upiName: z.string().trim().max(80).optional().default(''),
+});

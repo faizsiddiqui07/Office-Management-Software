@@ -12,6 +12,7 @@ import {
   HandCoins,
   Plus,
   Search,
+  Smartphone,
   Trash2,
   Users,
 } from 'lucide-react';
@@ -288,6 +289,51 @@ function PersonDetail({ personId, onAddDue, onAddPay }) {
   );
 }
 
+const VPA_RE = /^[a-zA-Z0-9.\-_]{2,}@[a-zA-Z0-9.\-_]{2,}$/;
+
+/** Admin Manager's own UPI id for collecting dues — lives here, not in leadership Settings. */
+function UpiCard({ upi }) {
+  const qc = useQueryClient();
+  const [id, setId] = React.useState('');
+  const [name, setName] = React.useState('');
+  React.useEffect(() => {
+    setId(upi?.id || '');
+    setName(upi?.name || '');
+  }, [upi?.id, upi?.name]);
+
+  const dirty = id.trim() !== (upi?.id || '') || name.trim() !== (upi?.name || '');
+  const validId = !id.trim() || VPA_RE.test(id.trim());
+
+  const save = useMutation({
+    mutationFn: () => api.put('/dues/upi', { upiId: id.trim(), upiName: name.trim() }),
+    onSuccess: () => {
+      toast.success(id.trim() ? 'UPI id saved' : 'UPI id cleared');
+      qc.invalidateQueries({ queryKey: ['dues'] });
+    },
+    onError: (e) => toast.error(e?.message || 'Could not save the UPI id'),
+  });
+
+  return (
+    <GlassCard className="space-y-3 p-5">
+      <div className="flex items-center gap-2">
+        <Smartphone className="size-4 text-primary" />
+        <p className="text-sm font-semibold">UPI for dues payments</p>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Everyone pays their dues to this UPI id — it puts a “Pay via UPI” button on their My dues page, prefilled with the exact amount. Only you can set it, and nothing settles automatically: you still record a payment when the money arrives.
+      </p>
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <Input value={id} onChange={(e) => setId(e.target.value)} placeholder="yourname@bank" inputMode="email" autoCapitalize="none" className="bg-background/50 sm:max-w-xs" />
+        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Payee name (optional)" className="bg-background/50 sm:max-w-xs" />
+        <Button onClick={() => save.mutate()} disabled={save.isPending || !dirty || !validId}>
+          {save.isPending ? 'Saving…' : 'Save'}
+        </Button>
+      </div>
+      {!validId ? <p className="text-xs text-destructive">Enter a valid UPI id like name@bank.</p> : null}
+    </GlassCard>
+  );
+}
+
 export function DuesAdmin() {
   const { user } = useAuth();
   const { data, isLoading, isError, error } = useQuery({ queryKey: ['dues', 'overview'], queryFn: () => api.get('/dues/overview') });
@@ -359,6 +405,8 @@ export function DuesAdmin() {
             <StatCard label="Total advance" value={formatMoney(data.totalAdvance)} icon={ArrowUpRight} tone="success" hint="paid ahead" />
             <StatCard label="People" value={people.length} icon={Users} tone="default" />
           </div>
+
+          <UpiCard upi={data.upi} />
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
             <div className="space-y-3">

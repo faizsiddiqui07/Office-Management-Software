@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { LedgerEntry } from '../models/LedgerEntry.js';
 import { User } from '../models/User.js';
+import { Setting } from '../models/Setting.js';
 import { notify } from '../models/Notification.js';
 import { companyDayFromYMD } from '../lib/time.js';
 
@@ -222,6 +223,21 @@ export async function settle(admin, person) {
   });
 
   return { settled: true, pending: state.pending, advance: state.advance };
+}
+
+/** The UPI id dues are paid into (raw, as the Admin Manager set it). */
+export async function getUpi() {
+  const s = await Setting.getSingleton();
+  return { id: s.duesUpiId || '', name: s.duesUpiName || '' };
+}
+
+/** Set/clear the dues UPI — Admin Manager only (route-gated by manageDues). */
+export async function setUpi({ upiId, upiName }) {
+  const s = await Setting.getSingleton();
+  s.duesUpiId = upiId || '';
+  s.duesUpiName = upiName || '';
+  await s.save();
+  return { id: s.duesUpiId, name: s.duesUpiName };
 }
 
 export async function deleteEntry(id) {
