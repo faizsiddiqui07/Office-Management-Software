@@ -1,7 +1,9 @@
 import { Visitor } from '../models/Visitor.js';
 import { User } from '../models/User.js';
 import { Setting } from '../models/Setting.js';
-import { companyDayFromYMD } from '../lib/time.js';
+import { notify } from '../models/Notification.js';
+import { can } from '../lib/permissions.js';
+import { companyDayFromYMD, ymdInTz } from '../lib/time.js';
 
 function httpError(status, code, message) {
   const e = new Error(message);
@@ -48,7 +50,48 @@ export async function removeCategory(name) {
 /* ── People suggestions for the "whom to meet" typeahead ── */
 export async function peopleSuggestions() {
   const users = await User.find({ isActive: true }).select('name designation role').sort({ name: 1 });
-  return users.map((u) => ({ name: u.name, designation: u.designation || '' }));
+  // `id` travels so the form can record WHICH employee was picked (toMeetUser), which is
+  // what lets us alert the host on arrival.
+  return users.map((u) => ({ id: u.id, name: u.name, designation: u.designation || '' }));
+}
+
+/**
+ * Alert the host that their visitor has arrived — deliberately narrow:
+ *  - only a live arrival: logged for TODAY and not already checked out (a back-dated or
+ *    already-completed entry is a record, not an arrival);
+ *  - the host is resolved from the picked user id, or failing that an EXACT single
+ *    name match among active users (so a free-typed full name still works, but an
+ *    ambiguous or partial one doesn't guess);
+ *  - never the person who logged the entry (no self-ping);
+ *  - ONLY if the host can open the visitor register — the notification links to
+ *    /visitors, so sending it to someone without access would be a dead end.
+ * Fire-and-forget: a hiccup here must never fail logging the visitor.
+ */
+async function maybeAlertHost(visitor, creator) {
+  if (visitor.dateYMD !== ymdInTz(new Date()) || visitor.checkOutTime) return;
+
+  let host = null;
+  if (visitor.toMeetUser) {
+    host = await User.findById(visitor.toMeetUser).select('name role isActive');
+  } else if (visitor.toMeet && visitor.toMeet.trim()) {
+    const rx = new RegExp(`^${escapeRegex(visitor.toMeet.trim())}$`, 'i');
+    const matches = await User.find({ isActive: true, name: rx }).select('name role isActive').limit(2);
+    if (matches.length === 1) [host] = matches;
+  }
+  if (!host || host.isActive === false) return;
+  if (String(host._id) === String(creator._id)) return;
+  if (!can(host, 'manageVisitors')) return; // no register access → dead link → no ping
+
+  const bits = [visitor.company, visitor.purpose].map((s) => (s || '').trim()).filter(Boolean);
+  await notify({
+    user: host._id,
+    type: 'VISITOR',
+    title: `${visitor.name} is here to see you`,
+    message: bits.length ? `${bits.join(' · ')} — at reception` : 'Waiting at reception',
+    link: '/visitors',
+    entityType: 'Visitor',
+    entityId: visitor._id,
+  });
 }
 
 /* ── Entries ─────────────────────────────────────────────── */
@@ -60,6 +103,7 @@ export async function createVisitor(user, data) {
     fromPlace: data.fromPlace || '',
     company: data.company || '',
     toMeet: data.toMeet || '',
+    toMeetUser: data.toMeetUser || null,
     purpose: data.purpose || '',
     dateYMD: data.dateYMD,
     date: companyDayFromYMD(data.dateYMD),
@@ -68,6 +112,8 @@ export async function createVisitor(user, data) {
     createdBy: user._id,
   });
   await v.populate('createdBy', 'name');
+  // Tell the host their visitor is here (best-effort; never blocks logging the entry).
+  await maybeAlertHost(v, user).catch((e) => console.error('visitor host alert failed:', e?.message));
   return v.toJSON();
 }
 
@@ -83,6 +129,9 @@ export async function updateVisitor(id, data) {
   for (const f of editable) {
     if (data[f] !== undefined) v[f] = data[f];
   }
+  // Handled apart from the loop: '' must become null, not an invalid ObjectId cast.
+  // Correcting the host on an edit doesn't re-alert — the arrival ping is create-only.
+  if (data.toMeetUser !== undefined) v.toMeetUser = data.toMeetUser || null;
   if (data.dateYMD !== undefined) {
     v.dateYMD = data.dateYMD;
     v.date = companyDayFromYMD(data.dateYMD);

@@ -53,6 +53,7 @@ export function VisitorDialog({ visitor, open: openProp, onOpenChange }) {
       fromPlace: visitor?.fromPlace || '',
       company: visitor?.company || '',
       toMeet: visitor?.toMeet || '',
+      toMeetUser: visitor?.toMeetUser || '',
       purpose: visitor?.purpose || '',
       dateYMD: visitor?.dateYMD || todayYMD(),
       checkInTime: visitor?.checkInTime || nowHM(),
@@ -135,7 +136,11 @@ export function VisitorDialog({ visitor, open: openProp, onOpenChange }) {
             <PersonAutocomplete
               id="v-meet"
               value={form.toMeet || ''}
-              onChange={(v) => setForm((f) => ({ ...f, toMeet: v }))}
+              // Typing by hand drops any previously-picked link — the name may no longer
+              // match that person. Picking a suggestion records their id, which is what
+              // lets the host be alerted on arrival.
+              onChange={(v) => setForm((f) => ({ ...f, toMeet: v, toMeetUser: '' }))}
+              onSelect={(p) => setForm((f) => ({ ...f, toMeet: p.name, toMeetUser: p.id }))}
               people={people}
               placeholder="Start typing a name…"
             />

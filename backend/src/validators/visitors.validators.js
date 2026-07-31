@@ -10,6 +10,9 @@ export const createVisitorSchema = z.object({
   fromPlace: z.string().max(200).optional().default(''),
   company: z.string().max(200).optional().default(''),
   toMeet: z.string().max(120).optional().default(''),
+  // The resolved host user id when the typeahead matched a registered person; '' / null
+  // / absent when the name was free-typed.
+  toMeetUser: z.union([z.string().regex(/^[0-9a-fA-F]{24}$/), z.literal(''), z.null()]).optional(),
   purpose: z.string().max(1000).optional().default(''),
   dateYMD: ymd,
   checkInTime: hm.optional().default(''),

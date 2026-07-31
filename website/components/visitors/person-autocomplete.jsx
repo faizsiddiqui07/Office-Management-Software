@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
  * Free-text input that suggests registered people as you type (type "kal" →
  * "Kalpana Saini"). You can still type anyone not in the system.
  */
-export function PersonAutocomplete({ id, value, onChange, people = [], placeholder }) {
+export function PersonAutocomplete({ id, value, onChange, onSelect, people = [], placeholder }) {
   const [open, setOpen] = React.useState(false);
   const wrapRef = React.useRef(null);
   const q = (value || '').toLowerCase().trim();
@@ -41,10 +41,11 @@ export function PersonAutocomplete({ id, value, onChange, people = [], placehold
         <div className="absolute z-50 mt-1 max-h-56 w-full overflow-auto rounded-xl border border-border/60 bg-card p-1 shadow-glass">
           {matches.map((p) => (
             <button
-              key={p.name}
+              key={p.id || p.name}
               type="button"
               onClick={() => {
                 onChange(p.name);
+                onSelect?.(p); // hands back the picked person (incl. id) to the parent
                 setOpen(false);
               }}
               className="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-foreground/[0.06]"
