@@ -69,15 +69,27 @@ function BalanceHero({ pending, advance }) {
 }
 
 /**
- * The admin manager's UPI id with one-tap copy — shown only when you owe and the id is
- * set. Deliberately NOT a upi:// deep link: payment apps (Google Pay especially) honour
- * those only for verified merchants and refuse a personal VPA with "Incorrect merchant
- * details", so the pay button was removed. Copy the id, pay from your own UPI app, and
- * the admin records the payment when it lands.
+ * "Pay via UPI" — only when you actually owe and the admin has set a UPI id. The button
+ * opens the phone's UPI app (GPay/PhonePe/Paytm) prefilled with the exact pending amount;
+ * the id is also copyable for desktop. Nothing settles automatically — the admin records
+ * the payment when it lands.
  */
 function UpiPay({ pending, upi }) {
   const [copied, setCopied] = React.useState(false);
   if (!(pending > 0) || !upi?.id) return null;
+
+  const amount = (pending / 100).toFixed(2);
+  // `pa` goes RAW: percent-encoding it turns @ into %40 and payment apps then fail with
+  // "Incorrect merchant details". Safe raw — the VPA validator (name@bank, see the admin
+  // card / setUpiSchema) only admits URL-safe characters. `pn`/`tn` may hold spaces, and
+  // those apps expect them percent-encoded, so they stay encoded.
+  const link = `upi://pay?${[
+    `pa=${upi.id}`,
+    upi.name ? `pn=${encodeURIComponent(upi.name)}` : null,
+    `am=${amount}`,
+    'cu=INR',
+    `tn=${encodeURIComponent('Office dues')}`,
+  ].filter(Boolean).join('&')}`;
 
   const copy = async () => {
     try {
@@ -93,21 +105,21 @@ function UpiPay({ pending, upi }) {
     <GlassPanel className="space-y-3 p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <p className="inline-flex items-center gap-1.5 text-sm font-medium"><Smartphone className="size-4 text-primary" /> Pay the admin manager</p>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            Send <span className="font-semibold tabular-nums text-foreground">{formatMoney(pending)}</span> to this UPI id from GPay / PhonePe / Paytm.
-          </p>
+          <p className="text-sm font-medium">Pay the admin manager</p>
+          <button type="button" onClick={copy} className="mt-0.5 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
+            <span className="truncate font-medium tabular-nums">{upi.id}</span>
+            {copied ? <Check className="size-3.5 shrink-0 text-success" /> : <Copy className="size-3.5 shrink-0" />}
+            <span className="shrink-0 text-xs">{copied ? 'Copied' : 'Copy'}</span>
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={copy}
+        <a
+          href={link}
           className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
         >
-          {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
-          <span className="max-w-[220px] truncate tabular-nums">{copied ? 'Copied!' : upi.id}</span>
-        </button>
+          <Smartphone className="size-4" /> Pay {formatMoney(pending)} via UPI
+        </a>
       </div>
-      <p className="text-xs text-muted-foreground">Tap the id to copy it. The admin marks it paid once the money arrives.</p>
+      <p className="text-xs text-muted-foreground">Opens your UPI app (GPay / PhonePe / Paytm). The admin marks it paid once the money arrives.</p>
     </GlassPanel>
   );
 }
