@@ -77,8 +77,16 @@ export async function mySnapshot(user, { type = 'monthly', dateYMD, range } = {}
 
   // Dues movement inside the period, from the entries the report already scoped.
   const entries = report.dues?.entries ?? [];
-  const duesAdded = entries.filter((e) => e.kind === 'DUE').reduce((s, e) => s + e.amount, 0);
+  const dueEntries = entries.filter((e) => e.kind === 'DUE');
+  const duesAdded = dueEntries.reduce((s, e) => s + e.amount, 0);
   const duesPaid = entries.filter((e) => e.kind !== 'DUE').reduce((s, e) => s + e.amount, 0);
+  // Are the items the admin added this period settled? Each due carries its status from
+  // the full-ledger reducer — it turns PAID once it's covered, whether by an advance
+  // paid earlier, a later payment, or the admin's settle button. So "every due this
+  // period is PAID" is the honest answer to "is this month cleared?", and it stops the
+  // advance case from reading as unpaid just because the money went in a month earlier.
+  // Only meaningful when something was actually added.
+  const duesSettled = dueEntries.length > 0 && dueEntries.every((e) => e.status === 'PAID');
 
   const leaveTakenDays = (report.leaves?.taken ?? []).reduce((s, l) => s + (l.days || 0), 0);
   const pointsEarned = pointRows.reduce((s, p) => s + p.points, 0);
@@ -102,6 +110,7 @@ export async function mySnapshot(user, { type = 'monthly', dateYMD, range } = {}
       tasksDone: doneInPeriod,
       duesAdded,
       duesPaid,
+      duesSettled,
       points: pointsEarned,
       pointRows: pointRows.map((p) => (p.toJSON ? p.toJSON() : p)),
     },

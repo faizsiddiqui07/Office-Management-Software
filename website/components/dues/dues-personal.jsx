@@ -51,7 +51,7 @@ function BalanceHero({ pending, advance }) {
     Icon = ArrowUpRight;
     label = 'You owe the admin';
     value = formatMoney(pending);
-    hint = 'Pay the admin manager in cash — they’ll mark it here.';
+    hint = 'Pay the admin manager — they’ll mark it here.';
   }
 
   return (

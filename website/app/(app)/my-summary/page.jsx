@@ -146,9 +146,18 @@ export default function MyStandingPage() {
               ) : null}
               <Stat
                 icon={HandCoins}
-                label={now.duesAdvance > 0 ? 'Advance with the office' : 'You owe the office'}
+                label={now.duesAdvance > 0 ? 'Advance with the admin' : now.duesPending > 0 ? 'You owe the admin' : 'Dues'}
                 value={formatMoney(now.duesAdvance > 0 ? now.duesAdvance : now.duesPending)}
-                hint={now.duesPending === 0 && now.duesAdvance === 0 ? 'All settled' : 'Pay the admin manager in cash'}
+                // Advance is money already handed to the admin manager, not something to
+                // pay — the admin buys your lunch/errands out of it. Only prompt to pay
+                // when there's actually a due, and don't insist on cash (online is fine).
+                hint={
+                  now.duesAdvance > 0
+                    ? 'Paid ahead — your items come out of this'
+                    : now.duesPending > 0
+                      ? 'Pay the admin manager — they’ll mark it here'
+                      : 'All settled'
+                }
                 tone={now.duesAdvance > 0 ? 'good' : now.duesPending > 0 ? 'warn' : 'default'}
               />
               <Stat
@@ -219,7 +228,11 @@ export default function MyStandingPage() {
                 icon={HandCoins}
                 label="Dues added"
                 value={formatMoney(inP.duesAdded)}
-                hint={inP.duesPaid ? `${formatMoney(inP.duesPaid)} paid` : 'Nothing paid in this period'}
+                // Settled once every item added this period is cleared — by an advance,
+                // a payment, or the admin's settle button. Until then, keep showing what
+                // was actually paid inside the period (or that nothing was).
+                hint={inP.duesSettled ? 'Settled' : inP.duesPaid ? `${formatMoney(inP.duesPaid)} paid` : 'Nothing paid in this period'}
+                tone={inP.duesSettled ? 'good' : 'default'}
               />
 
               {shows.points ? (

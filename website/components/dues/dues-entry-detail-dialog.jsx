@@ -66,7 +66,7 @@ export function DuesEntryDetailDialog({ entry, open, onOpenChange, footer }) {
                 it in the browser's own zone can show the previous day. */}
             <Row label="Date">{formatYMD(entry.dateYMD)}</Row>
 
-            {isDue && entry.paid > 0 ? <Row label="Paid in cash">{formatMoney(entry.paid)}</Row> : null}
+            {isDue && entry.paid > 0 ? <Row label="Paid directly">{formatMoney(entry.paid)}</Row> : null}
             {isDue && entry.remaining > 0 ? (
               <Row label="Still owed">
                 <span className="text-amber-600 dark:text-amber-300">{formatMoney(entry.remaining)}</span>
