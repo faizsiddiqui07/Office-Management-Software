@@ -1,6 +1,6 @@
 import { Attendance } from '../models/Attendance.js';
 import { LeaveRequest } from '../models/LeaveRequest.js';
-import { LeaveBalance } from '../models/LeaveBalance.js';
+import { Expense } from '../models/Expense.js';
 import { User } from '../models/User.js';
 import { Role } from '../models/Role.js';
 import { Task } from '../models/Task.js';
@@ -202,13 +202,17 @@ export async function buildDashboard(user) {
 
   // ── Leadership: rich analytics ────────────────────────────
   if (can(user, 'leadershipDashboard')) {
-    // Expenses run on the CALENDAR year (the chart is titled with it) — the
-    // fiscal `year` above is only for leave balances.
-    const calendarYear = Number(todayYMD.slice(0, 4));
-    const [headcount, balances, yearExpenses, pendingApprovals, pendingApprovalsCount, recent] = await Promise.all([
+    const [headcount, dailySpend, openTasks, pendingApprovals, pendingApprovalsCount, recent] = await Promise.all([
       User.countDocuments({ isActive: true }),
-      LeaveBalance.find({ year }),
-      expenseSummary({ from: `${calendarYear}-01-01`, to: `${calendarYear}-12-31` }),
+      // This month's spend DAY BY DAY (the chart plots a line over the dates). A full
+      // calendar year grouped by month left the chart all-but-empty — only the live
+      // month has data — so it's the current month at daily resolution instead.
+      Expense.aggregate([
+        { $match: { dateYMD: { $gte: month.from, $lte: todayYMD } } },
+        { $group: { _id: '$dateYMD', total: { $sum: '$amount' } } },
+      ]),
+      // Every still-open task across the company — the 4th analytics stat.
+      Task.countDocuments({ status: 'PENDING' }),
       LeaveRequest.find({ status: 'PENDING' }).sort({ appliedAt: -1 }).limit(6).populate('user', 'name employeeId'),
       LeaveRequest.countDocuments({ status: 'PENDING' }),
       // Recent activity is the audit feed — only fetch it for users who may view the activity log.
@@ -216,6 +220,16 @@ export async function buildDashboard(user) {
         ? AuditLog.find().sort({ createdAt: -1 }).limit(10).populate('actor', 'name')
         : Promise.resolve([]),
     ]);
+
+    // Fill every day from the 1st to today so the line is continuous, not a dot per day
+    // that happened to have an expense.
+    const spentByDay = new Map(dailySpend.map((d) => [d._id, d.total]));
+    const dailyExpenseTrend = [];
+    for (let t = Date.parse(`${month.from}T00:00:00Z`); ; t += 86400000) {
+      const ymd = new Date(t).toISOString().slice(0, 10);
+      if (ymd > todayYMD) break;
+      dailyExpenseTrend.push({ ymd, total: spentByDay.get(ymd) ?? 0 });
+    }
 
     out.analytics = {
       headcount,
@@ -232,12 +246,9 @@ export async function buildDashboard(user) {
       },
       // The same list the common leaderboard already computed — no second query.
       overtimeLeaders: out.leaderboards.overtime,
-      leaveUtilization: {
-        used: balances.reduce((s, b) => s + b.used, 0),
-        total: balances.reduce((s, b) => s + b.totalQuota, 0),
-      },
-      monthlyExpenseTrend: yearExpenses.byMonth,
-      monthlyExpenseTrendYear: calendarYear, // the UI titles the chart from this
+      openTasks,
+      dailyExpenseTrend,
+      expenseMonthLabel: month.label, // the UI titles the chart from this
       pendingApprovalsCount, // real total (the list below is capped at 6 for preview)
       pendingApprovals: pendingApprovals.map((l) => ({
         id: l.id,

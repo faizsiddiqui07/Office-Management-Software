@@ -11,6 +11,7 @@ import {
   Clock,
   FileText,
   Inbox,
+  ListTodo,
   Megaphone,
   Plane,
   Settings,
@@ -158,7 +159,8 @@ export default function DashboardPage() {
   const ts = todayStat(today);
   const isApprover = can(user, 'approveLeave');
   const canAudit = can(user, 'viewAudit'); // Recent activity = the audit feed
-  const selfTracks = can(user, 'markAttendance') || can(user, 'applyLeave'); // leadership doesn't self-track
+  const canApplyLeave = can(user, 'applyLeave'); // leadership can't take leave → no "my leaves"
+  const selfTracks = can(user, 'markAttendance') || canApplyLeave; // leadership doesn't self-track
 
   return (
     <div className="space-y-8">
@@ -289,11 +291,11 @@ export default function DashboardPage() {
               hint="leave requests"
             />
             <StatCard
-              label="Leave utilization"
-              value={`${analytics.leaveUtilization.total ? Math.round((analytics.leaveUtilization.used / analytics.leaveUtilization.total) * 100) : 0}%`}
-              icon={CalendarDays}
-              tone="info"
-              hint={`${analytics.leaveUtilization.used}/${analytics.leaveUtilization.total} days used`}
+              label="Open tasks"
+              value={analytics.openTasks}
+              icon={ListTodo}
+              tone={analytics.openTasks ? 'warning' : 'default'}
+              hint="pending across the company"
             />
           </div>
 
@@ -304,8 +306,8 @@ export default function DashboardPage() {
             </GlassCard>
 
             <GlassCard className="p-5 xl:col-span-2">
-              <p className="mb-2 text-sm font-medium">Monthly spend ({analytics.monthlyExpenseTrendYear ?? new Date().getFullYear()})</p>
-              <ExpenseTrendChart data={analytics.monthlyExpenseTrend} />
+              <p className="mb-2 text-sm font-medium">Spend this month{analytics.expenseMonthLabel ? ` · ${analytics.expenseMonthLabel}` : ''}</p>
+              <ExpenseTrendChart data={analytics.dailyExpenseTrend} />
             </GlassCard>
           </div>
 
@@ -409,6 +411,9 @@ export default function DashboardPage() {
             </GlassCard>
           </div>
 
+          {/* Only for people who can actually take leave — leadership doesn't, so this
+              never sits on their dashboard reading "No pending requests." */}
+          {canApplyLeave ? (
           <div className="space-y-3">
             <SectionTitle>My pending leaves</SectionTitle>
             <GlassCard className="divide-y divide-border/50 p-2">
@@ -427,6 +432,7 @@ export default function DashboardPage() {
               )}
             </GlassCard>
           </div>
+          ) : null}
         </div>
       </div>
     </div>
