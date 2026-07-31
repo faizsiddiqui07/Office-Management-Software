@@ -79,8 +79,12 @@ function UpiPay({ pending, upi }) {
   if (!(pending > 0) || !upi?.id) return null;
 
   const amount = (pending / 100).toFixed(2);
+  // `pa` goes RAW: percent-encoding it turns @ into %40 and payment apps then fail with
+  // "Incorrect merchant details". Safe raw — the VPA validator (name@bank, see the admin
+  // card / setUpiSchema) only admits URL-safe characters. `pn`/`tn` may hold spaces, and
+  // those apps expect them percent-encoded, so they stay encoded.
   const link = `upi://pay?${[
-    `pa=${encodeURIComponent(upi.id)}`,
+    `pa=${upi.id}`,
     upi.name ? `pn=${encodeURIComponent(upi.name)}` : null,
     `am=${amount}`,
     'cu=INR',
