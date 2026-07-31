@@ -10,6 +10,7 @@ import {
   CalendarPlus,
   Clock,
   FileText,
+  Home,
   Inbox,
   ListTodo,
   Megaphone,
@@ -155,7 +156,7 @@ export default function DashboardPage() {
     );
   }
 
-  const { today, balance, announcements, upcomingHolidays, myPendingLeaves, team, expenses, analytics, leaderboards } = data;
+  const { today, balance, announcements, upcomingHolidays, myPendingLeaves, whosOut, team, expenses, analytics, leaderboards } = data;
   const ts = todayStat(today);
   const isApprover = can(user, 'approveLeave');
   const canAudit = can(user, 'viewAudit'); // Recent activity = the audit feed
@@ -269,6 +270,65 @@ export default function DashboardPage() {
               )}
             </GlassCard>
           </div>
+        </section>
+      ) : null}
+
+      {/* Who's out today — everyone, so "is X in today?" needs no page hop */}
+      {whosOut ? (
+        <section className="space-y-3">
+          <SectionTitle>Who’s out today</SectionTitle>
+          <GlassCard className="space-y-4 p-5">
+            {whosOut.officeWfh || whosOut.onLeave.length || whosOut.wfh.length ? (
+              <div className="space-y-3">
+                {whosOut.officeWfh ? (
+                  <p className="inline-flex items-center gap-2 text-sm">
+                    <Home className="size-4 text-primary" />
+                    <span className="font-medium">The whole office is working from home today.</span>
+                  </p>
+                ) : null}
+                {whosOut.onLeave.length ? (
+                  <div>
+                    <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">On leave</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {whosOut.onLeave.map((p, i) => (
+                        <span key={i} className="inline-flex items-center gap-1.5 rounded-full bg-warning/12 px-2.5 py-1 text-xs font-medium text-amber-600 ring-1 ring-warning/25 dark:text-amber-300">
+                          {p.name} <span className="opacity-70">· {requestTypeLabel(p.type)}</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                {whosOut.wfh.length ? (
+                  <div>
+                    <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">Working from home</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {whosOut.wfh.map((name, i) => (
+                        <span key={i} className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
+                          <Home className="size-3" /> {name}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">Everyone’s in today.</p>
+            )}
+
+            {whosOut.upcoming?.length ? (
+              <div className="border-t border-border/50 pt-3">
+                <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">Coming up · next 7 days</p>
+                <ul className="space-y-1 text-sm">
+                  {whosOut.upcoming.map((p, i) => (
+                    <li key={i} className="flex flex-wrap items-baseline gap-x-1.5">
+                      <span className="font-medium">{p.name}</span>
+                      <span className="text-muted-foreground">— {requestTypeLabel(p.type)} from {fmtDate(p.startYMD)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </GlassCard>
         </section>
       ) : null}
 

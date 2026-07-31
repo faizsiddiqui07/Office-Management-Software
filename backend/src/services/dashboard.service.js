@@ -117,6 +117,33 @@ async function withNames(agg, extra) {
   return agg.map((o) => ({ name: nameOf.get(String(o._id)) ?? '—', ...extra(o) }));
 }
 
+/**
+ * Who is out today + who's about to be — approved leave and WFH only. Shown to EVERYONE
+ * on the dashboard so "is X in today?" needs no page hop. Absent (an unplanned no-show)
+ * is deliberately excluded: it's derived, noisy before the day ends, and a management
+ * concern leadership already sees on Team / analytics.
+ */
+export async function whosOut(todayYMD, settings) {
+  const plus7 = new Date(`${todayYMD}T00:00:00Z`);
+  plus7.setUTCDate(plus7.getUTCDate() + 7);
+  const in7 = plus7.toISOString().slice(0, 10);
+
+  const [leaveToday, wfhToday, upcoming] = await Promise.all([
+    LeaveRequest.find({ status: 'APPROVED', type: { $ne: 'WFH' }, startYMD: { $lte: todayYMD }, endYMD: { $gte: todayYMD } }).populate('user', 'name').sort({ startYMD: 1 }),
+    LeaveRequest.find({ status: 'APPROVED', type: 'WFH', startYMD: { $lte: todayYMD }, endYMD: { $gte: todayYMD } }).populate('user', 'name'),
+    LeaveRequest.find({ status: 'APPROVED', type: { $ne: 'WFH' }, startYMD: { $gt: todayYMD, $lte: in7 } }).populate('user', 'name').sort({ startYMD: 1 }).limit(10),
+  ]);
+
+  const officeWfh = (settings.wfhDays || []).some((d) => d.ymd === todayYMD);
+  return {
+    onLeave: leaveToday.map((l) => ({ name: l.user?.name ?? '—', type: l.type })),
+    // On an office-wide WFH day everyone is home — say it once, don't list 15 names.
+    wfh: officeWfh ? [] : wfhToday.map((l) => l.user?.name ?? '—'),
+    officeWfh,
+    upcoming: upcoming.map((l) => ({ name: l.user?.name ?? '—', type: l.type, startYMD: l.startYMD })),
+  };
+}
+
 export async function buildDashboard(user) {
   const settings = await Setting.getSingleton();
   const now = new Date();
@@ -142,6 +169,8 @@ export async function buildDashboard(user) {
   // "the next five, whenever they are" true without an unbounded scan.
   out.upcomingHolidays = (await listHolidays({ from: todayYMD, to: `${Number(todayYMD.slice(0, 4)) + 1}-12-31` })).slice(0, 5);
   out.myPendingLeaves = (await LeaveRequest.find({ user: user._id, status: 'PENDING' }).sort({ appliedAt: -1 })).map((l) => l.toJSON());
+  // Everyone sees who's on leave / WFH today (and who's out soon) — no role gate.
+  out.whosOut = await whosOut(todayYMD, settings);
 
   const month = computePeriod('monthly', todayYMD);
   const monthStart = companyDayFromYMD(month.from);
