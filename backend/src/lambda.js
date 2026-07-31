@@ -1,5 +1,6 @@
 import serverless from 'serverless-http';
 import { app, initApp } from './app.js';
+import { runScheduledJobs } from './services/scheduler.service.js';
 
 /**
  * AWS Lambda entry point (handler = "src/lambda.handler" in the Lambda config).
@@ -24,5 +25,15 @@ export const handler = async (event, context) => {
   // Keep the Mongo connection (and role cache) alive between warm invocations.
   context.callbackWaitsForEmptyEventLoop = false;
   await initApp(); // idempotent + cached
+
+  // Scheduled tick from EventBridge (Scheduler input {"cron": true}, or a classic rule).
+  // Run the time-based jobs and return WITHOUT going through Express — there's no HTTP
+  // request to route. These frequent ticks also keep this container warm (init already
+  // done above), which is what makes the app open instantly for the next real visitor.
+  if (event?.cron === true || event?.source === 'aws.events' || event?.source === 'aws.scheduler') {
+    const jobs = await runScheduledJobs().catch((e) => ({ error: e?.message || 'error' }));
+    return { statusCode: 200, body: JSON.stringify({ ok: true, jobs }) };
+  }
+
   return serverlessHandler(event, context);
 };
