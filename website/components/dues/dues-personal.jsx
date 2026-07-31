@@ -79,16 +79,17 @@ function UpiPay({ pending, upi }) {
   if (!(pending > 0) || !upi?.id) return null;
 
   const amount = (pending / 100).toFixed(2);
-  // `pa` goes RAW: percent-encoding it turns @ into %40 and payment apps then fail with
-  // "Incorrect merchant details". Safe raw — the VPA validator (name@bank, see the admin
-  // card / setUpiSchema) only admits URL-safe characters. `pn`/`tn` may hold spaces, and
-  // those apps expect them percent-encoded, so they stay encoded.
+  // Deliberately MINIMAL, per the NPCI linking spec: pa + pn + am + cu and nothing else.
+  //  - `pa` goes RAW: percent-encoding turned @ into %40, and payment apps (iMobile) then
+  //    refused with "Incorrect merchant details". Raw is safe — the VPA validator
+  //    (setUpiSchema / the admin card) only admits URL-safe characters.
+  //  - No `tn`, and never `mc`/`tr`: merchant-style fields are what flip apps into
+  //    merchant validation, which a personal VPA can only fail.
   const link = `upi://pay?${[
     `pa=${upi.id}`,
     upi.name ? `pn=${encodeURIComponent(upi.name)}` : null,
     `am=${amount}`,
     'cu=INR',
-    `tn=${encodeURIComponent('Office dues')}`,
   ].filter(Boolean).join('&')}`;
 
   const copy = async () => {
@@ -119,7 +120,7 @@ function UpiPay({ pending, upi }) {
           <Smartphone className="size-4" /> Pay {formatMoney(pending)} via UPI
         </a>
       </div>
-      <p className="text-xs text-muted-foreground">Opens your UPI app (GPay / PhonePe / Paytm). The admin marks it paid once the money arrives.</p>
+      <p className="text-xs text-muted-foreground">Opens your UPI app with the amount already filled in. If the button doesn’t work in one app, copy the id and pay from any UPI app — the admin marks it paid once the money arrives.</p>
     </GlassPanel>
   );
 }
