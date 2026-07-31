@@ -109,7 +109,8 @@ export async function record(req, res, next) {
     if (!userId || !ymd.test(startYMD || '') || !ymd.test(endYMD || '')) {
       return res.status(400).json(fail('BAD_INPUT', 'userId and valid dates are required'));
     }
-    if (!['CASUAL', 'SICK', 'PAID', 'UNPAID'].includes(type)) {
+    // Paid/Unpaid retired — only Casual and Sick can be recorded now (see lib/leave.js).
+    if (!['CASUAL', 'SICK'].includes(type)) {
       return res.status(400).json(fail('BAD_TYPE', 'Pick a valid leave type'));
     }
     const request = await svc.recordLeaveForUser(req.user, userId, { type, startYMD, endYMD, reason });

@@ -1,11 +1,20 @@
+// The leave dialog's type dropdown offers only Casual and Sick — both draw from the paid
+// quota. "Paid" was a redundant third quota type and "Unpaid (LOP)" (leave beyond quota)
+// is no longer offered; both are retired as choices. They live on only in
+// LEAVE_TYPE_LABELS so any historical request that still carries them keeps reading right.
 export const LEAVE_TYPES = [
   { value: 'CASUAL', label: 'Casual' },
   { value: 'SICK', label: 'Sick' },
-  { value: 'PAID', label: 'Paid' },
-  { value: 'UNPAID', label: 'Unpaid (LOP)' },
 ];
 
-export const LEAVE_TYPE_LABELS = Object.fromEntries(LEAVE_TYPES.map((t) => [t.value, t.label]));
+// Display labels — kept for the retired types too, so an old Paid/Unpaid request still
+// reads properly in lists, reports and history even though it can't be picked any more.
+export const LEAVE_TYPE_LABELS = {
+  CASUAL: 'Casual',
+  SICK: 'Sick',
+  PAID: 'Paid',
+  UNPAID: 'Unpaid (LOP)',
+};
 
 /**
  * Work from home. Deliberately NOT in LEAVE_TYPES — that array fills the leave dialog's

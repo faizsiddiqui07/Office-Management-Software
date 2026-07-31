@@ -7,6 +7,9 @@ const leaveRequestSchema = new mongoose.Schema(
     // on this model so it flows through the same apply / edit / approve / cancel
     // machinery and shows up wherever leave does. Its own rules (one day at a time, a
     // yearly cap) live in leave.service.js.
+    // Only CASUAL, SICK and WFH can be created now — PAID and UNPAID were retired as
+    // choices (see website/lib/leave.js). They stay in the enum so any request stored
+    // before the change still validates on save (cancel/approve/edit) and reads correctly.
     type: { type: String, enum: ['CASUAL', 'SICK', 'PAID', 'UNPAID', 'WFH'], required: true },
     // Company-TZ midnight instants + their yyyy-MM-dd strings (for enumeration/display).
     startDate: { type: Date, required: true },
