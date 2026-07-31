@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Check, Clock, Download, Home, Pencil, TriangleAlert, UserCheck, UserPlus, Users, UserX } from 'lucide-react';
-import { api, getAuthToken } from '@/lib/api';
+import { api, downloadFile } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can, roleName } from '@/lib/permissions';
 import { effectiveStatus } from '@/lib/attendance';
@@ -106,17 +106,8 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
 /** Authenticated CSV download (day roster or month payroll matrix). */
 async function downloadCsv(path, filename) {
-  const res = await fetch(`${API_BASE}/api${path}`, { headers: { Authorization: `Bearer ${getAuthToken()}` } });
-  if (!res.ok) throw new Error('Could not download');
-  const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  // One iOS-safe download path for the whole app — see downloadFile.
+  await downloadFile(`${API_BASE}/api${path}`, filename);
 }
 
 /** A stat card that also acts as a filter toggle for the roster below. */

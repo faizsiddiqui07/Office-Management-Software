@@ -1,4 +1,4 @@
-import { getAuthToken } from '@/lib/api';
+import { downloadFile } from '@/lib/api';
 import { COMPANY_TZ } from '@/lib/time';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
@@ -26,15 +26,6 @@ export function todayYMD() {
 export async function downloadVisitors(format, params = {}) {
   const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
   const url = `${API_BASE}/api/visitors/export.${format}${qs ? `?${qs}` : ''}`;
-  const res = await fetch(url, { cache: 'no-store', headers: { Authorization: `Bearer ${getAuthToken()}` } });
-  if (!res.ok) throw new Error('Could not download the register');
-  const blob = await res.blob();
-  const objUrl = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = objUrl;
-  a.download = `visitors.${format}`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(objUrl);
+  // One iOS-safe download path for the whole app — see downloadFile.
+  await downloadFile(url, `visitors.${format}`);
 }

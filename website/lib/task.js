@@ -1,4 +1,4 @@
-import { getAuthToken } from '@/lib/api';
+import { downloadFile } from '@/lib/api';
 import { COMPANY_TZ } from '@/lib/time';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
@@ -37,15 +37,6 @@ export async function downloadTasksPdf(scope, view = 'mine', filters = {}) {
   if (filters.dateBasis) p.set('dateBasis', filters.dateBasis);
   if (filters.search) p.set('search', filters.search);
   const url = `${API_BASE}/api/tasks/export.pdf?${p.toString()}`;
-  const res = await fetch(url, { cache: 'no-store', headers: { Authorization: `Bearer ${getAuthToken()}` } });
-  if (!res.ok) throw new Error('Could not generate the PDF');
-  const blob = await res.blob();
-  const objUrl = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = objUrl;
-  a.download = `tasks-${scope}.pdf`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(objUrl);
+  // One iOS-safe download path for the whole app — see downloadFile.
+  await downloadFile(url, `tasks-${scope}.pdf`);
 }

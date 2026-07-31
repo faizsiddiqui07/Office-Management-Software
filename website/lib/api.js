@@ -131,15 +131,28 @@ export async function downloadFile(url, filename) {
   if (!res.ok) {
     throw new ApiError(res.status, 'HTTP_ERROR', 'Could not download the file');
   }
-  const blob = await res.blob();
+
+  // Save it the same way on every phone. Android and desktop honour `download` and
+  // just save the file; iOS Safari has two traps that turned this into a share/
+  // "Copy Link" prompt whose link 404s the moment it leaves the phone:
+  //   1. Safari PREVIEWS anything it can open — a PDF lands in its in-app viewer, and
+  //      that viewer's only share action is Copy Link, i.e. the throwaway blob: URL.
+  //      Handing it an octet-stream, which it cannot preview, makes it save instead.
+  //   2. Revoking the object URL on the next line cancels the save, because Safari
+  //      reads the blob asynchronously AFTER the click. Revoke long after, not now.
+  const raw = await res.blob();
+  const blob = new Blob([raw], { type: 'application/octet-stream' });
   const objUrl = URL.createObjectURL(blob);
+
   const a = document.createElement('a');
   a.href = objUrl;
   a.download = filename;
+  a.rel = 'noopener';
   document.body.appendChild(a);
   a.click();
   a.remove();
-  URL.revokeObjectURL(objUrl);
+
+  setTimeout(() => URL.revokeObjectURL(objUrl), 60_000);
 }
 
 export const getHealth = () => api.get('/health');
