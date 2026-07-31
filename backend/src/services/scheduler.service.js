@@ -1,6 +1,7 @@
 import { maybeRunDaily } from './bonus.service.js';
 import { maybeAnnounceBirthdays } from './holiday.service.js';
 import { publishDueAnnouncements } from './announcement.service.js';
+import { maybeRunDayCloseDigest } from './dayDigest.service.js';
 
 /**
  * Every time-based job, run from the EventBridge schedule (see src/lambda.js) instead of
@@ -16,13 +17,14 @@ import { publishDueAnnouncements } from './announcement.service.js';
  * must never error out.
  */
 export async function runScheduledJobs() {
-  const jobs = { bonus: 'ok', birthdays: 'ok', announcements: 'ok' };
+  const jobs = { bonus: 'ok', birthdays: 'ok', announcements: 'ok', dayDigest: 'ok' };
   const settled = await Promise.allSettled([
     maybeRunDaily(),
     maybeAnnounceBirthdays(),
     publishDueAnnouncements(),
+    maybeRunDayCloseDigest(),
   ]);
-  const keys = ['bonus', 'birthdays', 'announcements'];
+  const keys = ['bonus', 'birthdays', 'announcements', 'dayDigest'];
   settled.forEach((r, i) => {
     if (r.status === 'rejected') {
       jobs[keys[i]] = r.reason?.message || 'error';

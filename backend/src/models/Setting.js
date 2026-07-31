@@ -97,6 +97,9 @@ const settingSchema = new mongoose.Schema(
     eodDigest: {
       enabled: { type: Boolean, default: true },
       time: { type: String, default: '19:00' }, // 'HH:mm' company time
+      // YMD — last day the leadership attendance round-up push was sent. Throttles it to
+      // once a day off the EventBridge schedule (see dayDigest.service).
+      digestLastRun: { type: String, default: '' },
     },
     // Days the office has been declared work-from-home for, with the announcement each
     // one posted. Claiming the day here BEFORE announcing keeps a double-press (or a
