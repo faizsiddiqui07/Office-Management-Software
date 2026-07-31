@@ -6,7 +6,7 @@ import { User } from '../models/User.js';
 import { Setting } from '../models/Setting.js';
 import { joinedYMD, hadAccessOn } from '../lib/joining.js';
 import { createAnnouncement, retireAnnouncement } from './announcement.service.js';
-import { notify } from '../models/Notification.js';
+import { notify, clearNotificationsFor } from '../models/Notification.js';
 import { can, canAssignRole } from '../lib/permissions.js';
 import { rolesWithPermission, roleLabel, isOwnerRole, ownerRoleKeys } from '../lib/roles.js';
 import { companyDayFromYMD, ymdInTz, dayOfWeekInTz } from '../lib/time.js';
@@ -385,6 +385,10 @@ async function notifyApprovers(request, applicant) {
         // Straight to the approval queue where they act on it — not the "My leaves" page
         // an approver lands on by default, which is their own leaves, not this request.
         link: '/approvals?kind=leaves',
+        // Tag it so cancelling/deciding the request can withdraw this from every
+        // approver's bell — the queue link is dead once it leaves PENDING.
+        entityType: 'LeaveRequest',
+        entityId: request._id,
       }),
     ),
   );
@@ -651,6 +655,10 @@ export async function decideLeave(approver, id, decision, note, { replaceAttenda
   if (wfh && !isOwnerRole(approver.role)) {
     throw httpError(403, 'FORBIDDEN', 'Only CEO & President can decide a work-from-home request');
   }
+
+  // Once it's decided the "approve this" call is spent for EVERY approver — including
+  // the others who never acted — so clear it from all their bells, not just this one's.
+  await clearNotificationsFor('LeaveRequest', id, { types: ['LEAVE_REQUEST'] });
 
   if (decision === 'REJECT') {
     request.status = 'REJECTED';
@@ -953,6 +961,9 @@ export async function cancelLeave(viewer, id) {
     request.decidedBy = viewer._id;
     request.decidedAt = new Date();
     await request.save();
+    // Withdrawn before anyone decided it — pull the "approve this" from every approver's
+    // bell so it isn't left pointing at a queue the request has already left.
+    await clearNotificationsFor('LeaveRequest', request._id, { types: ['LEAVE_REQUEST'] });
     return request.toJSON();
   }
 
@@ -998,6 +1009,9 @@ export async function cancelLeave(viewer, id) {
     return fresh;
   });
 
+  // Belt and braces: the pending "approve this" was normally cleared when this was
+  // approved, but clear again so cancelling an approved leave never leaves one behind.
+  await clearNotificationsFor('LeaveRequest', result._id, { types: ['LEAVE_REQUEST'] });
   await notify({
     user: result.user,
     type: 'LEAVE_CANCELLED',
@@ -1052,6 +1066,8 @@ export async function deleteLeave(viewer, id) {
   }
 
   await request.deleteOne();
+  // The row is gone — take its "approve this" out of every approver's bell too.
+  await clearNotificationsFor('LeaveRequest', id, { types: ['LEAVE_REQUEST'] });
   return { success: true };
 }
 

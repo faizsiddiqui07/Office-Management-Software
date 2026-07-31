@@ -2,7 +2,7 @@ import { Regularization } from '../models/Regularization.js';
 import { Attendance } from '../models/Attendance.js';
 import { Setting } from '../models/Setting.js';
 import { User } from '../models/User.js';
-import { notify } from '../models/Notification.js';
+import { notify, clearNotificationsFor } from '../models/Notification.js';
 import { LEADERSHIP } from '../lib/permissions.js';
 import { companyDayFromYMD, companyDayInstantAt, isLateCheckIn, computeWork } from '../lib/time.js';
 import { effectiveSchedule } from '../lib/schedule.js';
@@ -80,6 +80,10 @@ export async function createRequest(user, { dateYMD, checkIn, checkOut, reason }
         message: `For ${dateYMD}`,
         // The approver decides these on the Approvals queue.
         link: '/approvals?kind=regularizations',
+        // Tag it so cancelling/deciding the correction can clear this from every
+        // leader's bell — the queue link is dead once it leaves PENDING.
+        entityType: 'Regularization',
+        entityId: reg._id,
       }),
     ),
   );
@@ -115,6 +119,8 @@ export async function listHistory() {
 export async function remove(id) {
   const reg = await Regularization.findByIdAndDelete(id);
   if (!reg) throw httpError(404, 'NOT_FOUND', 'Request not found');
+  // The row is gone — clear its "correction to review" from every leader's bell too.
+  await clearNotificationsFor('Regularization', id, { types: ['REGULARIZATION'] });
   return { id };
 }
 
@@ -167,6 +173,10 @@ export async function decide(approver, id, decision, note) {
   if (String(reg.user?._id ?? reg.user) === String(approver._id)) {
     throw httpError(403, 'SELF_DECISION', 'You cannot decide your own attendance correction — someone else has to review it');
   }
+
+  // Decided now — clear the "correction to review" from every leader's bell, including
+  // the others who never acted on it.
+  await clearNotificationsFor('Regularization', id, { types: ['REGULARIZATION'] });
 
   reg.status = decision;
   reg.decidedBy = approver._id;

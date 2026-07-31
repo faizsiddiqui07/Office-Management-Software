@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Task } from '../models/Task.js';
 import { User } from '../models/User.js';
-import { notify } from '../models/Notification.js';
+import { notify, clearNotificationsFor } from '../models/Notification.js';
 import { roleLabel } from '../lib/roles.js';
 import { companyDayFromYMD, ymdInTz, COMPANY_TZ } from '../lib/time.js';
 import { onAssignedTaskDone, onAssignedTaskUndone } from './bonus.service.js';
@@ -254,10 +254,14 @@ export async function setStatus(actor, id, status) {
     await task.save();
     await notify({
       user: task.assignedBy,
-      type: 'TASK_ASSIGNED',
+      // Its own type (not TASK_ASSIGNED, which also means "new task"/"tagged you") so
+      // withdrawing/deciding can clear THIS without touching the assignment notice.
+      type: 'TASK_APPROVAL',
       title: `${actor.name} submitted work for approval`,
       message: task.title,
       link: todoLink(task._id, true),
+      entityType: 'Task',
+      entityId: task._id,
     });
     return populated(task);
   }
@@ -266,6 +270,8 @@ export async function setStatus(actor, id, status) {
   if (!wantDone && task.awaitingApproval) {
     task.submittedAt = null;
     await task.save();
+    // Pulled back before review — take "approve this" out of the assigner's bell.
+    await clearNotificationsFor('Task', task._id, { types: ['TASK_APPROVAL'] });
     return populated(task);
   }
 
@@ -317,6 +323,10 @@ export async function reviewTask(actor, id, approve, reason) {
   const isAssigner = task.assignedBy && String(task.assignedBy) === String(actor._id);
   if (!isAssigner) throw httpError(403, 'FORBIDDEN', 'Only the person who assigned this task can review it');
   if (!task.awaitingApproval) throw httpError(400, 'NOT_AWAITING', 'This task isn’t waiting for approval');
+
+  // Reviewing it (either way) spends the "approve this" — clear it so it doesn't linger
+  // in the assigner's own bell after they've acted.
+  await clearNotificationsFor('Task', task._id, { types: ['TASK_APPROVAL'] });
 
   if (approve) {
     task.status = 'DONE';
@@ -478,10 +488,12 @@ async function settleParent(childTask, depth = 0) {
       await parent.save();
       await notify({
         user: parent.assignedBy,
-        type: 'TASK_ASSIGNED',
+        type: 'TASK_APPROVAL',
         title: 'Forwarded work is ready for your approval',
         message: parent.title,
         link: todoLink(parent._id, true),
+        entityType: 'Task',
+        entityId: parent._id,
       });
     }
     return;
