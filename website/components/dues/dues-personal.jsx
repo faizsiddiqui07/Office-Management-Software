@@ -98,6 +98,58 @@ function UpiPay({ pending, upi }) {
   if (!(pending > 0) || !upi?.id) return null;
 
   const amount = (pending / 100).toFixed(2);
+
+  /**
+   * The downloaded file is a payment SLIP, not a bare QR: title, QR, amount, id, and —
+   * in red — the validity window. The QR itself can't expire (it's just an image), so a
+   * human-readable "Valid only till …" is what stops someone innocently paying an old
+   * screenshot two days later. Composed on a scratch canvas from the on-screen QR.
+   */
+  const downloadQr = () => {
+    const qrCanvas = qrBoxRef.current?.querySelector('canvas');
+    if (!qrCanvas) return;
+    const W = 640;
+    const H = 872;
+    const out = document.createElement('canvas');
+    out.width = W;
+    out.height = H;
+    const ctx = out.getContext('2d');
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = 'center';
+
+    ctx.fillStyle = '#111827';
+    ctx.font = '600 30px system-ui, sans-serif';
+    ctx.fillText('Office dues payment', W / 2, 58);
+    ctx.font = '400 23px system-ui, sans-serif';
+    ctx.fillStyle = '#374151';
+    if (upi.name) ctx.fillText(`To: ${upi.name}`, W / 2, 96);
+
+    ctx.drawImage(qrCanvas, (W - 512) / 2, 122, 512, 512);
+
+    ctx.fillStyle = '#111827';
+    ctx.font = '700 44px system-ui, sans-serif';
+    ctx.fillText(`₹ ${amount}`, W / 2, 700);
+    ctx.font = '400 22px system-ui, sans-serif';
+    ctx.fillStyle = '#374151';
+    ctx.fillText(upi.id, W / 2, 736);
+
+    const fmt = (d) =>
+      d.toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
+    const till = new Date(Date.now() + qrLeft * 1000);
+    ctx.fillStyle = '#B91C1C'; // red — the one thing a later viewer must not miss
+    ctx.font = '600 26px system-ui, sans-serif';
+    ctx.fillText(`Valid only till ${fmt(till)}`, W / 2, 792);
+    ctx.fillStyle = '#6B7280';
+    ctx.font = '400 19px system-ui, sans-serif';
+    ctx.fillText(`Generated ${fmt(new Date())} · do not pay after the valid time`, W / 2, 826);
+
+    const a = document.createElement('a');
+    a.href = out.toDataURL('image/png');
+    a.download = `upi-dues-${amount}.png`;
+    a.click();
+  };
   // The QR carries the standard NPCI string (pa raw — %40 breaks apps; minimal params).
   // SCANNING is a different trust path than intent links: apps accept personal-VPA QRs.
   const qrValue = `upi://pay?${[
@@ -154,14 +206,7 @@ function UpiPay({ pending, upi }) {
             </p>
             <button
               type="button"
-              onClick={() => {
-                const canvas = qrBoxRef.current?.querySelector('canvas');
-                if (!canvas) return;
-                const a = document.createElement('a');
-                a.href = canvas.toDataURL('image/png');
-                a.download = `upi-dues-${(pending / 100).toFixed(2)}.png`;
-                a.click();
-              }}
+              onClick={downloadQr}
               className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
             >
               <Download className="size-4" /> Download QR
