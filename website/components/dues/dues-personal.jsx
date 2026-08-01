@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowDownLeft, ArrowUpRight, Check, CheckCircle2, Copy, HandCoins, Smartphone, Wallet } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import { api } from '@/lib/api';
 import { formatMoney } from '@/lib/expense';
 import { cn } from '@/lib/utils';
@@ -121,6 +122,20 @@ function UpiPay({ pending, upi }) {
         </a>
       </div>
       <p className="text-xs text-muted-foreground">Opens your UPI app with the amount already filled in. If the button doesn’t work in one app, copy the id and pay from any UPI app — the admin marks it paid once the money arrives.</p>
+
+      {/* Scan-to-pay QR — the same upi:// string every shop QR uses. Hidden on phones
+          (you can't scan your own screen); on a laptop this is THE way to pay, and a
+          phone whose app refuses intent links (iMobile) can scan it here too. White tile
+          always, whatever the theme — scanners want dark-on-light. */}
+      <div className="hidden items-center gap-4 border-t border-border/50 pt-3 sm:flex">
+        <span className="shrink-0 rounded-xl bg-white p-2.5 shadow-sm ring-1 ring-border/60">
+          <QRCodeSVG value={link} size={132} bgColor="#ffffff" fgColor="#000000" />
+        </span>
+        <div className="min-w-0 text-xs text-muted-foreground">
+          <p className="text-sm font-medium text-foreground">Scan to pay</p>
+          <p className="mt-0.5">Open any UPI app on your phone — GPay, PhonePe, Paytm or your bank’s app — and scan this code. The amount comes filled in.</p>
+        </div>
+      </div>
     </GlassPanel>
   );
 }
