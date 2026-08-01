@@ -177,6 +177,8 @@ function UpiPay({ pending, upi }) {
           <p className="mt-0.5 text-sm text-muted-foreground">
             Send <span className="font-semibold tabular-nums text-foreground">{formatMoney(pending)}</span> to this UPI id from GPay / PhonePe / any UPI app.
           </p>
+          {/* The id itself, plainly visible and select-all — copying by hand also works. */}
+          <p className="mt-1 select-all break-all text-sm font-semibold tabular-nums">{upi.id}</p>
         </div>
         <button
           type="button"
@@ -184,7 +186,7 @@ function UpiPay({ pending, upi }) {
           className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
         >
           {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
-          <span className="max-w-[240px] truncate tabular-nums">{copied ? 'Copied!' : upi.id}</span>
+          {copied ? 'Copied!' : 'Copy UPI ID'}
         </button>
       </div>
       <p className="text-xs text-muted-foreground">Tap to copy the id, then pay it directly from your UPI app (open the app → Pay by UPI ID → paste → amount). Direct payment works in every app. The admin marks it paid once the money arrives.</p>
@@ -204,13 +206,24 @@ function UpiPay({ pending, upi }) {
               Amount <span className="font-medium tabular-nums text-foreground">{formatMoney(pending)}</span> filled in · hides in{' '}
               <span className="font-medium tabular-nums text-foreground">{Math.floor(qrLeft / 60)}:{String(qrLeft % 60).padStart(2, '0')}</span>
             </p>
-            <button
-              type="button"
-              onClick={downloadQr}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-            >
-              <Download className="size-4" /> Download QR
-            </button>
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <button
+                type="button"
+                onClick={downloadQr}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+              >
+                <Download className="size-4" /> Download QR
+              </button>
+              {/* For whoever doesn't want the QR at all — the id, one tap away, right here. */}
+              <button
+                type="button"
+                onClick={copy}
+                className="inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium ring-1 ring-border transition-colors hover:bg-muted/40"
+              >
+                {copied ? <Check className="size-4 text-success" /> : <Copy className="size-4" />}
+                {copied ? 'Copied!' : 'Copy id'}
+              </button>
+            </div>
             <p className="text-center text-xs text-muted-foreground">
               Download it, open your UPI app’s scanner and pick this QR from your <span className="font-medium text-foreground">gallery</span> — the payment opens with the amount filled in.
             </p>
