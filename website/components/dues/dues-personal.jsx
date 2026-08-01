@@ -2,8 +2,8 @@
 
 import * as React from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowDownLeft, ArrowUpRight, Check, CheckCircle2, Copy, HandCoins, Smartphone, Wallet } from 'lucide-react';
-import { QRCodeSVG } from 'qrcode.react';
+import { ArrowDownLeft, ArrowUpRight, Check, CheckCircle2, Copy, Download, HandCoins, QrCode, Smartphone, Wallet } from 'lucide-react';
+import { QRCodeCanvas, QRCodeSVG } from 'qrcode.react';
 import { api } from '@/lib/api';
 import { formatMoney } from '@/lib/expense';
 import { cn } from '@/lib/utils';
@@ -80,8 +80,21 @@ function BalanceHero({ pending, advance }) {
  * Restricted". Personal-VPA intent links are simply blocked policy-side now; the flows
  * that work in every app are the two below — exactly what every shop uses.
  */
+const QR_WINDOW_SECONDS = 5 * 60; // the on-phone QR hides after 5 minutes
+
 function UpiPay({ pending, upi }) {
   const [copied, setCopied] = React.useState(false);
+  // Phone QR: opened on demand, auto-hides when the window runs out. The window is
+  // display hygiene (a stale amount shouldn't sit on screen) — a downloaded image is
+  // just a picture and can't be expired; the admin records whatever actually arrived.
+  const [qrLeft, setQrLeft] = React.useState(0);
+  const qrBoxRef = React.useRef(null);
+  React.useEffect(() => {
+    if (qrLeft <= 0) return undefined;
+    const t = setTimeout(() => setQrLeft((s) => s - 1), 1000);
+    return () => clearTimeout(t);
+  }, [qrLeft]);
+
   if (!(pending > 0) || !upi?.id) return null;
 
   const amount = (pending / 100).toFixed(2);
@@ -123,6 +136,50 @@ function UpiPay({ pending, upi }) {
         </button>
       </div>
       <p className="text-xs text-muted-foreground">Tap to copy the id, then pay it directly from your UPI app (open the app → Pay by UPI ID → paste → amount). Direct payment works in every app. The admin marks it paid once the money arrives.</p>
+
+      {/* Phone QR — on demand, since you can't point your camera at your own screen:
+          generate → download the PNG → open the UPI app's scanner → pick it FROM THE
+          GALLERY (GPay/PhonePe/Paytm scanners all take gallery images). Canvas (not SVG)
+          so toDataURL gives the download; rendered at 512px for a crisp, scannable file
+          but displayed at 200. Auto-hides after QR_WINDOW_SECONDS. */}
+      <div className="border-t border-border/50 pt-3 sm:hidden">
+        {qrLeft > 0 ? (
+          <div className="flex flex-col items-center gap-2.5">
+            <span ref={qrBoxRef} className="rounded-xl bg-white p-3 shadow-sm ring-1 ring-border/60">
+              <QRCodeCanvas value={qrValue} size={512} marginSize={2} bgColor="#ffffff" fgColor="#000000" style={{ width: 200, height: 200 }} />
+            </span>
+            <p className="text-xs text-muted-foreground">
+              Amount <span className="font-medium tabular-nums text-foreground">{formatMoney(pending)}</span> filled in · hides in{' '}
+              <span className="font-medium tabular-nums text-foreground">{Math.floor(qrLeft / 60)}:{String(qrLeft % 60).padStart(2, '0')}</span>
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                const canvas = qrBoxRef.current?.querySelector('canvas');
+                if (!canvas) return;
+                const a = document.createElement('a');
+                a.href = canvas.toDataURL('image/png');
+                a.download = `upi-dues-${(pending / 100).toFixed(2)}.png`;
+                a.click();
+              }}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            >
+              <Download className="size-4" /> Download QR
+            </button>
+            <p className="text-center text-xs text-muted-foreground">
+              Download it, open your UPI app’s scanner and pick this QR from your <span className="font-medium text-foreground">gallery</span> — the payment opens with the amount filled in.
+            </p>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setQrLeft(QR_WINDOW_SECONDS)}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium ring-1 ring-border transition-colors hover:bg-muted/40"
+          >
+            <QrCode className="size-4" /> Show QR to pay {formatMoney(pending)}
+          </button>
+        )}
+      </div>
 
       {/* Scan-to-pay QR — the same upi:// string every shop QR uses. Hidden on phones
           (you can't scan your own screen); on a laptop this is THE way to pay, and a
