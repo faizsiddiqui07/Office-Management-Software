@@ -320,7 +320,7 @@ function UpiCard({ upi }) {
         <p className="text-sm font-semibold">UPI for dues payments</p>
       </div>
       <p className="text-xs text-muted-foreground">
-        Everyone pays their dues to this UPI id — their My dues page shows it with one-tap copy, plus a scan-to-pay QR on desktop. Only you can set it, and nothing settles automatically: you still record a payment when the money arrives.
+        Everyone pays their dues — and advances — to this UPI id: their My dues page shows it with one-tap copy plus a scan-to-pay QR, and lets them enter their own amount when handing over an advance. Only you can set it, and nothing settles automatically: you still record a payment when the money arrives.
       </p>
       <div className="flex flex-col gap-2 sm:flex-row">
         <Input value={id} onChange={(e) => setId(e.target.value)} placeholder="yourname@bank" inputMode="email" autoCapitalize="none" className="bg-background/50 sm:max-w-xs" />

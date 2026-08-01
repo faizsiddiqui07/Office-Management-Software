@@ -88,6 +88,10 @@ function UpiPay({ pending, upi }) {
   // display hygiene (a stale amount shouldn't sit on screen) — a downloaded image is
   // just a picture and can't be expired; the admin records whatever actually arrived.
   const [qrLeft, setQrLeft] = React.useState(0);
+  // Advance flow: when nothing is pending (or the person chooses to), they type their
+  // own amount and get the exact same QR / download / copy paths for it.
+  const [customAmt, setCustomAmt] = React.useState(false);
+  const [amtStr, setAmtStr] = React.useState('');
   const qrBoxRef = React.useRef(null);
   React.useEffect(() => {
     if (qrLeft <= 0) return undefined;
@@ -95,9 +99,15 @@ function UpiPay({ pending, upi }) {
     return () => clearTimeout(t);
   }, [qrLeft]);
 
-  if (!(pending > 0) || !upi?.id) return null;
+  if (!upi?.id) return null;
 
-  const amount = (pending / 100).toFixed(2);
+  const hasPending = pending > 0;
+  // Advance mode is forced when nothing is pending, optional (toggle) when something is.
+  const payingCustom = customAmt || !hasPending;
+  const amountPaise = payingCustom ? Math.round((parseFloat(amtStr) || 0) * 100) : pending;
+  const valid = amountPaise > 0;
+  const amount = (amountPaise / 100).toFixed(2);
+  const slipTitle = payingCustom ? 'Office advance payment' : 'Office dues payment';
 
   /**
    * The downloaded file is a payment SLIP, not a bare QR: title, QR, amount, id, and —
@@ -107,7 +117,7 @@ function UpiPay({ pending, upi }) {
    */
   const downloadQr = () => {
     const qrCanvas = qrBoxRef.current?.querySelector('canvas');
-    if (!qrCanvas) return;
+    if (!qrCanvas || !valid) return;
     const W = 640;
     const H = 872;
     const out = document.createElement('canvas');
@@ -121,7 +131,7 @@ function UpiPay({ pending, upi }) {
 
     ctx.fillStyle = '#111827';
     ctx.font = '600 30px system-ui, sans-serif';
-    ctx.fillText('Office dues payment', W / 2, 58);
+    ctx.fillText(slipTitle, W / 2, 58);
     ctx.font = '400 23px system-ui, sans-serif';
     ctx.fillStyle = '#374151';
     if (upi.name) ctx.fillText(`To: ${upi.name}`, W / 2, 96);
@@ -173,9 +183,15 @@ function UpiPay({ pending, upi }) {
     <GlassPanel className="space-y-3 p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <p className="inline-flex items-center gap-1.5 text-sm font-medium"><Smartphone className="size-4 text-primary" /> Pay the admin manager</p>
+          <p className="inline-flex items-center gap-1.5 text-sm font-medium">
+            <Smartphone className="size-4 text-primary" /> {payingCustom ? 'Give an advance to the admin manager' : 'Pay the admin manager'}
+          </p>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            Send <span className="font-semibold tabular-nums text-foreground">{formatMoney(pending)}</span> to this UPI id from GPay / PhonePe / any UPI app.
+            {payingCustom ? (
+              'Enter the amount, then pay this UPI id from GPay / PhonePe / any UPI app — future lunches and errands get deducted from it.'
+            ) : (
+              <>Send <span className="font-semibold tabular-nums text-foreground">{formatMoney(pending)}</span> to this UPI id from GPay / PhonePe / any UPI app.</>
+            )}
           </p>
           {/* The id itself, plainly visible and select-all — copying by hand also works. */}
           <p className="mt-1 select-all break-all text-sm font-semibold tabular-nums">{upi.id}</p>
@@ -189,6 +205,36 @@ function UpiPay({ pending, upi }) {
           {copied ? 'Copied!' : 'Copy UPI ID'}
         </button>
       </div>
+      {/* Advance mode: the person types how much they're handing over. */}
+      {payingCustom ? (
+        <div className="flex items-center gap-2">
+          <label htmlFor="upi-adv-amt" className="text-sm font-medium">₹</label>
+          <input
+            id="upi-adv-amt"
+            type="number"
+            min="1"
+            step="1"
+            inputMode="decimal"
+            value={amtStr}
+            onChange={(e) => setAmtStr(e.target.value)}
+            placeholder="Amount"
+            className="w-36 rounded-xl border border-border bg-background/50 px-3 py-2 text-sm tabular-nums outline-none focus:ring-2 focus:ring-primary"
+          />
+          {valid ? <span className="text-xs text-muted-foreground">QR below carries {formatMoney(amountPaise)}</span> : <span className="text-xs text-muted-foreground">Enter an amount to get the QR</span>}
+        </div>
+      ) : null}
+
+      {/* People WITH pending can still choose to hand over an advance instead. */}
+      {hasPending ? (
+        <button
+          type="button"
+          onClick={() => { setCustomAmt((v) => !v); setAmtStr(''); setQrLeft(0); }}
+          className="text-left text-xs font-medium text-primary hover:underline"
+        >
+          {payingCustom ? `← Back to your pending amount (${formatMoney(pending)})` : 'Want to give an advance instead? Enter your own amount →'}
+        </button>
+      ) : null}
+
       <p className="text-xs text-muted-foreground">Tap to copy the id, then pay it directly from your UPI app (open the app → Pay by UPI ID → paste → amount). Direct payment works in every app. The admin marks it paid once the money arrives.</p>
 
       {/* Phone QR — on demand, since you can't point your camera at your own screen:
@@ -196,6 +242,7 @@ function UpiPay({ pending, upi }) {
           GALLERY (GPay/PhonePe/Paytm scanners all take gallery images). Canvas (not SVG)
           so toDataURL gives the download; rendered at 512px for a crisp, scannable file
           but displayed at 200. Auto-hides after QR_WINDOW_SECONDS. */}
+      {valid ? (
       <div className="border-t border-border/50 pt-3 sm:hidden">
         {qrLeft > 0 ? (
           <div className="flex flex-col items-center gap-2.5">
@@ -203,7 +250,7 @@ function UpiPay({ pending, upi }) {
               <QRCodeCanvas value={qrValue} size={512} marginSize={2} bgColor="#ffffff" fgColor="#000000" style={{ width: 200, height: 200 }} />
             </span>
             <p className="text-xs text-muted-foreground">
-              Amount <span className="font-medium tabular-nums text-foreground">{formatMoney(pending)}</span> filled in · hides in{' '}
+              Amount <span className="font-medium tabular-nums text-foreground">{formatMoney(amountPaise)}</span> filled in · hides in{' '}
               <span className="font-medium tabular-nums text-foreground">{Math.floor(qrLeft / 60)}:{String(qrLeft % 60).padStart(2, '0')}</span>
             </p>
             <div className="flex flex-wrap items-center justify-center gap-2">
@@ -234,24 +281,27 @@ function UpiPay({ pending, upi }) {
             onClick={() => setQrLeft(QR_WINDOW_SECONDS)}
             className="inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium ring-1 ring-border transition-colors hover:bg-muted/40"
           >
-            <QrCode className="size-4" /> Show QR to pay {formatMoney(pending)}
+            <QrCode className="size-4" /> Show QR to pay {formatMoney(amountPaise)}
           </button>
         )}
       </div>
+      ) : null}
 
       {/* Scan-to-pay QR — the same upi:// string every shop QR uses. Hidden on phones
           (you can't scan your own screen); on a laptop this is THE way to pay, and a
           phone whose app refuses intent links (iMobile) can scan it here too. White tile
           always, whatever the theme — scanners want dark-on-light. */}
+      {valid ? (
       <div className="hidden items-center gap-4 border-t border-border/50 pt-3 sm:flex">
         <span className="shrink-0 rounded-xl bg-white p-2.5 shadow-sm ring-1 ring-border/60">
           <QRCodeSVG value={qrValue} size={132} bgColor="#ffffff" fgColor="#000000" />
         </span>
         <div className="min-w-0 text-xs text-muted-foreground">
-          <p className="text-sm font-medium text-foreground">Scan to pay</p>
+          <p className="text-sm font-medium text-foreground">Scan to pay {formatMoney(amountPaise)}</p>
           <p className="mt-0.5">Open any UPI app on your phone — GPay, PhonePe, Paytm or your bank’s app — and scan this code. The amount comes filled in.</p>
         </div>
       </div>
+      ) : null}
     </GlassPanel>
   );
 }
