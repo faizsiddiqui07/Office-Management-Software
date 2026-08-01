@@ -70,23 +70,24 @@ function BalanceHero({ pending, advance }) {
 }
 
 /**
- * "Pay via UPI" — only when you actually owe and the admin has set a UPI id. The button
- * opens the phone's UPI app (GPay/PhonePe/Paytm) prefilled with the exact pending amount;
- * the id is also copyable for desktop. Nothing settles automatically — the admin records
- * the payment when it lands.
+ * Pay the admin manager — UPI id with one-tap copy (phone) + scan-to-pay QR (desktop).
+ *
+ * Deliberately NO upi:// deep-link button. Field-tested to death: the link was
+ * spec-perfect (GPay resolved the verified payee name and prefilled the amount), but at
+ * the moment of payment GPay refuses web-initiated P2P intents with a misleading
+ * "exceeded the bank limit" error (confirmed from two different payer accounts, while
+ * MANUALLY paying the same id works), and iMobile refuses them outright with "Request
+ * Restricted". Personal-VPA intent links are simply blocked policy-side now; the flows
+ * that work in every app are the two below — exactly what every shop uses.
  */
 function UpiPay({ pending, upi }) {
   const [copied, setCopied] = React.useState(false);
   if (!(pending > 0) || !upi?.id) return null;
 
   const amount = (pending / 100).toFixed(2);
-  // Deliberately MINIMAL, per the NPCI linking spec: pa + pn + am + cu and nothing else.
-  //  - `pa` goes RAW: percent-encoding turned @ into %40, and payment apps (iMobile) then
-  //    refused with "Incorrect merchant details". Raw is safe — the VPA validator
-  //    (setUpiSchema / the admin card) only admits URL-safe characters.
-  //  - No `tn`, and never `mc`/`tr`: merchant-style fields are what flip apps into
-  //    merchant validation, which a personal VPA can only fail.
-  const link = `upi://pay?${[
+  // The QR carries the standard NPCI string (pa raw — %40 breaks apps; minimal params).
+  // SCANNING is a different trust path than intent links: apps accept personal-VPA QRs.
+  const qrValue = `upi://pay?${[
     `pa=${upi.id}`,
     upi.name ? `pn=${encodeURIComponent(upi.name)}` : null,
     `am=${amount}`,
@@ -107,21 +108,21 @@ function UpiPay({ pending, upi }) {
     <GlassPanel className="space-y-3 p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <p className="text-sm font-medium">Pay the admin manager</p>
-          <button type="button" onClick={copy} className="mt-0.5 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
-            <span className="truncate font-medium tabular-nums">{upi.id}</span>
-            {copied ? <Check className="size-3.5 shrink-0 text-success" /> : <Copy className="size-3.5 shrink-0" />}
-            <span className="shrink-0 text-xs">{copied ? 'Copied' : 'Copy'}</span>
-          </button>
+          <p className="inline-flex items-center gap-1.5 text-sm font-medium"><Smartphone className="size-4 text-primary" /> Pay the admin manager</p>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            Send <span className="font-semibold tabular-nums text-foreground">{formatMoney(pending)}</span> to this UPI id from GPay / PhonePe / any UPI app.
+          </p>
         </div>
-        <a
-          href={link}
+        <button
+          type="button"
+          onClick={copy}
           className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
         >
-          <Smartphone className="size-4" /> Pay {formatMoney(pending)} via UPI
-        </a>
+          {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
+          <span className="max-w-[240px] truncate tabular-nums">{copied ? 'Copied!' : upi.id}</span>
+        </button>
       </div>
-      <p className="text-xs text-muted-foreground">Opens your UPI app with the amount already filled in. If the button doesn’t work in one app, copy the id and pay from any UPI app — the admin marks it paid once the money arrives.</p>
+      <p className="text-xs text-muted-foreground">Tap to copy the id, then pay it directly from your UPI app (open the app → Pay by UPI ID → paste → amount). Direct payment works in every app. The admin marks it paid once the money arrives.</p>
 
       {/* Scan-to-pay QR — the same upi:// string every shop QR uses. Hidden on phones
           (you can't scan your own screen); on a laptop this is THE way to pay, and a
@@ -129,7 +130,7 @@ function UpiPay({ pending, upi }) {
           always, whatever the theme — scanners want dark-on-light. */}
       <div className="hidden items-center gap-4 border-t border-border/50 pt-3 sm:flex">
         <span className="shrink-0 rounded-xl bg-white p-2.5 shadow-sm ring-1 ring-border/60">
-          <QRCodeSVG value={link} size={132} bgColor="#ffffff" fgColor="#000000" />
+          <QRCodeSVG value={qrValue} size={132} bgColor="#ffffff" fgColor="#000000" />
         </span>
         <div className="min-w-0 text-xs text-muted-foreground">
           <p className="text-sm font-medium text-foreground">Scan to pay</p>
