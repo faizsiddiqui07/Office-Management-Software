@@ -31,7 +31,7 @@ function httpError(status, code, message) {
 export const AUTO_RULES = [
   { key: 'assignedTaskOnTime', label: 'Assigned task done on time', hint: 'Only tasks someone assigns — not self-made', sign: 'reward' },
   { key: 'assignedTaskLate', label: 'Assigned task done or left late', hint: 'After the due date + grace days', sign: 'penalty' },
-  { key: 'punctualStreak', label: 'Punctual streak', hint: 'A run of on-time days (see “streak length”)', sign: 'reward' },
+  { key: 'punctualStreak', label: 'Punctual week', hint: 'On time all week (Mon–Sat); leave / WFH / Sunday don’t break it', sign: 'reward' },
   { key: 'lateArrival', label: 'Each late arrival', hint: 'Every day they check in late', sign: 'penalty' },
   { key: 'overtimeHour', label: 'Each hour of overtime', hint: 'Per full hour worked past the shift', sign: 'reward' },
   { key: 'absentDay', label: 'Each absent day', hint: 'A working day with no attendance and no leave', sign: 'penalty' },
@@ -72,7 +72,6 @@ export async function getConfig() {
     enabled: !!b.enabled,
     rupeesPerPoint: b.rupeesPerPoint || 0,
     graceDays: b.graceDays ?? 1,
-    streakDays: b.streakDays || 10,
     autoRules: (b.autoRules || []).filter((r) => RULE_KEYS.has(r.key)).map((r) => ({ key: r.key, points: Number(r.points) || 0 })),
     manualItems: (b.manualItems || []).map((m) => ({ id: m.id, label: m.label, points: m.points })),
     catalog: AUTO_RULES, // so the UI can render labels + the "add rule" dropdown
@@ -101,7 +100,6 @@ export async function updateConfig(patch) {
     enabled: patch.enabled !== undefined ? !!patch.enabled : b.enabled,
     rupeesPerPoint: Math.max(0, num(patch.rupeesPerPoint, b.rupeesPerPoint || 0)),
     graceDays: Math.max(0, num(patch.graceDays, b.graceDays ?? 1)),
-    streakDays: Math.max(1, num(patch.streakDays, b.streakDays || 10)),
     autoRules: Array.isArray(patch.autoRules)
       ? patch.autoRules.filter((r) => r && RULE_KEYS.has(r.key)).map((r) => ({ key: r.key, points: Math.round(num(r.points, 0)) }))
       : (b.autoRules || []),
@@ -149,8 +147,7 @@ export async function guide() {
       const meta = AUTO_RULES.find((x) => x.key === r.key);
       if (!meta || !r.points) return null;
       const signed = meta.sign === 'penalty' ? -Math.abs(r.points) : r.points;
-      let label = meta.label;
-      if (r.key === 'punctualStreak') label = `Punctual streak (${cfg.streakDays} days no late)`;
+      const label = r.key === 'punctualStreak' ? 'Punctual week (on time all week)' : meta.label;
       return { label, points: signed };
     })
     .filter(Boolean);
@@ -257,46 +254,21 @@ export async function onAssignedTaskUndone(taskId) {
   await PointEntry.deleteMany({ taskRef: taskId, source: 'auto_task' });
 }
 
-/** After a check-in: a late arrival is penalised; an on-time one may complete a streak. */
+/**
+ * After a check-in: a late arrival is penalised. The punctual-streak reward is NO LONGER
+ * decided here — it's a full-week thing now (Mon–Sat), evaluated once the week closes in
+ * runWeeklyStreak (called from the daily scan). Deciding it per check-in couldn't work:
+ * a week whose last working day is a holiday/leave has no final check-in to trigger on.
+ */
 export async function onCheckIn(user, dateYMD, isLate) {
   const s = await Setting.getSingleton();
   const b = s.bonus || {};
   if (!b.enabled) return;
-
   if (isLate) {
     const pts = rulePoints(b, 'lateArrival');
     if (pts) {
       await awardOnce(`auto_late:${user._id}:${dateYMD}`, { user: user._id, month: dateYMD.slice(0, 7), points: -Math.abs(pts), reason: `Late arrival · ${dateYMD}`, source: 'auto_late' });
     }
-    return; // late breaks any streak
-  }
-
-  const streakPts = rulePoints(b, 'punctualStreak');
-  if (!streakPts) return;
-  const N = Math.max(1, b.streakDays || 10);
-  const month = dateYMD.slice(0, 7);
-  const monthStart = `${month}-01`;
-  const recs = await Attendance.find({ user: user._id, date: { $gte: companyDayFromYMD(monthStart), $lte: companyDayFromYMD(dateYMD) } }).select('date status');
-  const byDay = new Map(recs.map((r) => [ymdInTz(r.date), r.status]));
-  const holidays = await holidayYMDSet(monthStart, dateYMD);
-  const offDays = userWeekendDays(user, s);
-  let streak = 0;
-  let cur = dateYMD;
-  while (cur >= monthStart) {
-    const dow = dayOfWeekInTz(companyDayFromYMD(cur));
-    // A work-from-home day is skipped like a holiday: nobody checked in, so there is no
-    // punctuality to reward — but it mustn't break a streak either, and it must not be
-    // countable, or the streak could be farmed from home.
-    if (!(offDays.includes(dow) || holidays.has(cur) || byDay.get(cur) === 'WFH')) {
-      if (byDay.get(cur) === 'PRESENT') streak += 1;
-      else break;
-    }
-    cur = prevDay(cur);
-  }
-  if (streak > 0 && streak % N === 0) {
-    // Keyed by the day the streak landed, so hitting 10 and later 20 both award, but
-    // the same day can never award twice.
-    await awardOnce(`auto_streak:${user._id}:${dateYMD}`, { user: user._id, month, points: Math.abs(streakPts), reason: `${N}-day punctual streak`, source: 'auto_streak' });
   }
 }
 
@@ -472,6 +444,67 @@ async function runMonthRollup(b) {
   return target;
 }
 
+/** The most recent fully-finished Mon–Sat week (its Saturday falls before today). */
+function lastCompletedWeek() {
+  let end = prevDay(ymdInTz(new Date()));
+  for (let i = 0; i < 7 && dayOfWeekInTz(companyDayFromYMD(end)) !== 6; i += 1) end = prevDay(end);
+  return { start: addDays(end, -5), end }; // Monday … Saturday
+}
+
+/**
+ * Weekly punctual-week award. Once a Mon–Sat week is over, anyone who — across their OWN
+ * working days that week — was never unexcused-late and never absent-without-leave earns
+ * the `punctualStreak` points. Per the office rule, Sunday, holidays, approved leave and
+ * WFH are all NEUTRAL: they never break the week (a full leave/WFH week still qualifies).
+ * Only a late check-in or an unexplained no-show disqualifies. Awarded once per week
+ * (dedup keyed on the week's Monday); the entry's month is the week-ending Saturday's.
+ * Part-timers are judged on their own workdays inside the span; mid-week joiners / the
+ * go-live week only on the days they actually had access.
+ */
+export async function runWeeklyStreak(b) {
+  const pts = rulePoints(b, 'punctualStreak');
+  if (!pts) return;
+  const { start, end } = lastCompletedWeek();
+  if (end < APP_LIVE_YMD) return; // the week ended before the system went live
+
+  const s = await Setting.getSingleton();
+  const holidays = await holidayYMDSet(start, end);
+  const roster = (await User.find({ isActive: true }).select('name role employmentType schedule dateOfJoining')).filter((u) => can({ role: u.role }, 'markAttendance'));
+  const { included: users } = splitByJoining(roster, start, end);
+  if (!users.length) return;
+
+  const recs = await Attendance.find({ date: { $gte: companyDayFromYMD(start), $lte: companyDayFromYMD(end) } }).select('user date status excused');
+  const recByUserDay = new Map(recs.map((r) => [`${r.user}|${ymdInTz(r.date)}`, r]));
+  const leaves = await LeaveRequest.find({ status: 'APPROVED', startYMD: { $lte: end }, endYMD: { $gte: start } }).select('user startYMD endYMD');
+  const monthOfAward = end.slice(0, 7); // week-ending Saturday's month
+
+  for (const u of users) {
+    const startedOn = periodStartFor(u, start);
+    const off = userWeekendDays(u, s);
+    let workingDays = 0;
+    let broke = false;
+    for (let d = start; d <= end; d = addDays(d, 1)) {
+      if (d < startedOn) continue; // before they had access (joiner / go-live)
+      const dow = dayOfWeekInTz(companyDayFromYMD(d));
+      if (off.includes(dow) || holidays.has(d)) continue; // Sunday / off-day / holiday → neutral
+      workingDays += 1;
+      const rec = recByUserDay.get(`${u._id}|${d}`);
+      const onLeave = leaves.some((l) => String(l.user) === String(u._id) && l.startYMD <= d && l.endYMD >= d);
+      if (rec) {
+        if (rec.status === 'LATE' && !rec.excused) { broke = true; break; } // an unexcused late breaks it
+        if (rec.status === 'ABSENT' && !onLeave) { broke = true; break; } // marked absent, no leave
+      } else if (!onLeave) {
+        broke = true; break; // no record and no approved leave = unexplained absence
+      }
+      // PRESENT (on time), WFH, ON_LEAVE, or an approved-leave day → all fine
+    }
+    if (workingDays > 0 && !broke) {
+      // eslint-disable-next-line no-await-in-loop
+      await awardOnce(`auto_streak:${u._id}:${start}`, { user: u._id, month: monthOfAward, points: Math.abs(pts), reason: `Punctual week · ${start} to ${end}`, source: 'auto_streak' });
+    }
+  }
+}
+
 /** Runs the daily scans + month rollup at most once a day (no cron needed). */
 export async function maybeRunDaily() {
   const s = await Setting.getSingleton();
@@ -491,6 +524,8 @@ export async function maybeRunDaily() {
   if (rolled) s.bonus.lastMonthRollup = rolled;
   await s.save();
   try { await scanOverdueTasks(b); } catch (e) { console.error('overdue scan failed', e?.message); }
+  // Weekly punctual-week award — dedup-keyed on the week's Monday, so a daily run is safe.
+  try { await runWeeklyStreak(b); } catch (e) { console.error('weekly streak failed', e?.message); }
   try {
     await scanAbsences(b, scanFrom);
     // Only now are those days genuinely accounted for.

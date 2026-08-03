@@ -36,7 +36,6 @@ export function BonusSettings() {
         enabled: !!cfg.enabled,
         rupeesPerPoint: cfg.rupeesPerPoint ?? 0,
         graceDays: cfg.graceDays ?? 1,
-        streakDays: cfg.streakDays ?? 10,
         autoRules: (cfg.autoRules ?? []).map((r) => ({ ...r })),
         manualItems: (cfg.manualItems ?? []).map((m) => ({ ...m })),
       });
@@ -69,7 +68,6 @@ export function BonusSettings() {
   const delItem = (i) => set({ manualItems: form.manualItems.filter((_, j) => j !== i) });
 
   const usesGrace = activeKeys.has('assignedTaskLate');
-  const usesStreak = activeKeys.has('punctualStreak');
 
   return (
     <GlassPanel className="space-y-5 p-4 sm:p-6">
@@ -89,7 +87,6 @@ export function BonusSettings() {
           <div className="grid gap-4 sm:grid-cols-3">
             <NumField label="₹ per point" hint="1 point = this many rupees" value={form.rupeesPerPoint} onChange={(v) => set({ rupeesPerPoint: v })} />
             {usesGrace ? <NumField label="Task grace days" hint="Extra days before a task is late" value={form.graceDays} onChange={(v) => set({ graceDays: v })} /> : null}
-            {usesStreak ? <NumField label="Streak length (days)" hint="On-time days for one streak award" min={1} value={form.streakDays} onChange={(v) => set({ streakDays: v })} /> : null}
           </div>
 
           {/* Automatic rules — add from the catalog, remove any you don't want */}
