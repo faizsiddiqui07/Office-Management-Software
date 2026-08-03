@@ -76,6 +76,20 @@ export async function removeEntry(req, res, next) {
   }
 }
 
+/**
+ * Score a past month on purpose — for a month that had already gone by when the point
+ * values were entered, so the automatic scans never touched it.
+ */
+export async function backfill(req, res, next) {
+  try {
+    const result = await svc.backfillMonth(req.body?.month);
+    await audit({ actor: req.user._id, action: 'bonus.backfill', entityType: 'Bonus', entityId: result.month, meta: result });
+    res.json(ok(result));
+  } catch (err) {
+    handleErr(res, err, next);
+  }
+}
+
 export async function leaderboard(req, res, next) {
   try {
     res.json(ok({ month: req.query.month || svc.currentMonth(), rows: await svc.leaderboard(req.query.month) }));

@@ -4,7 +4,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Award, Coins, Gift, Sparkles, Trash2, TrendingUp } from 'lucide-react';
+import { Award, Coins, Gift, RefreshCw, Sparkles, Trash2, TrendingUp } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can, roleName } from '@/lib/permissions';
@@ -18,6 +18,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ConfirmDialog } from '@/components/glass/confirm-dialog';
+import { cn } from '@/lib/utils';
 import { formatRupees } from '@/lib/expense';
 import { monthOptions, fyOptions, paramsForSelection } from '@/lib/reward-periods';
 
@@ -160,6 +162,55 @@ function LeadershipTools({ isOwner, onDelete }) {
   );
 }
 
+/**
+ * Score a past month on purpose.
+ *
+ * Turning the scheme on never scores the past on its own — nobody should be awarded (or
+ * penalised) for a month they were never told the rules for. So a month that had already
+ * gone by when the point values were entered simply has no entries. This is how
+ * leadership fills one in deliberately.
+ */
+function RecalculateMonth({ month, label }) {
+  const qc = useQueryClient();
+  const [confirming, setConfirming] = React.useState(false);
+
+  const mut = useMutation({
+    mutationFn: () => api.post('/bonus/backfill', { month }),
+    onSuccess: (r) => {
+      toast.success(r?.added ? `${label}: ${r.added} entr${r.added === 1 ? 'y' : 'ies'} added` : `${label} was already up to date`);
+      qc.invalidateQueries({ queryKey: ['bonus'] });
+      setConfirming(false);
+    },
+    onError: (e) => toast.error(e?.message || 'Could not recalculate'),
+  });
+
+  return (
+    <>
+      <GlassPanel className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+        <div className="min-w-0">
+          <p className="text-sm font-medium">Nothing recorded for {label}?</p>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            Points are only scored from the day the rules were set. Recalculate to score {label} from what was actually recorded — attendance, overtime, punctual weeks and assigned tasks.
+          </p>
+        </div>
+        <Button variant="outline" className="shrink-0" onClick={() => setConfirming(true)} disabled={mut.isPending}>
+          <RefreshCw className={cn('size-4', mut.isPending && 'animate-spin')} /> {mut.isPending ? 'Working…' : `Recalculate ${label}`}
+        </Button>
+      </GlassPanel>
+
+      <ConfirmDialog
+        open={confirming}
+        onOpenChange={setConfirming}
+        title={`Recalculate ${label}?`}
+        description={`Every automatic rule is applied to what ${label} actually recorded: late arrivals, overtime, absences, punctual weeks and assigned tasks finished that month. Manual awards aren't touched, and running it again later changes nothing. Note that a working day with no attendance and no approved leave counts as an absence.`}
+        confirmLabel="Recalculate"
+        loading={mut.isPending}
+        onConfirm={() => mut.mutate()}
+      />
+    </>
+  );
+}
+
 export default function RewardsPage() {
   const { user } = useAuth();
   const qc = useQueryClient();
@@ -242,6 +293,13 @@ export default function RewardsPage() {
             <StatCard label="My points" value={me?.points ?? 0} hint={periodLabel} icon={Award} tone="success" />
             {me?.rupeesPerPoint ? <StatCard label="Worth" value={money(me?.rupees)} hint={`${money(me?.rupeesPerPoint)}/point`} icon={Coins} tone="default" /> : null}
           </div>
+
+          {/* Leadership, looking at a month with nothing in it: offer to score it. Only
+              for a single month (a year is many months, each scored on its own) and only
+              when it is genuinely empty, so it can't be mistaken for a routine action. */}
+          {isLeader && mode === 'monthly' && me && !me.entries?.length ? (
+            <RecalculateMonth month={monthly} label={periodLabel} />
+          ) : null}
 
           {/* How it works — the price list */}
           <GlassPanel className="space-y-3 p-4 sm:p-5">

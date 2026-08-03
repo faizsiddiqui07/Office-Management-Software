@@ -353,25 +353,28 @@ async function scanOverdueTasks(b) {
  * absences were silently dropped for good. `since` is the day it last ran, so it now
  * works through every day from there up to yesterday and catches up.
  */
-async function scanAbsences(b, since) {
+async function scanAbsences(b, since, until = null) {
   const pts = rulePoints(b, 'absentDay');
   if (!pts) return;
+  // Today isn't finished, so the newest day that can be judged is yesterday — unless a
+  // caller (the backfill) names an earlier last day.
   const yesterday = prevDay(ymdInTz(new Date()));
+  const lastDay = until && until < yesterday ? until : yesterday;
   // Nothing was tracked before the office started running on this system, so a day
   // from before it can't be an absence — no matter what joining dates say (real,
   // older hire dates get entered over time and would otherwise reopen this).
-  if (yesterday < APP_LIVE_YMD) return;
+  if (lastDay < APP_LIVE_YMD) return;
 
   // Never reach further back than the go-live day, and cap the catch-up so a long
   // silence (or a first run with no watermark) can't turn into a months-long sweep.
   const MAX_CATCHUP_DAYS = 31;
   let start = since && since > APP_LIVE_YMD ? since : APP_LIVE_YMD;
-  let floor = yesterday;
+  let floor = lastDay;
   for (let i = 0; i < MAX_CATCHUP_DAYS - 1; i += 1) floor = prevDay(floor);
   if (start < floor) start = floor;
 
   const days = [];
-  for (let d = yesterday; d >= start && days.length < MAX_CATCHUP_DAYS; d = prevDay(d)) days.push(d);
+  for (let d = lastDay; d >= start && days.length < MAX_CATCHUP_DAYS; d = prevDay(d)) days.push(d);
   days.reverse(); // oldest first, so the history reads in order
   if (!days.length) return;
 
@@ -404,12 +407,16 @@ async function scanAbsences(b, since) {
   }
 }
 
-/** Month-end awards for the just-finished month (no-leave, perfect attendance). */
-async function runMonthRollup(b) {
+/**
+ * Month-end awards (no-leave, perfect attendance) for the just-finished month — or for
+ * any month a caller names, which is what the backfill uses. When a month is named the
+ * "already processed" watermark is skipped: awardOnce keys make a re-run harmless.
+ */
+async function runMonthRollup(b, forMonth = null) {
   const thisMonth = currentMonth();
   const done = b.lastMonthRollup;
-  const target = prevMonth(thisMonth);
-  if (done === target) return target; // already processed
+  const target = forMonth || prevMonth(thisMonth);
+  if (!forMonth && done === target) return target; // already processed
   const noLeavePts = rulePoints(b, 'noLeaveMonth');
   const perfectPts = rulePoints(b, 'perfectAttendanceMonth');
   if (!noLeavePts && !perfectPts) return target;
@@ -480,10 +487,11 @@ function lastCompletedWeek() {
  * Part-timers are judged on their own workdays inside the span; mid-week joiners / the
  * go-live week only on the days they actually had access.
  */
-export async function runWeeklyStreak(b) {
+export async function runWeeklyStreak(b, week = null) {
   const pts = rulePoints(b, 'punctualStreak');
   if (!pts) return;
-  const { start, end } = lastCompletedWeek();
+  // Defaults to the week that just finished; a caller (the backfill) may name any week.
+  const { start, end } = week || lastCompletedWeek();
   if (end < APP_LIVE_YMD) return; // the week ended before the system went live
 
   const s = await Setting.getSingleton();
@@ -522,6 +530,92 @@ export async function runWeeklyStreak(b) {
       await awardOnce(`auto_streak:${u._id}:${start}`, { user: u._id, month: monthOfAward, points: Math.abs(pts), reason: `Punctual week · ${start} to ${end}`, source: 'auto_streak' });
     }
   }
+}
+
+/**
+ * Score a PAST month with the rules exactly as they stand today — the deliberate,
+ * leadership-triggered counterpart to the automatic scans.
+ *
+ * Switching the scheme on never scores the past on its own (that would hand out awards
+ * for a month nobody had been told the rules for), so a month that had already gone by
+ * when the point values were entered simply has no entries. This is how you fill it in
+ * on purpose.
+ *
+ * Every rule that can be derived from what was actually recorded is applied: late
+ * arrivals, overtime, absences, the punctual weeks whose Saturday falls in the month,
+ * every assigned task finished in it, and the month-end no-leave / perfect-attendance
+ * awards. Manual awards are, of course, not invented.
+ *
+ * Safe to run again: every award is written under the same dedupe key the live scans
+ * use, so a second pass adds nothing and changes nothing.
+ */
+export async function backfillMonth(month) {
+  if (!/^\d{4}-\d{2}$/.test(String(month || ''))) throw httpError(400, 'BAD_MONTH', 'Pick a month to recalculate');
+  const thisMonth = currentMonth();
+  if (month > thisMonth) throw httpError(400, 'FUTURE_MONTH', 'That month hasn’t happened yet');
+  const s = await Setting.getSingleton();
+  const b = s.bonus || {};
+  if (!b.enabled) throw httpError(400, 'DISABLED', 'Turn the bonus system on first');
+
+  const from = `${month}-01`;
+  const lastDay = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate();
+  const to = `${month}-${String(lastDay).padStart(2, '0')}`;
+  // Nothing was tracked before go-live, and today isn't finished yet.
+  const start = from < APP_LIVE_YMD ? APP_LIVE_YMD : from;
+  const yesterday = prevDay(ymdInTz(new Date()));
+  const end = to > yesterday ? yesterday : to;
+  if (end < start) throw httpError(400, 'NO_DAYS', 'There are no finished days in that month yet');
+
+  const before = await PointEntry.countDocuments({ month });
+
+  // 1. Attendance-derived awards, straight off what was recorded that month.
+  const latePts = rulePoints(b, 'lateArrival');
+  const otPts = rulePoints(b, 'overtimeHour');
+  if (latePts || otPts) {
+    const recs = await Attendance.find({ date: { $gte: companyDayFromYMD(start), $lte: companyDayFromYMD(end) } }).select('user date status overtimeMinutes');
+    for (const r of recs) {
+      const ymd = ymdInTz(r.date);
+      if (latePts && r.status === 'LATE') {
+        // eslint-disable-next-line no-await-in-loop
+        await awardOnce(`auto_late:${r.user}:${ymd}`, { user: r.user, month: ymd.slice(0, 7), points: -Math.abs(latePts), reason: `Late arrival · ${ymd}`, source: 'auto_late' });
+      }
+      const hours = Math.floor((r.overtimeMinutes || 0) / 60);
+      if (otPts && hours > 0) {
+        // eslint-disable-next-line no-await-in-loop
+        await awardOnce(`auto_ot:${r.user}:${ymd}`, { user: r.user, month: ymd.slice(0, 7), points: Math.abs(otPts) * hours, reason: `Overtime · ${ymd} (${hours}h)`, source: 'auto_ot' }, { replace: true });
+      }
+    }
+  }
+
+  // 2. Absences — the same scan the daily job runs, pointed at this month.
+  await scanAbsences(b, start, end);
+
+  // 3. Punctual weeks: every Mon–Sat week whose SATURDAY lands in this month, which is
+  //    the month such an award belongs to (a week may straddle two months).
+  let sat = start;
+  while (dayOfWeekInTz(companyDayFromYMD(sat)) !== 6) sat = addDays(sat, 1);
+  for (; sat <= end; sat = addDays(sat, 7)) {
+    // eslint-disable-next-line no-await-in-loop
+    await runWeeklyStreak(b, { start: addDays(sat, -5), end: sat });
+  }
+
+  // 4. Assigned tasks finished in the month — scored by the same hook the live path uses,
+  //    so on-time/late, grace days and the forwarded-copy rule all behave identically.
+  if (rulePoints(b, 'assignedTaskOnTime') || rulePoints(b, 'assignedTaskLate')) {
+    const tasks = await Task.find({ status: 'DONE', assignedBy: { $ne: null }, completedAt: { $ne: null } }).select('owner dueYMD title completedAt submittedAt requiresApproval assignedBy');
+    for (const t of tasks) {
+      const doneYMD = ymdInTz((t.requiresApproval && t.submittedAt) || t.completedAt);
+      if (doneYMD < from || doneYMD > to) continue;
+      // eslint-disable-next-line no-await-in-loop
+      await onAssignedTaskDone(t);
+    }
+  }
+
+  // 5. Month-end awards — only once the month is genuinely over.
+  if (month < thisMonth) await runMonthRollup(b, month);
+
+  const after = await PointEntry.countDocuments({ month });
+  return { month, added: after - before, total: after };
 }
 
 /** Runs the daily scans + month rollup at most once a day (no cron needed). */
