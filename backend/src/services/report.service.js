@@ -328,6 +328,80 @@ export async function buildReport(type, dateYMD, range) {
     members: activeUsers.map((u) => ({ name: u.name, employeeId: u.employeeId, role: u.role, roleLabel: roleLabel(u.role), department: u.department })),
   };
 
+  // ── Tasks, person by person ───────────────────────────────
+  // Who got through how much work in this period, and how much of it landed on time.
+  //
+  // Judged exactly the way the bonus system and the leaderboard judge it, so the three
+  // never tell different stories: a task counts on the day it was SUBMITTED when it
+  // needed approval (a slow sign-off must not turn on-time work late), otherwise on the
+  // day it was completed; and "late" allows the configured grace days.
+  //
+  // Only DELEGATED work counts — the same rule points use. Someone's private to-do list
+  // is theirs to keep, not company output. Copies that were forwarded onward are left
+  // out too: finishing at the bottom of a chain closes every copy above it, and one
+  // piece of work should be counted once, for whoever actually did it.
+  const graceDays = Math.max(0, settings.bonus?.graceDays ?? 1);
+  const plusDays = (ymd, n) => {
+    const d = new Date(`${ymd}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + n);
+    return d.toISOString().slice(0, 10);
+  };
+  const forwardedParentIds = await Task.distinct('forwardedFrom', { forwardedFrom: { $ne: null } });
+  const [doneTasks, taggedTasks] = await Promise.all([
+    Task.find({
+      status: 'DONE',
+      assignedBy: { $ne: null },
+      completedAt: { $ne: null },
+      _id: { $nin: forwardedParentIds },
+    }).select('owner completedBy dueYMD completedAt submittedAt requiresApproval'),
+    // Tagged: work RAISED in this period that named them as a colleague. It is somebody
+    // else's task, so it is reported beside the figures above, never inside them.
+    Task.find({ collaborators: { $ne: [] }, createdAt: { $gte: new Date(`${from}T00:00:00.000Z`), $lte: new Date(`${to}T23:59:59.999Z`) } }).select('owner collaborators'),
+  ]);
+
+  const taskRow = new Map(); // userId → { done, onTime, late, tagged }
+  const rowFor = (id) => {
+    const k = String(id);
+    if (!taskRow.has(k)) taskRow.set(k, { done: 0, onTime: 0, late: 0, tagged: 0 });
+    return taskRow.get(k);
+  };
+  for (const t of doneTasks) {
+    const doneYMD = ymdInTz((t.requiresApproval && t.submittedAt) || t.completedAt);
+    if (doneYMD < from || doneYMD > to) continue; // finished outside this period
+    const row = rowFor(t.completedBy || t.owner); // credit whoever actually did it
+    row.done += 1;
+    if (t.dueYMD) {
+      if (doneYMD <= plusDays(t.dueYMD, graceDays)) row.onTime += 1;
+      else row.late += 1;
+    }
+  }
+  for (const t of taggedTasks) {
+    for (const c of t.collaborators || []) {
+      if (String(c) === String(t.owner)) continue; // their own task isn't "tagged on"
+      rowFor(c).tagged += 1;
+    }
+  }
+
+  const taskPerEmployee = activeUsers
+    .map((u) => ({
+      name: u.name,
+      employeeId: u.employeeId,
+      role: u.role,
+      roleLabel: roleLabel(u.role),
+      ...(taskRow.get(String(u._id)) || { done: 0, onTime: 0, late: 0, tagged: 0 }),
+    }))
+    // Most work done first — the table reads as a picture of the period, not a directory.
+    .sort((a, b) => b.done - a.done || b.onTime - a.onTime || a.name.localeCompare(b.name));
+
+  const tasks = {
+    perEmployee: taskPerEmployee,
+    totals: taskPerEmployee.reduce(
+      (acc, r) => ({ done: acc.done + r.done, onTime: acc.onTime + r.onTime, late: acc.late + r.late, tagged: acc.tagged + r.tagged }),
+      { done: 0, onTime: 0, late: 0, tagged: 0 },
+    ),
+    graceDays,
+  };
+
   // No dues in the company report at all — not even totals. What the office is owed
   // is the admin's ledger, not company reporting. Each person still sees their own
   // entry by entry in their own report, and the Dues page administers them.
@@ -347,6 +421,7 @@ export async function buildReport(type, dateYMD, range) {
     // People left out of this report because they joined after it — surfaced so a
     // short list reads as "they weren't here yet", not as missing data.
     joinedLater,
+    tasks,
     attendance: { perEmployee, totals },
     leaves,
     expenses,

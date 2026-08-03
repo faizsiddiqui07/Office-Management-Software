@@ -191,6 +191,46 @@ function footer(data, titleLabel) {
 }
 
 /* ── Company sections ────────────────────────────────────── */
+/**
+ * Who did how much work in this period — the first thing the report answers.
+ *
+ * Only DELEGATED work is counted, judged on the day it was submitted (for approval
+ * tasks) or completed, with the configured grace days before anything counts as late —
+ * the same rule the bonus system and the leaderboard use. "Tagged" is beside those
+ * figures, never inside them: being kept in the loop is not doing the work.
+ */
+function companyTasksSection(d, accent) {
+  const t = d.tasks || { perEmployee: [], totals: { done: 0, onTime: 0, late: 0, tagged: 0 } };
+  const tot = t.totals;
+  const stats = [
+    stat('Tasks done', tot.done, 'ct1'),
+    stat('On time', tot.onTime, 'ct2'),
+    stat('Late', tot.late, 'ct3'),
+    stat('Tagged on', tot.tagged, 'ct4'),
+  ];
+  const headers = [
+    { label: 'Employee', w: '30%' },
+    { label: 'ID', w: '14%' },
+    { label: 'Done', w: '14%', align: 'right' },
+    { label: 'On time', w: '14%', align: 'right' },
+    { label: 'Late', w: '14%', align: 'right' },
+    { label: 'Tagged', w: '14%', align: 'right' },
+  ];
+  const rows = t.perEmployee.map((e) => [e.name, e.employeeId, e.done, e.onTime, e.late, e.tagged]);
+  return E(
+    View,
+    { key: 'tasks' },
+    sectionTitle('Tasks', accent),
+    E(View, { style: styles.statRow }, ...stats),
+    rows.length ? table(headers, rows) : E(Text, { style: styles.empty }, 'No task activity in this period.'),
+    E(
+      Text,
+      { style: styles.empty },
+      `Assigned work only — personal to-dos aren’t counted. Late means finished more than ${t.graceDays ?? 1} day${(t.graceDays ?? 1) === 1 ? '' : 's'} past the due date. “Tagged” is work raised in this period that named the person as a colleague — somebody else’s task, not counted in the figures above.`,
+    ),
+  );
+}
+
 function attendanceSection(d, accent) {
   const t = d.attendance.totals;
   const stats = [
@@ -299,12 +339,14 @@ function rosterSection(d, accent) {
 // office ledger has no business travelling inside it. Personal reports still carry
 // the reader's own dues (selfDuesSection below).
 const COMPANY_SECTIONS = {
+  tasks: companyTasksSection,
   attendance: attendanceSection,
   leaves: leavesSection,
   expenses: expensesSection,
   roster: rosterSection,
 };
-const COMPANY_ORDER = ['attendance', 'leaves', 'expenses', 'roster'];
+// Tasks first: what the office actually got done is the headline the report opens with.
+const COMPANY_ORDER = ['tasks', 'attendance', 'leaves', 'expenses', 'roster'];
 
 function buildCompanyDoc(data, sections, logo) {
   const accent = data.company.brandColor || DEFAULT_ACCENT;

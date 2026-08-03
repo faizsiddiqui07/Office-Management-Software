@@ -10,7 +10,8 @@ const TYPES = ['daily', 'weekly', 'monthly', 'yearly', 'custom'];
 // Dues are deliberately absent: what people owe the office is between them and the
 // admin, so it never appears in a company-wide report. Each person still sees their
 // own ledger on the Dues page and in their own report.
-const COMPANY_SECTIONS = ['attendance', 'leaves', 'expenses', 'roster'];
+// Tasks lead the report — what the office got done, person by person.
+const COMPANY_SECTIONS = ['tasks', 'attendance', 'leaves', 'expenses', 'roster'];
 const SELF_SECTIONS = ['attendance', 'leaves', 'dues'];
 
 const isYMD = (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
@@ -56,7 +57,9 @@ function sectionAccess(user) {
   // dedicated viewExpenses permission. Without this, someone given the leadership
   // dashboard but deliberately NOT expense access could still pull the whole company
   // expense register out of the report.
-  return { attendance: all, leaves: all, roster: all, expenses: all && can(user, 'viewExpenses') };
+  // Tasks ride the same leadership gate as attendance: it is everyone's work output,
+  // the same class of company-wide data.
+  return { tasks: all, attendance: all, leaves: all, roster: all, expenses: all && can(user, 'viewExpenses') };
 }
 
 export function canCompanyReports(user) {
@@ -85,6 +88,7 @@ export async function preview(req, res, next) {
       delete data.leaves;
       delete data.roster;
     }
+    if (!access.tasks) delete data.tasks;
     data.allowedSections = COMPANY_SECTIONS.filter((s) => access[s]);
     return res.json(ok(data));
   } catch (err) {

@@ -1,10 +1,11 @@
 'use client';
 
-import { CalendarClock, CalendarDays, Clock, UserCheck, UserPlus, UserX, Users, Wallet } from 'lucide-react';
+import { CalendarClock, CalendarDays, Clock, ListTodo, UserCheck, UserPlus, UserX, Users, Wallet } from 'lucide-react';
 import { StatCard } from '@/components/glass/stat-card';
 import { GlassCard } from '@/components/glass/glass-card';
 import { DataTable } from '@/components/glass/data-table';
 import { StatusBadge } from '@/components/glass/status-badge';
+import { cn } from '@/lib/utils';
 import { formatDuration } from '@/lib/time';
 import { formatMoney, categoryLabel } from '@/lib/expense';
 import { formatRange, formatYMD } from '@/lib/leave';
@@ -28,6 +29,52 @@ function ReportSection({ icon: Icon, title, meta, children }) {
       </header>
       <div className="space-y-4 p-3 sm:p-4">{children}</div>
     </section>
+  );
+}
+
+/**
+ * Who got through how much work — the report opens with it.
+ *
+ * Delegated work only, judged the way the bonus system and the leaderboard judge it
+ * (submit day for approval tasks, plus the configured grace days before "late"). Tagged
+ * work sits in its own column, never inside the counts: being kept in the loop is not
+ * doing the work.
+ */
+function TasksSection({ data }) {
+  const t = data.tasks.totals;
+  const grace = data.tasks.graceDays ?? 1;
+  const columns = [
+    {
+      id: 'name',
+      header: 'Employee',
+      accessorFn: (r) => `${r.name} ${r.employeeId} ${roleName(r)}`,
+      cell: ({ row }) => (
+        <div>
+          <p className="font-medium">{row.original.name}</p>
+          <p className="text-xs text-muted-foreground">
+            {row.original.employeeId} · {roleName(row.original)}
+          </p>
+        </div>
+      ),
+    },
+    { id: 'done', header: 'Done', accessorFn: (r) => r.done, cell: ({ row }) => <span className="tabular-nums font-medium">{row.original.done}</span> },
+    { id: 'onTime', header: 'On time', accessorFn: (r) => r.onTime, cell: ({ row }) => <span className="tabular-nums text-success">{row.original.onTime}</span> },
+    { id: 'late', header: 'Late', accessorFn: (r) => r.late, cell: ({ row }) => <span className={cn('tabular-nums', row.original.late ? 'text-amber-600 dark:text-amber-300' : '')}>{row.original.late}</span> },
+    { id: 'tagged', header: 'Tagged on', accessorFn: (r) => r.tagged, cell: ({ row }) => <span className="tabular-nums text-muted-foreground">{row.original.tagged}</span> },
+  ];
+  return (
+    <ReportSection icon={ListTodo} title="Tasks" meta={`${t.done} done · ${t.onTime} on time`}>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatCard label="Tasks done" value={t.done} icon={ListTodo} tone="default" hint="assigned work only" />
+        <StatCard label="On time" value={t.onTime} icon={UserCheck} tone="success" hint={t.done ? `${Math.round((t.onTime / Math.max(1, t.onTime + t.late)) * 100)}% of dated work` : '—'} />
+        <StatCard label="Late" value={t.late} icon={Clock} tone={t.late ? 'warning' : 'default'} hint={`over ${grace} day${grace === 1 ? '' : 's'} past due`} />
+        <StatCard label="Tagged on" value={t.tagged} icon={UserX} tone="info" hint="kept in the loop" />
+      </div>
+      <DataTable columns={columns} data={data.tasks.perEmployee} searchPlaceholder="Search employees…" pageSize={8} emptyMessage="No task activity." />
+      <p className="text-xs text-muted-foreground">
+        Assigned work only — personal to-dos aren’t counted. “Tagged on” is work raised in this period that named the person as a colleague; it belongs to someone else and isn’t counted in the figures above.
+      </p>
+    </ReportSection>
   );
 }
 
@@ -218,6 +265,8 @@ export function ReportPreview({ data, sections }) {
     <div className="space-y-4">
       <OngoingNotice data={data} workingDays={data.workingDays} />
       <JoinedLaterNotice data={data} />
+      {/* Tasks first — what the office actually got done leads the report. */}
+      {has('tasks') && data.tasks ? <TasksSection data={data} /> : null}
       {has('attendance') && data.attendance ? <AttendanceSection data={data} /> : null}
       {has('leaves') && data.leaves ? <LeavesSection data={data} /> : null}
       {has('expenses') && data.expenses ? <ExpensesSection data={data} /> : null}
