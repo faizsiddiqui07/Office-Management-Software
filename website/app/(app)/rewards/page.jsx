@@ -19,10 +19,17 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { formatRupees } from '@/lib/expense';
+import { monthOptions, fyOptions, paramsForSelection } from '@/lib/reward-periods';
 
 function fmtDate(iso) {
   if (!iso) return '';
   return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+}
+// Full date for the breakdown: in a yearly view a single "27 Jul" is ambiguous — the
+// year matters — so both formatters coexist, this one used for entry rows.
+function fmtDateFull(iso) {
+  if (!iso) return '';
+  return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 const money = (n) => formatRupees(n);
 const Pts = ({ n }) => <span className={n < 0 ? 'font-medium text-destructive' : 'font-medium text-emerald-600 dark:text-emerald-300'}>{n > 0 ? `+${n}` : n}</span>;
@@ -158,7 +165,20 @@ export default function RewardsPage() {
   const qc = useQueryClient();
   const isLeader = !!user && can(user, 'manageSettings');
   const isOwner = user?.role === 'CEO_PRESIDENT'; // CEO & President — only they can delete points
-  const { data: me } = useMyBonus();
+
+  // Period selector — Monthly (Jul 2026, Aug 2026…) or Yearly (FY 2026–27, FY 2027–28…).
+  // Monthly starts at go-live (Jul 2026); Yearly is the financial year (Apr–Mar), like
+  // the leave module. Default: current month.
+  const months = React.useMemo(() => monthOptions(), []);
+  const years = React.useMemo(() => fyOptions(), []);
+  const [mode, setMode] = React.useState('monthly');
+  const [monthly, setMonthly] = React.useState(() => months[0]?.value || '');
+  const [yearly, setYearly] = React.useState(() => years[0]?.value || '');
+  const selection = mode === 'monthly' ? monthly : yearly;
+  const { params: mineParams, label: periodLabel } = paramsForSelection(mode, selection);
+  const isRange = mode === 'yearly';
+
+  const { data: me } = useMyBonus(mineParams);
   const { data: guide } = useBonusGuide();
 
   const delMut = useMutation({
@@ -171,7 +191,42 @@ export default function RewardsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader eyebrow="Bonus" title="Rewards" icon={Award} description="Earn points for good work — leadership sets what each is worth, and points reset each month." />
+      <PageHeader
+        eyebrow="Bonus"
+        title="Rewards"
+        icon={Award}
+        description="Earn points for good work — leadership sets what each is worth, and points reset each month."
+        actions={
+          enabled === false ? null : (
+            /* Monthly + Yearly picker. Two selects side-by-side on desktop; on phones they
+               stack, each full-width, because the parent .actions is flex-wrap. */
+            <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+              <Select value={mode} onValueChange={setMode}>
+                <SelectTrigger className="min-w-[7.5rem] bg-background/50"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="monthly">Monthly</SelectItem>
+                  <SelectItem value="yearly">Yearly (FY)</SelectItem>
+                </SelectContent>
+              </Select>
+              {mode === 'monthly' ? (
+                <Select value={monthly} onValueChange={setMonthly}>
+                  <SelectTrigger className="min-w-[9.5rem] bg-background/50"><SelectValue placeholder="Pick a month" /></SelectTrigger>
+                  <SelectContent>
+                    {months.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Select value={yearly} onValueChange={setYearly}>
+                  <SelectTrigger className="min-w-[9.5rem] bg-background/50"><SelectValue placeholder="Pick a year" /></SelectTrigger>
+                  <SelectContent>
+                    {years.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+          )
+        }
+      />
 
       {enabled === false ? (
         <EmptyState
@@ -181,9 +236,10 @@ export default function RewardsPage() {
         />
       ) : (
         <>
-          {/* My points */}
-          <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-            <StatCard label="My points" value={me?.points ?? 0} hint="this month" icon={Award} tone="success" />
+          {/* My points — two cards max, so cap the grid at 2 (a 4-col grid used to leave
+              two visible empty columns on desktop). */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
+            <StatCard label="My points" value={me?.points ?? 0} hint={periodLabel} icon={Award} tone="success" />
             {me?.rupeesPerPoint ? <StatCard label="Worth" value={money(me?.rupees)} hint={`${money(me?.rupeesPerPoint)}/point`} icon={Coins} tone="default" /> : null}
           </div>
 
@@ -207,16 +263,17 @@ export default function RewardsPage() {
             </div>
           </GlassPanel>
 
-          {/* My breakdown */}
+          {/* My breakdown — reflects the picked period. Yearly views show the full date
+              (year matters when many months are listed). */}
           <GlassPanel className="p-2">
-            <div className="px-3 py-2 text-sm font-semibold">My points this month</div>
+            <div className="px-3 py-2 text-sm font-semibold">My points · {periodLabel}</div>
             {me?.entries?.length ? (
               <ul className="divide-y divide-border/50">
                 {me.entries.map((e) => (
                   <li key={e.id} className="flex items-center gap-3 px-3 py-2.5">
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm">{e.reason}</p>
-                      <p className="text-xs text-muted-foreground">{fmtDate(e.createdAt)}{e.source === 'manual' ? ' · awarded' : ' · automatic'}</p>
+                      <p className="text-xs text-muted-foreground">{(isRange ? fmtDateFull : fmtDate)(e.createdAt)}{e.source === 'manual' ? ' · awarded' : ' · automatic'}</p>
                     </div>
                     <span className="shrink-0 tabular-nums text-sm"><Pts n={e.points} /></span>
                     {isOwner ? (
@@ -226,7 +283,7 @@ export default function RewardsPage() {
                 ))}
               </ul>
             ) : (
-              <p className="px-3 py-6 text-center text-sm text-muted-foreground">No points yet this month — keep it up!</p>
+              <p className="px-3 py-6 text-center text-sm text-muted-foreground">No points in {periodLabel} — keep it up!</p>
             )}
           </GlassPanel>
 

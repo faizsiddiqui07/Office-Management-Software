@@ -12,7 +12,8 @@ export async function me(req, res, next) {
   try {
     // Opportunistic: apply any overdue-task penalties (throttled to once a day).
     try { await svc.maybeRunDaily(); } catch { /* non-blocking */ }
-    res.json(ok(await svc.mySummary(req.user, req.query.month)));
+    const { month, from, to } = req.query || {};
+    res.json(ok(await svc.mySummary(req.user, { month, from, to })));
   } catch (err) {
     next(err);
   }

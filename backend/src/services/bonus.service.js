@@ -125,13 +125,32 @@ export async function userMonthTotal(userId, month = currentMonth()) {
   return agg[0]?.points || 0;
 }
 
-export async function mySummary(user, month = currentMonth()) {
+/**
+ * One person's points for a single month OR a month range (financial year, etc.).
+ *
+ * Accepts either `{month: 'YYYY-MM'}` (single) or `{from: 'YYYY-MM', to: 'YYYY-MM'}`
+ * (inclusive). No args → current month, matching the header badge's default. The month
+ * range uses the existing `month` string index — PointEntry.month is always 'YYYY-MM',
+ * so lexicographic $gte/$lte works and the query stays indexed. Entries cap is bumped
+ * on a range so a full 12-month view isn't silently truncated.
+ */
+export async function mySummary(user, params = {}) {
   const cfg = await getConfig();
-  const points = await userMonthTotal(user._id, month);
-  const entries = await PointEntry.find({ user: user._id, month }).sort({ createdAt: -1 }).limit(200);
+  const isRange = !!(params.from && params.to);
+  const month = isRange ? undefined : params.month || currentMonth();
+
+  const matchMonth = isRange ? { $gte: params.from, $lte: params.to } : month;
+  const [agg] = await PointEntry.aggregate([
+    { $match: { user: toId(user._id), month: matchMonth } },
+    { $group: { _id: null, points: { $sum: '$points' } } },
+  ]);
+  const points = agg?.points || 0;
+  const entries = await PointEntry.find({ user: user._id, month: matchMonth }).sort({ createdAt: -1 }).limit(isRange ? 1200 : 200);
+
   return {
     enabled: cfg.enabled,
-    month,
+    month: month || null,
+    range: isRange ? { from: params.from, to: params.to } : null,
     points,
     rupees: cfg.rupeesPerPoint ? Math.round(points * cfg.rupeesPerPoint) : 0,
     rupeesPerPoint: cfg.rupeesPerPoint,

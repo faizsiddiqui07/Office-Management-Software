@@ -3,11 +3,25 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 
-/** The signed-in user's own points this month (header badge + rewards page). */
-export function useMyBonus() {
+/**
+ * The signed-in user's own points.
+ *
+ * `params` (optional):
+ *   - {month: 'YYYY-MM'} → that single month
+ *   - {from: 'YYYY-MM', to: 'YYYY-MM'} → inclusive range (e.g. a financial year)
+ *   - nothing → current month (default; matches the header badge)
+ *
+ * Period is in the queryKey so switching months/years never serves stale cache.
+ */
+export function useMyBonus(params) {
+  const q = new URLSearchParams();
+  if (params?.month) q.set('month', params.month);
+  if (params?.from) q.set('from', params.from);
+  if (params?.to) q.set('to', params.to);
+  const qs = q.toString();
   return useQuery({
-    queryKey: ['bonus', 'me'],
-    queryFn: () => api.get('/bonus/me'),
+    queryKey: ['bonus', 'me', qs],
+    queryFn: () => api.get(`/bonus/me${qs ? `?${qs}` : ''}`),
     staleTime: 60 * 1000,
   });
 }
