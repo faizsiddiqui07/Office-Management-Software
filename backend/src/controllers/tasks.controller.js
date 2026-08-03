@@ -174,7 +174,10 @@ const PERIOD_LABELS = {
 export async function exportPdf(req, res, next) {
   try {
     const scope = req.query?.scope || 'all';
-    const view = req.query?.view === 'assigned' ? 'assigned' : 'mine';
+    // Which list is being printed: what I own, what I handed out, or what I'm merely
+    // tagged on. Each prints on its own — a tagged task is somebody else's work and
+    // never belongs in the totals of the other two.
+    const view = ['assigned', 'tagged'].includes(req.query?.view) ? req.query.view : 'mine';
     const q = { scope: view, limit: 10000 };
     if (scope === 'pending') q.status = 'PENDING';
     else if (scope === 'completed') q.status = 'DONE';
@@ -207,17 +210,19 @@ export async function exportPdf(req, res, next) {
     const s = await Setting.getSingleton();
     const data = {
       company: { name: s.companyName, brandColor: s.brandColor },
-      scopeLabel: parts.join(' · ') + (view === 'assigned' ? ' · assigned by me' : ''),
+      scopeLabel: parts.join(' · ') + (view === 'assigned' ? ' · assigned by me' : view === 'tagged' ? ' · tagged (kept in the loop)' : ''),
       for: view === 'assigned' ? null : req.user.name,
       // Company-time date — the raw ISO slice printed the UTC day, a day early in the
       // early-morning IST window, while the table's Created/Completed columns show IST.
       generatedAt: ymdInTz(new Date()),
+      view,
       tasks,
     };
     const logo = loadCompanyLogo(s.logoDark || s.logoUrl || s.logoLight);
     const stream = await renderTasksPdf(data, logo);
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="tasks-${scope}.pdf"`);
+    // The view goes in the filename, or a tagged export would overwrite the "mine" one.
+    res.setHeader('Content-Disposition', `attachment; filename="tasks-${view === 'mine' ? '' : `${view}-`}${scope}.pdf"`);
     stream.pipe(res);
   } catch (err) {
     handleErr(res, err, next);

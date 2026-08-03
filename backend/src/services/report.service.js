@@ -388,14 +388,17 @@ export async function buildSelfReport({ user, type, dateYMD, range }) {
   // Tasks OWNED by this person that were raised in the window — for the stats block.
   const dFrom = new Date(`${from}T00:00:00.000Z`);
   const dTo = new Date(`${to}T23:59:59.999Z`);
-  const [records, takenLeaves, pendingLeaves, balanceDoc, due, taskDocs, wfhReqs, wfhAllowance] = await Promise.all([
+  const [records, takenLeaves, pendingLeaves, balanceDoc, due, taskDocs, taggedDocs, wfhReqs, wfhAllowance] = await Promise.all([
     Attendance.find({ user: user._id, date: { $gte: fromDay, $lte: toDay } }),
     // Leave only — WFH is reported separately (no balance, and the day was worked).
     LeaveRequest.find({ user: user._id, status: 'APPROVED', type: { $ne: 'WFH' }, startYMD: { $lte: to }, endYMD: { $gte: from } }).sort({ startYMD: -1 }),
     LeaveRequest.find({ user: user._id, status: 'PENDING', type: { $ne: 'WFH' } }).sort({ appliedAt: -1 }),
     LeaveBalance.findOne({ user: user._id, year: leaveYearOf(from) }),
     ledgerFor(user._id),
-    Task.find({ owner: user._id, createdAt: { $gte: dFrom, $lte: dTo } }).select('status dueYMD completedAt submittedAt requiresApproval'),
+    Task.find({ owner: user._id, createdAt: { $gte: dFrom, $lte: dTo } }).select('status dueYMD completedAt submittedAt requiresApproval assignedBy'),
+    // Work they were only TAGGED on — somebody else's task. Counted apart from their own
+    // figures, never inside them: being kept in the loop is not doing the work.
+    Task.find({ collaborators: user._id, owner: { $ne: user._id }, createdAt: { $gte: dFrom, $lte: dTo } }).select('status dueYMD completedAt submittedAt requiresApproval'),
     // Their own WFH requests touching this period, plus the fiscal-year allowance —
     // which is a standing figure, so it is anchored to the leave year, never the
     // (possibly one-day) report window.
@@ -527,20 +530,32 @@ export async function buildSelfReport({ user, type, dateYMD, range }) {
   // On-time = finished on or before the due date, judged from the SUBMIT day for an
   // approval task (a slow approval never turns on-time work late) — same rule the
   // leaderboard and the bonus system use.
-  const taskStats = { total: taskDocs.length, pending: 0, done: 0, onTime: 0, late: 0, overdue: 0 };
-  for (const t of taskDocs) {
-    if (t.status === 'DONE') {
-      taskStats.done += 1;
-      if (t.dueYMD) {
-        const doneYMD = ymdInTz((t.requiresApproval && t.submittedAt) || t.completedAt || new Date());
-        if (doneYMD <= t.dueYMD) taskStats.onTime += 1;
-        else taskStats.late += 1;
+  const tallyTasks = (docs) => {
+    const st = { total: docs.length, pending: 0, done: 0, onTime: 0, late: 0, overdue: 0 };
+    for (const t of docs) {
+      if (t.status === 'DONE') {
+        st.done += 1;
+        if (t.dueYMD) {
+          const doneYMD = ymdInTz((t.requiresApproval && t.submittedAt) || t.completedAt || new Date());
+          if (doneYMD <= t.dueYMD) st.onTime += 1;
+          else st.late += 1;
+        }
+      } else {
+        st.pending += 1;
+        if (t.dueYMD && t.dueYMD < todayYMD) st.overdue += 1;
       }
-    } else {
-      taskStats.pending += 1;
-      if (t.dueYMD && t.dueYMD < todayYMD) taskStats.overdue += 1;
     }
-  }
+    return st;
+  };
+  // The headline figures stay what this person OWNS, split so the delegated work — the
+  // kind that counts and earns points — can be read on its own. Tagged work is somebody
+  // else's task: reported beside these, never added into them.
+  const taskStats = {
+    ...tallyTasks(taskDocs),
+    assigned: tallyTasks(taskDocs.filter((t) => t.assignedBy)),
+    personal: tallyTasks(taskDocs.filter((t) => !t.assignedBy)),
+    tagged: tallyTasks(taggedDocs),
+  };
 
   return {
     scope: 'me',

@@ -35,7 +35,7 @@ import { PDF_SCOPES, downloadTasksPdf, isOverdue, todayYMD } from '@/lib/task';
 // range has to mean. Filtering them on when each row happened to be created is what made
 // "27–30 July" drop a task plainly marked "Due 27 Jul". History is finished work, where
 // the only date that means anything is when it was completed.
-const DATE_BASIS = { mine: 'due', assigned: 'due', history: 'completed' };
+const DATE_BASIS = { mine: 'due', tagged: 'due', assigned: 'due', history: 'completed' };
 
 // Presets follow the basis. A deadline window looks FORWARD (what is coming up, what is
 // already late); a completion window looks back. Nothing on either list is a no-op.
@@ -751,7 +751,7 @@ export function TaskBoard() {
   const requestedTab = params.get('tab');
   const focusTaskId = params.get('task'); // a notification asking to open one exact task
   const [tab, setTab] = React.useState(() =>
-    ['mine', 'history', 'assigned'].includes(requestedTab) ? requestedTab : 'mine',
+    ['mine', 'history', 'tagged', 'assigned'].includes(requestedTab) ? requestedTab : 'mine',
   );
   const [search, setSearch] = React.useState('');
   const [debouncedSearch, setDebouncedSearch] = React.useState('');
@@ -773,6 +773,9 @@ export function TaskBoard() {
   const [flat, setFlat] = React.useState(null); // null | 'pending' | 'all'
 
   const isAssigned = tab === 'assigned';
+  // Work somebody else owns and tagged me on — its own tab, its own server scope, and
+  // deliberately outside every "my tasks" count.
+  const isTagged = tab === 'tagged';
 
   // A stat card jumps to "My tasks" and shows exactly that slice, flat — no folders, no
   // date filter, no search in the way. Completed has no flat mode of its own; it just
@@ -801,10 +804,13 @@ export function TaskBoard() {
   }, [tab]);
 
   const { data: sum } = useQuery({ queryKey: ['tasks', 'summary'], queryFn: () => api.get('/tasks/summary') });
+  // `mine` is owner-only (own to-dos + work delegated to me). Tagged work is counted
+  // apart, so the three headline figures describe only what this person is answerable for.
   const m = sum?.mine ?? { pending: 0, done: 0, total: 0 };
+  const tg = sum?.tagged ?? { pending: 0, done: 0, total: 0 };
 
   const isMine = tab === 'mine';
-  const scope = isAssigned ? 'assigned' : 'mine';
+  const scope = isAssigned ? 'assigned' : isTagged ? 'tagged' : 'mine';
   // History fetches completed only. My tasks fetches ALL statuses (folders need
   // pending AND completed together) and splits/groups client-side.
   const status = tab === 'history' ? 'DONE' : '';
@@ -812,12 +818,13 @@ export function TaskBoard() {
   const dateBasis = DATE_BASIS[tab] ?? 'added';
 
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['tasks', 'list', scope, status, isMine || isAssigned ? '' : debouncedSearch, period, `${range.from}~${range.to}`, dateBasis],
+    queryKey: ['tasks', 'list', scope, status, isMine || isAssigned || isTagged ? '' : debouncedSearch, period, `${range.from}~${range.to}`, dateBasis],
     queryFn: () => {
       const p = new URLSearchParams({ scope, limit: '10000', dateBasis });
       if (status) p.set('status', status);
-      // My tasks & Assigned search client-side (task text + person name); History uses the server.
-      if (!isMine && !isAssigned && debouncedSearch) p.set('search', debouncedSearch);
+      // My tasks, Tagged & Assigned search client-side (task text + person name); History
+      // uses the server.
+      if (!isMine && !isAssigned && !isTagged && debouncedSearch) p.set('search', debouncedSearch);
       // The date filter applies to every tab. It used to be suppressed on "My tasks" —
       // which is the tab everyone lands on, so the control was missing exactly where it
       // was being reached for, and picking a range there did nothing at all.
@@ -847,7 +854,7 @@ export function TaskBoard() {
   // when 2+ people have delegated work to me, one folder per assigner. A lone
   // assigner's pending tasks fold into the flat list (no folder tap for one person).
   const mine = React.useMemo(() => {
-    if (!isMine) return { personalPending: [], folders: [], tagged: [], searching: false };
+    if (!isMine) return { personalPending: [], folders: [], searching: false };
     const myId = user?.id;
     const q = search.toLowerCase().trim();
     const textHit = (t) => t.title.toLowerCase().includes(q) || (t.notes || '').toLowerCase().includes(q);
@@ -862,13 +869,12 @@ export function TaskBoard() {
     const byPerson = new Map();
     const personal = [];
     const personalDone = []; // kept aside only so a search can still reach them
-    const tagged = [];       // somebody else's task, mine only to watch
     for (const t of tasks) {
-      // Being tagged is not being assigned. These used to be filed under the assigner's
-      // "Assigned to me" folder, so a colleague kept in the loop saw the work as their
-      // own — the whole complaint. They get their own section instead.
+      // Tagged work never reaches this list any more — the server's `mine` scope is
+      // owner-only and tagged rows live in their own tab. The guard stays as a
+      // belt-and-braces skip for any legacy row that slips through.
       if (onlyTagged(t, myId)) {
-        tagged.push(t);
+        continue;
       } else if (t.assignedBy) {
         const from = t.assignedBy;
         const id = from.id || String(from);
@@ -893,12 +899,12 @@ export function TaskBoard() {
       // Finished work is in here too. A folder lists its completed tasks, so leaving them
       // out of the search would mean a task you can SEE by opening a folder can't be
       // found by typing its name — which is the whole complaint.
-      const all = [...personal, ...personalDone, ...tagged, ...[...byPerson.values()].flatMap((f) => f.tasks)];
+      const all = [...personal, ...personalDone, ...[...byPerson.values()].flatMap((f) => f.tasks)];
       const hits = all
         .filter((t) => textHit(t) || (fromOf(t)?.name || '').toLowerCase().includes(q))
         // Open work first — it's what needs doing; finished rows follow, struck through.
         .sort((a, b) => (a.status === 'DONE') - (b.status === 'DONE') || byDueDate(a, b));
-      return { personalPending: hits, folders: [], tagged: [], searching: true };
+      return { personalPending: hits, folders: [], searching: true };
     }
 
     let personalPending = personal;
@@ -924,10 +930,26 @@ export function TaskBoard() {
     }
 
     personalPending = personalPending.filter(matchesRow).sort(byDueDate);
-    // Finished work someone tagged me on lives in History, same as everything else.
-    const taggedOpen = tagged.filter((t) => t.status !== 'DONE').sort(byDueDate);
-    return { personalPending, folders, tagged: taggedOpen, searching: false };
+    return { personalPending, folders, searching: false };
   }, [isMine, tasks, search, user?.id]);
+
+  /**
+   * The Tagged tab: colleagues' tasks I was tagged on — pending first, finished after.
+   * Fetched with its own server scope, so nothing here can leak into "My tasks" and
+   * nothing from my own list can appear here. Searchable by task text, the owner's name
+   * or whoever assigned it.
+   */
+  const taggedList = React.useMemo(() => {
+    if (!isTagged) return [];
+    const q = search.toLowerCase().trim();
+    return tasks
+      .filter((t) => !q
+        || t.title.toLowerCase().includes(q)
+        || (t.notes || '').toLowerCase().includes(q)
+        || (t.owner?.name || '').toLowerCase().includes(q)
+        || (t.assignedBy?.name || '').toLowerCase().includes(q))
+      .sort((a, b) => (a.status === 'DONE') - (b.status === 'DONE') || byDueDate(a, b));
+  }, [isTagged, tasks, search]);
 
   // My OWN task (not delegated to me, not just shared with me) → I can edit/delete it.
   const canMgr = (t) => t.owner?.id === user?.id && !t.assignedBy;
@@ -1130,8 +1152,9 @@ export function TaskBoard() {
   const downloadPdf = async () => {
     setPdfBusy(true);
     try {
-      // The PDF prints the rows currently on screen — same range, same search — so the
-      // download can never disagree with what was just read.
+      // The PDF prints the rows currently on screen — same list, same range, same search
+      // — so the download can never disagree with what was just read. `scope` already
+      // carries which list this is (mine / tagged / assigned).
       await downloadTasksPdf(pdfScope, scope, {
         period,
         dateBasis,
@@ -1181,10 +1204,14 @@ export function TaskBoard() {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-3 gap-3 sm:gap-4">
+      {/* Four across is too tight on a phone, so it's 2×2 there and a single row from sm up. */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
         <StatMini label="Pending" value={m.pending} icon={ListTodo} tone={m.pending ? 'warning' : 'default'} onClick={() => showFlat('pending')} hint="Show every pending task, flat" />
         <StatMini label="Completed" value={m.done} icon={CheckCircle2} tone="success" onClick={() => { setFlat(null); setTab('history'); }} hint="See completed tasks" />
         <StatMini label="Total" value={m.total} icon={ClipboardList} onClick={() => showFlat('all')} hint="Show every task, flat" />
+        {/* Its own box, never folded into Total: being tagged is being kept in the loop,
+            not being given the work. */}
+        <StatMini label="Tagged" value={tg.total} icon={Users} onClick={() => { setFlat(null); setTab('tagged'); }} hint="Tasks you’re tagged on — someone else does them" />
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -1251,6 +1278,9 @@ export function TaskBoard() {
         <TabsList>
           <TabsTrigger value="mine">My tasks</TabsTrigger>
           <TabsTrigger value="history">History</TabsTrigger>
+          <TabsTrigger value="tagged">
+            Tagged{tg.total ? <span className="ml-1 text-xs font-normal text-muted-foreground">({tg.total})</span> : null}
+          </TabsTrigger>
           {canAssign ? <TabsTrigger value="assigned">Assigned by me</TabsTrigger> : null}
         </TabsList>
         <TabsContent value={tab} className="pt-4">
@@ -1261,6 +1291,37 @@ export function TaskBoard() {
             <QueryError title="Couldn’t load your tasks" error={error} onRetry={refetch} />
           ) : isLoading ? (
             <LoadingState label="Loading tasks…" />
+          ) : isTagged ? (
+            taggedList.length ? (
+              <div className="space-y-2.5">
+                <p className="px-1 text-xs text-muted-foreground">
+                  You’re tagged on these so you can follow them — the person they’re assigned to does the work, and they don’t count towards your own task figures.
+                </p>
+                {taggedList.map((t) => (
+                  <TaskRow
+                    key={t.id}
+                    task={t}
+                    myId={user?.id}
+                    canToggle
+                    onToggle={(x) => toggleMut.mutate(x)}
+                    onEdit={(x) => setEditing(x)}
+                    onDelete={(x) => setDeleting(x)}
+                    onOpen={(x) => openTask({ task: x, canToggle: canCompleteTask(x, user?.id), allowEdit: false, allowDelete: false, assignerView: false })}
+                  />
+                ))}
+                {(data?.total ?? 0) > tasks.length ? (
+                  <p className="px-1 text-xs text-muted-foreground">
+                    Showing {tasks.length} of {data.total} — narrow the search to see the rest.
+                  </p>
+                ) : null}
+              </div>
+            ) : (
+              <EmptyState
+                icon={Users}
+                title={search.trim() ? 'No matching tagged tasks' : 'Nothing shared with you'}
+                description={search.trim() ? '' : 'When a colleague tags you on their task, it shows up here.'}
+              />
+            )
           ) : isAssigned ? (
             <div className="space-y-6">
               {awaitingList.length ? (
@@ -1380,7 +1441,7 @@ export function TaskBoard() {
                   description=""
                 />
               )
-            ) : !mine.personalPending.length && !mine.folders.length && !mine.tagged.length ? (
+            ) : !mine.personalPending.length && !mine.folders.length ? (
               <EmptyState
                 icon={ListTodo}
                 title={search.trim() ? 'No matching tasks' : 'No pending tasks'}
@@ -1418,32 +1479,8 @@ export function TaskBoard() {
                   </div>
                 ) : null}
 
-                {/* Work I'm tagged on — somebody else's to do, mine to keep an eye on.
-                    Deliberately its own section: filed under "Assigned to me" it read as
-                    work handed to me, which is what was being reported. */}
-                {mine.tagged.length ? (
-                  <div className="space-y-2.5">
-                    <h3 className="flex items-center gap-2 text-sm font-semibold">
-                      <Users className="size-4 text-primary" /> Shared with me
-                      <span className="font-normal text-muted-foreground">({mine.tagged.length})</span>
-                    </h3>
-                    <p className="-mt-1 px-1 text-xs text-muted-foreground">
-                      You’re tagged on these so you can follow them. The person they’re assigned to does the work.
-                    </p>
-                    {mine.tagged.map((t) => (
-                      <TaskRow
-                        key={t.id}
-                        task={t}
-                        myId={user?.id}
-                        canToggle
-                        onToggle={(x) => toggleMut.mutate(x)}
-                        onEdit={(x) => setEditing(x)}
-                        onDelete={(x) => setDeleting(x)}
-                        onOpen={(x) => openTask({ task: x, canToggle: canCompleteTask(x, user?.id), allowEdit: false, allowDelete: false, assignerView: false })}
-                      />
-                    ))}
-                  </div>
-                ) : null}
+                {/* Tagged work used to sit here as a "Shared with me" section. It now has
+                    its own tab and its own stat box, so this list is purely what I own. */}
 
                 {mine.folders.length ? (
                   <div className="space-y-3">

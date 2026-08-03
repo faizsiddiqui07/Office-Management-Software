@@ -330,9 +330,11 @@ function selfSubject(d) {
   );
 }
 
-/** Task stats — totals only, no list. */
+/** Task stats — totals only, no list. Own work and tagged work are kept apart. */
 function selfTasksSection(d, accent) {
   const t = d.tasks || { total: 0, pending: 0, done: 0, onTime: 0, late: 0, overdue: 0 };
+  const assigned = t.assigned || null;
+  const tagged = t.tagged || null;
   const stats = [
     stat('Total tasks', t.total, 'tk1'),
     stat('Pending', t.pending, 'tk2'),
@@ -340,6 +342,9 @@ function selfTasksSection(d, accent) {
     stat('Done on time', t.onTime, 'tk4'),
     stat('Done late', t.late, 'tk5'),
     stat('Overdue', t.overdue, 'tk6'),
+    // Of their own tasks, how many were DELEGATED to them — the kind that counts for
+    // points and for the company's task figures.
+    ...(assigned ? [stat('Of these, assigned', assigned.total, 'tk7')] : []),
   ];
   return E(
     View,
@@ -347,6 +352,22 @@ function selfTasksSection(d, accent) {
     sectionTitle('Tasks', accent),
     E(View, { style: styles.statRow }, ...stats),
     t.total === 0 ? E(Text, { style: styles.empty }, 'No tasks in this period.') : null,
+    // Tagged work sits in its own row, plainly labelled, so it can never be read as part
+    // of the totals above.
+    tagged && tagged.total > 0
+      ? E(
+          View,
+          { key: 'tg' },
+          E(Text, { style: styles.subTitle }, 'Tagged — kept in the loop (not counted above)'),
+          E(
+            View,
+            { style: styles.statRow },
+            stat('Tagged on', tagged.total, 'tg1'),
+            stat('Pending', tagged.pending, 'tg2'),
+            stat('Done', tagged.done, 'tg3'),
+          ),
+        )
+      : null,
   );
 }
 

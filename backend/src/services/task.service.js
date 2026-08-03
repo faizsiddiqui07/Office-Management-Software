@@ -27,6 +27,13 @@ const todoLink = (id, assigned = false) =>
   (id ? `/todo?${assigned ? 'tab=assigned&' : ''}task=${id}` : assigned ? '/todo?tab=assigned' : '/todo');
 
 /**
+ * The same link for a TAGGED colleague. Their task lives on its own tab now, and each
+ * tab loads its own list — without the tab the notification would land on "My tasks",
+ * whose list no longer contains the task, and the detail dialog would never open.
+ */
+const taggedLink = (id) => (id ? `/todo?tab=tagged&task=${id}` : '/todo?tab=tagged');
+
+/**
  * The end-of-day round-up: who finished what TODAY, person by person.
  *
  * Read live off the tasks every time it's asked for — nothing is stored, nothing is
@@ -183,7 +190,7 @@ export async function createTask(actor, data) {
         type: 'TASK_ASSIGNED',
         title: `${actor.name} tagged you on a task`,
         message: data.title,
-        link: todoLink(created[0]?.id),
+        link: taggedLink(created[0]?.id),
       });
     }
     return { tasks: created };
@@ -207,7 +214,7 @@ export async function createTask(actor, data) {
       type: 'TASK_ASSIGNED',
       title: `${actor.name} tagged you on a task`,
       message: data.dueYMD ? `${data.title} (due ${data.dueYMD})` : data.title,
-      link: todoLink(task._id),
+      link: taggedLink(task._id),
     });
   }
 
@@ -659,7 +666,7 @@ export async function updateTask(actor, id, data) {
           type: 'TASK_ASSIGNED',
           title: `${actor.name} tagged you on a task`,
           message: task.dueYMD ? `${task.title} (due ${task.dueYMD})` : task.title,
-          link: todoLink(members[0]?._id),
+          link: taggedLink(members[0]?._id),
         });
       }
     }
@@ -728,7 +735,7 @@ export async function updateTask(actor, id, data) {
     task.collaborators = resolved;
     for (const cid of resolved) {
       if (!before.has(String(cid))) {
-        await notify({ user: cid, type: 'TASK_ASSIGNED', title: `${actor.name} tagged you on a task`, message: task.dueYMD ? `${task.title} (due ${task.dueYMD})` : task.title, link: todoLink(task._id) });
+        await notify({ user: cid, type: 'TASK_ASSIGNED', title: `${actor.name} tagged you on a task`, message: task.dueYMD ? `${task.title} (due ${task.dueYMD})` : task.title, link: taggedLink(task._id) });
       }
     }
   }
@@ -812,11 +819,20 @@ function dueMatch(period, status) {
 
 export async function listTasks(actor, { scope = 'mine', status, search, period, from, to, dateBasis, awaiting, page = 1, limit = 200 }) {
   const and = [];
-  // "mine" now also includes shared tasks I'm tagged on (a collaborator), not just
-  // ones I own — so multiple $or blocks may stack; combine them with $and.
+  // Three distinct kinds of work, never mixed:
+  //   assigned — work I handed to someone else,
+  //   tagged   — somebody else's task I was only tagged on (kept in the loop): it is
+  //              NOT mine to do and must never count towards my task figures,
+  //   mine     — what I actually own: my own to-dos plus work delegated TO me.
+  // "mine" used to include tagged rows, which is what made a colleague's task show up
+  // as the viewer's own and inflate every count built on this list.
   if (scope === 'assigned') and.push({ assignedBy: actor._id });
-  else {
-    and.push({ $or: [{ owner: actor._id }, { collaborators: actor._id }] });
+  else if (scope === 'tagged') {
+    // Owner-guard matters: without it a legacy row where somebody is in their own
+    // collaborators list would appear as "tagged on their own task".
+    and.push({ collaborators: actor._id, owner: { $ne: actor._id } });
+  } else {
+    and.push({ owner: actor._id });
     // Work I have PASSED ON is no longer mine to do, so it leaves my own list. It shows
     // up under "Assigned by me" instead — as the copy I handed over, which is the one
     // carrying the live status — and that copy's hand-off trail says the work came from
@@ -1010,16 +1026,21 @@ export async function taskSummary(actor) {
   // The same exclusion listTasks applies: work I passed on isn't counted as mine, or the
   // badge would promise more rows than the list shows.
   const passedOn = await Task.distinct('forwardedFrom', { assignedBy: actor._id, forwardedFrom: { $ne: null } });
-  const [mine, assigned] = await Promise.all([
+  const [mine, assigned, tagged] = await Promise.all([
+    // Mine = what I OWN (my own to-dos + work delegated to me). Tagged rows are somebody
+    // else's work and are counted separately below, never here — these are the figures
+    // the stat boxes and the header badge show.
     Task.aggregate([
-      { $match: { $or: [{ owner: actor._id }, { collaborators: actor._id }], ...(passedOn.length ? { _id: { $nin: passedOn } } : {}) } },
+      { $match: { owner: actor._id, ...(passedOn.length ? { _id: { $nin: passedOn } } : {}) } },
       { $group: { _id: '$status', n: { $sum: 1 } } },
     ]),
     Task.aggregate([{ $match: { assignedBy: actor._id } }, { $group: { _id: '$status', n: { $sum: 1 } } }]),
+    Task.aggregate([
+      { $match: { collaborators: actor._id, owner: { $ne: actor._id } } },
+      { $group: { _id: '$status', n: { $sum: 1 } } },
+    ]),
   ]);
   const pick = (agg, st) => agg.find((a) => a._id === st)?.n ?? 0;
-  return {
-    mine: { pending: pick(mine, 'PENDING'), done: pick(mine, 'DONE'), total: pick(mine, 'PENDING') + pick(mine, 'DONE') },
-    assigned: { pending: pick(assigned, 'PENDING'), done: pick(assigned, 'DONE'), total: pick(assigned, 'PENDING') + pick(assigned, 'DONE') },
-  };
+  const box = (agg) => ({ pending: pick(agg, 'PENDING'), done: pick(agg, 'DONE'), total: pick(agg, 'PENDING') + pick(agg, 'DONE') });
+  return { mine: box(mine), assigned: box(assigned), tagged: box(tagged) };
 }

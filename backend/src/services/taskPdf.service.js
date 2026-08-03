@@ -36,10 +36,15 @@ const styles = StyleSheet.create({
   },
 });
 
+// `Type` says which KIND of work each row is — Assigned (delegated, the kind that
+// counts and earns points), Personal (own to-do), or Tagged (somebody else's task you
+// were kept in the loop on). Widths sum to 100%; row() maps cells positionally, so this
+// order and the cells array in buildDoc must stay in lockstep.
 const COLS = [
-  { key: 'title', label: 'Task', w: '31%' },
-  { key: 'owner', label: 'Owner', w: '15%' },
-  { key: 'assignedBy', label: 'Assigned by', w: '14%' },
+  { key: 'title', label: 'Task', w: '26%' },
+  { key: 'owner', label: 'Owner', w: '13%' },
+  { key: 'assignedBy', label: 'Assigned by', w: '12%' },
+  { key: 'kind', label: 'Type', w: '9%' },
   { key: 'status', label: 'Status', w: '9%' },
   { key: 'dueYMD', label: 'Due', w: '11%' },
   { key: 'created', label: 'Created', w: '10%' },
@@ -72,6 +77,7 @@ function buildDoc(data, logo) {
   const done = tasks.filter((t) => t.status === 'DONE').length;
   const pending = tasks.length - done;
 
+  const isTaggedView = data.view === 'tagged';
   const head = row(COLS.map((c) => c.label), 'head', { header: true });
   const body = tasks.map((t, i) =>
     row(
@@ -79,6 +85,7 @@ function buildDoc(data, logo) {
         t.title,
         t.owner?.name || '',
         t.assignedBy?.name || '—',
+        isTaggedView ? 'Tagged' : t.assignedBy ? 'Assigned' : 'Personal',
         t.status === 'DONE' ? 'Done' : 'Pending',
         t.dueYMD || '',
         fmtDate(t.createdAt),
@@ -114,9 +121,15 @@ function buildDoc(data, logo) {
     ),
   );
 
+  // A tagged list is other people's work. Saying so on the page stops the totals above
+  // being read as this person's own output.
+  const note = isTaggedView
+    ? E(Text, { key: 'n', style: styles.empty }, 'These are colleagues’ tasks you were tagged on — they don’t count towards your own task figures.')
+    : null;
+
   const table = tasks.length
     ? E(View, { key: 't' }, head, ...body)
-    : E(Text, { key: 'e', style: styles.empty }, 'No tasks for this selection.');
+    : E(Text, { key: 'e', style: styles.empty }, isTaggedView ? 'You haven’t been tagged on any tasks for this selection.' : 'No tasks for this selection.');
 
   const footer = E(
     View,
@@ -125,7 +138,7 @@ function buildDoc(data, logo) {
     E(Text, { render: ({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}` }),
   );
 
-  return E(Document, {}, E(Page, { size: 'A4', style: styles.page }, header, table, footer));
+  return E(Document, {}, E(Page, { size: 'A4', style: styles.page }, header, note, table, footer));
 }
 
 export async function renderTasksPdf(data, logo = null) {

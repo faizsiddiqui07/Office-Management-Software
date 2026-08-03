@@ -48,7 +48,9 @@ export const reviewTaskSchema = z.object({
 });
 
 export const listTasksQuerySchema = z.object({
-  scope: z.enum(['mine', 'assigned']).optional(),
+  // mine = what I own · assigned = what I handed out · tagged = somebody else's task
+  // I was only tagged on (kept in the loop, never counted as mine).
+  scope: z.enum(['mine', 'assigned', 'tagged']).optional(),
   status: z.enum(['PENDING', 'DONE']).optional(),
   search: z.string().optional(),
   // Backward-looking presets go with `added`/`completed`; the forward-looking ones and

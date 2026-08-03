@@ -26,6 +26,12 @@ export function isOverdue(dueYMD) {
   return !!dueYMD && dueYMD < todayYMD();
 }
 
+/**
+ * @param {string} scope  what to include: all | pending | completed | week | month | year
+ * @param {'mine'|'tagged'|'assigned'} view  WHICH list — my own work, work I'm only
+ *   tagged on, or work I handed out. Each prints separately: a tagged task is somebody
+ *   else's and never belongs in the other two's figures.
+ */
 export async function downloadTasksPdf(scope, view = 'mine', filters = {}) {
   const p = new URLSearchParams({ scope, view });
   // Carry the on-screen date range and search into the export.
@@ -37,6 +43,7 @@ export async function downloadTasksPdf(scope, view = 'mine', filters = {}) {
   if (filters.dateBasis) p.set('dateBasis', filters.dateBasis);
   if (filters.search) p.set('search', filters.search);
   const url = `${API_BASE}/api/tasks/export.pdf?${p.toString()}`;
-  // One iOS-safe download path for the whole app — see downloadFile.
-  await downloadFile(url, `tasks-${scope}.pdf`);
+  // One iOS-safe download path for the whole app — see downloadFile. The view is in the
+  // filename so a tagged export doesn't overwrite the one for your own tasks.
+  await downloadFile(url, `tasks-${view === 'mine' ? '' : `${view}-`}${scope}.pdf`);
 }
