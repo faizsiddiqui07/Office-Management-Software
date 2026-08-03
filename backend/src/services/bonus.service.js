@@ -107,6 +107,7 @@ export async function updateConfig(patch) {
       ? patch.manualItems.filter((m) => m && String(m.label || '').trim()).slice(0, 100)
           .map((m) => ({ id: m.id || rand(), label: String(m.label).trim().slice(0, 80), points: Math.round(num(m.points, 0)) }))
       : (b.manualItems || []),
+    historyScored: b.historyScored || '', // never reset by a settings save
     lastPenaltyRun: turningOn ? today : b.lastPenaltyRun || '',
     lastMonthRollup: turningOn ? prevMonth(currentMonth()) : b.lastMonthRollup || '',
     lastAbsenceScan: turningOn ? today : b.lastAbsenceScan || '',
@@ -618,11 +619,53 @@ export async function backfillMonth(month) {
   return { month, added: after - before, total: after };
 }
 
+const nextMonth = (ym) => {
+  const [y, m] = String(ym).split('-').map(Number);
+  return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
+};
+
+/**
+ * Score the months that went by BEFORE the point values were entered.
+ *
+ * The scheme is switched on part-way through the office's life, and switching it on
+ * deliberately doesn't score the past on the spot. But everything those months need was
+ * recorded all along — attendance, overtime, finished tasks — so leaving them blank just
+ * means people's earlier work is missing from their own Rewards page. This walks forward
+ * from go-live to the last finished month, once, and fills them in.
+ *
+ * Its own watermark, independent of the daily throttle, so it runs on the very next
+ * request after a deploy rather than waiting for tomorrow. A couple of months per run
+ * keeps any single request short; the rest follow on the next one.
+ */
+async function catchUpHistory(b) {
+  const target = prevMonth(currentMonth()); // the last month that is actually over
+  const firstMonth = APP_LIVE_YMD.slice(0, 7);
+  let done = b.historyScored || '';
+  if (done >= target) return;
+
+  let m = done ? nextMonth(done) : firstMonth;
+  let ran = 0;
+  while (m <= target && ran < 2) {
+    // eslint-disable-next-line no-await-in-loop
+    await backfillMonth(m);
+    done = m;
+    ran += 1;
+    m = nextMonth(m);
+  }
+  if (ran) {
+    await Setting.updateOne({ key: 'global' }, { $set: { 'bonus.historyScored': done } });
+    Setting.invalidateCache();
+  }
+}
+
 /** Runs the daily scans + month rollup at most once a day (no cron needed). */
 export async function maybeRunDaily() {
   const s = await Setting.getSingleton();
   const b = s.bonus || {};
   if (!b.enabled) return;
+  // Before the daily throttle: the history catch-up has its own watermark and must not
+  // have to wait for tomorrow just because today's scan already ran.
+  try { await catchUpHistory(b); } catch (e) { console.error('history catch-up failed', e?.message); }
   const today = ymdInTz(new Date());
   if (b.lastPenaltyRun === today) return;
   // Where the absence catch-up starts. Kept SEPARATE from the once-a-day throttle and

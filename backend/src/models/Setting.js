@@ -79,6 +79,11 @@ const settingSchema = new mongoose.Schema(
         default: [],
       },
       lastPenaltyRun: { type: String, default: '' }, // YMD — throttles the daily scan
+      // 'YYYY-MM' — the last past month scored by the one-time history catch-up. The
+      // scheme is usually switched on part-way through the office's life, leaving the
+      // months before it unscored even though everything they need was recorded; this
+      // walks forward through them once so nobody's earlier work is simply missing.
+      historyScored: { type: String, default: '' },
       lastMonthRollup: { type: String, default: '' }, // YYYY-MM — last month whose month-end awards ran
       // YMD — the last day the absence scan actually FINISHED. Separate from the
       // throttle above so a failed run doesn't quietly declare its days done.
