@@ -146,7 +146,11 @@ export async function mySummary(user, params = {}) {
     { $group: { _id: null, points: { $sum: '$points' } } },
   ]);
   const points = agg?.points || 0;
-  const entries = await PointEntry.find({ user: user._id, month: matchMonth }).sort({ createdAt: -1 }).limit(isRange ? 1200 : 200);
+  // Newest FIRST by the day it was earned — a month scored after the fact was written
+  // all at once, so sorting on createdAt would list it in an arbitrary order.
+  const entries = await PointEntry.find({ user: user._id, month: matchMonth })
+    .sort({ earnedYMD: -1, createdAt: -1 })
+    .limit(isRange ? 1200 : 200);
 
   return {
     enabled: cfg.enabled,
@@ -190,7 +194,7 @@ export async function awardManual(actor, { userId, points, reason, itemId, month
   }
   if (!Number.isFinite(pts) || pts === 0) throw httpError(400, 'BAD_POINTS', 'Enter a non-zero points value');
   if (!label) throw httpError(400, 'BAD_REASON', 'Add a short reason');
-  const entry = await PointEntry.create({ user: target._id, month: month || currentMonth(), points: Math.round(pts), reason: label.slice(0, 140), source: 'manual', awardedBy: actor._id });
+  const entry = await PointEntry.create({ user: target._id, month: month || currentMonth(), earnedYMD: ymdInTz(new Date()), points: Math.round(pts), reason: label.slice(0, 140), source: 'manual', awardedBy: actor._id });
   return entry.toJSON();
 }
 
@@ -208,8 +212,15 @@ export async function recentAwards(limit = 30) {
   return entries.map((e) => { const j = e.toJSON(); return { id: j.id, points: j.points, reason: j.reason, month: j.month, createdAt: j.createdAt, user: j.user, awardedBy: j.awardedBy }; });
 }
 
-export async function leaderboard(month = currentMonth()) {
-  const rows = await PointEntry.aggregate([{ $match: { month } }, { $group: { _id: '$user', points: { $sum: '$points' } } }, { $sort: { points: -1 } }]);
+/**
+ * Everyone's totals for a period — a single month, or a range (a financial year), the
+ * same shapes mySummary takes so the board always matches the period on screen.
+ */
+export async function leaderboard(params = {}) {
+  const p = typeof params === 'string' ? { month: params } : (params || {});
+  const isRange = !!(p.from && p.to);
+  const matchMonth = isRange ? { $gte: p.from, $lte: p.to } : (p.month || currentMonth());
+  const rows = await PointEntry.aggregate([{ $match: { month: matchMonth } }, { $group: { _id: '$user', points: { $sum: '$points' } } }, { $sort: { points: -1 } }]);
   const users = await User.find({ _id: { $in: rows.map((r) => r._id) } }).select('name role employeeId');
   const byId = new Map(users.map((u) => [String(u._id), u]));
   const cfg = await getConfig();
@@ -228,7 +239,7 @@ export async function leaderboard(month = currentMonth()) {
  * first created instead of adding a duplicate. Returns nothing — callers don't care
  * which of them won.
  */
-async function awardOnce(key, { user, month, points, reason, source, taskRef = null }, { replace = false } = {}) {
+async function awardOnce(key, { user, month, points, reason, source, taskRef = null, earnedYMD = '' }, { replace = false } = {}) {
   const doc = { user, month, points, reason, source, taskRef };
   await PointEntry.updateOne(
     { dedupeKey: key },
@@ -236,7 +247,11 @@ async function awardOnce(key, { user, month, points, reason, source, taskRef = n
     // written, in the month it was written. Re-running a scan must never move a July
     // penalty into August's total. `replace` is for the two cases that genuinely
     // recompute — a day's overtime, and a task's result superseding its overdue mark.
-    replace ? { $set: doc, $setOnInsert: { dedupeKey: key } } : { $setOnInsert: { ...doc, dedupeKey: key } },
+    // earnedYMD is always $set, even on an insert-only award: it is derived from the
+    // event, not a value that should freeze at whatever the first write happened to know.
+    replace
+      ? { $set: { ...doc, earnedYMD }, $setOnInsert: { dedupeKey: key } }
+      : { $set: { earnedYMD }, $setOnInsert: { ...doc, dedupeKey: key } },
     { upsert: true },
   );
 }
@@ -267,7 +282,7 @@ export async function onAssignedTaskDone(task) {
   const pts = rulePoints(b, late ? 'assignedTaskLate' : 'assignedTaskOnTime');
   if (!pts) return;
   // replace: the finished result supersedes any overdue penalty already recorded.
-  await awardOnce(`auto_task:${task._id}`, { user: task.owner, month: completedYMD.slice(0, 7), points: late ? -Math.abs(pts) : Math.abs(pts), reason: `${late ? 'Late completion' : 'Completed'}: ${task.title}`, source: 'auto_task', taskRef: task._id }, { replace: true });
+  await awardOnce(`auto_task:${task._id}`, { user: task.owner, month: completedYMD.slice(0, 7), points: late ? -Math.abs(pts) : Math.abs(pts), reason: `${late ? 'Late completion' : 'Completed'}: ${task.title}`, source: 'auto_task', taskRef: task._id, earnedYMD: completedYMD }, { replace: true });
 }
 
 export async function onAssignedTaskUndone(taskId) {
@@ -287,7 +302,7 @@ export async function onCheckIn(user, dateYMD, isLate) {
   if (isLate) {
     const pts = rulePoints(b, 'lateArrival');
     if (pts) {
-      await awardOnce(`auto_late:${user._id}:${dateYMD}`, { user: user._id, month: dateYMD.slice(0, 7), points: -Math.abs(pts), reason: `Late arrival · ${dateYMD}`, source: 'auto_late' });
+      await awardOnce(`auto_late:${user._id}:${dateYMD}`, { user: user._id, month: dateYMD.slice(0, 7), points: -Math.abs(pts), reason: `Late arrival · ${dateYMD}`, source: 'auto_late', earnedYMD: dateYMD });
     }
   }
 }
@@ -310,7 +325,7 @@ export async function onCheckOut(user, dateYMD, overtimeMinutes) {
   await PointEntry.deleteMany({ user: user._id, source: 'auto_ot', dedupeKey: { $exists: false }, createdAt: { $gte: start, $lt: end } });
   const hours = Math.floor((overtimeMinutes || 0) / 60);
   if (pts && hours > 0) {
-    await awardOnce(key, { user: user._id, month: dateYMD.slice(0, 7), points: Math.abs(pts) * hours, reason: `Overtime · ${dateYMD} (${hours}h)`, source: 'auto_ot' }, { replace: true });
+    await awardOnce(key, { user: user._id, month: dateYMD.slice(0, 7), points: Math.abs(pts) * hours, reason: `Overtime · ${dateYMD} (${hours}h)`, source: 'auto_ot', earnedYMD: dateYMD }, { replace: true });
   } else {
     // The day no longer earns anything (corrected check-out, rule switched off).
     await PointEntry.deleteOne({ dedupeKey: key });
@@ -341,7 +356,7 @@ async function scanOverdueTasks(b) {
     // Same key the completion award uses, so a task carries exactly one auto entry —
     // the overdue penalty is replaced by the result once it's finished.
     // eslint-disable-next-line no-await-in-loop
-    await awardOnce(`auto_task:${t._id}`, { user: t.owner, month: today.slice(0, 7), points: -Math.abs(pts), reason: `Overdue: ${t.title}`, source: 'auto_task', taskRef: t._id });
+    await awardOnce(`auto_task:${t._id}`, { user: t.owner, month: today.slice(0, 7), points: -Math.abs(pts), reason: `Overdue: ${t.title}`, source: 'auto_task', taskRef: t._id, earnedYMD: today });
   }
 }
 
@@ -403,7 +418,7 @@ async function scanAbsences(b, since, until = null) {
       if (userWeekendDays(u, s).includes(dow)) continue;
       if (present.has(String(u._id)) || onLeave.has(String(u._id))) continue;
       // eslint-disable-next-line no-await-in-loop
-      await awardOnce(`auto_absent:${u._id}:${ymd}`, { user: u._id, month, points: -Math.abs(pts), reason: `Absent · ${ymd}`, source: 'auto_absent' });
+      await awardOnce(`auto_absent:${u._id}:${ymd}`, { user: u._id, month, points: -Math.abs(pts), reason: `Absent · ${ymd}`, source: 'auto_absent', earnedYMD: ymd });
     }
   }
 }
@@ -441,7 +456,7 @@ async function runMonthRollup(b, forMonth = null) {
       // "no leave taken all month" award.
       const took = await LeaveRequest.countDocuments({ user: u._id, status: 'APPROVED', type: { $ne: 'WFH' }, startYMD: { $lte: monthEnd }, endYMD: { $gte: from } });
       if (took === 0) {
-        await awardOnce(`auto_noleave:${u._id}:${target}`, { user: u._id, month: target, points: Math.abs(noLeavePts), reason: 'No leave taken all month', source: 'auto_noleave' });
+        await awardOnce(`auto_noleave:${u._id}:${target}`, { user: u._id, month: target, points: Math.abs(noLeavePts), reason: 'No leave taken all month', source: 'auto_noleave', earnedYMD: monthEnd });
       }
     }
     // perfect-attendance award: no absent working days + no unexcused late
@@ -464,7 +479,7 @@ async function runMonthRollup(b, forMonth = null) {
         else if (rec.status === 'ABSENT') absent += 1;
       }
       if (workingDays > 0 && absent === 0 && lateBad === 0) {
-        await awardOnce(`auto_perfect:${u._id}:${target}`, { user: u._id, month: target, points: Math.abs(perfectPts), reason: 'Perfect attendance all month', source: 'auto_perfect' });
+        await awardOnce(`auto_perfect:${u._id}:${target}`, { user: u._id, month: target, points: Math.abs(perfectPts), reason: 'Perfect attendance all month', source: 'auto_perfect', earnedYMD: monthEnd });
       }
     }
   }
@@ -528,7 +543,7 @@ export async function runWeeklyStreak(b, week = null) {
     }
     if (workingDays > 0 && !broke) {
       // eslint-disable-next-line no-await-in-loop
-      await awardOnce(`auto_streak:${u._id}:${start}`, { user: u._id, month: monthOfAward, points: Math.abs(pts), reason: `Punctual week · ${start} to ${end}`, source: 'auto_streak' });
+      await awardOnce(`auto_streak:${u._id}:${start}`, { user: u._id, month: monthOfAward, points: Math.abs(pts), reason: `Punctual week · ${start} to ${end}`, source: 'auto_streak', earnedYMD: end });
     }
   }
 }
@@ -578,12 +593,12 @@ export async function backfillMonth(month) {
       const ymd = ymdInTz(r.date);
       if (latePts && r.status === 'LATE') {
         // eslint-disable-next-line no-await-in-loop
-        await awardOnce(`auto_late:${r.user}:${ymd}`, { user: r.user, month: ymd.slice(0, 7), points: -Math.abs(latePts), reason: `Late arrival · ${ymd}`, source: 'auto_late' });
+        await awardOnce(`auto_late:${r.user}:${ymd}`, { user: r.user, month: ymd.slice(0, 7), points: -Math.abs(latePts), reason: `Late arrival · ${ymd}`, source: 'auto_late', earnedYMD: ymd });
       }
       const hours = Math.floor((r.overtimeMinutes || 0) / 60);
       if (otPts && hours > 0) {
         // eslint-disable-next-line no-await-in-loop
-        await awardOnce(`auto_ot:${r.user}:${ymd}`, { user: r.user, month: ymd.slice(0, 7), points: Math.abs(otPts) * hours, reason: `Overtime · ${ymd} (${hours}h)`, source: 'auto_ot' }, { replace: true });
+        await awardOnce(`auto_ot:${r.user}:${ymd}`, { user: r.user, month: ymd.slice(0, 7), points: Math.abs(otPts) * hours, reason: `Overtime · ${ymd} (${hours}h)`, source: 'auto_ot', earnedYMD: ymd }, { replace: true });
       }
     }
   }
@@ -658,6 +673,49 @@ async function catchUpHistory(b) {
   }
 }
 
+/**
+ * Fill in `earnedYMD` on entries written before the field existed.
+ *
+ * Every automatic award's dedupe key ends in the day (or the month) it belongs to, so
+ * the real date can be recovered from it — which matters most for the months scored
+ * after the fact, where every row would otherwise read as the day of the scan. Task
+ * awards carry no date in their key, so those take the task's own completion day.
+ * Bounded and self-terminating: once nothing is missing it does nothing.
+ */
+async function repairEarnedDates() {
+  const rows = await PointEntry.find({ $or: [{ earnedYMD: { $exists: false } }, { earnedYMD: '' }] })
+    .select('dedupeKey month source taskRef createdAt')
+    .limit(2000);
+  if (!rows.length) return;
+
+  const taskIds = rows.filter((r) => r.source === 'auto_task' && r.taskRef).map((r) => r.taskRef);
+  const tasks = taskIds.length ? await Task.find({ _id: { $in: taskIds } }).select('completedAt submittedAt requiresApproval') : [];
+  const taskById = new Map(tasks.map((t) => [String(t._id), t]));
+
+  for (const r of rows) {
+    let ymd = '';
+    const key = r.dedupeKey || '';
+    const day = key.match(/:(\d{4}-\d{2}-\d{2})$/);
+    const mon = key.match(/:(\d{4}-\d{2})$/);
+    if (day) {
+      [, ymd] = day;
+    } else if (r.source === 'auto_task' && taskById.has(String(r.taskRef))) {
+      const t = taskById.get(String(r.taskRef));
+      const at = (t.requiresApproval && t.submittedAt) || t.completedAt;
+      if (at) ymd = ymdInTz(at);
+    } else if (mon) {
+      // A month-end award belongs to the last day of its month.
+      const [, ym] = mon;
+      const last = new Date(Date.UTC(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)), 0)).getUTCDate();
+      ymd = `${ym}-${String(last).padStart(2, '0')}`;
+    }
+    // Anything still unknown (a manual award) keeps the day it was written.
+    if (!ymd) ymd = ymdInTz(r.createdAt || new Date());
+    // eslint-disable-next-line no-await-in-loop
+    await PointEntry.updateOne({ _id: r._id }, { $set: { earnedYMD: ymd } });
+  }
+}
+
 /** Runs the daily scans + month rollup at most once a day (no cron needed). */
 export async function maybeRunDaily() {
   const s = await Setting.getSingleton();
@@ -666,6 +724,7 @@ export async function maybeRunDaily() {
   // Before the daily throttle: the history catch-up has its own watermark and must not
   // have to wait for tomorrow just because today's scan already ran.
   try { await catchUpHistory(b); } catch (e) { console.error('history catch-up failed', e?.message); }
+  try { await repairEarnedDates(); } catch (e) { console.error('earned-date repair failed', e?.message); }
   const today = ymdInTz(new Date());
   if (b.lastPenaltyRun === today) return;
   // Where the absence catch-up starts. Kept SEPARATE from the once-a-day throttle and

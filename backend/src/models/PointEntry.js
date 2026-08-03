@@ -10,6 +10,11 @@ const pointEntrySchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     month: { type: String, required: true, index: true }, // 'YYYY-MM'
+    // The day the points were actually EARNED — the late arrival, the overtime, the day
+    // the task was finished. Distinct from createdAt, which is only when the row was
+    // written: a month scored after the fact would otherwise show every entry dated on
+    // the day of the scan, hiding when anything really happened.
+    earnedYMD: { type: String, default: '' },
     points: { type: Number, required: true }, // + credit, − penalty
     reason: { type: String, default: '' }, // human label shown in the breakdown
     source: {

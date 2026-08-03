@@ -21,26 +21,31 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { formatRupees } from '@/lib/expense';
 import { monthOptions, fyOptions, paramsForSelection } from '@/lib/reward-periods';
 
-function fmtDate(iso) {
-  if (!iso) return '';
-  return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+/**
+ * Accepts an ISO instant OR a plain 'YYYY-MM-DD' (which is what earnedYMD is). A plain
+ * date is read in UTC so it never slides to the day before for a viewer west of India.
+ */
+function fmtDate(v, opts = { day: '2-digit', month: 'short' }) {
+  if (!v) return '';
+  const ymd = /^\d{4}-\d{2}-\d{2}$/.test(String(v));
+  return new Date(ymd ? `${v}T00:00:00Z` : v).toLocaleDateString('en-GB', ymd ? { ...opts, timeZone: 'UTC' } : opts);
 }
 // Full date for the breakdown: in a yearly view a single "27 Jul" is ambiguous — the
 // year matters — so both formatters coexist, this one used for entry rows.
-function fmtDateFull(iso) {
-  if (!iso) return '';
-  return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+function fmtDateFull(v) {
+  return fmtDate(v, { day: '2-digit', month: 'short', year: 'numeric' });
 }
 const money = (n) => formatRupees(n);
 const Pts = ({ n }) => <span className={n < 0 ? 'font-medium text-destructive' : 'font-medium text-emerald-600 dark:text-emerald-300'}>{n > 0 ? `+${n}` : n}</span>;
 
 /** Leadership-only: give points to a teammate and see the leaderboard.
  *  `isOwner` (CEO & President) also gets an undo on recent awards. */
-function LeadershipTools({ isOwner, onDelete }) {
+function LeadershipTools({ isOwner, onDelete, periodParams, periodLabel }) {
   const qc = useQueryClient();
   const { data: cfg } = useBonusConfig();
   const { data: usersData } = useQuery({ queryKey: ['users'], queryFn: () => api.get('/users') });
-  const board = useBonusLeaderboard();
+  // Follows the period picked at the top of the page, not always "this month".
+  const board = useBonusLeaderboard(periodParams);
   const recent = useRecentAwards();
 
   const users = (usersData?.users ?? []).filter((u) => u.isActive);
@@ -115,7 +120,7 @@ function LeadershipTools({ isOwner, onDelete }) {
       </GlassPanel>
 
       <GlassPanel className="p-2">
-        <div className="flex items-center gap-2 px-3 py-2 text-sm font-semibold"><TrendingUp className="size-4 text-primary" /> Leaderboard · this month</div>
+        <div className="flex items-center gap-2 px-3 py-2 text-sm font-semibold"><TrendingUp className="size-4 text-primary" /> Leaderboard · {periodLabel}</div>
         {board.data?.length ? (
           <ul className="divide-y divide-border/50">
             {board.data.map((r, i) => (
@@ -130,7 +135,7 @@ function LeadershipTools({ isOwner, onDelete }) {
             ))}
           </ul>
         ) : (
-          <p className="px-3 py-6 text-center text-sm text-muted-foreground">No points awarded yet this month.</p>
+          <p className="px-3 py-6 text-center text-sm text-muted-foreground">No points in {periodLabel}.</p>
         )}
       </GlassPanel>
 
@@ -273,7 +278,7 @@ export default function RewardsPage() {
                   <li key={e.id} className="flex items-center gap-3 px-3 py-2.5">
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm">{e.reason}</p>
-                      <p className="text-xs text-muted-foreground">{(isRange ? fmtDateFull : fmtDate)(e.createdAt)}{e.source === 'manual' ? ' · awarded' : ' · automatic'}</p>
+                      <p className="text-xs text-muted-foreground">{(isRange ? fmtDateFull : fmtDate)(e.earnedYMD || e.createdAt)}{e.source === 'manual' ? ' · awarded' : ' · automatic'}</p>
                     </div>
                     <span className="shrink-0 tabular-nums text-sm"><Pts n={e.points} /></span>
                     {isOwner ? (
@@ -287,7 +292,7 @@ export default function RewardsPage() {
             )}
           </GlassPanel>
 
-          {isLeader ? <LeadershipTools isOwner={isOwner} onDelete={(id) => delMut.mutate(id)} /> : null}
+          {isLeader ? <LeadershipTools isOwner={isOwner} onDelete={(id) => delMut.mutate(id)} periodParams={mineParams} periodLabel={periodLabel} /> : null}
 
           {!isLeader ? (
             <p className="text-center text-xs text-muted-foreground">

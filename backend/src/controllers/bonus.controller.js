@@ -92,7 +92,8 @@ export async function backfill(req, res, next) {
 
 export async function leaderboard(req, res, next) {
   try {
-    res.json(ok({ month: req.query.month || svc.currentMonth(), rows: await svc.leaderboard(req.query.month) }));
+    const { month, from, to } = req.query || {};
+    res.json(ok({ month: month || svc.currentMonth(), from, to, rows: await svc.leaderboard({ month, from, to }) }));
   } catch (err) {
     next(err);
   }

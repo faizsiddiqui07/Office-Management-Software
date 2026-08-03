@@ -44,11 +44,20 @@ export function useBonusConfig(enabled = true) {
   });
 }
 
-/** Per-user totals for a month (leadership only). */
-export function useBonusLeaderboard(enabled = true) {
+/**
+ * Everyone's totals for a period (leadership only). Takes the same `params` shape as
+ * useMyBonus — {month} or {from, to} — so the board follows whatever period the page is
+ * showing instead of being stuck on the current month.
+ */
+export function useBonusLeaderboard(params, enabled = true) {
+  const q = new URLSearchParams();
+  if (params?.month) q.set('month', params.month);
+  if (params?.from) q.set('from', params.from);
+  if (params?.to) q.set('to', params.to);
+  const qs = q.toString();
   return useQuery({
-    queryKey: ['bonus', 'leaderboard'],
-    queryFn: () => api.get('/bonus/leaderboard'),
+    queryKey: ['bonus', 'leaderboard', qs],
+    queryFn: () => api.get(`/bonus/leaderboard${qs ? `?${qs}` : ''}`),
     enabled,
     select: (res) => res.rows ?? [],
   });
