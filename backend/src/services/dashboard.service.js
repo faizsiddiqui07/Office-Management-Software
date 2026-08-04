@@ -9,6 +9,7 @@ import { AuditLog } from '../models/AuditLog.js';
 import { can } from '../lib/permissions.js';
 import { roleLabel } from '../lib/roles.js';
 import { companyDayFromYMD, ymdInTz } from '../lib/time.js';
+import { APP_LIVE_YMD } from '../lib/appLive.js';
 import { leaveYearOf } from '../lib/leaveYear.js';
 import { getTodayPayload, attendanceOverview } from './attendance.service.js';
 import { listHolidays, maybeAnnounceBirthdays } from './holiday.service.js';
@@ -68,7 +69,7 @@ async function overtimeLeaderboard(fromDay, toDay) {
  * three times. Excluding the passed-on copies leaves only the copy actually worked, so
  * each real task counts once.
  */
-async function taskLeaderboard(ceoIds, forwardedParentIds, range) {
+async function taskLeaderboard(ceoIds, forwardedParentIds, range, graceDays = 0) {
   if (!ceoIds.length) return [];
   const agg = await Task.aggregate([
     {
@@ -85,17 +86,28 @@ async function taskLeaderboard(ceoIds, forwardedParentIds, range) {
         ],
       },
     },
-    // The day the work was DONE, in company time. For an approval-gated task that's the
-    // submit day, not the approval day — the doer met the deadline when they submitted,
-    // and an approver sitting on it must not turn an on-time task late. Matches how the
-    // bonus system judges the same thing. Both this and the month window use IST so they
-    // line up with the due date's calendar, never a UTC day that could shift.
-    { $addFields: { doneYMD: { $dateToString: { date: { $ifNull: ['$submittedAt', '$completedAt'] }, format: '%Y-%m-%d', timezone: COMPANY_TZ } } } },
+    // The day the work was DONE, in company time — the completion/approval day. For an
+    // approval task that's when the assigner approved it, so a task approved after its due
+    // date + grace counts as late, exactly how the bonus system and reports judge it.
+    // `duePlus` shifts the due date forward by the grace days so the comparison is a plain
+    // string ≤. IST throughout so it lines up with the due date's calendar, never a UTC day.
+    {
+      $addFields: {
+        doneYMD: { $dateToString: { date: '$completedAt', format: '%Y-%m-%d', timezone: COMPANY_TZ } },
+        duePlus: {
+          $dateToString: {
+            date: { $dateAdd: { startDate: { $dateFromString: { dateString: '$dueYMD', timezone: COMPANY_TZ } }, unit: 'day', amount: graceDays } },
+            format: '%Y-%m-%d',
+            timezone: COMPANY_TZ,
+          },
+        },
+      },
+    },
     {
       $match: {
         $expr: {
           $and: [
-            { $lte: ['$doneYMD', '$dueYMD'] }, // on or before the deadline
+            { $lte: ['$doneYMD', '$duePlus'] }, // on or before the deadline + grace
             ...(range?.from ? [{ $gte: ['$doneYMD', range.from] }] : []),
             ...(range?.to ? [{ $lte: ['$doneYMD', range.to] }] : []),
           ],
@@ -144,6 +156,34 @@ export async function whosOut(todayYMD, settings) {
   };
 }
 
+/**
+ * Task + overtime leaders for one period, so each dashboard card can be browsed
+ * independently. `scope`: 'all' (all-time) or 'month' (a specific 'YYYY-MM', default the
+ * current month). Same shape the dashboard's own leaderboards use.
+ */
+export async function leadersForPeriod({ scope = 'month', month } = {}) {
+  const settings = await Setting.getSingleton();
+  const graceDays = Math.max(0, settings.bonus?.graceDays ?? 1);
+  const ceoIds = await ownerTierUserIds();
+  const forwardedParentIds = await Task.distinct('forwardedFrom', { forwardedFrom: { $ne: null } });
+
+  if (scope === 'all') {
+    const [task, overtime] = await Promise.all([
+      taskLeaderboard(ceoIds, forwardedParentIds, null, graceDays),
+      overtimeLeaderboard(companyDayFromYMD(APP_LIVE_YMD), companyDayFromYMD(ymdInTz(new Date()))),
+    ]);
+    return { scope: 'all', label: 'All time', task, overtime };
+  }
+
+  const target = /^\d{4}-\d{2}$/.test(String(month || '')) ? month : ymdInTz(new Date()).slice(0, 7);
+  const p = computePeriod('monthly', `${target}-15`);
+  const [task, overtime] = await Promise.all([
+    taskLeaderboard(ceoIds, forwardedParentIds, { from: p.from, to: p.to }, graceDays),
+    overtimeLeaderboard(companyDayFromYMD(p.from), companyDayFromYMD(p.to)),
+  ]);
+  return { scope: 'month', month: target, label: p.label, task, overtime };
+}
+
 export async function buildDashboard(user) {
   const settings = await Setting.getSingleton();
   const now = new Date();
@@ -180,13 +220,14 @@ export async function buildDashboard(user) {
   // Overtime is this month; task completions come both ways so the card can toggle
   // between this month and all-time without another request.
   const ceoIds = await ownerTierUserIds();
+  const graceDays = Math.max(0, settings.bonus?.graceDays ?? 1);
   // Copies that were forwarded onward — excluded from the board so one forwarded piece
   // of work isn't counted once per link in its chain.
   const forwardedParentIds = await Task.distinct('forwardedFrom', { forwardedFrom: { $ne: null } });
   const [overtimeLeaders, taskLeadersMonth, taskLeadersAll] = await Promise.all([
     overtimeLeaderboard(monthStart, monthEnd),
-    taskLeaderboard(ceoIds, forwardedParentIds, { from: month.from, to: month.to }),
-    taskLeaderboard(ceoIds, forwardedParentIds, null),
+    taskLeaderboard(ceoIds, forwardedParentIds, { from: month.from, to: month.to }, graceDays),
+    taskLeaderboard(ceoIds, forwardedParentIds, null, graceDays),
   ]);
   out.leaderboards = {
     monthLabel: month.label,

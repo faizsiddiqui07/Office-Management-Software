@@ -4,6 +4,29 @@
 /* Dark mode is class-based (next-themes adds `.dark` on <html>). */
 @custom-variant dark (&:is(.dark *));
 
+/* base-ui state variants. base-ui exposes its component states as bare boolean data
+   attributes (data-open, data-closed, data-starting-style, …), and our UI components
+   style them with matching bare utilities (data-open:animate-in, data-closed:animate-out,
+   etc.). Tailwind only ships bracketed data variants (data-[open]:) out of the box, so
+   without these declarations every one of those utilities was silently dropped at build —
+   which is why every dialog, menu, popover, select and sheet snapped open and shut with
+   no transition. Declaring them here is what makes the open/close animations actually
+   run, app-wide. Orientation is a valued attribute (data-orientation="vertical"); the
+   rest are boolean. */
+@custom-variant data-open (&[data-open]);
+@custom-variant data-closed (&[data-closed]);
+@custom-variant data-starting-style (&[data-starting-style]);
+@custom-variant data-ending-style (&[data-ending-style]);
+@custom-variant data-disabled (&[data-disabled]);
+@custom-variant data-checked (&[data-checked]);
+@custom-variant data-unchecked (&[data-unchecked]);
+@custom-variant data-placeholder (&[data-placeholder]);
+@custom-variant data-popup-open (&[data-popup-open]);
+@custom-variant data-active (&[data-active]);
+@custom-variant data-inset (&[data-inset]);
+@custom-variant data-horizontal (&[data-orientation="horizontal"]);
+@custom-variant data-vertical (&[data-orientation="vertical"]);
+
 /* ────────────────────────────────────────────────────────────
    Design tokens — "Premium Apple Glass"
    Neutral glass base + a single calm indigo accent. Colors in
