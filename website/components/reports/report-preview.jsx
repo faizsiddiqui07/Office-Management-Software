@@ -72,7 +72,7 @@ function TasksSection({ data }) {
       </div>
       <DataTable columns={columns} data={data.tasks.perEmployee} searchPlaceholder="Search employees…" pageSize={8} emptyMessage="No task activity." />
       <p className="text-xs text-muted-foreground">
-        Assigned work only — personal to-dos aren’t counted. “Tagged on” is work raised in this period that named the person as a colleague; it belongs to someone else and isn’t counted in the figures above.
+        Assigned work only — personal to-dos aren’t counted. A task with no deadline can’t be late, so it counts as on time (done always equals on time + late). “Tagged on” is work raised in this period that named the person as a colleague; it belongs to someone else and isn’t counted in the figures above.
       </p>
     </ReportSection>
   );

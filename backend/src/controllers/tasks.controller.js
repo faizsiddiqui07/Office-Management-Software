@@ -21,6 +21,15 @@ export async function summary(req, res, next) {
   }
 }
 
+/** One task, fully populated — for a detail view (e.g. clicking a task on Rewards). */
+export async function getOne(req, res, next) {
+  try {
+    res.json(ok({ task: await svc.getTaskDetail(req.user, req.params.id) }));
+  } catch (err) {
+    handleErr(res, err, next);
+  }
+}
+
 export async function assignable(req, res, next) {
   try {
     // `users` = who they may hand work TO (access-controlled).

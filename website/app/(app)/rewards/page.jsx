@@ -4,20 +4,21 @@ import * as React from 'react';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Award, Coins, Gift, Sparkles, Trash2, TrendingUp } from 'lucide-react';
+import { Award, Coins, Gift, Info, Sparkles, Trash2, TrendingUp, ChevronRight } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can, roleName } from '@/lib/permissions';
-import { useMyBonus, useBonusGuide, useBonusConfig, useBonusLeaderboard, useRecentAwards } from '@/lib/bonus';
+import { useMyBonus, useBonusGuide, useBonusConfig, useBonusLeaderboard, useUserBonus, useRecentAwards } from '@/lib/bonus';
 import { PageHeader } from '@/components/glass/page-header';
 import { GlassPanel } from '@/components/glass/glass-panel';
 import { StatCard } from '@/components/glass/stat-card';
 import { EmptyState } from '@/components/glass/empty-state';
-import { StatusBadge } from '@/components/glass/status-badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { cn } from '@/lib/utils';
 import { formatRupees } from '@/lib/expense';
 import { monthOptions, fyOptions, paramsForSelection } from '@/lib/reward-periods';
 
@@ -38,9 +39,191 @@ function fmtDateFull(v) {
 const money = (n) => formatRupees(n);
 const Pts = ({ n }) => <span className={n < 0 ? 'font-medium text-destructive' : 'font-medium text-emerald-600 dark:text-emerald-300'}>{n > 0 ? `+${n}` : n}</span>;
 
+// What each kind of automatic entry is, in plain words, for the detail view.
+const SOURCE_LABEL = {
+  auto_task: 'Assigned task',
+  auto_streak: 'Punctual week',
+  auto_late: 'Late arrival',
+  auto_ot: 'Overtime',
+  auto_absent: 'Absent day',
+  auto_noleave: 'No leave taken',
+  auto_perfect: 'Perfect attendance',
+  manual: 'Awarded by leadership',
+};
+
+/* ── Detail dialogs (Task 4: click any point to see where it came from) ────────── */
+
+function useTaskDetail(id) {
+  return useQuery({
+    queryKey: ['task', id],
+    queryFn: () => api.get(`/tasks/${id}`),
+    enabled: !!id,
+    select: (r) => r.task,
+  });
+}
+
+function Fact({ label, value }) {
+  if (value === null || value === undefined || value === '') return null;
+  return (
+    <div className="flex justify-between gap-3 py-2">
+      <span className="shrink-0 text-muted-foreground">{label}</span>
+      <span className="text-right font-medium">{value}</span>
+    </div>
+  );
+}
+
+/** The full story of a task behind a point entry. */
+function TaskFacts({ task }) {
+  const collabs = (task.collaborators || []).map((c) => c.name).filter(Boolean).join(', ');
+  return (
+    <div className="divide-y divide-border/50 rounded-xl bg-foreground/[0.03] px-3.5 ring-1 ring-border/50">
+      <Fact label="Task" value={task.title} />
+      <Fact label="Assigned by" value={task.assignedBy?.name || task.originalAssignedBy?.name} />
+      <Fact label="Assigned on" value={fmtDateFull(task.createdAt)} />
+      <Fact label="Due date" value={task.dueYMD ? fmtDateFull(task.dueYMD) : 'No deadline'} />
+      {task.requiresApproval ? <Fact label="Submitted" value={fmtDateFull(task.submittedAt)} /> : null}
+      <Fact label="Completed on" value={fmtDateFull(task.completedAt)} />
+      <Fact label="Completed by" value={task.completedBy?.name} />
+      {task.approvedBy?.name ? <Fact label="Approved by" value={task.approvedBy.name} /> : null}
+      <Fact label="Status" value={task.status === 'DONE' ? 'Done' : 'Pending'} />
+      {collabs ? <Fact label="Tagged" value={collabs} /> : null}
+      {task.notes ? <Fact label="Notes" value={task.notes} /> : null}
+    </div>
+  );
+}
+
+/** One point entry, expanded: what it was, what it's worth, and — if it's a task — the task. */
+function EntryDetailDialog({ entry, onOpenChange }) {
+  const isTask = entry?.source === 'auto_task' && !!entry?.taskRef;
+  const q = useTaskDetail(isTask ? entry.taskRef : null);
+  return (
+    <Dialog open={!!entry} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="pr-2">{entry?.reason}</DialogTitle>
+          <DialogDescription>
+            {SOURCE_LABEL[entry?.source] || 'Points'} · {fmtDateFull(entry?.earnedYMD || entry?.createdAt)}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex items-center justify-between rounded-xl bg-foreground/[0.03] px-3.5 py-3 ring-1 ring-border/50">
+          <span className="text-sm text-muted-foreground">Points</span>
+          <span className="text-base"><Pts n={entry?.points ?? 0} /></span>
+        </div>
+
+        {isTask ? (
+          q.isLoading ? (
+            <p className="py-2 text-center text-sm text-muted-foreground">Loading task…</p>
+          ) : q.isError ? (
+            <p className="py-2 text-center text-sm text-muted-foreground">Couldn’t load the task’s details.</p>
+          ) : q.data ? (
+            <TaskFacts task={q.data} />
+          ) : null
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            {entry?.source === 'manual'
+              ? 'Given by leadership.'
+              : 'Earned automatically from your attendance and work records.'}
+          </p>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** A single clickable point row — used in both "My points" and a person's drill-down. */
+function EntryRow({ entry, isRange, onOpen, onDelete }) {
+  return (
+    <li className="flex items-center gap-1">
+      <button
+        type="button"
+        onClick={() => onOpen(entry)}
+        className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-foreground/[0.04]"
+      >
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm">{entry.reason}</p>
+          <p className="text-xs text-muted-foreground">
+            {(isRange ? fmtDateFull : fmtDate)(entry.earnedYMD || entry.createdAt)}
+            {entry.source === 'manual' ? ' · awarded' : ' · automatic'}
+          </p>
+        </div>
+        <span className="shrink-0 tabular-nums text-sm"><Pts n={entry.points} /></span>
+        <ChevronRight className="size-4 shrink-0 text-muted-foreground/50" />
+      </button>
+      {onDelete ? (
+        <Button variant="ghost" size="icon" className="size-8 shrink-0 text-destructive" onClick={() => onDelete(entry.id)} aria-label="Remove">
+          <Trash2 className="size-4" />
+        </Button>
+      ) : null}
+    </li>
+  );
+}
+
+/** Leadership drill-down: one person's whole breakdown for the period. */
+function PersonBreakdownDialog({ person, params, label, isRange, onOpenChange, onOpenEntry }) {
+  const q = useUserBonus(person?.id, params);
+  const data = q.data;
+  return (
+    <Dialog open={!!person} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{person?.name}</DialogTitle>
+          <DialogDescription>{roleName(person || {})} · {label}</DialogDescription>
+        </DialogHeader>
+
+        <div className="flex items-center justify-between rounded-xl bg-foreground/[0.03] px-3.5 py-3 ring-1 ring-border/50">
+          <span className="text-sm text-muted-foreground">Points · {label}</span>
+          <span className="text-base"><Pts n={data?.points ?? 0} /></span>
+        </div>
+
+        {q.isLoading ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">Loading…</p>
+        ) : data?.entries?.length ? (
+          <ul className="max-h-[50vh] divide-y divide-border/50 overflow-y-auto">
+            {data.entries.map((e) => (
+              <EntryRow key={e.id} entry={e} isRange={isRange} onOpen={onOpenEntry} />
+            ))}
+          </ul>
+        ) : (
+          <p className="py-6 text-center text-sm text-muted-foreground">No points in {label}.</p>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** The price list — what each action is worth — behind a button. */
+function HowPointsDialog({ open, onOpenChange, guide }) {
+  const rows = [...(guide?.autoRules ?? []), ...(guide?.manualItems ?? [])];
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>How points work</DialogTitle>
+          {guide?.rupeesPerPoint ? (
+            <DialogDescription>Every point is worth {money(guide.rupeesPerPoint)}.</DialogDescription>
+          ) : null}
+        </DialogHeader>
+        <div className="divide-y divide-border/50 overflow-hidden rounded-xl bg-foreground/[0.03] ring-1 ring-border/50">
+          {rows.length ? (
+            rows.map((r, i) => (
+              <div key={i} className="flex items-center justify-between gap-3 px-3.5 py-2.5">
+                <span className="text-sm">{r.label}</span>
+                <span className="shrink-0 tabular-nums text-sm"><Pts n={r.points} /></span>
+              </div>
+            ))
+          ) : (
+            <p className="px-3.5 py-4 text-sm text-muted-foreground">No point values set yet.</p>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 /** Leadership-only: give points to a teammate and see the leaderboard.
  *  `isOwner` (CEO & President) also gets an undo on recent awards. */
-function LeadershipTools({ isOwner, onDelete, periodParams, periodLabel }) {
+function LeadershipTools({ isOwner, onDelete, periodParams, periodLabel, onOpenPerson }) {
   const qc = useQueryClient();
   const { data: cfg } = useBonusConfig();
   const { data: usersData } = useQuery({ queryKey: ['users'], queryFn: () => api.get('/users') });
@@ -124,13 +307,20 @@ function LeadershipTools({ isOwner, onDelete, periodParams, periodLabel }) {
         {board.data?.length ? (
           <ul className="divide-y divide-border/50">
             {board.data.map((r, i) => (
-              <li key={r.id} className="flex items-center gap-3 px-3 py-2.5">
-                <span className="w-5 shrink-0 text-center text-xs font-medium text-muted-foreground tabular-nums">{i + 1}</span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{r.name}</p>
-                  <p className="text-xs text-muted-foreground">{roleName(r)}{cfg?.rupeesPerPoint ? ` · ${money(r.rupees)}` : ''}</p>
-                </div>
-                <span className="shrink-0 tabular-nums"><Pts n={r.points} /></span>
+              <li key={r.id}>
+                <button
+                  type="button"
+                  onClick={() => onOpenPerson(r)}
+                  className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-foreground/[0.04]"
+                >
+                  <span className="w-5 shrink-0 text-center text-xs font-medium text-muted-foreground tabular-nums">{i + 1}</span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{r.name}</p>
+                    <p className="text-xs text-muted-foreground">{roleName(r)}{cfg?.rupeesPerPoint ? ` · ${money(r.rupees)}` : ''}</p>
+                  </div>
+                  <span className="shrink-0 tabular-nums"><Pts n={r.points} /></span>
+                  <ChevronRight className="size-4 shrink-0 text-muted-foreground/50" />
+                </button>
               </li>
             ))}
           </ul>
@@ -185,6 +375,11 @@ export default function RewardsPage() {
 
   const { data: me } = useMyBonus(mineParams);
   const { data: guide } = useBonusGuide();
+
+  // Dialog state (Tasks 3 & 4)
+  const [guideOpen, setGuideOpen] = React.useState(false);
+  const [person, setPerson] = React.useState(null); // leaderboard drill-down
+  const [detailEntry, setDetailEntry] = React.useState(null); // a single point's detail
 
   const delMut = useMutation({
     mutationFn: (id) => api.delete(`/bonus/entry/${id}`),
@@ -248,43 +443,25 @@ export default function RewardsPage() {
             {me?.rupeesPerPoint ? <StatCard label="Worth" value={money(me?.rupees)} hint={`${money(me?.rupeesPerPoint)}/point`} icon={Coins} tone="default" /> : null}
           </div>
 
-          {/* How it works — the price list */}
-          <GlassPanel className="space-y-3 p-4 sm:p-5">
-            <h2 className="font-semibold tracking-tight">How points work</h2>
-            {guide?.rupeesPerPoint ? (
-              <p className="text-sm text-muted-foreground">Every point is worth <span className="font-medium text-foreground">{money(guide.rupeesPerPoint)}</span>.</p>
-            ) : null}
-            <div className="divide-y divide-border/50 overflow-hidden rounded-xl bg-foreground/[0.03] ring-1 ring-border/50">
-              {[...(guide?.autoRules ?? []), ...(guide?.manualItems ?? [])].length ? (
-                [...(guide?.autoRules ?? []), ...(guide?.manualItems ?? [])].map((r, i) => (
-                  <div key={i} className="flex items-center justify-between gap-3 px-3.5 py-2.5">
-                    <span className="text-sm">{r.label}</span>
-                    <span className="shrink-0 tabular-nums text-sm"><Pts n={r.points} /></span>
-                  </div>
-                ))
-              ) : (
-                <p className="px-3.5 py-4 text-sm text-muted-foreground">No point values set yet.</p>
-              )}
-            </div>
-          </GlassPanel>
-
-          {/* My breakdown — reflects the picked period. Yearly views show the full date
-              (year matters when many months are listed). */}
+          {/* My breakdown — now the FIRST thing under the stats. Each row opens its detail;
+              a task row shows the whole task. "How points work" moved into a button. */}
           <GlassPanel className="p-2">
-            <div className="px-3 py-2 text-sm font-semibold">My points · {periodLabel}</div>
+            <div className="flex items-center justify-between gap-2 px-3 py-2">
+              <span className="text-sm font-semibold">My points · {periodLabel}</span>
+              <Button variant="outline" size="sm" onClick={() => setGuideOpen(true)}>
+                <Info className="size-4" /> How points work
+              </Button>
+            </div>
             {me?.entries?.length ? (
               <ul className="divide-y divide-border/50">
                 {me.entries.map((e) => (
-                  <li key={e.id} className="flex items-center gap-3 px-3 py-2.5">
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm">{e.reason}</p>
-                      <p className="text-xs text-muted-foreground">{(isRange ? fmtDateFull : fmtDate)(e.earnedYMD || e.createdAt)}{e.source === 'manual' ? ' · awarded' : ' · automatic'}</p>
-                    </div>
-                    <span className="shrink-0 tabular-nums text-sm"><Pts n={e.points} /></span>
-                    {isOwner ? (
-                      <Button variant="ghost" size="icon" className="size-8 text-destructive" onClick={() => delMut.mutate(e.id)} aria-label="Remove"><Trash2 className="size-4" /></Button>
-                    ) : null}
-                  </li>
+                  <EntryRow
+                    key={e.id}
+                    entry={e}
+                    isRange={isRange}
+                    onOpen={setDetailEntry}
+                    onDelete={isOwner ? (id) => delMut.mutate(id) : undefined}
+                  />
                 ))}
               </ul>
             ) : (
@@ -292,11 +469,19 @@ export default function RewardsPage() {
             )}
           </GlassPanel>
 
-          {isLeader ? <LeadershipTools isOwner={isOwner} onDelete={(id) => delMut.mutate(id)} periodParams={mineParams} periodLabel={periodLabel} /> : null}
+          {isLeader ? (
+            <LeadershipTools
+              isOwner={isOwner}
+              onDelete={(id) => delMut.mutate(id)}
+              periodParams={mineParams}
+              periodLabel={periodLabel}
+              onOpenPerson={setPerson}
+            />
+          ) : null}
 
           {!isLeader ? (
             <p className="text-center text-xs text-muted-foreground">
-              Points reset at the start of each month. Questions? Ask your manager.
+              Points reset at the start of each month. Tap any line to see where it came from. Questions? Ask your manager.
             </p>
           ) : null}
           {isLeader ? (
@@ -304,6 +489,18 @@ export default function RewardsPage() {
               Set point values and add reward items in <Link href="/settings" className="font-medium text-primary hover:underline">Settings → Bonus &amp; rewards</Link>.
             </p>
           ) : null}
+
+          {/* Dialogs */}
+          <HowPointsDialog open={guideOpen} onOpenChange={setGuideOpen} guide={guide} />
+          <PersonBreakdownDialog
+            person={person}
+            params={mineParams}
+            label={periodLabel}
+            isRange={isRange}
+            onOpenChange={(o) => { if (!o) setPerson(null); }}
+            onOpenEntry={setDetailEntry}
+          />
+          <EntryDetailDialog entry={detailEntry} onOpenChange={(o) => { if (!o) setDetailEntry(null); }} />
         </>
       )}
     </div>

@@ -226,7 +226,7 @@ function companyTasksSection(d, accent) {
     E(
       Text,
       { style: styles.empty },
-      `Assigned work only — personal to-dos aren’t counted. Late means finished more than ${t.graceDays ?? 1} day${(t.graceDays ?? 1) === 1 ? '' : 's'} past the due date. “Tagged” is work raised in this period that named the person as a colleague — somebody else’s task, not counted in the figures above.`,
+      `Assigned work only — personal to-dos aren’t counted. Late means finished more than ${t.graceDays ?? 1} day${(t.graceDays ?? 1) === 1 ? '' : 's'} past the due date; a task with no deadline counts as on time, so done always equals on time + late. “Tagged” is work raised in this period that named the person as a colleague — somebody else’s task, not counted in the figures above.`,
     ),
   );
 }

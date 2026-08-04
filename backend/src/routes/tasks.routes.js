@@ -1,6 +1,6 @@
 import express from 'express';
 import { requireAuth } from '../middleware/auth.js';
-import { summary, assignable, list, create, setStatus, seen, seenBulk, forward, review, update, remove, exportPdf, eodDigest } from '../controllers/tasks.controller.js';
+import { summary, assignable, list, create, setStatus, seen, seenBulk, forward, review, update, remove, exportPdf, eodDigest, getOne } from '../controllers/tasks.controller.js';
 
 export const tasksRouter = express.Router();
 
@@ -14,6 +14,7 @@ tasksRouter.get('/eod-digest', eodDigest); // owner-tier only — enforced in th
 tasksRouter.get('/assignable', assignable);
 tasksRouter.get('/export.pdf', exportPdf);
 tasksRouter.get('/', list);
+tasksRouter.get('/:id', getOne); // one task's full detail — access-checked in the service
 tasksRouter.post('/', create); // assigning to others is access-checked in the service
 tasksRouter.patch('/seen', seenBulk); // must precede '/:id' — otherwise "seen" is read as an id
 tasksRouter.patch('/:id/status', setStatus);

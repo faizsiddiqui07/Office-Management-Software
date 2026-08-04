@@ -370,10 +370,12 @@ export async function buildReport(type, dateYMD, range) {
     if (doneYMD < from || doneYMD > to) continue; // finished outside this period
     const row = rowFor(t.completedBy || t.owner); // credit whoever actually did it
     row.done += 1;
-    if (t.dueYMD) {
-      if (doneYMD <= plusDays(t.dueYMD, graceDays)) row.onTime += 1;
-      else row.late += 1;
-    }
+    // A task with no due date can't be late — it's counted as on time, exactly the way
+    // the bonus engine scores it (onAssignedTaskDone treats a missing dueYMD as on time).
+    // This also makes the columns reconcile: on time + late always equals done, so a task
+    // never silently vanishes between the totals.
+    if (t.dueYMD && doneYMD > plusDays(t.dueYMD, graceDays)) row.late += 1;
+    else row.onTime += 1;
   }
   for (const t of taggedTasks) {
     for (const c of t.collaborators || []) {
@@ -602,19 +604,24 @@ export async function buildSelfReport({ user, type, dateYMD, range }) {
   };
 
   // ── Task stats (totals only, no list) ─────────────────────
-  // On-time = finished on or before the due date, judged from the SUBMIT day for an
-  // approval task (a slow approval never turns on-time work late) — same rule the
-  // leaderboard and the bonus system use.
+  // On-time = finished on or before the due date + grace, judged from the SUBMIT day for
+  // an approval task (a slow approval never turns on-time work late) — the same rule the
+  // leaderboard, the bonus system and the company report use. A task with no due date
+  // can't be late, so it counts as on time; this keeps done = on time + late.
+  const graceDaysSelf = Math.max(0, settings.bonus?.graceDays ?? 1);
+  const plusDaysSelf = (ymd, n) => {
+    const d = new Date(`${ymd}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + n);
+    return d.toISOString().slice(0, 10);
+  };
   const tallyTasks = (docs) => {
     const st = { total: docs.length, pending: 0, done: 0, onTime: 0, late: 0, overdue: 0 };
     for (const t of docs) {
       if (t.status === 'DONE') {
         st.done += 1;
-        if (t.dueYMD) {
-          const doneYMD = ymdInTz((t.requiresApproval && t.submittedAt) || t.completedAt || new Date());
-          if (doneYMD <= t.dueYMD) st.onTime += 1;
-          else st.late += 1;
-        }
+        const doneYMD = ymdInTz((t.requiresApproval && t.submittedAt) || t.completedAt || new Date());
+        if (t.dueYMD && doneYMD > plusDaysSelf(t.dueYMD, graceDaysSelf)) st.late += 1;
+        else st.onTime += 1;
       } else {
         st.pending += 1;
         if (t.dueYMD && t.dueYMD < todayYMD) st.overdue += 1;

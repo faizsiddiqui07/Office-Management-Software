@@ -63,6 +63,23 @@ export function useBonusLeaderboard(params, enabled = true) {
   });
 }
 
+/**
+ * One person's breakdown for a period (leadership only) — the leaderboard drill-down.
+ * Same `params` shape as useMyBonus. Disabled until a userId is passed.
+ */
+export function useUserBonus(userId, params) {
+  const q = new URLSearchParams();
+  if (params?.month) q.set('month', params.month);
+  if (params?.from) q.set('from', params.from);
+  if (params?.to) q.set('to', params.to);
+  const qs = q.toString();
+  return useQuery({
+    queryKey: ['bonus', 'user', userId, qs],
+    queryFn: () => api.get(`/bonus/user/${userId}${qs ? `?${qs}` : ''}`),
+    enabled: !!userId,
+  });
+}
+
 /** Recent manual awards (leadership only) — for review + owner-only undo. */
 export function useRecentAwards(enabled = true) {
   return useQuery({

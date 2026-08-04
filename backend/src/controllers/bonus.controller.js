@@ -98,3 +98,13 @@ export async function leaderboard(req, res, next) {
     next(err);
   }
 }
+
+/** One person's breakdown for a period — the leadership drill-down from the leaderboard. */
+export async function userSummary(req, res, next) {
+  try {
+    const { month, from, to } = req.query || {};
+    res.json(ok(await svc.userSummary(req.params.id, { month, from, to })));
+  } catch (err) {
+    handleErr(res, err, next);
+  }
+}

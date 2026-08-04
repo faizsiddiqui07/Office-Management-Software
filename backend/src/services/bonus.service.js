@@ -55,7 +55,6 @@ function prevMonth(ymOrToday) {
   const [y, m] = ym.split('-').map(Number);
   return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`;
 }
-const dayRange = (ymd) => { const start = companyDayFromYMD(ymd); return { start, end: new Date(start.getTime() + 86400000) }; };
 
 /** Points configured for an auto rule (0 if the CEO hasn't switched it on). */
 function rulePoints(bonus, key) {
@@ -161,6 +160,17 @@ export async function mySummary(user, params = {}) {
     rupeesPerPoint: cfg.rupeesPerPoint,
     entries: entries.map((e) => e.toJSON()),
   };
+}
+
+/**
+ * Any one person's summary for a period — the leadership view behind a leaderboard click.
+ * Same shape as mySummary, plus who the person is, so the drill-down can be titled.
+ */
+export async function userSummary(userId, params = {}) {
+  const u = await User.findById(userId).select('name role employeeId');
+  if (!u) throw httpError(404, 'NOT_FOUND', 'That user was not found');
+  const sum = await mySummary(u, params);
+  return { user: { id: String(u._id), name: u.name, role: u.role, employeeId: u.employeeId }, ...sum };
 }
 
 /** The public "price list" every staff member can see. */
@@ -277,8 +287,15 @@ export async function onAssignedTaskDone(task) {
   // that's the submit time, so a slow approval never turns on-time work into "late".
   // Only trust submittedAt when the task is actually an approval task (guards against a
   // stale submit timestamp left behind if the gate was later switched off).
-  const completedYMD = ymdInTz((task.requiresApproval && task.submittedAt) || task.completedAt || new Date());
-  const late = task.dueYMD && completedYMD > addDays(task.dueYMD, b.graceDays || 0);
+  const rawYMD = ymdInTz((task.requiresApproval && task.submittedAt) || task.completedAt || new Date());
+  // Nothing predates go-live: a task carrying an earlier completion date (an import
+  // artifact, a back-dated record) would otherwise show on somebody's Rewards page days
+  // before they even had access. Clamp it forward so the earliest a reward can appear is
+  // the day the office started running on this system.
+  const completedYMD = rawYMD < APP_LIVE_YMD ? APP_LIVE_YMD : rawYMD;
+  // Late is still judged on the REAL completion day vs the due date — the clamp only
+  // decides which day/month the points are filed under, never whether it was on time.
+  const late = task.dueYMD && rawYMD > addDays(task.dueYMD, b.graceDays || 0);
   const pts = rulePoints(b, late ? 'assignedTaskLate' : 'assignedTaskOnTime');
   if (!pts) return;
   // replace: the finished result supersedes any overdue penalty already recorded.
@@ -307,29 +324,60 @@ export async function onCheckIn(user, dateYMD, isLate) {
   }
 }
 
-/** After a check-out: award points per full hour of overtime (replaces the day's OT entry). */
-export async function onCheckOut(user, dateYMD, overtimeMinutes) {
+/** A human overtime total: "9h 46m", "18h", "46m". */
+function otLabel(min) {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  if (!h) return `${m}m`;
+  return m ? `${h}h ${m}m` : `${h}h`;
+}
+
+/**
+ * Overtime is scored as ONE row per person per month, off the month's TOTAL overtime —
+ * never a separate row for each day. Full hours pay the per-hour rate; a leftover of MORE
+ * than 30 minutes adds half the rate (rounded), 30 minutes or less adds nothing. So at
+ * 2 points/hour, 9h 46m earns 9×2 + 1 = 19, while 9h 20m earns just 18.
+ *
+ * Always re-derived from attendance, and every older overtime row for that user-month —
+ * the per-day ones, keyless legacy ones, and the monthly row itself — is cleared first,
+ * so moving to the monthly model, a corrected check-out, or the rule being switched off
+ * can never leave a stale row behind to double-count.
+ */
+async function recomputeMonthlyOvertime(b, userId, month) {
+  await PointEntry.deleteMany({ user: userId, source: 'auto_ot', month });
+  const pts = Math.abs(rulePoints(b, 'overtimeHour'));
+  if (!pts) return;
+  const from = `${month}-01`;
+  const lastDay = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate();
+  const to = `${month}-${String(lastDay).padStart(2, '0')}`;
+  const recs = await Attendance.find({ user: userId, date: { $gte: companyDayFromYMD(from), $lte: companyDayFromYMD(to) } }).select('date overtimeMinutes');
+  let total = 0;
+  let lastOtDay = '';
+  for (const r of recs) {
+    const min = r.overtimeMinutes || 0;
+    if (min <= 0) continue;
+    total += min;
+    const ymd = ymdInTz(r.date);
+    if (ymd > lastOtDay) lastOtDay = ymd;
+  }
+  if (total <= 0) return;
+  const hours = Math.floor(total / 60);
+  const leftover = total % 60;
+  const points = hours * pts + (leftover > 30 ? Math.round(pts / 2) : 0);
+  if (points <= 0) return;
+  await awardOnce(
+    `auto_ot:${userId}:${month}`,
+    { user: userId, month, points, reason: `Overtime · ${otLabel(total)}`, source: 'auto_ot', earnedYMD: lastOtDay || to },
+    { replace: true },
+  );
+}
+
+/** After a check-out (or any attendance edit): rebuild the month's single overtime row. */
+export async function onCheckOut(user, dateYMD) {
   const s = await Setting.getSingleton();
   const b = s.bonus || {};
   if (!b.enabled) return;
-  const pts = rulePoints(b, 'overtimeHour');
-  // One overtime entry per day. Keyed by the DAY the overtime belongs to rather than
-  // matched on when the row happened to be written, so re-running it just rewrites
-  // that day's award to the new figure.
-  const key = `auto_ot:${user._id}:${dateYMD}`;
-  // An overtime row written before keys existed carries none, so the keyed upsert below
-  // wouldn't see it — correcting a pre-key day would leave the old award standing beside
-  // the new one. Those legacy rows were only ever written by a self-checkout, so their
-  // createdAt IS the overtime day; clear that day's keyless row first.
-  const { start, end } = dayRange(dateYMD);
-  await PointEntry.deleteMany({ user: user._id, source: 'auto_ot', dedupeKey: { $exists: false }, createdAt: { $gte: start, $lt: end } });
-  const hours = Math.floor((overtimeMinutes || 0) / 60);
-  if (pts && hours > 0) {
-    await awardOnce(key, { user: user._id, month: dateYMD.slice(0, 7), points: Math.abs(pts) * hours, reason: `Overtime · ${dateYMD} (${hours}h)`, source: 'auto_ot', earnedYMD: dateYMD }, { replace: true });
-  } else {
-    // The day no longer earns anything (corrected check-out, rule switched off).
-    await PointEntry.deleteOne({ dedupeKey: key });
-  }
+  await recomputeMonthlyOvertime(b, user._id, dateYMD.slice(0, 7));
 }
 
 // ── Daily scans + month rollup (run opportunistically, no cron) ───────────────
@@ -587,19 +635,22 @@ export async function backfillMonth(month) {
   // 1. Attendance-derived awards, straight off what was recorded that month.
   const latePts = rulePoints(b, 'lateArrival');
   const otPts = rulePoints(b, 'overtimeHour');
-  if (latePts || otPts) {
-    const recs = await Attendance.find({ date: { $gte: companyDayFromYMD(start), $lte: companyDayFromYMD(end) } }).select('user date status overtimeMinutes');
+  if (latePts) {
+    const recs = await Attendance.find({ date: { $gte: companyDayFromYMD(start), $lte: companyDayFromYMD(end) }, status: 'LATE' }).select('user date');
     for (const r of recs) {
       const ymd = ymdInTz(r.date);
-      if (latePts && r.status === 'LATE') {
-        // eslint-disable-next-line no-await-in-loop
-        await awardOnce(`auto_late:${r.user}:${ymd}`, { user: r.user, month: ymd.slice(0, 7), points: -Math.abs(latePts), reason: `Late arrival · ${ymd}`, source: 'auto_late', earnedYMD: ymd });
-      }
-      const hours = Math.floor((r.overtimeMinutes || 0) / 60);
-      if (otPts && hours > 0) {
-        // eslint-disable-next-line no-await-in-loop
-        await awardOnce(`auto_ot:${r.user}:${ymd}`, { user: r.user, month: ymd.slice(0, 7), points: Math.abs(otPts) * hours, reason: `Overtime · ${ymd} (${hours}h)`, source: 'auto_ot', earnedYMD: ymd }, { replace: true });
-      }
+      // eslint-disable-next-line no-await-in-loop
+      await awardOnce(`auto_late:${r.user}:${ymd}`, { user: r.user, month: ymd.slice(0, 7), points: -Math.abs(latePts), reason: `Late arrival · ${ymd}`, source: 'auto_late', earnedYMD: ymd });
+    }
+  }
+  // Overtime is one row per person for the whole month, so recompute it per person rather
+  // than per day (see recomputeMonthlyOvertime): full hours × rate, plus half the rate for
+  // a leftover over 30 minutes.
+  if (otPts) {
+    const otUsers = await Attendance.distinct('user', { date: { $gte: companyDayFromYMD(start), $lte: companyDayFromYMD(end) }, overtimeMinutes: { $gt: 0 } });
+    for (const uid of otUsers) {
+      // eslint-disable-next-line no-await-in-loop
+      await recomputeMonthlyOvertime(b, uid, month);
     }
   }
 
@@ -716,6 +767,43 @@ async function repairEarnedDates() {
   }
 }
 
+/**
+ * Fold pre-existing per-DAY overtime rows into the one-row-per-month model.
+ *
+ * Overtime used to be scored a row a day; it is now a single monthly total (see
+ * recomputeMonthlyOvertime). This finds the user-months that still have the old per-day
+ * rows — a dated key, or a keyless legacy row — and recomputes each into the single row.
+ * Monthly rows carry a 'YYYY-MM' key, so they're never matched: once folded, it's done.
+ */
+async function consolidateOvertime(b) {
+  const perDay = await PointEntry.find({
+    source: 'auto_ot',
+    $or: [{ dedupeKey: { $regex: /:\d{4}-\d{2}-\d{2}$/ } }, { dedupeKey: { $exists: false } }],
+  }).select('user month').limit(3000);
+  if (!perDay.length) return;
+  const seen = new Set();
+  for (const r of perDay) {
+    const k = `${r.user}|${r.month}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    // eslint-disable-next-line no-await-in-loop
+    await recomputeMonthlyOvertime(b, r.user, r.month);
+  }
+}
+
+/**
+ * Pull any award dated before go-live forward to it. Nothing was tracked before 1 July,
+ * so an earlier date is always an artifact (a back-dated or imported task). The scans
+ * already clamp; this catches task awards, which are dated from the task's own completion
+ * day. Bounded and self-terminating.
+ */
+async function clampPreGoLive() {
+  await PointEntry.updateMany(
+    { earnedYMD: { $gt: '', $lt: APP_LIVE_YMD } },
+    { $set: { earnedYMD: APP_LIVE_YMD, month: APP_LIVE_YMD.slice(0, 7) } },
+  );
+}
+
 /** Runs the daily scans + month rollup at most once a day (no cron needed). */
 export async function maybeRunDaily() {
   const s = await Setting.getSingleton();
@@ -725,6 +813,8 @@ export async function maybeRunDaily() {
   // have to wait for tomorrow just because today's scan already ran.
   try { await catchUpHistory(b); } catch (e) { console.error('history catch-up failed', e?.message); }
   try { await repairEarnedDates(); } catch (e) { console.error('earned-date repair failed', e?.message); }
+  try { await consolidateOvertime(b); } catch (e) { console.error('overtime consolidation failed', e?.message); }
+  try { await clampPreGoLive(); } catch (e) { console.error('pre-go-live clamp failed', e?.message); }
   const today = ymdInTz(new Date());
   if (b.lastPenaltyRun === today) return;
   // Where the absence catch-up starts. Kept SEPARATE from the once-a-day throttle and

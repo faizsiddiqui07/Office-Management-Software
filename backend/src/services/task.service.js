@@ -3,6 +3,7 @@ import { Task } from '../models/Task.js';
 import { User } from '../models/User.js';
 import { notify, clearNotificationsFor } from '../models/Notification.js';
 import { roleLabel } from '../lib/roles.js';
+import { can } from '../lib/permissions.js';
 import { companyDayFromYMD, ymdInTz, COMPANY_TZ } from '../lib/time.js';
 import { onAssignedTaskDone, onAssignedTaskUndone } from './bonus.service.js';
 
@@ -232,6 +233,28 @@ async function populated(task) {
   await task.populate('approvedBy', 'name');
   await task.populate('originalAssignedBy', 'name');
   return task.toJSON();
+}
+
+/**
+ * One task, fully populated, for a detail view (e.g. clicking a task on the Rewards
+ * page). Readable by anyone connected to the task — its owner, assigner, a collaborator,
+ * whoever completed or approved it, the person who first set it in motion — or by
+ * leadership who can see everyone's work. Everyone else is refused, so a task id can't be
+ * probed for someone else's private notes.
+ */
+export async function getTaskDetail(actor, id) {
+  const task = await Task.findById(id);
+  if (!task) throw httpError(404, 'NOT_FOUND', 'Task not found');
+  const me = String(actor._id);
+  const linked = [task.owner, task.assignedBy, task.completedBy, task.approvedBy, task.originalAssignedBy]
+    .filter(Boolean)
+    .map(String);
+  const isCollaborator = (task.collaborators || []).some((c) => String(c) === me);
+  const canSeeAll = can(actor, 'viewEveryone') || can(actor, 'manageSettings');
+  if (!linked.includes(me) && !isCollaborator && !canSeeAll) {
+    throw httpError(403, 'FORBIDDEN', 'You don’t have access to this task');
+  }
+  return populated(task);
 }
 
 export async function setStatus(actor, id, status) {
