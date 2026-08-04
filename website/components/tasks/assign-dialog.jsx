@@ -80,12 +80,9 @@ export function AssignDialog() {
       open={open}
       onOpenChange={setOpen}
       trigger={
-        // Yellowish so "hand work to someone" reads as a distinct, deliberate action
-        // next to the plain "Add task" — same amber the Pending stat uses.
-        <Button
-          variant="outline"
-          className="w-full border-warning/30 bg-warning/15 text-amber-700 hover:bg-warning/25 hover:text-amber-800 dark:border-warning/25 dark:bg-warning/15 dark:text-amber-300 dark:hover:bg-warning/25 sm:w-auto"
-        >
+        // Solid yellow, same weight as the plain "Add task" button, so "hand work to
+        // someone" reads as a distinct, deliberate action rather than a secondary one.
+        <Button className="w-full bg-warning text-warning-foreground hover:bg-warning/90 sm:w-auto">
           <UserRoundPlus className="size-4" /> Assign work
         </Button>
       }
