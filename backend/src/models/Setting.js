@@ -84,6 +84,9 @@ const settingSchema = new mongoose.Schema(
       // months before it unscored even though everything they need was recorded; this
       // walks forward through them once so nobody's earlier work is simply missing.
       historyScored: { type: String, default: '' },
+      // Bumped when the way tasks are scored changes, so a one-time re-score of existing
+      // point entries runs once after a deploy (see rescoreAssignedTasks) and not again.
+      rescoreVersion: { type: String, default: '' },
       lastMonthRollup: { type: String, default: '' }, // YYYY-MM — last month whose month-end awards ran
       // YMD — the last day the absence scan actually FINISHED. Separate from the
       // throttle above so a failed run doesn't quietly declare its days done.

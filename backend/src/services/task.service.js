@@ -51,7 +51,7 @@ export async function eodDigest(dateYMD) {
   const forwardedParentIds = await Task.distinct('forwardedFrom', { forwardedFrom: { $ne: null } });
   const rows = await Task.aggregate([
     { $match: { status: 'DONE', completedAt: { $ne: null }, _id: { $nin: forwardedParentIds } } },
-    { $addFields: { doneYMD: { $dateToString: { date: { $ifNull: ['$submittedAt', '$completedAt'] }, format: '%Y-%m-%d', timezone: COMPANY_TZ } } } },
+    { $addFields: { doneYMD: { $dateToString: { date: '$completedAt', format: '%Y-%m-%d', timezone: COMPANY_TZ } } } },
     { $match: { doneYMD: dateYMD } },
     { $group: { _id: { $ifNull: ['$completedBy', '$owner'] }, titles: { $push: '$title' } } },
   ]);
@@ -344,7 +344,7 @@ export async function setStatus(actor, id, status) {
 
 /**
  * The assigner reviews an approval-required task the assignee has submitted:
- * approve → it's DONE (credited to the assignee, on-time judged from submit time),
+ * approve → it's DONE (credited to the assignee, on-time judged from the approval day),
  * reject → back to the assignee's to-do with the reason.
  */
 export async function reviewTask(actor, id, approve, reason) {

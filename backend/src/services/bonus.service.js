@@ -107,6 +107,7 @@ export async function updateConfig(patch) {
           .map((m) => ({ id: m.id || rand(), label: String(m.label).trim().slice(0, 80), points: Math.round(num(m.points, 0)) }))
       : (b.manualItems || []),
     historyScored: b.historyScored || '', // never reset by a settings save
+    rescoreVersion: b.rescoreVersion || '', // one-time re-score watermark, preserved
     lastPenaltyRun: turningOn ? today : b.lastPenaltyRun || '',
     lastMonthRollup: turningOn ? prevMonth(currentMonth()) : b.lastMonthRollup || '',
     lastAbsenceScan: turningOn ? today : b.lastAbsenceScan || '',
@@ -283,17 +284,17 @@ export async function onAssignedTaskDone(task) {
     return;
   }
   await PointEntry.deleteMany({ taskRef: task._id, source: 'auto_task' });
-  // On-time is judged from when the assignee did the work — for approval-gated tasks
-  // that's the submit time, so a slow approval never turns on-time work into "late".
-  // Only trust submittedAt when the task is actually an approval task (guards against a
-  // stale submit timestamp left behind if the gate was later switched off).
-  const rawYMD = ymdInTz((task.requiresApproval && task.submittedAt) || task.completedAt || new Date());
+  // On-time is judged from the day the task was actually COMPLETED. For an approval task
+  // that is the day the assigner approved it (completedAt is stamped at approval), so a
+  // task approved after its due date + grace counts as late even if it was submitted on
+  // time — the office wants the finish line, not the hand-in, to decide.
+  const rawYMD = ymdInTz(task.completedAt || new Date());
   // Nothing predates go-live: a task carrying an earlier completion date (an import
   // artifact, a back-dated record) would otherwise show on somebody's Rewards page days
   // before they even had access. Clamp it forward so the earliest a reward can appear is
   // the day the office started running on this system.
   const completedYMD = rawYMD < APP_LIVE_YMD ? APP_LIVE_YMD : rawYMD;
-  // Late is still judged on the REAL completion day vs the due date — the clamp only
+  // Late is judged on the real completion day vs the due date — the clamp above only
   // decides which day/month the points are filed under, never whether it was on time.
   const late = task.dueYMD && rawYMD > addDays(task.dueYMD, b.graceDays || 0);
   const pts = rulePoints(b, late ? 'assignedTaskLate' : 'assignedTaskOnTime');
@@ -671,7 +672,7 @@ export async function backfillMonth(month) {
   if (rulePoints(b, 'assignedTaskOnTime') || rulePoints(b, 'assignedTaskLate')) {
     const tasks = await Task.find({ status: 'DONE', assignedBy: { $ne: null }, completedAt: { $ne: null } }).select('owner dueYMD title completedAt submittedAt requiresApproval assignedBy');
     for (const t of tasks) {
-      const doneYMD = ymdInTz((t.requiresApproval && t.submittedAt) || t.completedAt);
+      const doneYMD = ymdInTz(t.completedAt); // the completion/approval day decides the month
       if (doneYMD < from || doneYMD > to) continue;
       // eslint-disable-next-line no-await-in-loop
       await onAssignedTaskDone(t);
@@ -752,8 +753,8 @@ async function repairEarnedDates() {
       [, ymd] = day;
     } else if (r.source === 'auto_task' && taskById.has(String(r.taskRef))) {
       const t = taskById.get(String(r.taskRef));
-      const at = (t.requiresApproval && t.submittedAt) || t.completedAt;
-      if (at) ymd = ymdInTz(at);
+      if (t.completedAt) ymd = ymdInTz(t.completedAt); // the completion/approval day
+
     } else if (mon) {
       // A month-end award belongs to the last day of its month.
       const [, ym] = mon;
@@ -804,6 +805,29 @@ async function clampPreGoLive() {
   );
 }
 
+// Bump this whenever the way a task is scored changes; rescoreAssignedTasks re-runs once.
+const RESCORE_VERSION = 'completed-date-v1';
+
+/**
+ * Re-score every finished assigned task once, so entries written under an OLD rule are
+ * brought in line with how tasks are scored now (on-time judged from the completion /
+ * approval day, not the submit day). Re-runs onAssignedTaskDone — which replaces each
+ * task's entry in place and re-files its month — so it's safe and idempotent. Guarded by
+ * a version watermark so it happens once after the deploy, not on every request.
+ */
+async function rescoreAssignedTasks(b) {
+  if (b.rescoreVersion === RESCORE_VERSION) return;
+  const tasks = await Task.find({ status: 'DONE', assignedBy: { $ne: null }, completedAt: { $ne: null } })
+    .select('owner completedBy dueYMD title completedAt submittedAt requiresApproval assignedBy status')
+    .limit(5000);
+  for (const t of tasks) {
+    // eslint-disable-next-line no-await-in-loop
+    await onAssignedTaskDone(t);
+  }
+  await Setting.updateOne({ key: 'global' }, { $set: { 'bonus.rescoreVersion': RESCORE_VERSION } });
+  Setting.invalidateCache();
+}
+
 /** Runs the daily scans + month rollup at most once a day (no cron needed). */
 export async function maybeRunDaily() {
   const s = await Setting.getSingleton();
@@ -814,6 +838,7 @@ export async function maybeRunDaily() {
   try { await catchUpHistory(b); } catch (e) { console.error('history catch-up failed', e?.message); }
   try { await repairEarnedDates(); } catch (e) { console.error('earned-date repair failed', e?.message); }
   try { await consolidateOvertime(b); } catch (e) { console.error('overtime consolidation failed', e?.message); }
+  try { await rescoreAssignedTasks(b); } catch (e) { console.error('task re-score failed', e?.message); }
   try { await clampPreGoLive(); } catch (e) { console.error('pre-go-live clamp failed', e?.message); }
   const today = ymdInTz(new Date());
   if (b.lastPenaltyRun === today) return;

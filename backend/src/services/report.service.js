@@ -366,7 +366,9 @@ export async function buildReport(type, dateYMD, range) {
     return taskRow.get(k);
   };
   for (const t of doneTasks) {
-    const doneYMD = ymdInTz((t.requiresApproval && t.submittedAt) || t.completedAt);
+    // The completion/approval day decides which period a task lands in AND whether it was
+    // late — the same rule the bonus engine and leaderboard use.
+    const doneYMD = ymdInTz(t.completedAt);
     if (doneYMD < from || doneYMD > to) continue; // finished outside this period
     const row = rowFor(t.completedBy || t.owner); // credit whoever actually did it
     row.done += 1;
@@ -604,8 +606,8 @@ export async function buildSelfReport({ user, type, dateYMD, range }) {
   };
 
   // ── Task stats (totals only, no list) ─────────────────────
-  // On-time = finished on or before the due date + grace, judged from the SUBMIT day for
-  // an approval task (a slow approval never turns on-time work late) — the same rule the
+  // On-time = completed on or before the due date + grace, judged from the day it was
+  // actually finished — the approval day for an approval task — the same rule the
   // leaderboard, the bonus system and the company report use. A task with no due date
   // can't be late, so it counts as on time; this keeps done = on time + late.
   const graceDaysSelf = Math.max(0, settings.bonus?.graceDays ?? 1);
@@ -619,7 +621,7 @@ export async function buildSelfReport({ user, type, dateYMD, range }) {
     for (const t of docs) {
       if (t.status === 'DONE') {
         st.done += 1;
-        const doneYMD = ymdInTz((t.requiresApproval && t.submittedAt) || t.completedAt || new Date());
+        const doneYMD = ymdInTz(t.completedAt || new Date());
         if (t.dueYMD && doneYMD > plusDaysSelf(t.dueYMD, graceDaysSelf)) st.late += 1;
         else st.onTime += 1;
       } else {
