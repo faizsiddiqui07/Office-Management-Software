@@ -703,7 +703,8 @@ export async function updateTask(actor, id, data) {
     for (const mm of editSet) {
       let changed = false;
       let contentChanged = false;
-      for (const f of contentFields) if (patch[f] !== undefined && mm[f] !== patch[f]) { mm[f] = patch[f]; changed = true; contentChanged = true; }
+      let dueChanged = false;
+      for (const f of contentFields) if (patch[f] !== undefined && mm[f] !== patch[f]) { if (f === 'dueYMD') dueChanged = true; mm[f] = patch[f]; changed = true; contentChanged = true; }
       // Rewriting the work makes an old receipt a lie — "Seen 20 Jul" would refer to
       // wording nobody has read. Clear it so it goes back to "delivered" and earns a
       // fresh receipt the next time the assignee's list loads.
@@ -719,6 +720,18 @@ export async function updateTask(actor, id, data) {
       if (changed) {
         await mm.save();
         changedCount += 1;
+        // Moving the due date must re-price the bonus for THIS copy. A finished task is
+        // re-scored against its new deadline (a due date pushed past the completion day
+        // turns a late −score into an on-time +score, and vice-versa); an unfinished one
+        // has any now-stale overdue penalty cleared, and the daily scan re-adds it only if
+        // it's still overdue. Without this, correcting a wrong due date left the old
+        // points frozen.
+        if (dueChanged && mm.assignedBy) {
+          try {
+            if (mm.status === 'DONE') await onAssignedTaskDone(mm);
+            else await onAssignedTaskUndone(mm._id);
+          } catch (e) { console.error('bonus hook (due-date edit) failed', e?.message); }
+        }
         if (mm.status !== 'DONE' && String(mm.owner) !== String(actor._id)) {
           await notify({ user: mm.owner, type: 'TASK_ASSIGNED', title: `${actor.name} updated a task`, message: mm.dueYMD ? `${mm.title} (due ${mm.dueYMD})` : mm.title, link: todoLink(mm._id) });
         }
@@ -733,11 +746,19 @@ export async function updateTask(actor, id, data) {
       const descendants = await collectForwardDescendants(cascadeRoots);
       for (const d of descendants) {
         let dChanged = false;
-        for (const f of contentFields) if (patch[f] !== undefined && d[f] !== patch[f]) { d[f] = patch[f]; dChanged = true; }
+        let dueChanged = false;
+        for (const f of contentFields) if (patch[f] !== undefined && d[f] !== patch[f]) { if (f === 'dueYMD') dueChanged = true; d[f] = patch[f]; dChanged = true; }
         if (dChanged) {
           if (d.seenAt) d.seenAt = null; // rewritten under them → earn a fresh receipt
           await d.save();
           changedCount += 1;
+          // Same re-pricing as above, for a copy further down the forward chain.
+          if (dueChanged && d.assignedBy) {
+            try {
+              if (d.status === 'DONE') await onAssignedTaskDone(d);
+              else await onAssignedTaskUndone(d._id);
+            } catch (e) { console.error('bonus hook (due-date cascade) failed', e?.message); }
+          }
           if (d.status !== 'DONE') {
             await notify({ user: d.owner, type: 'TASK_ASSIGNED', title: `${actor.name} updated a task`, message: d.dueYMD ? `${d.title} (due ${d.dueYMD})` : d.title, link: todoLink(d._id) });
           }
