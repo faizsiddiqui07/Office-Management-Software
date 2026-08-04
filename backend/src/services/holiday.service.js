@@ -198,6 +198,43 @@ export async function listHolidays({ year, month, from, to }) {
 }
 
 /**
+ * Data for the printable annual holiday list (a notice-board PDF). Runs the same
+ * calendar-year window through listHolidays — so repeats expand exactly as the calendar
+ * shows them — drops BIRTHDAY rows always, and keeps the chosen types (public holidays
+ * always; optional holidays and events by request). Shaped like buildLeaveLedger:
+ * { company, period, rows } so reportPdf can render it in the same house style.
+ */
+export async function buildHolidayList(year, { optional = true, events = false } = {}) {
+  const settings = await Setting.getSingleton();
+  const from = `${year}-01-01`;
+  const to = `${year}-12-31`;
+
+  const allow = new Set(['HOLIDAY']);
+  if (optional) allow.add('OPTIONAL_HOLIDAY');
+  if (events) allow.add('EVENT');
+
+  const all = await listHolidays({ year }); // already sorted by date, repeats expanded
+  const rows = all
+    .filter((h) => h.type !== 'BIRTHDAY' && allow.has(h.type))
+    .map((h) => ({
+      date: h.startYMD,
+      endDate: h.endYMD !== h.startYMD ? h.endYMD : null, // multi-day holidays keep their span
+      weekday: new Date(`${h.startYMD}T00:00:00Z`).toLocaleDateString('en-GB', { weekday: 'long', timeZone: 'UTC' }),
+      title: h.title,
+      type: h.type,
+      description: h.description || '',
+    }));
+
+  return {
+    company: { name: settings.companyName, currency: settings.currency, timezone: settings.timezone, brandColor: settings.brandColor, logoUrl: settings.logoUrl, logoLight: settings.logoLight, logoDark: settings.logoDark },
+    generatedAt: new Date().toISOString(),
+    period: { from, to, label: `Holidays ${year}`, year },
+    included: { optional, events },
+    rows,
+  };
+}
+
+/**
  * Set of yyyy-MM-dd that fall on a mandatory HOLIDAY within [fromYMD, toYMD].
  *
  * This is the working-day calculation — it decides attendance sheets, report

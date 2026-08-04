@@ -615,3 +615,44 @@ function buildLeaveLedgerDoc(data, logo) {
 export async function renderLeaveLedgerToStream(data, logo = null) {
   return renderToStream(buildLeaveLedgerDoc(data, logo));
 }
+
+/* ── Holiday list (printable annual sheet for the notice board) ───────────────── */
+const HOLIDAY_TYPE_COLOR = { HOLIDAY: STATUS_COLOR.HOLIDAY, OPTIONAL_HOLIDAY: '#0891b2', EVENT: '#d97706' };
+const HOLIDAY_TYPE_LABEL = { HOLIDAY: 'Public holiday', OPTIONAL_HOLIDAY: 'Optional', EVENT: 'Event' };
+
+function buildHolidayListDoc(data, logo) {
+  const accent = data.company.brandColor || DEFAULT_ACCENT;
+  const label = 'Holiday list';
+  const headers = [
+    { label: 'Date', w: '28%' },
+    { label: 'Day', w: '18%' },
+    { label: 'Holiday', w: '36%' },
+    { label: 'Type', w: '18%' },
+  ];
+  const rows = data.rows.map((r) => [
+    r.endDate ? `${dmon(r.date)} → ${dmon(r.endDate)}` : dmon(r.date),
+    r.weekday,
+    r.title,
+    { text: HOLIDAY_TYPE_LABEL[r.type] || tc(r.type), color: HOLIDAY_TYPE_COLOR[r.type] },
+  ]);
+  const inc = data.included || {};
+  const incNote = ['Public holidays', inc.optional ? 'optional holidays' : null, inc.events ? 'events' : null].filter(Boolean).join(' · ');
+  return E(
+    Document,
+    {},
+    E(
+      Page,
+      { size: 'A4', style: styles.page, wrap: true },
+      header(data, logo, accent, label),
+      metaLine(data),
+      sectionTitle(data.period.label, accent),
+      incNote ? E(Text, { style: styles.empty }, `Includes: ${incNote}`) : null,
+      rows.length ? table(headers, rows) : E(Text, { style: styles.empty }, 'No holidays recorded for this year.'),
+      footer(data, label),
+    ),
+  );
+}
+
+export async function renderHolidayListToStream(data, logo = null) {
+  return renderToStream(buildHolidayListDoc(data, logo));
+}
