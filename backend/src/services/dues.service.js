@@ -225,6 +225,45 @@ export async function settle(admin, person) {
   return { settled: true, pending: state.pending, advance: state.advance };
 }
 
+/**
+ * Edit a ledger entry in place — amount, item, source, date or note — instead of the old
+ * delete-and-re-add, which threw away the original date and any partial settlement. `kind`
+ * and `person` are immutable (an entry can't change owner or flip DUE↔PAYMENT), so they
+ * aren't accepted. Lowering a DUE's amount below what's already been paid clamps `paid`
+ * down, so an item can never read as over-settled. Returns the fresh person state, exactly
+ * like createDue, and tells the person their entry was corrected.
+ */
+export async function updateEntry(admin, id, patch = {}) {
+  assertId(id);
+  const entry = await LedgerEntry.findById(id);
+  if (!entry) throw httpError(404, 'NOT_FOUND', 'Entry not found');
+
+  if (patch.amount !== undefined) entry.amount = patch.amount;
+  if (patch.dateYMD !== undefined) {
+    entry.dateYMD = patch.dateYMD;
+    entry.date = companyDayFromYMD(patch.dateYMD); // keep the Date column in step with the YMD
+  }
+  if (patch.note !== undefined) entry.note = patch.note || '';
+  // item / source only exist on a DUE; a PAYMENT ignores them.
+  if (entry.kind === 'DUE') {
+    if (patch.item !== undefined) entry.item = patch.item || '';
+    if (patch.source !== undefined) entry.source = patch.source || '';
+    if (entry.paid > entry.amount) entry.paid = entry.amount; // never over-settled
+  }
+  await entry.save();
+
+  const state = await stateFor(entry.person);
+  await notify({
+    user: entry.person,
+    type: entry.kind === 'DUE' ? 'DUE_ADDED' : 'DUE_PAYMENT',
+    title: `Entry corrected by ${admin.name}`,
+    message: `${money(entry.amount)}${entry.kind === 'DUE' && entry.item ? ` • ${entry.item}` : ''} • ${stateLabel(state)}`,
+    link: '/dues',
+  });
+
+  return { entry: entry.toJSON(), pending: state.pending, advance: state.advance };
+}
+
 /** The UPI id dues are paid into (raw, as the Admin Manager set it). */
 export async function getUpi() {
   const s = await Setting.getSingleton();

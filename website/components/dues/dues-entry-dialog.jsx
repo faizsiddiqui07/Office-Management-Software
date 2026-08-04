@@ -19,11 +19,17 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { roleName } from '@/lib/permissions';
-import { rupeesToPaise, todayYMD } from '@/lib/expense';
+import { rupeesToPaise, paiseToRupees, todayYMD } from '@/lib/expense';
 
-/** Shared dialog for logging a DUE (something brought for someone) or a PAYMENT. */
-export function DuesEntryDialog({ mode = 'due', people = [], presetPerson = null, open, onOpenChange }) {
-  const isDue = mode === 'due';
+/**
+ * Shared dialog for logging a DUE / PAYMENT, or EDITING an existing one (pass `entry`).
+ * In edit mode the person and kind are fixed — only amount/item/source/date/note change —
+ * so it PUTs the correction instead of creating a new row, keeping the original date and
+ * any partial settlement (the old delete-and-re-add lost both).
+ */
+export function DuesEntryDialog({ mode = 'due', entry = null, people = [], presetPerson = null, open, onOpenChange }) {
+  const isEdit = !!entry;
+  const isDue = isEdit ? entry.kind === 'DUE' : mode === 'due';
   const qc = useQueryClient();
 
   // Previously-used item/source values, offered as native datalist suggestions so
@@ -41,23 +47,25 @@ export function DuesEntryDialog({ mode = 'due', people = [], presetPerson = null
 
   React.useEffect(() => {
     if (!open) return;
-    setPerson(presetPerson || '');
-    setAmount('');
-    setItem('');
-    setSource('');
-    setDate(todayYMD());
-    setNote('');
-  }, [open, presetPerson]);
+    setPerson(entry?.person || presetPerson || '');
+    setAmount(entry ? paiseToRupees(entry.amount) : '');
+    setItem(entry?.item || '');
+    setSource(entry?.source || '');
+    setDate(entry?.dateYMD || todayYMD());
+    setNote(entry?.note || '');
+  }, [open, entry, presetPerson]);
 
   const mut = useMutation({
     mutationFn: () => {
+      // person + kind are fixed on an edit, so they aren't sent.
       const body = isDue
-        ? { person, amount: rupeesToPaise(amount), item, source, dateYMD: date, note }
-        : { person, amount: rupeesToPaise(amount), dateYMD: date, note };
-      return api.post(isDue ? '/dues/due' : '/dues/payment', body);
+        ? { amount: rupeesToPaise(amount), item, source, dateYMD: date, note }
+        : { amount: rupeesToPaise(amount), dateYMD: date, note };
+      if (isEdit) return api.put(`/dues/${entry.id}`, body);
+      return api.post(isDue ? '/dues/due' : '/dues/payment', { person, ...body });
     },
     onSuccess: () => {
-      toast.success(isDue ? 'Due added' : 'Payment recorded');
+      toast.success(isEdit ? 'Entry updated' : isDue ? 'Due added' : 'Payment recorded');
       qc.invalidateQueries({ queryKey: ['dues'] });
       onOpenChange(false);
     },
@@ -65,7 +73,7 @@ export function DuesEntryDialog({ mode = 'due', people = [], presetPerson = null
   });
 
   const submit = () => {
-    if (!person) return toast.error('Pick a person');
+    if (!isEdit && !person) return toast.error('Pick a person');
     if (rupeesToPaise(amount) <= 0) return toast.error('Enter an amount');
     return mut.mutate();
   };
@@ -74,11 +82,13 @@ export function DuesEntryDialog({ mode = 'due', people = [], presetPerson = null
     <AppDialog
       open={open}
       onOpenChange={onOpenChange}
-      title={isDue ? 'Add a due' : 'Record a payment'}
+      title={isEdit ? (isDue ? 'Edit due' : 'Edit payment') : isDue ? 'Add a due' : 'Record a payment'}
       description={
-        isDue
-          ? 'Log something you brought for someone — they’ll owe this amount.'
-          : 'Record cash received. Anything over their pending becomes advance.'
+        isEdit
+          ? 'Correct this entry. The person and type can’t be changed.'
+          : isDue
+            ? 'Log something you brought for someone — they’ll owe this amount.'
+            : 'Record cash received. Anything over their pending becomes advance.'
       }
       footer={
         <>
@@ -86,7 +96,7 @@ export function DuesEntryDialog({ mode = 'due', people = [], presetPerson = null
             Cancel
           </Button>
           <Button onClick={submit} disabled={mut.isPending}>
-            {mut.isPending ? 'Saving…' : isDue ? 'Add due' : 'Record'}
+            {mut.isPending ? 'Saving…' : isEdit ? 'Save' : isDue ? 'Add due' : 'Record'}
           </Button>
         </>
       }
@@ -94,7 +104,7 @@ export function DuesEntryDialog({ mode = 'due', people = [], presetPerson = null
       <div className="max-h-[70vh] space-y-4 overflow-y-auto py-2">
         <div className="space-y-1.5">
           <Label>Person</Label>
-          <Select value={person} onValueChange={setPerson} disabled={!!presetPerson}>
+          <Select value={person} onValueChange={setPerson} disabled={!!presetPerson || isEdit}>
             <SelectTrigger className="w-full bg-background/50">
               <SelectValue placeholder="Choose a person" />
             </SelectTrigger>

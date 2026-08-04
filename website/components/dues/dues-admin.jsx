@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   Download,
   HandCoins,
+  Pencil,
   Plus,
   Search,
   Smartphone,
@@ -61,7 +62,7 @@ function BalanceChip({ p }) {
   return <span className="shrink-0 rounded-full bg-muted/50 px-2.5 py-1 text-xs font-medium text-muted-foreground ring-1 ring-border">Settled</span>;
 }
 
-function PersonDetail({ personId, onAddDue, onAddPay }) {
+function PersonDetail({ personId, onAddDue, onAddPay, onEdit }) {
   const qc = useQueryClient();
   const [confirmSettle, setConfirmSettle] = React.useState(false);
   const [pendingDelete, setPendingDelete] = React.useState(null);
@@ -254,6 +255,9 @@ function PersonDetail({ personId, onAddDue, onAddPay }) {
                   <CheckCheck className="size-4" /> Settle {formatMoney(viewing.remaining)}
                 </Button>
               ) : null}
+              <Button variant="outline" onClick={() => { onEdit(viewing); setViewingId(null); }}>
+                <Pencil className="size-4" /> Edit
+              </Button>
               <Button variant="outline" onClick={() => setPendingDelete(viewing)}>
                 <Trash2 className="size-4" /> Remove
               </Button>
@@ -343,6 +347,8 @@ export function DuesAdmin() {
   const [payOpen, setPayOpen] = React.useState(false);
   const [duePreset, setDuePreset] = React.useState(null);
   const [payPreset, setPayPreset] = React.useState(null);
+  const [editEntry, setEditEntry] = React.useState(null); // ledger line being corrected
+  const [editOpen, setEditOpen] = React.useState(false);
   const detailRef = React.useRef(null);
 
   // Everyone except the admin themselves — you can't owe yourself.
@@ -356,6 +362,10 @@ export function DuesAdmin() {
   const openPay = (personId = null) => {
     setPayPreset(personId);
     setPayOpen(true);
+  };
+  const openEdit = (entry) => {
+    setEditEntry(entry);
+    setEditOpen(true);
   };
   const selectPerson = (id) => {
     setSelectedId(id);
@@ -445,7 +455,7 @@ export function DuesAdmin() {
             </div>
 
             <div ref={detailRef} className="scroll-mt-24">
-              <PersonDetail personId={selectedId} onAddDue={openDue} onAddPay={openPay} />
+              <PersonDetail personId={selectedId} onAddDue={openDue} onAddPay={openPay} onEdit={openEdit} />
             </div>
           </div>
         </>
@@ -453,6 +463,7 @@ export function DuesAdmin() {
 
       <DuesEntryDialog mode="due" people={people} presetPerson={duePreset} open={dueOpen} onOpenChange={setDueOpen} />
       <DuesEntryDialog mode="payment" people={people} presetPerson={payPreset} open={payOpen} onOpenChange={setPayOpen} />
+      <DuesEntryDialog entry={editEntry} people={people} open={editOpen} onOpenChange={setEditOpen} />
     </div>
   );
 }

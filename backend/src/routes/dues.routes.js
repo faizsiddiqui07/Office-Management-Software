@@ -21,4 +21,5 @@ duesRouter.post('/settle', requirePermission('manageDues'), c.settle);
 duesRouter.post('/settle-entry', requirePermission('manageDues'), c.settleEntry);
 // The Admin Manager's own UPI id for collecting dues (edited on the Dues page, not Settings).
 duesRouter.put('/upi', requirePermission('manageDues'), c.setUpi);
+duesRouter.put('/:id', requirePermission('manageDues'), c.updateEntry); // edit a DUE/PAYMENT in place
 duesRouter.delete('/:id', requirePermission('manageDues'), c.removeEntry);

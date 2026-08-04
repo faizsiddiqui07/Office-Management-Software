@@ -1,6 +1,6 @@
 import { ok, fail } from '../lib/apiResponse.js';
 import * as svc from '../services/dues.service.js';
-import { addDueSchema, addPaymentSchema, settleSchema, settleEntrySchema, setUpiSchema } from '../validators/dues.validators.js';
+import { addDueSchema, updateEntrySchema, addPaymentSchema, settleSchema, settleEntrySchema, setUpiSchema } from '../validators/dues.validators.js';
 import { audit } from '../models/AuditLog.js';
 import { toCsv } from '../lib/csv.js';
 
@@ -96,6 +96,17 @@ export async function settleEntry(req, res, next) {
     const body = settleEntrySchema.parse(req.body);
     const result = await svc.settleDue(req.user, body.entryId);
     await audit({ actor: req.user._id, action: 'dues.settle_entry', entityType: 'LedgerEntry', entityId: body.entryId });
+    res.json(ok(result));
+  } catch (err) {
+    handleErr(res, err, next);
+  }
+}
+
+export async function updateEntry(req, res, next) {
+  try {
+    const body = updateEntrySchema.parse(req.body);
+    const result = await svc.updateEntry(req.user, req.params.id, body);
+    await audit({ actor: req.user._id, action: 'dues.update', entityType: 'LedgerEntry', entityId: req.params.id, meta: { amount: body.amount } });
     res.json(ok(result));
   } catch (err) {
     handleErr(res, err, next);

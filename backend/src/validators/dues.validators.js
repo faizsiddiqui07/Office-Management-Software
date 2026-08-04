@@ -14,6 +14,17 @@ export const addDueSchema = z.object({
   note: z.string().max(300).optional().default(''),
 });
 
+// Editing an existing entry: every field optional, and — unlike addDueSchema.partial() —
+// NO defaults, so an omitted field is left untouched instead of being blanked to ''. `kind`
+// and `person` are never editable, so they aren't accepted here at all.
+export const updateEntrySchema = z.object({
+  amount: amount.optional(),
+  item: z.string().max(120).optional(),
+  source: z.string().max(120).optional(),
+  dateYMD: ymd.optional(),
+  note: z.string().max(300).optional(),
+});
+
 export const addPaymentSchema = z.object({
   person: objectId,
   amount,
