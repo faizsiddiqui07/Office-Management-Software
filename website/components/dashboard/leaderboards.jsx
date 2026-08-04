@@ -4,11 +4,10 @@ import * as React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Clock, Trophy } from 'lucide-react';
 import { GlassCard } from '@/components/glass/glass-card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { MonthPicker } from '@/components/ui/month-picker';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { formatDuration } from '@/lib/time';
-import { monthOptions } from '@/lib/reward-periods';
 
 // Podium tints for the top three; everyone below is quiet. Bronze needs a lighter
 // tone on the dark card — amber-700 is dark enough to disappear into the glass.
@@ -32,16 +31,6 @@ function LeaderList({ rows, valueOf, empty, loading }) {
   );
 }
 
-/** This month · each past month (Jul 2026 →) · All time. */
-function usePeriodOptions() {
-  return React.useMemo(() => {
-    const months = monthOptions(); // newest-first, includes the current month
-    const current = months[0]?.value;
-    const past = months.filter((m) => m.value !== current);
-    return [{ value: 'this', label: 'This month' }, ...past, { value: 'all', label: 'All time' }];
-  }, []);
-}
-
 /** Fetches a period's leaders. Disabled for 'this' — that data already came with the page. */
 function useLeaders(sel) {
   const enabled = !!sel && sel !== 'this';
@@ -54,28 +43,14 @@ function useLeaders(sel) {
   });
 }
 
-function PeriodSelect({ value, onChange, options }) {
-  return (
-    <Select value={value} onValueChange={onChange}>
-      <SelectTrigger size="sm" className="ml-auto h-7 w-auto gap-1 bg-muted/50 px-2 text-xs">
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {options.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-      </SelectContent>
-    </Select>
-  );
-}
-
 /**
- * The two public leaderboards, shown to everyone. Each card carries its own period
- * picker — This month, any past month, or All time — so you can look back independently
- * on each. "This month" is served from the dashboard payload already loaded; other
- * periods are fetched on demand. Task leaders count on-time, CEO-involved delegated work,
- * all filtered on the server (on-time judged from the completion / approval day).
+ * The two public leaderboards, shown to everyone. Each card carries its own month picker —
+ * This month, any past month, or All time — so you can look back independently on each.
+ * "This month" is served from the dashboard payload already loaded; other periods are
+ * fetched on demand. Task leaders count on-time, CEO-involved delegated work, all filtered
+ * on the server (on-time judged from the completion / approval day).
  */
 export function Leaderboards({ data }) {
-  const options = usePeriodOptions();
   const [taskSel, setTaskSel] = React.useState('this');
   const [otSel, setOtSel] = React.useState('this');
   const taskQ = useLeaders(taskSel);
@@ -93,7 +68,7 @@ export function Leaderboards({ data }) {
           <div className="mb-3 flex items-center gap-2">
             <Trophy className="size-4 text-primary" />
             <p className="text-sm font-medium">Task leaders</p>
-            <PeriodSelect value={taskSel} onChange={setTaskSel} options={options} />
+            <MonthPicker value={taskSel} onChange={setTaskSel} className="ml-auto" />
           </div>
           <LeaderList
             rows={taskRows}
@@ -110,7 +85,7 @@ export function Leaderboards({ data }) {
           <div className="mb-3 flex items-center gap-2">
             <Clock className="size-4 text-primary" />
             <p className="text-sm font-medium">Overtime leaders</p>
-            <PeriodSelect value={otSel} onChange={setOtSel} options={options} />
+            <MonthPicker value={otSel} onChange={setOtSel} className="ml-auto" />
           </div>
           <LeaderList
             rows={otRows}
