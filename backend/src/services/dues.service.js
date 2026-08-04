@@ -247,6 +247,28 @@ export async function deleteEntry(id) {
   return { person: entry.person, ...(await stateFor(entry.person)) };
 }
 
+/**
+ * Distinct non-empty item/source values, most-recently-used first and capped — for the
+ * dues-entry form's auto-suggest. Only DUE rows carry these fields. $trim folds
+ * 'Lunch thali' and 'Lunch thali ' into one so the list doesn't show near-duplicates.
+ */
+async function recentDistinct(field, cap = 50) {
+  const rows = await LedgerEntry.aggregate([
+    { $match: { kind: 'DUE' } },
+    { $group: { _id: { $trim: { input: { $ifNull: [`$${field}`, ''] } } }, last: { $max: '$createdAt' } } },
+    { $match: { _id: { $ne: '' } } },
+    { $sort: { last: -1 } },
+    { $limit: cap },
+  ]);
+  return rows.map((r) => r._id);
+}
+
+/** Item and source suggestions for the add/edit-due form. */
+export async function suggestions() {
+  const [items, sources] = await Promise.all([recentDistinct('item'), recentDistinct('source')]);
+  return { items, sources };
+}
+
 export async function exportRows() {
   const docs = await LedgerEntry.find().sort({ date: -1, createdAt: -1 }).limit(10000).populate('person', 'name employeeId');
 

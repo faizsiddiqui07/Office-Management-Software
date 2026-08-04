@@ -97,6 +97,27 @@ export async function listExpenses({ from, to, category, paymentMethod, search, 
   return { expenses: expenses.map((e) => e.toJSON()), total, page, limit };
 }
 
+/**
+ * Distinct non-empty values of a text field, most-recently-used first and capped — for the
+ * vendor/title auto-suggest. $trim folds 'Staples' and 'Staples ' into one entry, which is
+ * exactly what stops category totals and the duplicate guard splitting on stray spaces.
+ */
+async function recentDistinct(field, cap = 50) {
+  const rows = await Expense.aggregate([
+    { $group: { _id: { $trim: { input: { $ifNull: [`$${field}`, ''] } } }, last: { $max: '$createdAt' } } },
+    { $match: { _id: { $ne: '' } } },
+    { $sort: { last: -1 } },
+    { $limit: cap },
+  ]);
+  return rows.map((r) => r._id);
+}
+
+/** Vendor and title suggestions for the add/edit-expense form. */
+export async function expenseSuggestions() {
+  const [vendors, titles] = await Promise.all([recentDistinct('vendor'), recentDistinct('title')]);
+  return { vendors, titles };
+}
+
 /** The twelve months ending with `to` — the trend window, independent of the period. */
 function trailingTwelve(to) {
   const end = to ? new Date(`${to}T00:00:00Z`) : new Date();

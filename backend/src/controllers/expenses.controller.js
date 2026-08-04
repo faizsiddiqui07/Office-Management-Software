@@ -21,12 +21,15 @@ function handleErr(res, err, next) {
 
 export async function meta(_req, res, next) {
   try {
-    const settings = await Setting.getSingleton();
+    const [settings, suggestions] = await Promise.all([Setting.getSingleton(), svc.expenseSuggestions()]);
     res.json(
       ok({
         categories: settings.expenseCategories,
         currency: settings.currency,
         paymentMethods: ['CASH', 'CARD', 'UPI', 'BANK_TRANSFER', 'OTHER'],
+        // Previously-used vendors/titles for the add/edit form's auto-suggest.
+        vendors: suggestions.vendors,
+        titles: suggestions.titles,
       }),
     );
   } catch (err) {

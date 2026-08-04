@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { AppDialog } from '@/components/glass/app-dialog';
@@ -25,6 +25,12 @@ import { rupeesToPaise, todayYMD } from '@/lib/expense';
 export function DuesEntryDialog({ mode = 'due', people = [], presetPerson = null, open, onOpenChange }) {
   const isDue = mode === 'due';
   const qc = useQueryClient();
+
+  // Previously-used item/source values, offered as native datalist suggestions so
+  // 'Lunch thali' / 'Sharma Dhaba' are picked once, not re-typed and mis-cased.
+  const { data: sug } = useQuery({ queryKey: ['dues', 'suggest'], queryFn: () => api.get('/dues/suggest'), enabled: !!open && isDue });
+  const itemSuggest = sug?.items ?? [];
+  const sourceSuggest = sug?.sources ?? [];
 
   const [person, setPerson] = React.useState('');
   const [amount, setAmount] = React.useState('');
@@ -120,11 +126,13 @@ export function DuesEntryDialog({ mode = 'due', people = [], presetPerson = null
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="d-item">What (item)</Label>
-              <Input id="d-item" value={item} onChange={(e) => setItem(e.target.value)} placeholder="Lunch thali" className="bg-background/50" />
+              <Input id="d-item" list="d-item-suggest" value={item} onChange={(e) => setItem(e.target.value)} placeholder="Lunch thali" className="bg-background/50" />
+              <datalist id="d-item-suggest">{itemSuggest.map((v) => <option key={v} value={v} />)}</datalist>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="d-src">From (source)</Label>
-              <Input id="d-src" value={source} onChange={(e) => setSource(e.target.value)} placeholder="Sharma Dhaba" className="bg-background/50" />
+              <Input id="d-src" list="d-src-suggest" value={source} onChange={(e) => setSource(e.target.value)} placeholder="Sharma Dhaba" className="bg-background/50" />
+              <datalist id="d-src-suggest">{sourceSuggest.map((v) => <option key={v} value={v} />)}</datalist>
             </div>
           </div>
         ) : null}

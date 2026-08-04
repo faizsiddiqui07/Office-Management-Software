@@ -41,6 +41,15 @@ export async function setUpi(req, res, next) {
   }
 }
 
+/** Previously-used item/source values for the dues-entry form's auto-suggest. */
+export async function suggest(req, res, next) {
+  try {
+    res.json(ok(await svc.suggestions()));
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function personDues(req, res, next) {
   try {
     res.json(ok(await svc.personLedger(req.params.id)));

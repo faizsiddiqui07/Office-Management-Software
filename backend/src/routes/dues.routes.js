@@ -13,6 +13,7 @@ duesRouter.get('/me', c.myDues);
 // Admin Manager (manageDues) — everyone's ledger + mutations.
 duesRouter.get('/overview', requirePermission('manageDues'), c.overview);
 duesRouter.get('/export.csv', requirePermission('manageDues'), c.exportCsv);
+duesRouter.get('/suggest', requirePermission('manageDues'), c.suggest); // item/source auto-suggest
 duesRouter.get('/person/:id', requirePermission('manageDues'), c.personDues);
 duesRouter.post('/due', requirePermission('manageDues'), c.addDue);
 duesRouter.post('/payment', requirePermission('manageDues'), c.addPayment);

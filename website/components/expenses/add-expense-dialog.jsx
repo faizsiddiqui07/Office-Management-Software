@@ -30,6 +30,10 @@ export function ExpenseDialog({ expense, open: openProp, onOpenChange }) {
 
   const { data: meta } = useQuery({ queryKey: ['expenses', 'meta'], queryFn: () => api.get('/expenses/meta') });
   const categories = meta?.categories ?? ['MISC'];
+  // Previously-used titles/vendors, offered as native datalist suggestions so the same
+  // 'Staples' is picked, not re-typed and mis-cased (which would split category totals).
+  const titleSuggest = meta?.titles ?? [];
+  const vendorSuggest = meta?.vendors ?? [];
 
   const [title, setTitle] = React.useState('');
   const [amount, setAmount] = React.useState('');
@@ -96,7 +100,8 @@ export function ExpenseDialog({ expense, open: openProp, onOpenChange }) {
       <div className="max-h-[70vh] space-y-4 overflow-y-auto py-2">
         <div className="space-y-1.5">
           <Label htmlFor="ex-title">Title</Label>
-          <Input id="ex-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Printer paper" className="bg-background/50" />
+          <Input id="ex-title" list="ex-title-suggest" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Printer paper" className="bg-background/50" />
+          <datalist id="ex-title-suggest">{titleSuggest.map((t) => <option key={t} value={t} />)}</datalist>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
@@ -148,7 +153,8 @@ export function ExpenseDialog({ expense, open: openProp, onOpenChange }) {
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="ex-vendor">Vendor</Label>
-          <Input id="ex-vendor" value={vendor} onChange={(e) => setVendor(e.target.value)} placeholder="Staples" className="bg-background/50" />
+          <Input id="ex-vendor" list="ex-vendor-suggest" value={vendor} onChange={(e) => setVendor(e.target.value)} placeholder="Staples" className="bg-background/50" />
+          <datalist id="ex-vendor-suggest">{vendorSuggest.map((v) => <option key={v} value={v} />)}</datalist>
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="ex-notes">Notes</Label>
