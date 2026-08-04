@@ -101,8 +101,11 @@ function EntryDetailDialog({ entry, onOpenChange }) {
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="pr-2">{entry?.reason}</DialogTitle>
+          {/* The date is when the POINTS were counted — for a task that's the day it was
+              completed/approved, NOT when it was assigned (the facts below show those).
+              Labelled so "Assigned task · 13 Jul" isn't misread as "assigned on 13 Jul". */}
           <DialogDescription>
-            {SOURCE_LABEL[entry?.source] || 'Points'} · {fmtDateFull(entry?.earnedYMD || entry?.createdAt)}
+            {SOURCE_LABEL[entry?.source] || 'Points'} · {(entry?.points ?? 0) < 0 ? 'counted' : 'earned'} {fmtDateFull(entry?.earnedYMD || entry?.createdAt)}
           </DialogDescription>
         </DialogHeader>
 
