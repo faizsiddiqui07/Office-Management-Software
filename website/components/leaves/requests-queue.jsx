@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/select';
 import { requestTypeLabel, isWFHType, formatRange } from '@/lib/leave';
 import { LeaveDetailDialog } from './leave-detail-dialog';
+import { CoverageWarning } from './coverage-warning';
 
 export function RequestsQueue() {
   const qc = useQueryClient();
@@ -140,6 +141,7 @@ export function RequestsQueue() {
           )
         }
       >
+        {viewing ? <CoverageWarning leave={viewing} /> : null}
         {isPending ? (
           <div className="space-y-2">
             <Label htmlFor="dec-note">Note for the employee (optional)</Label>

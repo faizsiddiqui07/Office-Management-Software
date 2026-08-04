@@ -1,7 +1,7 @@
 import express from 'express';
 import { requireAuth } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/requirePermission.js';
-import { balance, apply, update, record, list, decision, cancel, remove, leaveLedger, declareWfhDay, undoWfhDay, wfhDays } from '../controllers/leaves.controller.js';
+import { balance, apply, update, record, list, decision, cancel, remove, leaveLedger, declareWfhDay, undoWfhDay, wfhDays, coverage } from '../controllers/leaves.controller.js';
 
 export const leavesRouter = express.Router();
 
@@ -14,6 +14,9 @@ leavesRouter.get('/ledger.pdf', leaveLedger); // own by default; ?userId= for le
 leavesRouter.get('/wfh/days', wfhDays);
 leavesRouter.post('/wfh/declare', declareWfhDay);
 leavesRouter.delete('/wfh/declare', undoWfhDay);
+// Coverage clash warning shown to approvers reviewing a request — approver-gated because
+// only they reach the queue, and it reveals who else is off.
+leavesRouter.get('/coverage', requirePermission('approveLeave'), coverage);
 leavesRouter.get('/', list);
 leavesRouter.post('/', requirePermission('applyLeave'), apply);
 leavesRouter.patch('/:id', requirePermission('applyLeave'), update); // owner + pending — enforced in service

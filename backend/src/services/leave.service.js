@@ -291,6 +291,39 @@ async function findOverlappingLeave(userId, startYMD, endYMD, excludeId = null) 
   return LeaveRequest.findOne(filter);
 }
 
+/**
+ * OTHER people already on APPROVED leave / WFH whose dates overlap [startYMD, endYMD] —
+ * the same overlap test decideLeave's clash guard uses, but across everyone except the
+ * requester (`excludeUserId`). Read-only: it powers the coverage-clash warning an approver
+ * sees before deciding, so leadership doesn't approve a day that quietly empties the
+ * office. It only informs — it never blocks. Newest field first so the list reads by date.
+ */
+export async function overlappingApproved(excludeUserId, startYMD, endYMD) {
+  const ymd = /^\d{4}-\d{2}-\d{2}$/;
+  if (!ymd.test(startYMD || '') || !ymd.test(endYMD || '') || endYMD < startYMD) return [];
+  const filter = {
+    status: 'APPROVED',
+    startYMD: { $lte: endYMD },
+    endYMD: { $gte: startYMD },
+  };
+  if (excludeUserId) filter.user = { $ne: excludeUserId };
+  const rows = await LeaveRequest.find(filter)
+    .populate('user', 'name')
+    .sort({ startYMD: 1 })
+    .limit(100)
+    .lean();
+  return rows
+    .filter((r) => r.user) // skip an orphaned row whose user was since deleted
+    .map((r) => ({
+      id: String(r._id),
+      name: r.user.name,
+      type: r.type,
+      startYMD: r.startYMD,
+      endYMD: r.endYMD,
+      isWFH: isWFH(r.type),
+    }));
+}
+
 export async function applyLeave(user, { type, startYMD, endYMD, halfDay, halfDayPart, reason }) {
   if (endYMD < startYMD) throw httpError(400, 'BAD_RANGE', 'End date is before the start date');
   if (halfDay && startYMD !== endYMD) {

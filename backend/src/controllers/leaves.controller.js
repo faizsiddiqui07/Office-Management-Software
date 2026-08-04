@@ -148,6 +148,21 @@ export async function list(req, res, next) {
   }
 }
 
+/**
+ * Approver-only: who ELSE is already approved off (leave or WFH) during a request's dates,
+ * so the approver can see at a glance whether saying yes would leave the office short.
+ * Purely informational — it never blocks a decision.
+ */
+export async function coverage(req, res, next) {
+  try {
+    const { from, to, exclude } = req.query;
+    const people = await svc.overlappingApproved(exclude, from, to);
+    res.json(ok({ people }));
+  } catch (err) {
+    handleErr(res, err, next);
+  }
+}
+
 export async function decision(req, res, next) {
   try {
     const { decision: d, note } = decisionSchema.parse(req.body);
