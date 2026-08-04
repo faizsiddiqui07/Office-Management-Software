@@ -811,14 +811,13 @@ async function clampPreGoLive() {
 const RESCORE_VERSION = 'completed-date-v2';
 
 /**
- * Re-score every finished assigned task once, so entries written under an OLD rule are
- * brought in line with how tasks are scored now (on-time judged from the completion /
- * approval day, not the submit day). Re-runs onAssignedTaskDone — which replaces each
- * task's entry in place and re-files its month — so it's safe and idempotent. Guarded by
- * a version watermark so it happens once after the deploy, not on every request.
+ * Re-score every finished assigned task from the task table as it stands right now, so a
+ * task's points always reflect its CURRENT due date, completion day and status — even if
+ * those were changed directly in the database, outside the app's own hooks. Re-runs
+ * onAssignedTaskDone, which replaces each task's entry in place and re-files its month, so
+ * it's safe and idempotent.
  */
-async function rescoreAssignedTasks(b) {
-  if (b.rescoreVersion === RESCORE_VERSION) return;
+async function rescoreAllDoneAssigned() {
   const tasks = await Task.find({ status: 'DONE', assignedBy: { $ne: null }, completedAt: { $ne: null } })
     .select('owner completedBy dueYMD title completedAt submittedAt requiresApproval assignedBy status')
     .limit(5000);
@@ -826,8 +825,31 @@ async function rescoreAssignedTasks(b) {
     // eslint-disable-next-line no-await-in-loop
     await onAssignedTaskDone(t);
   }
+}
+
+/** The one-time re-score after a scoring-rule change, gated by a version watermark. */
+async function rescoreAssignedTasks(b) {
+  if (b.rescoreVersion === RESCORE_VERSION) return;
+  await rescoreAllDoneAssigned();
   await Setting.updateOne({ key: 'global' }, { $set: { 'bonus.rescoreVersion': RESCORE_VERSION } });
   Setting.invalidateCache();
+}
+
+/**
+ * Remove auto_task points whose task no longer qualifies — deleted, un-done, or
+ * un-assigned. The app's own delete / undo hooks handle changes made THROUGH the app in
+ * real time; this is the safety net for changes made directly in the database (a task
+ * deleted straight from the collection would otherwise leave its points on the Rewards
+ * page forever, pointing at a task that no longer loads). Two cheap queries, so it can run
+ * on every rewards load.
+ */
+async function pruneOrphanTaskEntries() {
+  const refs = await PointEntry.distinct('taskRef', { source: 'auto_task', taskRef: { $ne: null } });
+  if (!refs.length) return;
+  const alive = await Task.find({ _id: { $in: refs }, status: 'DONE', assignedBy: { $ne: null } }).select('_id');
+  const aliveSet = new Set(alive.map((t) => String(t._id)));
+  const dead = refs.filter((r) => !aliveSet.has(String(r)));
+  if (dead.length) await PointEntry.deleteMany({ source: 'auto_task', taskRef: { $in: dead } });
 }
 
 /** Runs the daily scans + month rollup at most once a day (no cron needed). */
@@ -842,6 +864,9 @@ export async function maybeRunDaily() {
   try { await consolidateOvertime(b); } catch (e) { console.error('overtime consolidation failed', e?.message); }
   try { await rescoreAssignedTasks(b); } catch (e) { console.error('task re-score failed', e?.message); }
   try { await clampPreGoLive(); } catch (e) { console.error('pre-go-live clamp failed', e?.message); }
+  // Every load: drop points for tasks deleted / un-done straight in the database, so a
+  // deleted task's score can't linger on the Rewards page. Cheap enough to be responsive.
+  try { await pruneOrphanTaskEntries(); } catch (e) { console.error('orphan prune failed', e?.message); }
   const today = ymdInTz(new Date());
   if (b.lastPenaltyRun === today) return;
   // Where the absence catch-up starts. Kept SEPARATE from the once-a-day throttle and
@@ -856,6 +881,10 @@ export async function maybeRunDaily() {
   if (rolled) s.bonus.lastMonthRollup = rolled;
   await s.save();
   try { await scanOverdueTasks(b); } catch (e) { console.error('overdue scan failed', e?.message); }
+  // Once a day, re-sync every finished task's points with the task table, so a due date or
+  // completion date changed directly in the database is reflected without waiting for an
+  // in-app edit. (In-app edits already re-score at the moment they happen.)
+  try { await rescoreAllDoneAssigned(); } catch (e) { console.error('daily task re-sync failed', e?.message); }
   // Weekly punctual-week award — dedup-keyed on the week's Monday, so a daily run is safe.
   try { await runWeeklyStreak(b); } catch (e) { console.error('weekly streak failed', e?.message); }
   try {
