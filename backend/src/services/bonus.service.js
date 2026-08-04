@@ -806,7 +806,9 @@ async function clampPreGoLive() {
 }
 
 // Bump this whenever the way a task is scored changes; rescoreAssignedTasks re-runs once.
-const RESCORE_VERSION = 'completed-date-v1';
+// v2: catch tasks whose due date was corrected before the due-date-edit re-scoring shipped
+// — their points were frozen at the old verdict and need one fresh pass to line up.
+const RESCORE_VERSION = 'completed-date-v2';
 
 /**
  * Re-score every finished assigned task once, so entries written under an OLD rule are
