@@ -140,15 +140,18 @@ export default function ExpensesPage() {
   // them are the same slice by construction rather than by both doing the same maths.
   const range = summary?.period ? { from: summary.period.from, to: summary.period.to } : null;
 
-  const exportCsv = async () => {
+  // Same filtered slice as the table, exported as either a re-crunchable CSV or a branded,
+  // printable PDF statement (the one an accountant is handed).
+  const doExport = async (kind = 'csv') => {
     if (!range) return;
     const p = new URLSearchParams({ from: range.from, to: range.to });
     if (filters.category !== 'ALL') p.set('category', filters.category);
     if (filters.payment !== 'ALL') p.set('paymentMethod', filters.payment);
     if (debouncedSearch) p.set('search', debouncedSearch);
+    const ext = kind === 'pdf' ? 'pdf' : 'csv';
     setExporting(true);
     try {
-      await downloadFile(`${API_BASE}/api/expenses/export.csv?${p.toString()}`, `expenses-${range.from}-to-${range.to}.csv`);
+      await downloadFile(`${API_BASE}/api/expenses/export.${ext}?${p.toString()}`, `expenses-${range.from}-to-${range.to}.${ext}`);
     } catch (e) {
       toast.error(e?.message || 'Could not export');
     } finally {
@@ -173,7 +176,7 @@ export default function ExpensesPage() {
         filters={{ ...filters, resolvedFrom: range?.from, resolvedTo: range?.to }}
         onChange={setFilters}
         categories={meta?.categories ?? []}
-        onExport={exportCsv}
+        onExport={doExport}
         exporting={exporting}
         canManage={canManage}
         addButton={<ExpenseDialog />}

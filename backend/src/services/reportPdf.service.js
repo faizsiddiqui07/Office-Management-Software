@@ -656,3 +656,33 @@ function buildHolidayListDoc(data, logo) {
 export async function renderHolidayListToStream(data, logo = null) {
   return renderToStream(buildHolidayListDoc(data, logo));
 }
+
+/* ── Standalone expense statement (the exact filtered slice, for an accountant) ──── */
+function buildExpenseListDoc(data, logo) {
+  const accent = data.company.brandColor || DEFAULT_ACCENT;
+  const label = 'Expense statement';
+  const generatedOn = new Date(data.generatedAt).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' });
+  return E(
+    Document,
+    {},
+    E(
+      Page,
+      { size: 'A4', style: styles.page, wrap: true },
+      header(data, logo, accent, label),
+      // The exact slice this statement covers (period + any category/method/search filter),
+      // so the reader knows what these figures are — and aren't.
+      E(
+        View,
+        { style: styles.metaRow },
+        E(Text, { style: styles.meta }, data.scope || 'All expenses'),
+        E(Text, { style: styles.meta }, `Generated: ${generatedOn}`),
+      ),
+      expensesSection(data, accent), // same category table + capped itemised list as the company report
+      footer(data, label),
+    ),
+  );
+}
+
+export async function renderExpenseListToStream(data, logo = null) {
+  return renderToStream(buildExpenseListDoc(data, logo));
+}

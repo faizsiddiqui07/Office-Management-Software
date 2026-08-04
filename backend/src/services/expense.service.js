@@ -1,4 +1,5 @@
 import { Expense } from '../models/Expense.js';
+import { Setting } from '../models/Setting.js';
 import { companyDayFromYMD } from '../lib/time.js';
 
 function httpError(status, code, message) {
@@ -170,5 +171,59 @@ export async function expenseSummary({ from, to, category, paymentMethod, search
     previous: prevMatch
       ? { total: previous[0]?.total ?? 0, count: previous[0]?.count ?? 0, from: prevFrom, to: prevTo }
       : null,
+  };
+}
+
+// The itemised list on the statement is capped so a huge slice can't produce a
+// thousand-page PDF; the total and category figures still cover everything, and the note
+// says "latest N of M". Generous enough that a normal filtered slice is never truncated.
+const STATEMENT_LIST_CAP = 500;
+
+/**
+ * Everything the printable expense statement needs — the EXACT filtered slice the user is
+ * looking at (period, category, method, search), shaped for reportPdf's expensesSection.
+ *
+ * Unlike expenseSummary — whose byCategory deliberately IGNORES the category filter so the
+ * page's picker stays usable after you've picked — here the category breakdown and the
+ * total both honour every filter, so the figures and the itemised rows describe one and
+ * the same slice (they'd otherwise disagree the moment a category was chosen).
+ */
+export async function buildExpenseStatement({ from, to, category, paymentMethod, search }) {
+  const filter = buildExpenseFilter({ from, to, category, paymentMethod, search });
+
+  const [byCategory, overall, list, settings] = await Promise.all([
+    Expense.aggregate([
+      { $match: filter },
+      { $group: { _id: '$category', total: { $sum: '$amount' }, count: { $sum: 1 } } },
+      { $sort: { total: -1 } },
+    ]),
+    Expense.aggregate([{ $match: filter }, { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }]),
+    Expense.find(filter).sort({ dateYMD: -1, createdAt: -1 }).limit(STATEMENT_LIST_CAP),
+    Setting.getSingleton(),
+  ]);
+
+  const total = overall[0]?.total ?? 0;
+  const count = overall[0]?.count ?? 0;
+
+  const fmt = (ymd) => new Date(`${ymd}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+  const rangeLabel = from && to ? `${fmt(from)} – ${fmt(to)}` : from ? `From ${fmt(from)}` : to ? `Until ${fmt(to)}` : 'All dates';
+  const scopeParts = [rangeLabel];
+  if (category) scopeParts.push(`Category: ${category.replace(/_/g, ' ')}`);
+  if (paymentMethod) scopeParts.push(`Method: ${paymentMethod.replace(/_/g, ' ')}`);
+  if (search) scopeParts.push(`Search: “${search}”`);
+
+  return {
+    company: { name: settings.companyName, currency: settings.currency, timezone: settings.timezone, brandColor: settings.brandColor, logoUrl: settings.logoUrl, logoLight: settings.logoLight, logoDark: settings.logoDark },
+    generatedAt: new Date().toISOString(),
+    period: { from, to, label: rangeLabel },
+    scope: scopeParts.join('   ·   '),
+    expenses: {
+      total,
+      count,
+      byCategory: byCategory.map((c) => ({ category: c._id, total: c.total, count: c.count })),
+      list: list.map((e) => ({ dateYMD: e.dateYMD, title: e.title, category: e.category, paymentMethod: e.paymentMethod, amount: e.amount })),
+      listCount: list.length,
+      listCapped: count > list.length,
+    },
   };
 }

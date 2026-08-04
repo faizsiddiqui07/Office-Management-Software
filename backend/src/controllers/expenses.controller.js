@@ -6,6 +6,8 @@ import {
   summaryQuerySchema,
 } from '../validators/expenses.validators.js';
 import * as svc from '../services/expense.service.js';
+import { renderExpenseListToStream } from '../services/reportPdf.service.js';
+import { loadCompanyLogo } from '../lib/brand.js';
 import { computePeriod, previousPeriod } from '../services/report.service.js';
 import { ymdInTz } from '../lib/time.js';
 import { Setting } from '../models/Setting.js';
@@ -90,6 +92,28 @@ export async function exportCsv(req, res, next) {
     res.send(toCsv(header, rows));
   } catch (err) {
     handleErr(res, err, next);
+  }
+}
+
+/**
+ * A branded, printable expense statement of the EXACT filtered slice on screen (same
+ * listExpensesQuerySchema params as the CSV export) — company header, category summary,
+ * itemised rows and total. The thing an accountant is handed; the CSV is for re-crunching.
+ */
+export async function exportPdf(req, res, next) {
+  try {
+    const q = listExpensesQuerySchema.parse(req.query);
+    const data = await svc.buildExpenseStatement(q);
+    await audit({ actor: req.user._id, action: 'expense.export_pdf', entityType: 'Expense', entityId: 'export', meta: { count: data.expenses.count, category: q.category, paymentMethod: q.paymentMethod } });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="expenses-${q.from || 'all'}-to-${q.to || 'all'}.pdf"`);
+    const stream = await renderExpenseListToStream(data, loadCompanyLogo(data.company.logoDark || data.company.logoUrl || data.company.logoLight));
+    stream.on('error', (err) => next(err));
+    stream.pipe(res);
+    return undefined;
+  } catch (err) {
+    return handleErr(res, err, next);
   }
 }
 

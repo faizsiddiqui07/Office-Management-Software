@@ -1,10 +1,11 @@
 'use client';
 
 import * as React from 'react';
-import { Download, Search, SlidersHorizontal, X } from 'lucide-react';
+import { Download, FileSpreadsheet, FileText, Search, SlidersHorizontal, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { AppDialog } from '@/components/glass/app-dialog';
 import { Button } from '@/components/ui/button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -122,10 +123,20 @@ export function ExpenseFilterBar({ filters, onChange, categories = [], onExport,
         </Button>
 
         <div className="ml-auto flex shrink-0 items-center gap-2">
-          <Button variant="outline" size="sm" onClick={onExport} disabled={exporting} title="Download these rows as CSV">
-            <Download className="size-4" />
-            <span className="hidden sm:inline">{exporting ? 'Exporting…' : 'Export'}</span>
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger render={<Button variant="outline" size="sm" disabled={exporting} title="Download this filtered slice" />}>
+              <Download className="size-4" />
+              <span className="hidden sm:inline">{exporting ? 'Exporting…' : 'Export'}</span>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => onExport('pdf')}>
+                <FileText /> PDF statement
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onExport('csv')}>
+                <FileSpreadsheet /> CSV (spreadsheet)
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           {canManage && addButton ? addButton : null}
         </div>
       </div>
