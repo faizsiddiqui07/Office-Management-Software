@@ -1277,11 +1277,11 @@ export function TaskBoard() {
       <Tabs value={tab} onValueChange={(v) => { setTab(v); setFlat(null); }}>
         <TabsList>
           <TabsTrigger value="mine">My tasks</TabsTrigger>
-          <TabsTrigger value="history">History</TabsTrigger>
+          {canAssign ? <TabsTrigger value="assigned">Assigned by me</TabsTrigger> : null}
           <TabsTrigger value="tagged">
             Tagged{tg.total ? <span className="ml-1 text-xs font-normal text-muted-foreground">({tg.total})</span> : null}
           </TabsTrigger>
-          {canAssign ? <TabsTrigger value="assigned">Assigned by me</TabsTrigger> : null}
+          <TabsTrigger value="history">History</TabsTrigger>
         </TabsList>
         <TabsContent value={tab} className="pt-4">
           {isError && !data ? (
