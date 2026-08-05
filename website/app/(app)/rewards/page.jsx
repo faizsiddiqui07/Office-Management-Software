@@ -4,7 +4,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Award, Coins, Gift, Info, Sparkles, Trash2, TrendingUp, ChevronRight } from 'lucide-react';
+import { Award, Coins, Gift, Info, Sparkles, Trash2, TrendingDown, TrendingUp, ChevronRight } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can, roleName } from '@/lib/permissions';
@@ -399,7 +399,7 @@ export default function RewardsPage() {
         eyebrow="Bonus"
         title="Rewards"
         icon={Award}
-        description="Earn points for good work — leadership sets what each is worth, and points reset each month."
+        description="Earn points for good work — leadership sets what each is worth. Positives reset each month; a negative balance carries into the next month until you clear it."
         actions={
           enabled === false ? null : (
             /* Monthly + Yearly picker. Two selects side-by-side on desktop; on phones they
@@ -440,12 +440,22 @@ export default function RewardsPage() {
         />
       ) : (
         <>
-          {/* My points — two cards max, so cap the grid at 2 (a 4-col grid used to leave
-              two visible empty columns on desktop). */}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
-            <StatCard label="My points" value={me?.points ?? 0} hint={periodLabel} icon={Award} tone="success" />
-            {me?.rupeesPerPoint ? <StatCard label="Worth" value={money(me?.rupees)} hint={`${money(me?.rupeesPerPoint)}/point`} icon={Coins} tone="default" /> : null}
-          </div>
+          {/* My points. When a deficit has been carried in from earlier months, show it
+              split three ways — this month vs carried-over vs net — so the two are never
+              confused. Otherwise the simple one/two-card layout. */}
+          {(me?.carriedOver ?? 0) < 0 ? (
+            <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+              <StatCard label="This month" value={me?.earned ?? 0} hint={periodLabel} icon={Award} tone="default" />
+              <StatCard label="Carried over" value={me?.carriedOver ?? 0} hint="deficit from earlier months" icon={TrendingDown} tone="destructive" />
+              <StatCard label="Net total" value={me?.points ?? 0} hint={periodLabel} icon={Award} tone={(me?.points ?? 0) < 0 ? 'destructive' : 'success'} />
+              {me?.rupeesPerPoint ? <StatCard label="Worth" value={money(me?.rupees)} hint={`${money(me?.rupeesPerPoint)}/point`} icon={Coins} tone="default" /> : null}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
+              <StatCard label="My points" value={me?.points ?? 0} hint={periodLabel} icon={Award} tone="success" />
+              {me?.rupeesPerPoint ? <StatCard label="Worth" value={money(me?.rupees)} hint={`${money(me?.rupeesPerPoint)}/point`} icon={Coins} tone="default" /> : null}
+            </div>
+          )}
 
           {/* My breakdown — now the FIRST thing under the stats. Each row opens its detail;
               a task row shows the whole task. "How points work" moved into a button. */}

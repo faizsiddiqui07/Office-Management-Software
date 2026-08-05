@@ -57,6 +57,35 @@ function prevMonth(ymOrToday) {
   const [y, m] = ym.split('-').map(Number);
   return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`;
 }
+function nextMonthYM(ym) {
+  const [y, m] = String(ym).slice(0, 7).split('-').map(Number);
+  return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
+}
+
+/**
+ * The deficit a person carries INTO `targetMonth` — always ≤ 0.
+ *
+ * Only a NEGATIVE month total carries forward, and it keeps compounding until it's cleared:
+ * a positive month resets (you don't hoard a surplus into the next month), a negative one
+ * follows you. Computed live from the ledger by walking every month from go-live up to the
+ * month before the target — so it's always in step with the real entries and needs no
+ * stored carry-over rows (which would double-count in a range view). For each month:
+ * net = that month's earned points + whatever was carried in; carry-out = min(0, net).
+ */
+async function carryInFor(userId, targetMonth) {
+  const goLive = APP_LIVE_YMD.slice(0, 7);
+  if (targetMonth <= goLive) return 0;
+  const rows = await PointEntry.aggregate([
+    { $match: { user: toId(userId), month: { $gte: goLive, $lt: targetMonth } } },
+    { $group: { _id: '$month', earned: { $sum: '$points' } } },
+  ]);
+  const byMonth = new Map(rows.map((r) => [r._id, r.earned]));
+  let carry = 0;
+  for (let ym = goLive; ym < targetMonth; ym = nextMonthYM(ym)) {
+    carry = Math.min(0, (byMonth.get(ym) || 0) + carry);
+  }
+  return carry;
+}
 
 /** Points configured for an auto rule (0 if the CEO hasn't switched it on). */
 function rulePoints(bonus, key) {
@@ -147,7 +176,12 @@ export async function mySummary(user, params = {}) {
     { $match: { user: toId(user._id), month: matchMonth } },
     { $group: { _id: null, points: { $sum: '$points' } } },
   ]);
-  const points = agg?.points || 0;
+  const earned = agg?.points || 0; // what was actually earned/lost within this period
+  // A single month carries in the previous month's deficit (compounding, negatives only);
+  // a range is shown as its raw earnings — carry-over is a month-to-month notion and would
+  // double-count across a span. `points` is the NET the header + leaderboard read.
+  const carriedOver = isRange ? 0 : await carryInFor(user._id, month);
+  const points = earned + carriedOver;
   // Newest FIRST by the day it was earned — a month scored after the fact was written
   // all at once, so sorting on createdAt would list it in an arbitrary order.
   const entries = await PointEntry.find({ user: user._id, month: matchMonth })
@@ -158,8 +192,11 @@ export async function mySummary(user, params = {}) {
     enabled: cfg.enabled,
     month: month || null,
     range: isRange ? { from: params.from, to: params.to } : null,
-    points,
-    rupees: cfg.rupeesPerPoint ? Math.round(points * cfg.rupeesPerPoint) : 0,
+    points, // net = earned + carriedOver
+    earned, // just this period, before any carry-over
+    carriedOver, // ≤ 0, the deficit brought from earlier months (0 for a range)
+    // Payout is for a positive net only; a deficit doesn't pay a negative wage, it carries.
+    rupees: cfg.rupeesPerPoint && points > 0 ? Math.round(points * cfg.rupeesPerPoint) : 0,
     rupeesPerPoint: cfg.rupeesPerPoint,
     entries: entries.map((e) => e.toJSON()),
   };
@@ -232,14 +269,45 @@ export async function recentAwards(limit = 30) {
 export async function leaderboard(params = {}) {
   const p = typeof params === 'string' ? { month: params } : (params || {});
   const isRange = !!(p.from && p.to);
-  const matchMonth = isRange ? { $gte: p.from, $lte: p.to } : (p.month || currentMonth());
-  const rows = await PointEntry.aggregate([{ $match: { month: matchMonth } }, { $group: { _id: '$user', points: { $sum: '$points' } } }, { $sort: { points: -1 } }]);
+  let rows;
+  if (isRange) {
+    // A range is the raw sum of its entries (carry-over is month-to-month, not a span total).
+    rows = await PointEntry.aggregate([
+      { $match: { month: { $gte: p.from, $lte: p.to } } },
+      { $group: { _id: '$user', points: { $sum: '$points' } } },
+      { $sort: { points: -1 } },
+    ]);
+  } else {
+    // Single month: rank by NET standing (earned this month + any carried-in deficit), so
+    // the board agrees with the header badge and each person's own Rewards page.
+    const targetMonth = p.month || currentMonth();
+    const goLive = APP_LIVE_YMD.slice(0, 7);
+    const agg = await PointEntry.aggregate([
+      { $match: { month: { $gte: goLive, $lte: targetMonth } } },
+      { $group: { _id: { user: '$user', month: '$month' }, earned: { $sum: '$points' } } },
+    ]);
+    const byUser = new Map();
+    for (const r of agg) {
+      const uid = String(r._id.user);
+      if (!byUser.has(uid)) byUser.set(uid, new Map());
+      byUser.get(uid).set(r._id.month, r.earned);
+    }
+    rows = [];
+    for (const [uid, months] of byUser) {
+      let carry = 0;
+      for (let ym = goLive; ym < targetMonth; ym = nextMonthYM(ym)) carry = Math.min(0, (months.get(ym) || 0) + carry);
+      const net = (months.get(targetMonth) || 0) + carry;
+      // Skip anyone who nets zero and did nothing this month — no point listing a flat 0.
+      if (net !== 0 || months.has(targetMonth)) rows.push({ _id: uid, points: net });
+    }
+    rows.sort((a, b) => b.points - a.points);
+  }
   const users = await User.find({ _id: { $in: rows.map((r) => r._id) } }).select('name role employeeId');
   const byId = new Map(users.map((u) => [String(u._id), u]));
   const cfg = await getConfig();
   return rows.map((r) => {
     const u = byId.get(String(r._id));
-    return u ? { id: String(u._id), name: u.name, employeeId: u.employeeId, role: u.role, points: r.points, rupees: cfg.rupeesPerPoint ? Math.round(r.points * cfg.rupeesPerPoint) : 0 } : null;
+    return u ? { id: String(u._id), name: u.name, employeeId: u.employeeId, role: u.role, points: r.points, rupees: cfg.rupeesPerPoint && r.points > 0 ? Math.round(r.points * cfg.rupeesPerPoint) : 0 } : null;
   }).filter(Boolean);
 }
 
