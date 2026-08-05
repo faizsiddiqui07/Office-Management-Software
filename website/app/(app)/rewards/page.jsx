@@ -42,6 +42,7 @@ const Pts = ({ n }) => <span className={n < 0 ? 'font-medium text-destructive' :
 // What each kind of automatic entry is, in plain words, for the detail view.
 const SOURCE_LABEL = {
   auto_task: 'Assigned task',
+  auto_forward: 'Forwarded a task',
   auto_streak: 'Punctual week',
   auto_late: 'Late arrival',
   auto_ot: 'Overtime',
@@ -94,7 +95,7 @@ function TaskFacts({ task }) {
 
 /** One point entry, expanded: what it was, what it's worth, and — if it's a task — the task. */
 function EntryDetailDialog({ entry, onOpenChange }) {
-  const isTask = entry?.source === 'auto_task' && !!entry?.taskRef;
+  const isTask = (entry?.source === 'auto_task' || entry?.source === 'auto_forward') && !!entry?.taskRef;
   const q = useTaskDetail(isTask ? entry.taskRef : null);
   return (
     <Dialog open={!!entry} onOpenChange={onOpenChange}>

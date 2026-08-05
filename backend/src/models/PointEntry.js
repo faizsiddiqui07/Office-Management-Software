@@ -19,7 +19,7 @@ const pointEntrySchema = new mongoose.Schema(
     reason: { type: String, default: '' }, // human label shown in the breakdown
     source: {
       type: String,
-      enum: ['auto_task', 'auto_streak', 'auto_late', 'auto_ot', 'auto_absent', 'auto_noleave', 'auto_perfect', 'manual'],
+      enum: ['auto_task', 'auto_forward', 'auto_streak', 'auto_late', 'auto_ot', 'auto_absent', 'auto_noleave', 'auto_perfect', 'manual'],
       default: 'manual',
       index: true,
     },

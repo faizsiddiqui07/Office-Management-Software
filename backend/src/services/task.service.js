@@ -473,6 +473,11 @@ export async function forwardTask(actor, id, { assignTo, requiresApproval, notes
     status: 'PENDING',
   });
 
+  // The parent copy is now a forwarder, not a doer — drop any overdue penalty it had picked
+  // up while it sat in their list. Their reward now comes from the chain settling (a
+  // forwarder bonus), scored on the root when the whole chain is finally approved.
+  try { await onAssignedTaskUndone(parent._id); } catch (e) { console.error('bonus hook (forward) failed', e?.message); }
+
   await notify({
     user: target._id,
     type: 'TASK_ASSIGNED',

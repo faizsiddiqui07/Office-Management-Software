@@ -31,6 +31,8 @@ function httpError(status, code, message) {
 export const AUTO_RULES = [
   { key: 'assignedTaskOnTime', label: 'Assigned task done on time', hint: 'Only tasks someone assigns — not self-made', sign: 'reward' },
   { key: 'assignedTaskLate', label: 'Assigned task done or left late', hint: 'After the due date + grace days', sign: 'penalty' },
+  { key: 'forwardOnTime', label: 'Forwarded a task, done on time', hint: 'For whoever passed the work down — when the chain finishes on time', sign: 'reward' },
+  { key: 'forwardLate', label: 'Forwarded a task, done late', hint: 'For whoever passed the work down — when the chain finishes late', sign: 'penalty' },
   { key: 'punctualStreak', label: 'Punctual week', hint: 'On time all week (Mon–Sat); leave / WFH / Sunday don’t break it', sign: 'reward' },
   { key: 'lateArrival', label: 'Each late arrival', hint: 'Every day they check in late', sign: 'penalty' },
   { key: 'overtimeHour', label: 'Each hour of overtime', hint: 'Per full hour worked past the shift', sign: 'reward' },
@@ -269,42 +271,90 @@ async function awardOnce(key, { user, month, points, reason, source, taskRef = n
 
 // ── Event hooks (called from other services) ─────────────────────────────────
 
+/** Every copy forwarded off `rootId`, at any depth (the tree BELOW the root, root excluded). */
+async function collectChainCopies(rootId) {
+  const out = [];
+  let frontier = [rootId];
+  let depth = 0;
+  while (frontier.length && depth < 12) {
+    // eslint-disable-next-line no-await-in-loop
+    const kids = await Task.find({ forwardedFrom: { $in: frontier } }).select('owner forwardedFrom title');
+    if (!kids.length) break;
+    out.push(...kids);
+    frontier = kids.map((k) => k._id);
+    depth += 1;
+  }
+  return out;
+}
+
+/**
+ * Score a finished task — and, when it's a forwarded chain, everyone in that chain at once.
+ *
+ * FULL-CHAIN GATING: nobody is paid until the work is accepted at the TOP of the chain.
+ * Only the ROOT copy (the one directly assigned — nothing forwarded INTO it) awards, and it
+ * pays the whole tree together. A copy finishing lower down settles upward (settleParent)
+ * but pays no one on its own; if the chain is rejected or left pending anywhere above, the
+ * root never reaches DONE and no points are ever written — so a later rejection at the top
+ * means C, B and A all get nothing, exactly as intended.
+ *
+ * Within a settled chain:
+ *  - a copy that was forwarded onward (has a child) = a FORWARDER → forwardOnTime / forwardLate;
+ *  - a copy with nothing forwarded off it (a leaf) = the DOER → assignedTaskOnTime / assignedTaskLate.
+ * On-time vs late is judged once, from the ROOT's final approval day (completedAt) vs its
+ * due date + grace, and applied to everyone.
+ */
 export async function onAssignedTaskDone(task) {
   const s = await Setting.getSingleton();
   const b = s.bonus || {};
   if (!b.enabled || !task.assignedBy) return;
-  // Work that was passed further down belongs to whoever it ended up with. Finishing at
-  // the bottom settles every copy above it (settleParent), and each of those settles
-  // used to score its own holder too — so a single job paid two or three people. The
-  // copy that was actually worked is the one with nothing forwarded off it, and that is
-  // the only one scored. The leaderboard already counts it this way.
-  if (await Task.exists({ forwardedFrom: task._id })) {
-    // Clear anything already on it (an overdue penalty from before it was passed on).
-    await PointEntry.deleteMany({ taskRef: task._id, source: 'auto_task' });
-    return;
-  }
-  await PointEntry.deleteMany({ taskRef: task._id, source: 'auto_task' });
-  // On-time is judged from the day the task was actually COMPLETED. For an approval task
-  // that is the day the assigner approved it (completedAt is stamped at approval), so a
-  // task approved after its due date + grace counts as late even if it was submitted on
-  // time — the office wants the finish line, not the hand-in, to decide.
+  // A non-root copy never pays out by itself — it waits for the top to accept the work.
+  if (task.forwardedFrom) return;
+
+  const descendants = await collectChainCopies(task._id);
+  const copies = [task, ...descendants];
+  // The ids of copies that were forwarded onward — those owners are forwarders, the rest doers.
+  const forwarderIds = new Set(descendants.map((c) => String(c.forwardedFrom)));
+
   const rawYMD = ymdInTz(task.completedAt || new Date());
-  // Nothing predates go-live: a task carrying an earlier completion date (an import
-  // artifact, a back-dated record) would otherwise show on somebody's Rewards page days
-  // before they even had access. Clamp it forward so the earliest a reward can appear is
-  // the day the office started running on this system.
+  // Nothing predates go-live: a back-dated completion would otherwise surface on a Rewards
+  // page before that person had access. Clamp forward for FILING only — lateness is still
+  // judged on the real day.
   const completedYMD = rawYMD < APP_LIVE_YMD ? APP_LIVE_YMD : rawYMD;
-  // Late is judged on the real completion day vs the due date — the clamp above only
-  // decides which day/month the points are filed under, never whether it was on time.
   const late = task.dueYMD && rawYMD > addDays(task.dueYMD, b.graceDays || 0);
-  const pts = rulePoints(b, late ? 'assignedTaskLate' : 'assignedTaskOnTime');
-  if (!pts) return;
-  // replace: the finished result supersedes any overdue penalty already recorded.
-  await awardOnce(`auto_task:${task._id}`, { user: task.owner, month: completedYMD.slice(0, 7), points: late ? -Math.abs(pts) : Math.abs(pts), reason: `${late ? 'Late completion' : 'Completed'}: ${task.title}`, source: 'auto_task', taskRef: task._id, earnedYMD: completedYMD }, { replace: true });
+
+  for (const copy of copies) {
+    const isForwarder = forwarderIds.has(String(copy._id));
+    const key = isForwarder ? `auto_forward:${copy._id}` : `auto_task:${copy._id}`;
+    const source = isForwarder ? 'auto_forward' : 'auto_task';
+    // Clear any entry of the OTHER kind for this copy (e.g. an overdue auto_task mark on a
+    // copy that turns out to be a forwarder), so a re-score never leaves a stale row behind.
+    // eslint-disable-next-line no-await-in-loop
+    await PointEntry.deleteMany({ taskRef: copy._id, source: isForwarder ? 'auto_task' : 'auto_forward' });
+    const pts = rulePoints(b, isForwarder ? (late ? 'forwardLate' : 'forwardOnTime') : (late ? 'assignedTaskLate' : 'assignedTaskOnTime'));
+    if (!pts) {
+      // eslint-disable-next-line no-await-in-loop
+      await PointEntry.deleteMany({ dedupeKey: key });
+      // eslint-disable-next-line no-continue
+      continue;
+    }
+    const what = isForwarder
+      ? (late ? 'Forwarded, done late' : 'Forwarded, done on time')
+      : (late ? 'Late completion' : 'Completed');
+    // eslint-disable-next-line no-await-in-loop
+    await awardOnce(key, {
+      user: copy.owner,
+      month: completedYMD.slice(0, 7),
+      points: late ? -Math.abs(pts) : Math.abs(pts),
+      reason: `${what}: ${copy.title || task.title}`,
+      source,
+      taskRef: copy._id,
+      earnedYMD: completedYMD,
+    }, { replace: true }); // replace: the finished result supersedes any overdue penalty
+  }
 }
 
 export async function onAssignedTaskUndone(taskId) {
-  await PointEntry.deleteMany({ taskRef: taskId, source: 'auto_task' });
+  await PointEntry.deleteMany({ taskRef: taskId, source: { $in: ['auto_task', 'auto_forward'] } });
 }
 
 /**
@@ -806,9 +856,29 @@ async function clampPreGoLive() {
 }
 
 // Bump this whenever the way a task is scored changes; rescoreAssignedTasks re-runs once.
-// v2: catch tasks whose due date was corrected before the due-date-edit re-scoring shipped
-// — their points were frozen at the old verdict and need one fresh pass to line up.
-const RESCORE_VERSION = 'completed-date-v2';
+// v2: catch tasks whose due date was corrected before the due-date-edit re-scoring shipped.
+// forwarder-reward-v1: forwarding now pays the forwarder (+forwardOnTime / -forwardLate) and
+// gates the whole chain on top approval, so every finished chain must be re-scored once.
+const RESCORE_VERSION = 'forwarder-reward-v1';
+
+/**
+ * Seed the forwarding reward rules (forwardOnTime +3 / forwardLate 2) into the live config
+ * once, so the feature works out of the box with the values leadership asked for — while
+ * still showing up in Settings as ordinary, editable rules. Guarded by a flag so removing
+ * them later doesn't make them re-appear. Missing keys only — never overwrites a value
+ * leadership has already set.
+ */
+async function seedForwardRules() {
+  const s = await Setting.getSingleton();
+  if (s.bonus?.forwardRuleSeeded) return;
+  const rules = [...(s.bonus.autoRules || [])];
+  if (!rules.some((r) => r.key === 'forwardOnTime')) rules.push({ key: 'forwardOnTime', points: 3 });
+  if (!rules.some((r) => r.key === 'forwardLate')) rules.push({ key: 'forwardLate', points: 2 });
+  s.bonus.autoRules = rules;
+  s.bonus.forwardRuleSeeded = true;
+  await s.save();
+  Setting.invalidateCache();
+}
 
 /**
  * Re-score every finished assigned task from the task table as it stands right now, so a
@@ -819,7 +889,7 @@ const RESCORE_VERSION = 'completed-date-v2';
  */
 async function rescoreAllDoneAssigned() {
   const tasks = await Task.find({ status: 'DONE', assignedBy: { $ne: null }, completedAt: { $ne: null } })
-    .select('owner completedBy dueYMD title completedAt submittedAt requiresApproval assignedBy status')
+    .select('owner completedBy dueYMD title completedAt submittedAt requiresApproval assignedBy status forwardedFrom')
     .limit(5000);
   for (const t of tasks) {
     // eslint-disable-next-line no-await-in-loop
@@ -844,12 +914,13 @@ async function rescoreAssignedTasks(b) {
  * on every rewards load.
  */
 async function pruneOrphanTaskEntries() {
-  const refs = await PointEntry.distinct('taskRef', { source: 'auto_task', taskRef: { $ne: null } });
+  const TASK_SOURCES = ['auto_task', 'auto_forward'];
+  const refs = await PointEntry.distinct('taskRef', { source: { $in: TASK_SOURCES }, taskRef: { $ne: null } });
   if (!refs.length) return;
   const alive = await Task.find({ _id: { $in: refs }, status: 'DONE', assignedBy: { $ne: null } }).select('_id');
   const aliveSet = new Set(alive.map((t) => String(t._id)));
   const dead = refs.filter((r) => !aliveSet.has(String(r)));
-  if (dead.length) await PointEntry.deleteMany({ source: 'auto_task', taskRef: { $in: dead } });
+  if (dead.length) await PointEntry.deleteMany({ source: { $in: TASK_SOURCES }, taskRef: { $in: dead } });
 }
 
 /** Runs the daily scans + month rollup at most once a day (no cron needed). */
@@ -862,6 +933,9 @@ export async function maybeRunDaily() {
   try { await catchUpHistory(b); } catch (e) { console.error('history catch-up failed', e?.message); }
   try { await repairEarnedDates(); } catch (e) { console.error('earned-date repair failed', e?.message); }
   try { await consolidateOvertime(b); } catch (e) { console.error('overtime consolidation failed', e?.message); }
+  // Seed the forwarding reward rules BEFORE the re-score, so the one-time re-score already
+  // sees their point values and can pay forwarders for chains finished in past months.
+  try { await seedForwardRules(); } catch (e) { console.error('forward-rule seed failed', e?.message); }
   try { await rescoreAssignedTasks(b); } catch (e) { console.error('task re-score failed', e?.message); }
   try { await clampPreGoLive(); } catch (e) { console.error('pre-go-live clamp failed', e?.message); }
   // Every load: drop points for tasks deleted / un-done straight in the database, so a
