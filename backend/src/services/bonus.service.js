@@ -958,7 +958,13 @@ async function seedForwardRules() {
 async function rescoreAllDoneAssigned() {
   // Only ROOT copies (nothing forwarded INTO them) award — they pay their whole forward
   // tree at once; a non-root copy is a no-op in onAssignedTaskDone, so don't even load it.
-  const tasks = await Task.find({ status: 'DONE', assignedBy: { $ne: null }, completedAt: { $ne: null }, forwardedFrom: null })
+  //
+  // BOUNDED to the last ~45 days: this daily pass exists to catch task dates changed
+  // straight in the database, which only matters for CURRENT standings. Re-scoring years
+  // of closed, unchanged history every day was pushing the scheduled Lambda to its 30s
+  // timeout (and dragging the whole app down). App-driven edits still re-score instantly.
+  const cutoff = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000);
+  const tasks = await Task.find({ status: 'DONE', assignedBy: { $ne: null }, completedAt: { $gte: cutoff }, forwardedFrom: null })
     .select('owner completedBy dueYMD title completedAt submittedAt requiresApproval assignedBy status forwardedFrom')
     .limit(5000);
   for (const t of tasks) {
