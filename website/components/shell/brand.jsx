@@ -11,14 +11,19 @@ export function Brand({ className, compact = false }) {
   const b = settings || branding;
   const name = b?.companyName?.trim() || 'Architectus Bureau';
 
-  // Compact (small mobile screens): the square app mark. This is the ONE image that
-  // deliberately stays in the frontend (public/logo.png) — browsers require the
-  // favicon/PWA-install icon to be same-origin, so the same file doubles as the compact
-  // header mark, exactly as it always did. All other brand images come from S3.
+  // Compact (small mobile screens): the square app mark, uploaded via Settings (S3).
+  // Falls back to the Sparkles gradient mark until one is uploaded.
   if (compact) {
+    const mark = (b?.appIcon || '').trim();
     return (
       <div className={cn('flex items-center', className)}>
-        <img src="/logo.png" alt={name} className="size-10 shrink-0 rounded-lg object-contain" />
+        {mark ? (
+          <img src={mark} alt={name} className="size-10 shrink-0 rounded-lg object-contain" />
+        ) : (
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-info text-white shadow-glow">
+            <Sparkles className="size-5" />
+          </span>
+        )}
       </div>
     );
   }

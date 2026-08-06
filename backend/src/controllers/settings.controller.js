@@ -49,6 +49,7 @@ export async function getBranding(_req, res, next) {
           // Legacy back-fill applied in memory: an old single logo doubles as the dark one.
           logoDark: b.logoDark || b.logoUrl,
           logoUrl: b.logoUrl,
+          appIcon: b.appIcon,
           brandColor: b.brandColor,
           // Backgrounds ride along (tiny S3 URLs) so the login page shows the same
           // wallpaper as the app — no image ships with the frontend at all.
@@ -148,12 +149,12 @@ export async function testSmtp(req, res, next) {
 export async function uploadLogo(req, res, next) {
   try {
     const { dataUrl } = req.body || {};
-    const variant = req.body?.variant === 'light' ? 'light' : 'dark';
+    const variant = ['light', 'icon'].includes(req.body?.variant) ? req.body.variant : 'dark';
     if (!dataUrl) return res.status(400).json(fail('NO_IMAGE', 'No image provided'));
 
     const url = await saveCompanyLogo(dataUrl, variant); // uploads to the assets bucket
     const s = await Setting.getFullSingleton();
-    const field = variant === 'light' ? 'logoLight' : 'logoDark';
+    const field = variant === 'icon' ? 'appIcon' : variant === 'light' ? 'logoLight' : 'logoDark';
     const previous = s[field];
     s[field] = url;
     if (variant === 'dark') s.logoUrl = url; // keep legacy mirror in sync
@@ -170,9 +171,9 @@ export async function uploadLogo(req, res, next) {
 /** Remove a company logo variant ('light' or 'dark'). */
 export async function removeLogo(req, res, next) {
   try {
-    const variant = req.query?.variant === 'light' ? 'light' : 'dark';
+    const variant = ['light', 'icon'].includes(req.query?.variant) ? req.query.variant : 'dark';
     const s = await Setting.getFullSingleton();
-    const field = variant === 'light' ? 'logoLight' : 'logoDark';
+    const field = variant === 'icon' ? 'appIcon' : variant === 'light' ? 'logoLight' : 'logoDark';
     const previous = s[field];
     s[field] = '';
     if (variant === 'dark') s.logoUrl = '';

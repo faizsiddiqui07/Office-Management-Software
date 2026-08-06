@@ -135,9 +135,10 @@ async function saveMedia(dataUrl, keyPrefix) {
   return uploadAsset({ buffer, contentType: mime, keyPrefix, ext });
 }
 
-/** Validate + upload a company logo; returns the URL to store. */
+/** Validate + upload a company logo (or the square app icon); returns the URL to store. */
 export function saveCompanyLogo(dataUrl, variant = 'dark') {
-  return saveMedia(dataUrl, `logo-${variant === 'light' ? 'light' : 'dark'}`);
+  const prefix = variant === 'icon' ? 'app-icon' : `logo-${variant === 'light' ? 'light' : 'dark'}`;
+  return saveMedia(dataUrl, prefix);
 }
 
 /** Validate + upload an app background; returns the URL to store. */

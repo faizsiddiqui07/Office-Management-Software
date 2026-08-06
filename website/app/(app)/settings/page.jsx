@@ -41,6 +41,7 @@ export default function SettingsPage() {
   const [logoBusy, setLogoBusy] = React.useState(''); // '' | 'light' | 'dark'
   const lightInputRef = React.useRef(null);
   const darkInputRef = React.useRef(null);
+  const iconInputRef = React.useRef(null);
   const [bgBusy, setBgBusy] = React.useState(''); // '' | 'light' | 'dark'
   const bgLightRef = React.useRef(null);
   const bgDarkRef = React.useRef(null);
@@ -145,7 +146,7 @@ export default function SettingsPage() {
       const dataUrl = await downscaleImage(file, { maxDim: 800, mime: 'image/png' });
       await api.post('/settings/logo', { dataUrl, variant });
       await queryClient.invalidateQueries({ queryKey: SETTINGS_KEY });
-      toast.success(`${variant === 'light' ? 'Light' : 'Dark'} logo updated`);
+      toast.success(variant === 'icon' ? 'App icon updated' : `${variant === 'light' ? 'Light' : 'Dark'} logo updated`);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : err?.message || 'Could not upload logo');
     } finally {
@@ -369,6 +370,29 @@ export default function SettingsPage() {
                       ) : null}
                     </div>
                   </div>
+                  {/* App icon (square) — browser tab, install / home-screen icon and the
+                      compact mobile header mark. Served same-origin via /app-icon. */}
+                  <div className="space-y-2 rounded-xl bg-foreground/[0.03] p-3 ring-1 ring-border/50 sm:col-span-2">
+                    <p className="text-xs font-medium text-foreground/80">App icon <span className="font-normal text-muted-foreground">— square; shown as the browser-tab &amp; install icon and the mobile header mark</span></p>
+                    <div className="flex h-20 items-center justify-center rounded-md bg-[linear-gradient(45deg,#8882_25%,transparent_25%,transparent_75%,#8882_75%),linear-gradient(45deg,#8882_25%,transparent_25%,transparent_75%,#8882_75%)] [background-position:0_0,8px_8px] [background-size:16px_16px] p-2 ring-1 ring-border">
+                      {data?.settings?.appIcon ? (
+                        <img src={data.settings.appIcon} alt="App icon" className="size-16 rounded-lg object-contain" />
+                      ) : (
+                        <span className="text-xs text-muted-foreground">No app icon — a generic mark is shown</span>
+                      )}
+                    </div>
+                    <input ref={iconInputRef} type="file" accept="image/png,image/jpeg,image/jpg,image/webp" onChange={uploadLogo('icon')} className="hidden" />
+                    <div className="flex flex-wrap gap-2">
+                      <Button type="button" size="sm" variant="outline" onClick={() => iconInputRef.current?.click()} disabled={logoBusy === 'icon'}>
+                        <ImageUp className="size-4" /> {logoBusy === 'icon' ? 'Uploading…' : 'Upload'}
+                      </Button>
+                      {data?.settings?.appIcon ? (
+                        <Button type="button" size="sm" variant="ghost" onClick={removeLogo('icon')} disabled={logoBusy === 'icon'} className="text-destructive">
+                          <Trash2 className="size-4" /> Remove
+                        </Button>
+                      ) : null}
+                    </div>
+                  </div>
                 </div>
               </div>
               <div className="space-y-3 sm:col-span-2">
@@ -382,7 +406,7 @@ export default function SettingsPage() {
                   {/* Light-mode background */}
                   <div className="space-y-2 rounded-xl bg-foreground/[0.03] p-3 ring-1 ring-border/50">
                     <p className="text-xs font-medium text-foreground/80">Light mode</p>
-                    <div className="h-16 w-full overflow-hidden rounded-md ring-1 ring-border">
+                    <div className="h-40 w-full overflow-hidden rounded-md ring-1 ring-border">
                       {data?.settings?.bgLight ? (
                         <img src={data.settings.bgLight} alt="Light-mode background" className="h-full w-full object-cover" />
                       ) : (
@@ -406,7 +430,7 @@ export default function SettingsPage() {
                   {/* Dark-mode background */}
                   <div className="space-y-2 rounded-xl bg-foreground/[0.03] p-3 ring-1 ring-border/50">
                     <p className="text-xs font-medium text-foreground/80">Dark mode</p>
-                    <div className="h-16 w-full overflow-hidden rounded-md ring-1 ring-border">
+                    <div className="h-40 w-full overflow-hidden rounded-md ring-1 ring-border">
                       {data?.settings?.bgDark ? (
                         <img src={data.settings.bgDark} alt="Dark-mode background" className="h-full w-full object-cover" />
                       ) : (
