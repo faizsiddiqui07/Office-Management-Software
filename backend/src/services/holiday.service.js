@@ -226,7 +226,7 @@ export async function buildHolidayList(year, { optional = true, events = false }
     }));
 
   return {
-    company: { name: settings.companyName, currency: settings.currency, timezone: settings.timezone, brandColor: settings.brandColor, logoUrl: settings.logoUrl, logoLight: settings.logoLight, logoDark: settings.logoDark },
+    company: { name: settings.companyName, currency: settings.currency, timezone: settings.timezone, brandColor: settings.brandColor, ...(await Setting.getLogos()) },
     generatedAt: new Date().toISOString(),
     period: { from, to, label: `Holidays ${year}`, year },
     included: { optional, events },

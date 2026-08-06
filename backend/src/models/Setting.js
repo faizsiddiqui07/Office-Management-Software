@@ -155,17 +155,92 @@ let cachedAt = 0;
 // the settings form read back its own change as if it had reverted.
 const FRESH_MS = 3_000;
 
+/**
+ * The five base64-image fields (logos + the two background photos). Together they are
+ * ~0.9 MB of the document while EVERYTHING else is ~3 KB — and on a bandwidth-throttled
+ * Atlas tier that 0.9 MB took ~9.5s per fetch (measured), which is what made every
+ * settings-reading endpoint crawl. getSingleton therefore EXCLUDES them; the few places
+ * that genuinely render images use getBranding()/getFullSingleton() below.
+ */
+const HEAVY_FIELDS = ['logoUrl', 'logoLight', 'logoDark', 'bgLight', 'bgDark'];
+const LEAN_PROJECTION = HEAVY_FIELDS.map((f) => `-${f}`).join(' ');
+
+let brandingCached = null;
+let brandingAt = 0;
+// Branding changes ~a few times a year; each cache miss is an expensive ~0.9 MB pull, so
+// hold it much longer than the config cache. Saving settings clears it (same hooks).
+const BRANDING_FRESH_MS = 5 * 60_000;
+
 function clearSettingCache() {
   cached = null;
   cachedAt = 0;
+  brandingCached = null;
+  brandingAt = 0;
+  fullCached = null;
+  fullAt = 0;
 }
+
+let inFlight = null; // dedup: a burst of parallel readers shares ONE fetch instead of N
 
 settingSchema.statics.getSingleton = async function getSingleton() {
   if (cached && Date.now() - cachedAt < FRESH_MS) return cached;
+  if (!inFlight) {
+    inFlight = (async () => {
+      // Exclusion projection: mongoose only $sets modified paths on save(), so a doc
+      // loaded without the image fields can still be safely saved — the images in the
+      // database are never touched (verified by test).
+      let doc = await this.findOne({ key: 'global' }).select(LEAN_PROJECTION);
+      if (!doc) {
+        await this.create({ key: 'global' });
+        doc = await this.findOne({ key: 'global' }).select(LEAN_PROJECTION);
+      }
+      cached = doc;
+      cachedAt = Date.now();
+      return doc;
+    })().finally(() => { inFlight = null; });
+  }
+  return inFlight;
+};
+
+/** The image fields only (plus name/colour), plain object, long-cached. */
+settingSchema.statics.getBranding = async function getBranding() {
+  if (brandingCached && Date.now() - brandingAt < BRANDING_FRESH_MS) return brandingCached;
+  const doc = await this.findOne({ key: 'global' })
+    .select(['companyName', 'brandColor', ...HEAVY_FIELDS].join(' '))
+    .lean();
+  brandingCached = {
+    companyName: doc?.companyName || 'Office Management',
+    brandColor: doc?.brandColor || '#E5342B',
+    logoUrl: doc?.logoUrl || '',
+    logoLight: doc?.logoLight || '',
+    logoDark: doc?.logoDark || '',
+    bgLight: doc?.bgLight || '',
+    bgDark: doc?.bgDark || '',
+  };
+  brandingAt = Date.now();
+  return brandingCached;
+};
+
+/** Just the three logo fields (long-cached via getBranding) — for PDF headers. */
+settingSchema.statics.getLogos = async function getLogos() {
+  const b = await this.getBranding();
+  return { logoUrl: b.logoUrl, logoLight: b.logoLight, logoDark: b.logoDark };
+};
+
+let fullCached = null;
+let fullAt = 0;
+
+/**
+ * The COMPLETE document (images included) — the settings screens and GET /settings (which
+ * the app shell fetches on every page for the background photos). Cached like branding:
+ * each miss is the expensive ~0.9 MB pull, and any save clears it (post-save hooks below).
+ */
+settingSchema.statics.getFullSingleton = async function getFullSingleton() {
+  if (fullCached && Date.now() - fullAt < BRANDING_FRESH_MS) return fullCached;
   let doc = await this.findOne({ key: 'global' });
   if (!doc) doc = await this.create({ key: 'global' });
-  cached = doc;
-  cachedAt = Date.now();
+  fullCached = doc;
+  fullAt = Date.now();
   return doc;
 };
 

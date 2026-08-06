@@ -27,7 +27,7 @@ function backfillLogos(s) {
 
 export async function getSettings(_req, res, next) {
   try {
-    const s = await Setting.getSingleton();
+    const s = await Setting.getFullSingleton();
     if (backfillLogos(s)) await s.save();
     res.json(ok({ settings: s.toJSON() }));
   } catch (err) {
@@ -39,16 +39,16 @@ export async function getSettings(_req, res, next) {
  * unauthenticated login page so it can show the right theme-aware logo. */
 export async function getBranding(_req, res, next) {
   try {
-    const s = await Setting.getSingleton();
-    if (backfillLogos(s)) await s.save();
+    const b = await Setting.getBranding();
     res.json(
       ok({
         branding: {
-          companyName: s.companyName,
-          logoLight: s.logoLight,
-          logoDark: s.logoDark,
-          logoUrl: s.logoUrl,
-          brandColor: s.brandColor,
+          companyName: b.companyName,
+          logoLight: b.logoLight,
+          // Legacy back-fill applied in memory: an old single logo doubles as the dark one.
+          logoDark: b.logoDark || b.logoUrl,
+          logoUrl: b.logoUrl,
+          brandColor: b.brandColor,
         },
       }),
     );
@@ -60,7 +60,7 @@ export async function getBranding(_req, res, next) {
 export async function updateSettings(req, res, next) {
   try {
     const body = updateSettingsSchema.parse(req.body);
-    const s = await Setting.getSingleton();
+    const s = await Setting.getFullSingleton();
     Object.assign(s, body);
     await s.save();
     await audit({ actor: req.user._id, action: 'settings.update', entityType: 'Setting', entityId: 'global', meta: body });
@@ -80,7 +80,7 @@ export async function updateSmtp(req, res, next) {
     const body = updateSmtpSchema.parse(req.body);
     await requireReauth(req, body.currentPassword);
 
-    const s = await Setting.getSingleton();
+    const s = await Setting.getFullSingleton();
     s.smtpUser = body.smtpUser.trim();
     s.smtpHost = (body.smtpHost || '').trim();
     s.smtpPort = body.smtpPort || 0;
@@ -107,7 +107,7 @@ export async function updateSmtp(req, res, next) {
 export async function clearSmtp(req, res, next) {
   try {
     await requireReauth(req, req.body?.currentPassword);
-    const s = await Setting.getSingleton();
+    const s = await Setting.getFullSingleton();
     s.smtpUser = '';
     s.smtpPassEnc = '';
     s.smtpHost = '';
@@ -147,7 +147,7 @@ export async function uploadLogo(req, res, next) {
     if (!dataUrl) return res.status(400).json(fail('NO_IMAGE', 'No image provided'));
 
     const url = saveCompanyLogo(dataUrl, Date.now(), variant);
-    const s = await Setting.getSingleton();
+    const s = await Setting.getFullSingleton();
     const field = variant === 'light' ? 'logoLight' : 'logoDark';
     deleteLogoFile(s[field]); // drop the previous file for this variant
     s[field] = url;
@@ -165,7 +165,7 @@ export async function uploadLogo(req, res, next) {
 export async function removeLogo(req, res, next) {
   try {
     const variant = req.query?.variant === 'light' ? 'light' : 'dark';
-    const s = await Setting.getSingleton();
+    const s = await Setting.getFullSingleton();
     const field = variant === 'light' ? 'logoLight' : 'logoDark';
     deleteLogoFile(s[field]);
     s[field] = '';
@@ -186,7 +186,7 @@ export async function uploadBackground(req, res, next) {
     if (!dataUrl) return res.status(400).json(fail('NO_IMAGE', 'No image provided'));
 
     const url = saveBackground(dataUrl, Date.now(), variant);
-    const s = await Setting.getSingleton();
+    const s = await Setting.getFullSingleton();
     const field = variant === 'light' ? 'bgLight' : 'bgDark';
     deleteLogoFile(s[field]);
     s[field] = url;
@@ -203,7 +203,7 @@ export async function uploadBackground(req, res, next) {
 export async function removeBackground(req, res, next) {
   try {
     const variant = req.query?.variant === 'light' ? 'light' : 'dark';
-    const s = await Setting.getSingleton();
+    const s = await Setting.getFullSingleton();
     const field = variant === 'light' ? 'bgLight' : 'bgDark';
     deleteLogoFile(s[field]);
     s[field] = '';

@@ -234,7 +234,7 @@ export async function buildExpenseStatement({ from, to, category, paymentMethod,
   if (search) scopeParts.push(`Search: “${search}”`);
 
   return {
-    company: { name: settings.companyName, currency: settings.currency, timezone: settings.timezone, brandColor: settings.brandColor, logoUrl: settings.logoUrl, logoLight: settings.logoLight, logoDark: settings.logoDark },
+    company: { name: settings.companyName, currency: settings.currency, timezone: settings.timezone, brandColor: settings.brandColor, ...(await Setting.getLogos()) },
     generatedAt: new Date().toISOString(),
     period: { from, to, label: rangeLabel },
     scope: scopeParts.join('   ·   '),

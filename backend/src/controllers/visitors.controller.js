@@ -90,7 +90,8 @@ export async function exportPdf(req, res, next) {
       generatedAt: new Date().toISOString().slice(0, 10),
       visitors,
     };
-    const logo = loadCompanyLogo(s.logoDark || s.logoUrl || s.logoLight);
+    const logos = await Setting.getLogos();
+    const logo = loadCompanyLogo(logos.logoDark || logos.logoUrl || logos.logoLight);
     const stream = await renderVisitorsPdf(data, logo);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', 'attachment; filename="visitors.pdf"');

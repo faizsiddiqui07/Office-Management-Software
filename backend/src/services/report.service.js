@@ -420,7 +420,7 @@ export async function buildReport(type, dateYMD, range) {
     ongoing: to > todayYMD,
     asOfYMD: elapsedTo,
     generatedAt: new Date().toISOString(),
-    company: { name: settings.companyName, currency: settings.currency, timezone: settings.timezone, brandColor: settings.brandColor, logoUrl: settings.logoUrl, logoLight: settings.logoLight, logoDark: settings.logoDark },
+    company: { name: settings.companyName, currency: settings.currency, timezone: settings.timezone, brandColor: settings.brandColor, ...(await Setting.getLogos()) },
     workingDays,
     // People left out of this report because they joined after it — surfaced so a
     // short list reads as "they weren't here yet", not as missing data.
@@ -651,7 +651,7 @@ export async function buildSelfReport({ user, type, dateYMD, range }) {
     ongoing: to > todayYMD,
     asOfYMD: to < todayYMD ? to : todayYMD,
     generatedAt: new Date().toISOString(),
-    company: { name: settings.companyName, currency: settings.currency, timezone: settings.timezone, brandColor: settings.brandColor, logoUrl: settings.logoUrl, logoLight: settings.logoLight, logoDark: settings.logoDark },
+    company: { name: settings.companyName, currency: settings.currency, timezone: settings.timezone, brandColor: settings.brandColor, ...(await Setting.getLogos()) },
     subject: { name: user.name, employeeId: user.employeeId, role: user.role, roleLabel: roleLabel(user.role), department: user.department || '' },
     attendance: { days, totals: attTotals },
     tasks: taskStats,

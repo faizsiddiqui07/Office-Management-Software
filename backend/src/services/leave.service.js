@@ -206,7 +206,7 @@ export async function buildLeaveLedger(user, year = currentLeaveYear()) {
   }
 
   return {
-    company: { name: settings.companyName, currency: settings.currency, timezone: settings.timezone, brandColor: settings.brandColor, logoUrl: settings.logoUrl, logoLight: settings.logoLight, logoDark: settings.logoDark },
+    company: { name: settings.companyName, currency: settings.currency, timezone: settings.timezone, brandColor: settings.brandColor, ...(await Setting.getLogos()) },
     generatedAt: new Date().toISOString(),
     period: { from, to, label: `FY ${year}–${String(year + 1).slice(2)}` },
     subject: { name: user.name, employeeId: user.employeeId, role: user.role, roleLabel: roleLabel(user.role), department: user.department || '' },
