@@ -203,15 +203,15 @@ settingSchema.statics.getSingleton = async function getSingleton() {
 };
 
 /**
- * Logos only (plus name/colour), plain object, long-cached. Deliberately does NOT fetch
- * the two background photos — they are the bulk of the megabytes and nothing that calls
- * this (login-page branding, PDF headers) renders them; on a throttled cluster pulling
- * them here alone cost ~8s per cache miss. Backgrounds ride with getFullSingleton.
+ * The brand images (plus name/colour), plain object, long-cached. Since images moved to
+ * the assets bucket these fields are ~100-byte URLs, so the login page can carry the
+ * backgrounds too. (Legacy base64 values still work — they're just bigger until the CEO
+ * re-uploads through Settings and they become S3 URLs.)
  */
 settingSchema.statics.getBranding = async function getBranding() {
   if (brandingCached && Date.now() - brandingAt < BRANDING_FRESH_MS) return brandingCached;
   const doc = await this.findOne({ key: 'global' })
-    .select('companyName brandColor logoUrl logoLight logoDark')
+    .select('companyName brandColor logoUrl logoLight logoDark bgLight bgDark')
     .lean();
   brandingCached = {
     companyName: doc?.companyName || 'Office Management',
@@ -219,6 +219,8 @@ settingSchema.statics.getBranding = async function getBranding() {
     logoUrl: doc?.logoUrl || '',
     logoLight: doc?.logoLight || '',
     logoDark: doc?.logoDark || '',
+    bgLight: doc?.bgLight || '',
+    bgDark: doc?.bgDark || '',
   };
   brandingAt = Date.now();
   return brandingCached;

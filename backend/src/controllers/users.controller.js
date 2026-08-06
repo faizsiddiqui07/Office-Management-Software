@@ -48,7 +48,7 @@ export async function userReport(req, res, next) {
     const tracks = can({ role: user.role }, 'markAttendance');
     // Attendance only for self-tracking roles; task stats + leaves for everyone.
     const sections = tracks ? ['attendance', 'tasks', 'leaves'] : ['tasks', 'leaves'];
-    const stream = await renderSelfReportToStream(data, sections, loadCompanyLogo(data.company.logoDark || data.company.logoUrl || data.company.logoLight));
+    const stream = await renderSelfReportToStream(data, sections, await loadCompanyLogo(data.company.logoDark || data.company.logoUrl || data.company.logoLight));
     stream.on('error', (err) => next(err));
     stream.pipe(res);
     return undefined;

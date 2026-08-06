@@ -3,7 +3,8 @@ import { updateSettingsSchema, updateSmtpSchema } from '../validators/settings.v
 import { Setting } from '../models/Setting.js';
 import { User } from '../models/User.js';
 import { audit } from '../models/AuditLog.js';
-import { saveCompanyLogo, saveBackground, deleteLogoFile } from '../lib/brand.js';
+import { saveCompanyLogo, saveBackground } from '../lib/brand.js';
+import { deleteAsset } from '../lib/s3Assets.js';
 import { verifyPassword } from '../lib/password.js';
 import { encryptSecret } from '../lib/secretBox.js';
 import { sendTestEmail } from '../lib/mailer.js';
@@ -49,6 +50,10 @@ export async function getBranding(_req, res, next) {
           logoDark: b.logoDark || b.logoUrl,
           logoUrl: b.logoUrl,
           brandColor: b.brandColor,
+          // Backgrounds ride along (tiny S3 URLs) so the login page shows the same
+          // wallpaper as the app — no image ships with the frontend at all.
+          bgLight: b.bgLight,
+          bgDark: b.bgDark,
         },
       }),
     );
@@ -146,13 +151,14 @@ export async function uploadLogo(req, res, next) {
     const variant = req.body?.variant === 'light' ? 'light' : 'dark';
     if (!dataUrl) return res.status(400).json(fail('NO_IMAGE', 'No image provided'));
 
-    const url = saveCompanyLogo(dataUrl, Date.now(), variant);
+    const url = await saveCompanyLogo(dataUrl, variant); // uploads to the assets bucket
     const s = await Setting.getFullSingleton();
     const field = variant === 'light' ? 'logoLight' : 'logoDark';
-    deleteLogoFile(s[field]); // drop the previous file for this variant
+    const previous = s[field];
     s[field] = url;
     if (variant === 'dark') s.logoUrl = url; // keep legacy mirror in sync
     await s.save();
+    await deleteAsset(previous); // AFTER the save — a failed upload can never lose both
     await audit({ actor: req.user._id, action: 'settings.logo.upload', entityType: 'Setting', entityId: 'global', meta: { variant, url } });
     res.json(ok({ settings: s.toJSON() }));
   } catch (err) {
@@ -167,10 +173,11 @@ export async function removeLogo(req, res, next) {
     const variant = req.query?.variant === 'light' ? 'light' : 'dark';
     const s = await Setting.getFullSingleton();
     const field = variant === 'light' ? 'logoLight' : 'logoDark';
-    deleteLogoFile(s[field]);
+    const previous = s[field];
     s[field] = '';
     if (variant === 'dark') s.logoUrl = '';
     await s.save();
+    await deleteAsset(previous);
     await audit({ actor: req.user._id, action: 'settings.logo.remove', entityType: 'Setting', entityId: 'global', meta: { variant } });
     res.json(ok({ settings: s.toJSON() }));
   } catch (err) {
@@ -185,12 +192,13 @@ export async function uploadBackground(req, res, next) {
     const variant = req.body?.variant === 'light' ? 'light' : 'dark';
     if (!dataUrl) return res.status(400).json(fail('NO_IMAGE', 'No image provided'));
 
-    const url = saveBackground(dataUrl, Date.now(), variant);
+    const url = await saveBackground(dataUrl, variant); // uploads to the assets bucket
     const s = await Setting.getFullSingleton();
     const field = variant === 'light' ? 'bgLight' : 'bgDark';
-    deleteLogoFile(s[field]);
+    const previous = s[field];
     s[field] = url;
     await s.save();
+    await deleteAsset(previous);
     await audit({ actor: req.user._id, action: 'settings.bg.upload', entityType: 'Setting', entityId: 'global', meta: { variant, url } });
     res.json(ok({ settings: s.toJSON() }));
   } catch (err) {
@@ -205,9 +213,10 @@ export async function removeBackground(req, res, next) {
     const variant = req.query?.variant === 'light' ? 'light' : 'dark';
     const s = await Setting.getFullSingleton();
     const field = variant === 'light' ? 'bgLight' : 'bgDark';
-    deleteLogoFile(s[field]);
+    const previous = s[field];
     s[field] = '';
     await s.save();
+    await deleteAsset(previous);
     await audit({ actor: req.user._id, action: 'settings.bg.remove', entityType: 'Setting', entityId: 'global', meta: { variant } });
     res.json(ok({ settings: s.toJSON() }));
   } catch (err) {

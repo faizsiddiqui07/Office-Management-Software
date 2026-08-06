@@ -34,7 +34,8 @@ export default function LoginPage() {
   const { data: branding } = usePublicBranding();
   const companyName = branding?.companyName?.trim() || 'Architectus Bureau';
   // Left panel is always a dark gradient → always use the light (dark-mode) logo.
-  const panelLogo = branding?.logoDark || branding?.logoUrl || branding?.logoLight || '/logo.png';
+  // No static fallback — logos come from Settings (S3); absent one, the name renders.
+  const panelLogo = branding?.logoDark || branding?.logoUrl || branding?.logoLight || '';
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
   const [loading, setLoading] = React.useState(false);
@@ -78,8 +79,12 @@ export default function LoginPage() {
           </div>
 
           <div className="relative">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={panelLogo} alt={companyName} className="h-12 w-auto max-w-[260px] object-contain" />
+            {panelLogo ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={panelLogo} alt={companyName} className="h-12 w-auto max-w-[260px] object-contain" />
+            ) : (
+              <p className="text-2xl font-semibold tracking-tight">{companyName}</p>
+            )}
           </div>
 
           <div className="relative space-y-8">

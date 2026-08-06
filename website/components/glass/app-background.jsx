@@ -1,6 +1,6 @@
 'use client';
 
-import { useSettings } from '@/lib/settings';
+import { useSettings, usePublicBranding } from '@/lib/settings';
 import { AuroraBackground } from './aurora-background';
 
 /**
@@ -8,11 +8,17 @@ import { AuroraBackground } from './aurora-background';
  * dark versions, toggled by theme via CSS), it renders that photo — blurred and
  * toned for readability behind the glass UI. Otherwise it falls back to the
  * ambient aurora background, so it always looks good with no asset required.
+ *
+ * Images come from Settings (S3 URLs) — nothing ships with the frontend. On the
+ * signed-out pages /settings is a 401, so the PUBLIC branding endpoint supplies the
+ * same background URLs and the login page matches the app.
  */
 export function AppBackground() {
   const { data: settings } = useSettings();
-  const light = (settings?.bgLight || settings?.bgDark || '').trim();
-  const dark = (settings?.bgDark || settings?.bgLight || '').trim();
+  const { data: branding } = usePublicBranding();
+  const src = settings ?? branding;
+  const light = (src?.bgLight || src?.bgDark || '').trim();
+  const dark = (src?.bgDark || src?.bgLight || '').trim();
 
   if (!light && !dark) return <AuroraBackground />;
 

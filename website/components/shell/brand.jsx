@@ -11,11 +11,19 @@ export function Brand({ className, compact = false }) {
   const b = settings || branding;
   const name = b?.companyName?.trim() || 'Architectus Bureau';
 
-  // Compact (small mobile screens): square app mark — crisp and space-efficient.
+  // Compact (small mobile screens): square app mark — the uploaded logo (S3) if there is
+  // one, else the Sparkles mark. No image is baked into the frontend.
   if (compact) {
+    const mark = (b?.logoDark || b?.logoUrl || b?.logoLight || '').trim();
     return (
       <div className={cn('flex items-center', className)}>
-        <img src="/logo.png" alt={name} className="size-10 shrink-0 rounded-lg object-contain" />
+        {mark ? (
+          <img src={mark} alt={name} className="size-10 shrink-0 rounded-lg object-contain" />
+        ) : (
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-info text-white shadow-glow">
+            <Sparkles className="size-5" />
+          </span>
+        )}
       </div>
     );
   }

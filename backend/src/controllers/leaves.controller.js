@@ -33,7 +33,7 @@ export async function leaveLedger(req, res, next) {
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="leave-ledger-${target.employeeId || target._id}-${data.period.label.replace(/[^\w-]/g, '')}.pdf"`);
-    const stream = await renderLeaveLedgerToStream(data, loadCompanyLogo(data.company.logoDark || data.company.logoUrl || data.company.logoLight));
+    const stream = await renderLeaveLedgerToStream(data, await loadCompanyLogo(data.company.logoDark || data.company.logoUrl || data.company.logoLight));
     stream.on('error', (err) => next(err));
     stream.pipe(res);
     return undefined;

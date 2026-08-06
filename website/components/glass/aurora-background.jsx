@@ -1,44 +1,13 @@
 /**
- * Ambient background behind the glass content layer.
- *
- * - If NEXT_PUBLIC_BG_IMAGE is set (e.g. "/background.jpg" placed in
- *   website/public, or any URL), it renders that photo — blurred and toned —
- *   for the "real room behind frosted glass" look.
- * - Otherwise it falls back to a warm, photographic CSS ambient (aurora blobs
- *   + soft warm wash) so it always looks premium with no asset required.
+ * Ambient background behind the glass content layer — a warm, photographic CSS
+ * ambient (aurora blobs + soft warm wash), so the app always looks premium with
+ * NO image asset at all. Photo backgrounds are uploaded through Settings and live
+ * in S3 (see AppBackground); nothing image-like ships with the frontend build.
  *
  * Pure CSS (no JS) → renders on the server; respects prefers-reduced-motion via
  * the global media query in globals.css.
  */
-const BG_IMAGE = process.env.NEXT_PUBLIC_BG_IMAGE;
-
 export function AuroraBackground() {
-  if (BG_IMAGE) {
-    return (
-      <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={BG_IMAGE}
-          alt=""
-          className="absolute inset-0 h-full w-full scale-105 object-cover"
-        />
-        {/* readability + theme tint over the photo */}
-        <div className="absolute inset-0 bg-background/40 backdrop-blur-[3px]" />
-        <div className="absolute inset-0 bg-gradient-to-b from-background/30 via-background/10 to-background/65" />
-        <div
-          className="absolute inset-0 opacity-[0.12] dark:opacity-[0.08]"
-          style={{
-            backgroundImage:
-              'linear-gradient(to right, color-mix(in oklch, var(--foreground) 100%, transparent) 1px, transparent 1px), linear-gradient(to bottom, color-mix(in oklch, var(--foreground) 100%, transparent) 1px, transparent 1px)',
-            backgroundSize: '56px 56px',
-            maskImage: 'radial-gradient(ellipse 80% 60% at 50% 0%, #000 30%, transparent 75%)',
-            WebkitMaskImage: 'radial-gradient(ellipse 80% 60% at 50% 0%, #000 30%, transparent 75%)',
-          }}
-        />
-      </div>
-    );
-  }
-
   return (
     <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
       {/* base wash */}

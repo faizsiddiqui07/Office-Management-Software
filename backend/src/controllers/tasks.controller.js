@@ -228,7 +228,7 @@ export async function exportPdf(req, res, next) {
       tasks,
     };
     const logos = await Setting.getLogos();
-    const logo = loadCompanyLogo(logos.logoDark || logos.logoUrl || logos.logoLight);
+    const logo = await loadCompanyLogo(logos.logoDark || logos.logoUrl || logos.logoLight);
     const stream = await renderTasksPdf(data, logo);
     res.setHeader('Content-Type', 'application/pdf');
     // The view goes in the filename, or a tagged export would overwrite the "mine" one.
