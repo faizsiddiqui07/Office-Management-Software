@@ -2,6 +2,7 @@ import { maybeRunDaily } from './bonus.service.js';
 import { maybeAnnounceBirthdays } from './holiday.service.js';
 import { publishDueAnnouncements } from './announcement.service.js';
 import { maybeRunDayCloseDigest } from './dayDigest.service.js';
+import { runSetupTasks } from '../app.js';
 
 /**
  * Every time-based job, run from the EventBridge schedule (see src/lambda.js) instead of
@@ -17,14 +18,19 @@ import { maybeRunDayCloseDigest } from './dayDigest.service.js';
  * must never error out.
  */
 export async function runScheduledJobs() {
-  const jobs = { bonus: 'ok', birthdays: 'ok', announcements: 'ok', dayDigest: 'ok' };
+  const jobs = { setup: 'ok', bonus: 'ok', birthdays: 'ok', announcements: 'ok', dayDigest: 'ok' };
   const settled = await Promise.allSettled([
+    // Seed/migration/repair maintenance (system roles, role migrations, admin-lockout
+    // failsafe, default holidays). Moved here OFF the request path: running these inside
+    // every cold container's first request added ~seconds of DB round-trips to whichever
+    // page-load landed on it.
+    runSetupTasks(),
     maybeRunDaily(),
     maybeAnnounceBirthdays(),
     publishDueAnnouncements(),
     maybeRunDayCloseDigest(),
   ]);
-  const keys = ['bonus', 'birthdays', 'announcements', 'dayDigest'];
+  const keys = ['setup', 'bonus', 'birthdays', 'announcements', 'dayDigest'];
   settled.forEach((r, i) => {
     if (r.status === 'rejected') {
       jobs[keys[i]] = r.reason?.message || 'error';

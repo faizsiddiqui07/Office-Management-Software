@@ -76,14 +76,34 @@ async function runInit() {
     console.warn('⚠️  MONGODB_URI not set — running without a database.');
     return;
   }
+  // ONLY what a request genuinely needs before it can be served: the DB connection and
+  // the role/permission cache. This used to also run the seed/migration/repair jobs
+  // (system roles, role migrations, admin-lockout failsafe, default holidays) — five more
+  // sequential DB round-trips — which meant every COLD Lambda container spent ~9s inside
+  // the first request it served. Those jobs are one-time/self-healing maintenance, not
+  // request prerequisites, so they now run on the EventBridge tick (see runSetupTasks).
   await connectDB();
+  let n = await loadRoles();
+  if (!n) {
+    // A genuinely empty roles collection (first boot of a fresh install) — seed now, or
+    // no one can log in. Existing installs never hit this branch.
+    await ensureSystemRoles();
+    n = await loadRoles();
+  }
+  console.log(`🔐 Loaded ${n} roles into the permission cache`);
+}
+
+/**
+ * One-time / self-healing maintenance, run from the EventBridge tick — NOT from the
+ * request path. Each step is idempotent and cheap once it has nothing to do.
+ */
+export async function runSetupTasks() {
   await ensureSystemRoles();
   const migrated = await runRoleMigrations();
   if (migrated) console.log('🔁 Applied role permission migration (v2)');
   const repaired = await ensureRoleManagerExists();
   if (repaired) console.log('🛟 Restored role-management access (admin-lockout failsafe)');
-  const n = await loadRoles();
-  console.log(`🔐 Loaded ${n} roles into the permission cache`);
+  await loadRoles(); // refresh the cache in THIS container after any repairs
   const { added, converted, birthdays } = await ensureDefaultHolidays();
   if (added || converted || birthdays) {
     console.log(`🗓️  Calendar: added ${added} national holiday(s), set ${converted} existing one(s) + ${birthdays} birthday(s) to repeat`);

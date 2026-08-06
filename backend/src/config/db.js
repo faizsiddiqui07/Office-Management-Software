@@ -17,7 +17,11 @@ export async function connectDB() {
   if (!cached.promise) {
     mongoose.set('strictQuery', true);
     cached.promise = mongoose
-      .connect(uri, { dbName: process.env.MONGODB_DB || 'office_management' })
+      // maxPoolSize: each Lambda container gets its OWN pool. The mongoose default is 100
+      // per pool — a burst of containers could between them hold hundreds of Atlas
+      // connections, starving a small cluster (M0 caps at 500) and slowing every query.
+      // One container serves one request at a time, so a handful of sockets is plenty.
+      .connect(uri, { dbName: process.env.MONGODB_DB || 'office_management', maxPoolSize: 10 })
       .then((m) => {
         console.log('🍃 MongoDB connected');
         return m;
