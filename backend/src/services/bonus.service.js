@@ -973,10 +973,30 @@ async function rescoreAllDoneAssigned() {
   }
 }
 
-/** The one-time re-score after a scoring-rule change, gated by a version watermark. */
+/**
+ * The one-time re-score after a scoring-rule change, gated by a version watermark.
+ *
+ * 'forwarder-reward-v1' ONLY changed how forwarded chains score (a non-forwarded task is
+ * root == leaf and scores exactly as before), so it re-scores just the forward-chain
+ * ROOTS — a tiny set that always finishes inside one invocation. That matters: if this
+ * pass can't complete it never writes the watermark and re-runs on every schedule tick,
+ * which is exactly what dragged the whole app down. The daily re-sync still covers
+ * everything else.
+ */
 async function rescoreAssignedTasks(b) {
   if (b.rescoreVersion === RESCORE_VERSION) return;
-  await rescoreAllDoneAssigned();
+  const forwardedParentIds = await Task.distinct('forwardedFrom', { forwardedFrom: { $ne: null } });
+  if (forwardedParentIds.length) {
+    const roots = await Task.find({ _id: { $in: forwardedParentIds }, forwardedFrom: null, status: 'DONE', assignedBy: { $ne: null }, completedAt: { $ne: null } })
+      .select('owner completedBy dueYMD title completedAt submittedAt requiresApproval assignedBy status forwardedFrom')
+      .limit(5000);
+    for (const t of roots) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await onAssignedTaskDone(t);
+      } catch (e) { console.error('rescore(forward) task failed', String(t._id), e?.message); }
+    }
+  }
   await Setting.updateOne({ key: 'global' }, { $set: { 'bonus.rescoreVersion': RESCORE_VERSION } });
   Setting.invalidateCache();
 }
@@ -1004,19 +1024,15 @@ export async function maybeRunDaily() {
   const s = await Setting.getSingleton();
   const b = s.bonus || {};
   if (!b.enabled) return;
-  // Before the daily throttle: the history catch-up has its own watermark and must not
-  // have to wait for tomorrow just because today's scan already ran.
+  // Runs every tick (this whole job is scheduler-only now — see the /bonus/me controller).
+  // Keep ONLY watermark-gated, self-terminating work here so a tick every few minutes stays
+  // cheap; the collection-scanning one-offs moved into the once-a-day block below.
+  //  - catchUpHistory: has its own watermark, shouldn't wait a day to backfill past months.
+  //  - seedForwardRules / rescoreAssignedTasks: gated on flags/version, so a no-op once done
+  //    (and the re-score must apply promptly, not a day later).
   try { await catchUpHistory(b); } catch (e) { console.error('history catch-up failed', e?.message); }
-  try { await repairEarnedDates(); } catch (e) { console.error('earned-date repair failed', e?.message); }
-  try { await consolidateOvertime(b); } catch (e) { console.error('overtime consolidation failed', e?.message); }
-  // Seed the forwarding reward rules BEFORE the re-score, so the one-time re-score already
-  // sees their point values and can pay forwarders for chains finished in past months.
   try { await seedForwardRules(); } catch (e) { console.error('forward-rule seed failed', e?.message); }
   try { await rescoreAssignedTasks(b); } catch (e) { console.error('task re-score failed', e?.message); }
-  try { await clampPreGoLive(); } catch (e) { console.error('pre-go-live clamp failed', e?.message); }
-  // Every load: drop points for tasks deleted / un-done straight in the database, so a
-  // deleted task's score can't linger on the Rewards page. Cheap enough to be responsive.
-  try { await pruneOrphanTaskEntries(); } catch (e) { console.error('orphan prune failed', e?.message); }
   const today = ymdInTz(new Date());
   if (b.lastPenaltyRun === today) return;
   // Where the absence catch-up starts. Kept SEPARATE from the once-a-day throttle and
@@ -1026,10 +1042,18 @@ export async function maybeRunDaily() {
   // days done and they would never be looked at again — the exact hole this catch-up
   // was added to close.
   const scanFrom = b.lastAbsenceScan || b.lastPenaltyRun || '';
-  s.bonus.lastPenaltyRun = today; // throttle first
+  s.bonus.lastPenaltyRun = today; // throttle FIRST, so an overlapping tick can't double-run the heavy jobs below
   const rolled = await runMonthRollup(b).catch((e) => { console.error('month rollup failed', e?.message); return b.lastMonthRollup; });
   if (rolled) s.bonus.lastMonthRollup = rolled;
   await s.save();
+  // ── Once a day from here down. These do collection scans / heavier queries, so they must
+  //    NOT run on every few-minute tick (that recurring load is what slowed the whole app). ──
+  try { await repairEarnedDates(); } catch (e) { console.error('earned-date repair failed', e?.message); }
+  try { await consolidateOvertime(b); } catch (e) { console.error('overtime consolidation failed', e?.message); }
+  try { await clampPreGoLive(); } catch (e) { console.error('pre-go-live clamp failed', e?.message); }
+  // Drop points for tasks deleted / un-done straight in the database (self-heal). Once a day
+  // is plenty — direct-DB deletes are rare, and it's a full distinct scan.
+  try { await pruneOrphanTaskEntries(); } catch (e) { console.error('orphan prune failed', e?.message); }
   try { await scanOverdueTasks(b); } catch (e) { console.error('overdue scan failed', e?.message); }
   // Once a day, re-sync every finished task's points with the task table, so a due date or
   // completion date changed directly in the database is reflected without waiting for an
