@@ -63,11 +63,13 @@ export async function mySnapshot(user, { type = 'monthly', dateYMD, range } = {}
     shows.tasks
       ? Task.countDocuments({ owner: user._id, status: 'PENDING', dueYMD: { $ne: '', $lt: today } })
       : 0,
-    // Points carry a 'YYYY-MM' month, not a date, so a window narrower than a month has
-    // to go by when the award was written. That IS the honest answer to "what did I earn
-    // in these days" — it just isn't the same question as "what did I earn FOR them".
+    // Points earned INSIDE the window, by the day they were earned (earnedYMD), NOT the day
+    // the row was written. createdAt was wrong: the whole ledger gets rewritten by the
+    // history backfill / re-score jobs, so July's entries carry an August createdAt — and
+    // "this month" then swept July's points in too (e.g. 134 + 38 = 172 instead of 38).
+    // earnedYMD is a plain 'YYYY-MM-DD', so a lexicographic range matches any window.
     shows.points
-      ? PointEntry.find({ user: user._id, createdAt: { $gte: fromDay, $lte: toDayEnd } }).select('points reason source createdAt').sort({ createdAt: -1 }).limit(100)
+      ? PointEntry.find({ user: user._id, earnedYMD: { $gte: from, $lte: to } }).select('points reason source earnedYMD createdAt').sort({ earnedYMD: -1, createdAt: -1 }).limit(100)
       : [],
     shows.points ? PointEntry.aggregate([
       { $match: { user: user._id, month: today.slice(0, 7) } },
