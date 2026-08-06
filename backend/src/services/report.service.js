@@ -15,6 +15,7 @@ import { holidayYMDSet } from './holiday.service.js';
 import { expenseSummary } from './expense.service.js';
 import { ledgerFor } from './dues.service.js';
 import { wfhUsage } from './leave.service.js';
+import { periodPoints } from './bonus.service.js';
 import { APP_LIVE_YMD } from '../lib/appLive.js';
 
 const pad = (n) => String(n).padStart(2, '0');
@@ -424,6 +425,40 @@ export async function buildReport(type, dateYMD, range) {
     graceDays,
   };
 
+  // ── Rewards / bonus points, person by person ──────────────
+  // The same figures the Rewards page + leaderboard show for this period: a full month is
+  // the NET standing (that month's points + any carried-in deficit); any other window is
+  // the raw points earned on days inside it. Omitted entirely when the scheme is off.
+  const rp = await periodPoints({ type, from, to });
+  let rewards = null;
+  if (rp.enabled) {
+    const perEmployeeR = activeUsers
+      .map((u) => {
+        const points = rp.byUser.get(String(u._id)) || 0;
+        return {
+          name: u.name,
+          employeeId: u.employeeId,
+          role: u.role,
+          roleLabel: roleLabel(u.role),
+          points,
+          // Payout is for a positive standing only; a deficit carries, it never pays a negative wage.
+          rupees: rp.rupeesPerPoint && points > 0 ? Math.round(points * rp.rupeesPerPoint) : 0,
+        };
+      })
+      // Most points first — a leaderboard-style ordering, not a directory.
+      .sort((a, b) => b.points - a.points || a.name.localeCompare(b.name));
+    rewards = {
+      enabled: true,
+      rupeesPerPoint: rp.rupeesPerPoint,
+      monthlyNet: type === 'monthly', // true = month NET (carry-in), else raw earned in-window
+      perEmployee: perEmployeeR,
+      totals: perEmployeeR.reduce(
+        (acc, e) => ({ points: acc.points + e.points, rupees: acc.rupees + e.rupees }),
+        { points: 0, rupees: 0 },
+      ),
+    };
+  }
+
   // No dues in the company report at all — not even totals. What the office is owed
   // is the admin's ledger, not company reporting. Each person still sees their own
   // entry by entry in their own report, and the Dues page administers them.
@@ -444,6 +479,7 @@ export async function buildReport(type, dateYMD, range) {
     // short list reads as "they weren't here yet", not as missing data.
     joinedLater,
     tasks,
+    rewards, // null when the bonus scheme is off
     attendance: { perEmployee, totals },
     leaves,
     expenses,

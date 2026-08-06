@@ -10,8 +10,9 @@ const TYPES = ['daily', 'weekly', 'monthly', 'yearly', 'custom'];
 // Dues are deliberately absent: what people owe the office is between them and the
 // admin, so it never appears in a company-wide report. Each person still sees their
 // own ledger on the Dues page and in their own report.
-// Tasks lead the report — what the office got done, person by person.
-const COMPANY_SECTIONS = ['tasks', 'attendance', 'leaves', 'expenses', 'roster'];
+// Tasks lead the report — what the office got done, person by person; rewards ride
+// alongside them (only surfaced when the bonus scheme is on — see preview()).
+const COMPANY_SECTIONS = ['tasks', 'rewards', 'attendance', 'leaves', 'expenses', 'roster'];
 const SELF_SECTIONS = ['attendance', 'leaves', 'dues'];
 
 const isYMD = (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
@@ -58,8 +59,8 @@ function sectionAccess(user) {
   // dashboard but deliberately NOT expense access could still pull the whole company
   // expense register out of the report.
   // Tasks ride the same leadership gate as attendance: it is everyone's work output,
-  // the same class of company-wide data.
-  return { tasks: all, attendance: all, leaves: all, roster: all, expenses: all && can(user, 'viewExpenses') };
+  // the same class of company-wide data. Rewards (bonus points) ride the same gate.
+  return { tasks: all, rewards: all, attendance: all, leaves: all, roster: all, expenses: all && can(user, 'viewExpenses') };
 }
 
 export function canCompanyReports(user) {
@@ -89,7 +90,10 @@ export async function preview(req, res, next) {
       delete data.roster;
     }
     if (!access.tasks) delete data.tasks;
-    data.allowedSections = COMPANY_SECTIONS.filter((s) => access[s]);
+    // Rewards only exist when the bonus scheme is on; drop the section AND keep it out of
+    // the toggle list otherwise, so no empty "Rewards" chip appears.
+    if (!access.rewards || !data.rewards?.enabled) delete data.rewards;
+    data.allowedSections = COMPANY_SECTIONS.filter((s) => access[s] && (s !== 'rewards' || !!data.rewards));
     return res.json(ok(data));
   } catch (err) {
     return next(err);

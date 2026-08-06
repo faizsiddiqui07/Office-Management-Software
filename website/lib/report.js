@@ -9,6 +9,7 @@ export const REPORT_TYPES = [
 // Company-wide report sections (filtered per role by the server's allowedSections).
 export const REPORT_SECTIONS = [
   { value: 'tasks', label: 'Tasks' },
+  { value: 'rewards', label: 'Rewards' },
   { value: 'attendance', label: 'Attendance' },
   { value: 'leaves', label: 'Leaves' },
   { value: 'expenses', label: 'Expenses' },

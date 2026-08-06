@@ -231,6 +231,42 @@ function companyTasksSection(d, accent) {
   );
 }
 
+/**
+ * Bonus points per person for this period — sits right after Tasks. A full month is the
+ * NET standing (that month's points + any carried-in deficit); any other window is the raw
+ * points earned inside it. Returns null when the scheme is off, so the section drops out.
+ */
+function companyRewardsSection(d, accent) {
+  const r = d.rewards;
+  if (!r || !r.enabled) return null;
+  const rupee = (n) => `Rs ${(n || 0).toLocaleString('en-IN')}`; // whole rupees, NOT paise — do not use money()
+  const stats = [
+    stat('Total points', r.totals.points, 'rw1'),
+    ...(r.rupeesPerPoint ? [stat('Total payout', rupee(r.totals.rupees), 'rw2'), stat('Per point', rupee(r.rupeesPerPoint), 'rw3')] : []),
+  ];
+  const headers = [
+    { label: 'Employee', w: '40%' },
+    { label: 'ID', w: '18%' },
+    { label: 'Points', w: '21%', align: 'right' },
+    { label: 'Payout', w: '21%', align: 'right' },
+  ];
+  const rows = r.perEmployee.map((e) => [e.name, e.employeeId, String(e.points), e.rupees ? rupee(e.rupees) : '—']);
+  return E(
+    View,
+    { key: 'rewards' },
+    sectionTitle('Rewards', accent),
+    E(View, { style: styles.statRow }, ...stats),
+    rows.length ? table(headers, rows) : E(Text, { style: styles.empty }, 'No points in this period.'),
+    E(
+      Text,
+      { style: styles.empty },
+      r.monthlyNet
+        ? 'Monthly net standing — this month’s points plus any deficit carried in. Payout applies to a positive standing only.'
+        : 'Points earned on days inside this period (raw, no carry-over). Payout applies to a positive total only.',
+    ),
+  );
+}
+
 function attendanceSection(d, accent) {
   const t = d.attendance.totals;
   const stats = [
@@ -340,18 +376,21 @@ function rosterSection(d, accent) {
 // the reader's own dues (selfDuesSection below).
 const COMPANY_SECTIONS = {
   tasks: companyTasksSection,
+  rewards: companyRewardsSection,
   attendance: attendanceSection,
   leaves: leavesSection,
   expenses: expensesSection,
   roster: rosterSection,
 };
-// Tasks first: what the office actually got done is the headline the report opens with.
-const COMPANY_ORDER = ['tasks', 'attendance', 'leaves', 'expenses', 'roster'];
+// Tasks first: what the office actually got done is the headline the report opens with;
+// rewards ride alongside them.
+const COMPANY_ORDER = ['tasks', 'rewards', 'attendance', 'leaves', 'expenses', 'roster'];
 
 function buildCompanyDoc(data, sections, logo) {
   const accent = data.company.brandColor || DEFAULT_ACCENT;
   const typeLabel = `${data.type.charAt(0).toUpperCase()}${data.type.slice(1)} report`;
-  const body = COMPANY_ORDER.filter((s) => sections.includes(s)).map((s) => COMPANY_SECTIONS[s](data, accent));
+  // A section fn may return null (rewards when the scheme is off) — drop those.
+  const body = COMPANY_ORDER.filter((s) => sections.includes(s)).map((s) => COMPANY_SECTIONS[s](data, accent)).filter(Boolean);
   return E(
     Document,
     {},

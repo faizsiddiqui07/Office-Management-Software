@@ -1,6 +1,6 @@
 'use client';
 
-import { CalendarClock, CalendarDays, Clock, ListTodo, UserCheck, UserPlus, UserX, Users, Wallet } from 'lucide-react';
+import { Award, CalendarClock, CalendarDays, Clock, ListTodo, UserCheck, UserPlus, UserX, Users, Wallet } from 'lucide-react';
 import { StatCard } from '@/components/glass/stat-card';
 import { GlassCard } from '@/components/glass/glass-card';
 import { DataTable } from '@/components/glass/data-table';
@@ -73,6 +73,63 @@ function TasksSection({ data }) {
       <DataTable columns={columns} data={data.tasks.perEmployee} searchPlaceholder="Search employees…" pageSize={8} emptyMessage="No task activity." />
       <p className="text-xs text-muted-foreground">
         Assigned work only — personal to-dos aren’t counted. A task with no deadline can’t be late, so it counts as on time (done always equals on time + late). “Tagged on” is work raised in this period that named the person as a colleague; it belongs to someone else and isn’t counted in the figures above.
+      </p>
+    </ReportSection>
+  );
+}
+
+/**
+ * Bonus points, person by person, for this period — sits right after Tasks. A full month
+ * shows the NET standing (that month's points plus any deficit carried in, like the
+ * leaderboard); any other window shows the raw points earned inside it.
+ */
+function RewardsSection({ data }) {
+  const r = data.rewards;
+  const money = (n) => `₹${(n || 0).toLocaleString('en-IN')}`; // whole rupees, NOT paise
+  const columns = [
+    {
+      id: 'name',
+      header: 'Employee',
+      accessorFn: (row) => `${row.name} ${row.employeeId} ${roleName(row)}`,
+      cell: ({ row }) => (
+        <div>
+          <p className="font-medium">{row.original.name}</p>
+          <p className="text-xs text-muted-foreground">
+            {row.original.employeeId} · {roleName(row.original)}
+          </p>
+        </div>
+      ),
+    },
+    {
+      id: 'points',
+      header: 'Points',
+      accessorFn: (row) => row.points,
+      cell: ({ row }) => (
+        <span className={cn('tabular-nums font-medium', row.original.points < 0 ? 'text-destructive' : row.original.points > 0 ? 'text-success' : '')}>
+          {row.original.points}
+        </span>
+      ),
+    },
+    ...(r.rupeesPerPoint
+      ? [{
+          id: 'rupees',
+          header: 'Payout',
+          accessorFn: (row) => row.rupees,
+          cell: ({ row }) => <span className="tabular-nums text-muted-foreground">{row.original.rupees ? money(row.original.rupees) : '—'}</span>,
+        }]
+      : []),
+  ];
+  return (
+    <ReportSection icon={Award} title="Rewards" meta={`${r.totals.points} pts${r.rupeesPerPoint ? ` · ${money(r.totals.rupees)}` : ''}`}>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatCard label="Total points" value={r.totals.points} icon={Award} tone="default" />
+        {r.rupeesPerPoint ? <StatCard label="Total payout" value={money(r.totals.rupees)} icon={Wallet} tone="success" hint={`₹${r.rupeesPerPoint}/point`} /> : null}
+      </div>
+      <DataTable columns={columns} data={r.perEmployee} searchPlaceholder="Search employees…" pageSize={8} emptyMessage="No points in this period." />
+      <p className="text-xs text-muted-foreground">
+        {r.monthlyNet
+          ? 'Monthly net standing — this month’s points plus any deficit carried in, exactly like the Rewards leaderboard. Payout applies to a positive standing only.'
+          : 'Points earned on days inside this period (raw, no month-to-month carry-over). Payout applies to a positive total only.'}
       </p>
     </ReportSection>
   );
@@ -267,6 +324,7 @@ export function ReportPreview({ data, sections }) {
       <JoinedLaterNotice data={data} />
       {/* Tasks first — what the office actually got done leads the report. */}
       {has('tasks') && data.tasks ? <TasksSection data={data} /> : null}
+      {has('rewards') && data.rewards?.enabled ? <RewardsSection data={data} /> : null}
       {has('attendance') && data.attendance ? <AttendanceSection data={data} /> : null}
       {has('leaves') && data.leaves ? <LeavesSection data={data} /> : null}
       {has('expenses') && data.expenses ? <ExpensesSection data={data} /> : null}

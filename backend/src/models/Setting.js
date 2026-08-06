@@ -93,6 +93,8 @@ const settingSchema = new mongoose.Schema(
       forwardRuleSeeded: { type: Boolean, default: false },
       // Same guard for the escalating per-day overdue penalty rule.
       overdueDripSeeded: { type: Boolean, default: false },
+      // One-time flag: punctual-week labels rewritten to read by the week-ending day.
+      streakLabelFixed: { type: Boolean, default: false },
       lastMonthRollup: { type: String, default: '' }, // YYYY-MM — last month whose month-end awards ran
       // YMD — the last day the absence scan actually FINISHED. Separate from the
       // throttle above so a failed run doesn't quietly declare its days done.

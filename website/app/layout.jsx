@@ -32,11 +32,11 @@ export const metadata = {
   // website — no image ships with the frontend). ?v busts the previously cached favicon.
   icons: {
     icon: [
-      { url: '/app-icon?v=4', sizes: '512x512', type: 'image/png' },
-      { url: '/app-icon?v=4', sizes: '192x192', type: 'image/png' },
+      { url: '/app-icon?v=5', sizes: '512x512', type: 'image/png' },
+      { url: '/app-icon?v=5', sizes: '192x192', type: 'image/png' },
     ],
-    shortcut: ['/app-icon?v=4'],
-    apple: [{ url: '/app-icon', sizes: '180x180', type: 'image/png' }],
+    shortcut: ['/app-icon?v=5'],
+    apple: [{ url: '/app-icon?v=5', sizes: '180x180', type: 'image/png' }],
   },
 };
 

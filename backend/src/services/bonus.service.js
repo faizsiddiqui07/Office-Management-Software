@@ -313,6 +313,35 @@ export async function leaderboard(params = {}) {
 }
 
 /**
+ * Per-employee bonus points for a REPORT period, scored the way each granularity is shown
+ * elsewhere in the app:
+ *  - a full single MONTH → the NET standing (this month's points + any carried-in deficit),
+ *    exactly like the leaderboard / header badge for that month;
+ *  - any OTHER window (a day, week, quarter, fiscal year or custom span) → the RAW points
+ *    earned on days INSIDE the window, summed off earnedYMD (carry-over is a month-to-month
+ *    idea that doesn't apply to an arbitrary span).
+ * Returns { enabled, rupeesPerPoint, byUser: Map<userIdString, points> }. Empty when the
+ * scheme is switched off, so the report can omit the section entirely.
+ */
+export async function periodPoints({ type, from, to }) {
+  const cfg = await getConfig();
+  if (!cfg.enabled) return { enabled: false, rupeesPerPoint: 0, byUser: new Map() };
+  const byUser = new Map();
+  if (type === 'monthly') {
+    const rows = await leaderboard({ month: from.slice(0, 7) }); // NET, carry-in included
+    for (const r of rows) byUser.set(String(r.id), r.points);
+  } else {
+    // earnedYMD is a 'YYYY-MM-DD' string, so a lexicographic range works for any window.
+    const rows = await PointEntry.aggregate([
+      { $match: { earnedYMD: { $gte: from, $lte: to } } },
+      { $group: { _id: '$user', points: { $sum: '$points' } } },
+    ]);
+    for (const r of rows) byUser.set(String(r._id), r.points);
+  }
+  return { enabled: true, rupeesPerPoint: cfg.rupeesPerPoint, byUser };
+}
+
+/**
  * Record an automatic award exactly once.
  *
  * `key` identifies the award itself (who, what, which day or month). Two Lambdas
@@ -730,7 +759,11 @@ export async function runWeeklyStreak(b, week = null) {
     }
     if (workingDays > 0 && !broke) {
       // eslint-disable-next-line no-await-in-loop
-      await awardOnce(`auto_streak:${u._id}:${start}`, { user: u._id, month: monthOfAward, points: Math.abs(pts), reason: `Punctual week · ${start} to ${end}`, source: 'auto_streak', earnedYMD: end });
+      // Label by the week-ENDING day (the Saturday this entry is filed under), not the
+      // Monday it started. A week that straddles a month boundary (e.g. Mon 27 Jul → Sat
+      // 1 Aug) is filed in the ending month; leading the label with the July Monday made
+      // an August entry read as if July had leaked into the August breakdown.
+      await awardOnce(`auto_streak:${u._id}:${start}`, { user: u._id, month: monthOfAward, points: Math.abs(pts), reason: `Punctual week ending ${end}`, source: 'auto_streak', earnedYMD: end });
     }
   }
 }
@@ -890,7 +923,12 @@ async function repairEarnedDates() {
     const key = r.dedupeKey || '';
     const day = key.match(/:(\d{4}-\d{2}-\d{2})$/);
     const mon = key.match(/:(\d{4}-\d{2})$/);
-    if (day) {
+    if (r.source === 'auto_streak' && day) {
+      // A streak key ends in the week's MONDAY, but the award belongs to the week-ending
+      // Saturday (Monday + 5) — the day it is filed under. Using the Monday would land a
+      // straddling week in the wrong month.
+      ymd = addDays(day[1], 5);
+    } else if (day) {
       [, ymd] = day;
     } else if (r.source === 'auto_task' && taskById.has(String(r.taskRef))) {
       const t = taskById.get(String(r.taskRef));
@@ -976,6 +1014,24 @@ async function seedForwardRules() {
  * drip works out of the box - editable/removable in Settings like any other rule, and the
  * flag stops it re-appearing after leadership removes it.
  */
+/**
+ * One-time: rewrite existing punctual-week labels to read by the week-ENDING day, matching
+ * the new format. Old rows read "Punctual week · <Monday> to <Saturday>", which made a
+ * month-straddling week look like it belonged to the previous month in the breakdown; this
+ * aligns them to their earnedYMD (the Saturday they're already filed under). Guarded by a
+ * flag so it runs once and never again.
+ */
+async function relabelStreakEntries() {
+  const s = await Setting.getSingleton();
+  if (s.bonus?.streakLabelFixed) return;
+  await PointEntry.updateMany({ source: 'auto_streak', earnedYMD: { $ne: '' } }, [
+    { $set: { reason: { $concat: ['Punctual week ending ', '$earnedYMD'] } } },
+  ]);
+  s.bonus.streakLabelFixed = true;
+  await s.save();
+  Setting.invalidateCache();
+}
+
 async function seedOverdueDripRule() {
   const s = await Setting.getSingleton();
   if (s.bonus?.overdueDripSeeded) return;
@@ -1089,6 +1145,7 @@ export async function maybeRunDaily() {
   try { await catchUpHistory(b); } catch (e) { console.error('history catch-up failed', e?.message); }
   try { await seedForwardRules(); } catch (e) { console.error('forward-rule seed failed', e?.message); }
   try { await seedOverdueDripRule(); } catch (e) { console.error('overdue-drip seed failed', e?.message); }
+  try { await relabelStreakEntries(); } catch (e) { console.error('streak relabel failed', e?.message); }
   try { await rescoreAssignedTasks(b); } catch (e) { console.error('task re-score failed', e?.message); }
   const today = ymdInTz(new Date());
   if (b.lastPenaltyRun === today) return;

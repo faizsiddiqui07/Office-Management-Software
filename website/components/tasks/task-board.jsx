@@ -777,6 +777,19 @@ export function TaskBoard() {
   // deliberately outside every "my tasks" count.
   const isTagged = tab === 'tagged';
 
+  // The tab bar + list sit well below the stat cards — on a phone they're off the bottom
+  // of the viewport, so a card tap switches the tab with no visible feedback. When a stat
+  // card is used we smooth-scroll down to the list so the switched content is actually on
+  // screen. scroll-mt on the wrapper (below) keeps the sticky topbar from covering it.
+  const listRef = React.useRef(null);
+  const scrollToList = React.useCallback(() => {
+    // Wait for React to commit the tab switch so the target is in its final position,
+    // then smooth-scroll. rAF runs after the DOM update, before paint.
+    requestAnimationFrame(() => {
+      listRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }, []);
+
   // A stat card jumps to "My tasks" and shows exactly that slice, flat — no folders, no
   // date filter, no search in the way. Completed has no flat mode of its own; it just
   // opens History, which already is that list.
@@ -785,6 +798,7 @@ export function TaskBoard() {
     setPeriod('all');
     setTab('mine');
     setFlat(mode);
+    scrollToList();
   };
 
   // Reset the search box when switching tabs (task-text vs person name).
@@ -1207,11 +1221,11 @@ export function TaskBoard() {
       {/* Four across is too tight on a phone, so it's 2×2 there and a single row from sm up. */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
         <StatMini label="Pending" value={m.pending} icon={ListTodo} tone={m.pending ? 'warning' : 'default'} onClick={() => showFlat('pending')} hint="Show every pending task, flat" />
-        <StatMini label="Completed" value={m.done} icon={CheckCircle2} tone="success" onClick={() => { setFlat(null); setTab('history'); }} hint="See completed tasks" />
+        <StatMini label="Completed" value={m.done} icon={CheckCircle2} tone="success" onClick={() => { setFlat(null); setTab('history'); scrollToList(); }} hint="See completed tasks" />
         <StatMini label="Total" value={m.total} icon={ClipboardList} onClick={() => showFlat('all')} hint="Show every task, flat" />
         {/* Its own box, never folded into Total: being tagged is being kept in the loop,
             not being given the work. */}
-        <StatMini label="Tagged" value={tg.total} icon={Users} onClick={() => { setFlat(null); setTab('tagged'); }} hint="Tasks you’re tagged on — someone else does them" />
+        <StatMini label="Tagged" value={tg.total} icon={Users} onClick={() => { setFlat(null); setTab('tagged'); scrollToList(); }} hint="Tasks you’re tagged on — someone else does them" />
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -1274,6 +1288,9 @@ export function TaskBoard() {
         {filterNote ? <p className="px-1 text-xs text-muted-foreground">{filterNote}</p> : null}
       </div>
 
+      {/* Wrapper carries the scroll target + a scroll-margin so a stat-card jump stops just
+          below the sticky topbar instead of under it. (Tabs itself doesn't forward a ref.) */}
+      <div ref={listRef} className="scroll-mt-24">
       <Tabs value={tab} onValueChange={(v) => { setTab(v); setFlat(null); }}>
         <TabsList>
           <TabsTrigger value="mine">My tasks</TabsTrigger>
@@ -1542,6 +1559,7 @@ export function TaskBoard() {
           )}
         </TabsContent>
       </Tabs>
+      </div>
 
       {editing ? (
         <TaskDialog
