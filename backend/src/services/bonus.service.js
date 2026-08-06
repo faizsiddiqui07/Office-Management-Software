@@ -788,7 +788,12 @@ export async function backfillMonth(month) {
   // 4. Assigned tasks finished in the month — scored by the same hook the live path uses,
   //    so on-time/late, grace days and the forwarded-copy rule all behave identically.
   if (rulePoints(b, 'assignedTaskOnTime') || rulePoints(b, 'assignedTaskLate')) {
-    const tasks = await Task.find({ status: 'DONE', assignedBy: { $ne: null }, completedAt: { $ne: null } }).select('owner dueYMD title completedAt submittedAt requiresApproval assignedBy');
+    // Bounded to THIS month's completions. It used to load EVERY finished task (all months)
+    // and skip the rest in JS — cheap once, but this backfill runs on the schedule, and
+    // with the per-task forward-chain lookup that unbounded scan blew past the 30s timeout.
+    const monthStart = companyDayFromYMD(from);
+    const monthEndExclusive = companyDayFromYMD(`${nextMonth(month)}-01`);
+    const tasks = await Task.find({ status: 'DONE', assignedBy: { $ne: null }, forwardedFrom: null, completedAt: { $gte: monthStart, $lt: monthEndExclusive } }).select('owner dueYMD title completedAt submittedAt requiresApproval assignedBy forwardedFrom');
     for (const t of tasks) {
       const doneYMD = ymdInTz(t.completedAt); // the completion/approval day decides the month
       if (doneYMD < from || doneYMD > to) continue;
@@ -825,22 +830,20 @@ const nextMonth = (ym) => {
 async function catchUpHistory(b) {
   const target = prevMonth(currentMonth()); // the last month that is actually over
   const firstMonth = APP_LIVE_YMD.slice(0, 7);
-  let done = b.historyScored || '';
+  const done = b.historyScored || '';
   if (done >= target) return;
 
-  let m = done ? nextMonth(done) : firstMonth;
-  let ran = 0;
-  while (m <= target && ran < 2) {
-    // eslint-disable-next-line no-await-in-loop
-    await backfillMonth(m);
-    done = m;
-    ran += 1;
-    m = nextMonth(m);
-  }
-  if (ran) {
-    await Setting.updateOne({ key: 'global' }, { $set: { 'bonus.historyScored': done } });
-    Setting.invalidateCache();
-  }
+  const m = done ? nextMonth(done) : firstMonth;
+  // Advance the watermark BEFORE the heavy backfill, ONE month per run. It used to be
+  // written only AFTER backfilling two months — so if that overran the Lambda's 30s timeout
+  // the watermark never moved, and this re-ran the same heavy month on EVERY scheduler tick,
+  // pinning the function at 30s and hammering the DB (which is what slowed the whole app).
+  // The month's live hooks already scored it as things happened; this pass is a best-effort
+  // top-up, so marking it done up front — even if the backfill below is cut short — is safe
+  // and guarantees the catch-up can never loop.
+  await Setting.updateOne({ key: 'global' }, { $set: { 'bonus.historyScored': m } });
+  Setting.invalidateCache();
+  try { await backfillMonth(m); } catch (e) { console.error('history backfill', m, 'failed', e?.message); }
 }
 
 /**
