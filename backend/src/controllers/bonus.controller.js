@@ -10,8 +10,11 @@ function handleErr(res, err, next) {
 /** The signed-in user's own points (header badge + their rewards page). */
 export async function me(req, res, next) {
   try {
-    // Opportunistic: apply any overdue-task penalties (throttled to once a day).
-    try { await svc.maybeRunDaily(); } catch { /* non-blocking */ }
+    // NOTE: the daily jobs (overdue penalties, re-score, rollups) run on the EventBridge
+    // schedule (runScheduledJobs → maybeRunDaily), NOT here. This endpoint is hit by the
+    // header points-badge on EVERY page, so running maybeRunDaily inline made every page
+    // wait for it — and once the re-score got heavy that stalled the whole app. Keep this
+    // path to just reading the user's points.
     const { month, from, to } = req.query || {};
     res.json(ok(await svc.mySummary(req.user, { month, from, to })));
   } catch (err) {

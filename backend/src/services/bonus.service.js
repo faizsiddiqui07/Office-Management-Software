@@ -956,12 +956,20 @@ async function seedForwardRules() {
  * it's safe and idempotent.
  */
 async function rescoreAllDoneAssigned() {
-  const tasks = await Task.find({ status: 'DONE', assignedBy: { $ne: null }, completedAt: { $ne: null } })
+  // Only ROOT copies (nothing forwarded INTO them) award — they pay their whole forward
+  // tree at once; a non-root copy is a no-op in onAssignedTaskDone, so don't even load it.
+  const tasks = await Task.find({ status: 'DONE', assignedBy: { $ne: null }, completedAt: { $ne: null }, forwardedFrom: null })
     .select('owner completedBy dueYMD title completedAt submittedAt requiresApproval assignedBy status forwardedFrom')
     .limit(5000);
   for (const t of tasks) {
-    // eslint-disable-next-line no-await-in-loop
-    await onAssignedTaskDone(t);
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await onAssignedTaskDone(t);
+    } catch (e) {
+      // One bad task must never abort the whole pass — that would leave the version
+      // watermark unset and re-run the entire re-score on every schedule tick.
+      console.error('rescore task failed', String(t._id), e?.message);
+    }
   }
 }
 
