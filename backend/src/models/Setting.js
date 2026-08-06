@@ -91,6 +91,8 @@ const settingSchema = new mongoose.Schema(
       // Set once the forwarding reward rules (forwardOnTime / forwardLate) have been seeded
       // into autoRules, so leadership can then edit or remove them without them re-appearing.
       forwardRuleSeeded: { type: Boolean, default: false },
+      // Same guard for the escalating per-day overdue penalty rule.
+      overdueDripSeeded: { type: Boolean, default: false },
       lastMonthRollup: { type: String, default: '' }, // YYYY-MM — last month whose month-end awards ran
       // YMD — the last day the absence scan actually FINISHED. Separate from the
       // throttle above so a failed run doesn't quietly declare its days done.

@@ -9,6 +9,8 @@ import { ok, fail } from '../lib/apiResponse.js';
 import { sendPasswordResetEmail } from '../lib/mailer.js';
 import { publicAppUrl } from '../lib/appUrl.js';
 import { audit } from '../models/AuditLog.js';
+import { saveAvatar } from '../lib/brand.js';
+import { deleteAsset } from '../lib/s3Assets.js';
 import { permissionsForRole, roleLabel, isOwnerRole } from '../lib/roles.js';
 import { clientIp, lockedFor, recordFailure, clearFailures } from '../lib/loginGuard.js';
 
@@ -99,8 +101,18 @@ export async function updateProfile(req, res, next) {
     const user = await User.findById(req.user._id);
     if (name !== undefined) user.name = name;
     if (phone !== undefined) user.phone = phone;
-    if (avatarUrl !== undefined) user.avatarUrl = avatarUrl;
+    let previousAvatar = null;
+    if (avatarUrl !== undefined) {
+      previousAvatar = user.avatarUrl;
+      // A fresh upload arrives as a data URL — store it in S3 and keep only the URL in
+      // the user doc (same as the brand images; falls back to the data URL if the
+      // bucket isn't configured). '' clears the avatar. Anything else (already a URL)
+      // is kept as-is.
+      user.avatarUrl = avatarUrl.startsWith('data:') ? await saveAvatar(avatarUrl, user._id) : avatarUrl;
+    }
     await user.save();
+    // AFTER the save — drop the replaced S3 avatar (no-op for legacy base64 / empty).
+    if (previousAvatar !== null && previousAvatar !== user.avatarUrl) await deleteAsset(previousAvatar);
     await audit({ actor: user._id, action: 'auth.update_profile', entityType: 'User', entityId: user._id.toString() });
     return res.json(ok({ user: user.toJSON() }));
   } catch (err) {

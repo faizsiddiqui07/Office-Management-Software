@@ -208,24 +208,42 @@ export async function buildReport(type, dateYMD, range) {
     let wfh = 0;
     let workedMinutes = 0;
     let overtimeMinutes = 0;
+    // Recorded facts are counted up to TODAY — a check-in that already happened is real
+    // even while the office day is still running. (This is what makes the DAILY report
+    // show today's attendance instead of a blank table: the old cap at the last
+    // FINISHED day silently dropped every row of an in-progress today.) Judgements that
+    // need a finished day — absent — still cap at uElapsedTo via the *Fin counters.
+    const countTo = to < todayYMD ? to : todayYMD;
+    let showedFin = 0;
+    let onLeaveFin = 0;
+    let wfhFin = 0;
     for (const r of recsByUser.get(String(u._id)) || []) {
-      if (ymdInTz(new Date(r.date)) > uElapsedTo) continue; // don't count an unfinished today
+      const d = ymdInTz(new Date(r.date));
+      if (d > countTo) continue;
+      const finished = d <= uElapsedTo;
       workedMinutes += r.workedMinutes || 0;
       overtimeMinutes += r.overtimeMinutes || 0;
-      if (r.status === 'PRESENT') present += 1;
-      else if (r.status === 'LATE') {
+      if (r.status === 'PRESENT') {
+        present += 1;
+        if (finished) showedFin += 1;
+      } else if (r.status === 'LATE') {
         if (r.excused) present += 1; // excused (on-duty) counts as present
         else late += 1;
+        if (finished) showedFin += 1;
       } else if (r.status === 'ON_LEAVE') {
         onLeave += r.halfDayLeave ? 0.5 : 1; // half-day leave = half a day away
+        if (finished) onLeaveFin += r.halfDayLeave ? 0.5 : 1;
       } else if (r.status === 'WFH') {
         wfh += 1; // worked, from home
+        if (finished) wfhFin += 1;
       }
     }
     const showed = present + late;
     // WFH days were WORKED, so they are neither absent nor leave — subtract them or
-    // every work-from-home day silently reads as an absence.
-    const absent = Math.max(0, ownWorkingDays - showed - onLeave - wfh);
+    // every work-from-home day silently reads as an absence. Absent is judged ONLY on
+    // finished working days (ownWorkingDays stops at uElapsedTo), so an in-progress
+    // today can add to Present but never to Absent.
+    const absent = Math.max(0, ownWorkingDays - showedFin - onLeaveFin - wfhFin);
     return {
       name: u.name,
       joinedYMD: joinedYMD(u),

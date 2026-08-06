@@ -145,3 +145,12 @@ export function saveCompanyLogo(dataUrl, variant = 'dark') {
 export function saveBackground(dataUrl, variant = 'dark') {
   return saveMedia(dataUrl, `bg-${variant === 'light' ? 'light' : 'dark'}`);
 }
+
+/**
+ * Validate + upload a user's profile photo. Nested under branding/ so the existing
+ * bucket policy (public read) and the Lambda role's write policy both already cover it —
+ * no AWS changes needed for avatars.
+ */
+export function saveAvatar(dataUrl, userId) {
+  return saveMedia(dataUrl, `avatars/user-${userId}`);
+}

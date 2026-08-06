@@ -31,6 +31,7 @@ function httpError(status, code, message) {
 export const AUTO_RULES = [
   { key: 'assignedTaskOnTime', label: 'Assigned task done on time', hint: 'Only tasks someone assigns — not self-made', sign: 'reward' },
   { key: 'assignedTaskLate', label: 'Assigned task done or left late', hint: 'After the due date + grace days', sign: 'penalty' },
+  { key: 'assignedTaskOverdueDaily', label: 'Each extra day an assigned task stays overdue', hint: 'Per day after the first late mark, until it is finished', sign: 'penalty' },
   { key: 'forwardOnTime', label: 'Forwarded a task, done on time', hint: 'For whoever passed the work down — when the chain finishes on time', sign: 'reward' },
   { key: 'forwardLate', label: 'Forwarded a task, done late', hint: 'For whoever passed the work down — when the chain finishes late', sign: 'penalty' },
   { key: 'punctualStreak', label: 'Punctual week', hint: 'On time all week (Mon–Sat); leave / WFH / Sunday don’t break it', sign: 'reward' },
@@ -501,29 +502,48 @@ export async function onCheckOut(user, dateYMD) {
 
 // ── Daily scans + month rollup (run opportunistically, no cron) ───────────────
 
+// The per-day overdue drip only counts days from August 2026 - the month the rule was
+// introduced. It never back-fills: each day's entry is written on that day itself, so
+// July (or any earlier month) can never grow new penalties.
+const DRIP_FLOOR_YMD = '2026-08-01';
+
 async function scanOverdueTasks(b) {
   const pts = rulePoints(b, 'assignedTaskLate');
-  if (!pts) return;
+  const dripPts = rulePoints(b, 'assignedTaskOverdueDaily');
+  if (!pts && !dripPts) return;
   const today = ymdInTz(new Date());
-  // Work that was passed further down is now somebody else's to deliver. Their copy is
-  // the one that gets scored; the copy left behind up the chain stays PENDING until the
-  // bottom is finished, so counting it too penalised two people for one late job. The
-  // task leaderboard already excludes these — the penalty has to agree with it.
+  // Work that was passed further down is now somebody else's to deliver (the copy left
+  // behind stays PENDING until the bottom finishes); the leaderboard excludes these and
+  // the penalties have to agree with it. Submitted-for-approval tasks are skipped too:
+  // the assignee did the work, so neither the mark nor the drip runs while a review sits
+  // with the approver.
   const forwardedParentIds = await Task.distinct('forwardedFrom', { forwardedFrom: { $ne: null } });
-  // Skip tasks already submitted for approval — the assignee did the work; a slow
-  // approval must not become an "overdue" penalty on them.
   const tasks = await Task.find({ assignedBy: { $ne: null }, status: 'PENDING', dueYMD: { $ne: '' }, submittedAt: null, _id: { $nin: forwardedParentIds } }).select('owner dueYMD title');
   for (const t of tasks) {
-    if (addDays(t.dueYMD, b.graceDays || 0) >= today) continue;
+    const duePlus = addDays(t.dueYMD, b.graceDays || 0);
+    if (duePlus >= today) continue;
+    // -- One-time late mark (unchanged rule) --
     // Belt and braces on top of the dedupe key: an entry written before keys existed
-    // carries only taskRef, so keying alone would not see it and would penalise the
-    // same task a second time on the first run after an upgrade.
+    // carries only taskRef, so keying alone would not see it and would penalise the same
+    // task twice after an upgrade. Drip entries share the source, so they are excluded
+    // from this existence check by their key prefix.
     // eslint-disable-next-line no-await-in-loop
-    if (await PointEntry.findOne({ taskRef: t._id, source: 'auto_task' })) continue;
-    // Same key the completion award uses, so a task carries exactly one auto entry —
-    // the overdue penalty is replaced by the result once it's finished.
-    // eslint-disable-next-line no-await-in-loop
-    await awardOnce(`auto_task:${t._id}`, { user: t.owner, month: today.slice(0, 7), points: -Math.abs(pts), reason: `Overdue: ${t.title}`, source: 'auto_task', taskRef: t._id, earnedYMD: today });
+    const marked = await PointEntry.findOne({ taskRef: t._id, source: 'auto_task', dedupeKey: { $not: /^auto_overdue:/ } });
+    if (pts && !marked) {
+      // Same key the completion award uses, so the task's MAIN auto entry is replaced by
+      // the result once it's finished. (The drips below are separate per-day entries.)
+      // eslint-disable-next-line no-await-in-loop
+      await awardOnce(`auto_task:${t._id}`, { user: t.owner, month: today.slice(0, 7), points: -Math.abs(pts), reason: `Overdue: ${t.title}`, source: 'auto_task', taskRef: t._id, earnedYMD: today });
+    }
+    // -- Escalating drip: -N for each FURTHER day it stays overdue --
+    // Today only (no retroactive fill), never the first late day (that day carries the
+    // one-time mark), and never before the August-2026 floor. Once the task is finished
+    // these day entries STAY - they were the price of those days - while the main entry
+    // flips to the completion result.
+    if (dripPts && today >= DRIP_FLOOR_YMD && today > addDays(duePlus, 1)) {
+      // eslint-disable-next-line no-await-in-loop
+      await awardOnce(`auto_overdue:${t._id}:${today}`, { user: t.owner, month: today.slice(0, 7), points: -Math.abs(dripPts), reason: `Still overdue: ${t.title}`, source: 'auto_task', taskRef: t._id, earnedYMD: today });
+    }
   }
 }
 
@@ -952,6 +972,22 @@ async function seedForwardRules() {
 }
 
 /**
+ * Seed the escalating-overdue rule (assignedTaskOverdueDaily, 1 point/day) once, so the
+ * drip works out of the box - editable/removable in Settings like any other rule, and the
+ * flag stops it re-appearing after leadership removes it.
+ */
+async function seedOverdueDripRule() {
+  const s = await Setting.getSingleton();
+  if (s.bonus?.overdueDripSeeded) return;
+  const rules = [...(s.bonus.autoRules || [])];
+  if (!rules.some((r) => r.key === 'assignedTaskOverdueDaily')) rules.push({ key: 'assignedTaskOverdueDaily', points: 1 });
+  s.bonus.autoRules = rules;
+  s.bonus.overdueDripSeeded = true;
+  await s.save();
+  Setting.invalidateCache();
+}
+
+/**
  * Re-score every finished assigned task from the task table as it stands right now, so a
  * task's points always reflect its CURRENT due date, completion day and status — even if
  * those were changed directly in the database, outside the app's own hooks. Re-runs
@@ -1020,12 +1056,23 @@ async function rescoreAssignedTasks(b) {
  */
 async function pruneOrphanTaskEntries() {
   const TASK_SOURCES = ['auto_task', 'auto_forward'];
-  const refs = await PointEntry.distinct('taskRef', { source: { $in: TASK_SOURCES }, taskRef: { $ne: null } });
-  if (!refs.length) return;
-  const alive = await Task.find({ _id: { $in: refs }, status: 'DONE', assignedBy: { $ne: null } }).select('_id');
-  const aliveSet = new Set(alive.map((t) => String(t._id)));
-  const dead = refs.filter((r) => !aliveSet.has(String(r)));
-  if (dead.length) await PointEntry.deleteMany({ source: { $in: TASK_SOURCES }, taskRef: { $in: dead } });
+  const entries = await PointEntry.find({ source: { $in: TASK_SOURCES }, taskRef: { $ne: null } })
+    .select('taskRef points')
+    .limit(20000);
+  if (!entries.length) return;
+  const ids = [...new Set(entries.map((e) => String(e.taskRef)))];
+  const tasks = await Task.find({ _id: { $in: ids }, assignedBy: { $ne: null } }).select('status');
+  const byId = new Map(tasks.map((t) => [String(t._id), t]));
+  const dead = [];
+  for (const e of entries) {
+    const t = byId.get(String(e.taskRef));
+    // A COMPLETION result (positive) needs a task that's still DONE; a PENALTY (the
+    // overdue mark and the per-day drips, all negative) is legitimate on a task that is
+    // merely still PENDING - deleting those daily would re-date them on every re-add.
+    const keep = t && (t.status === 'DONE' || e.points < 0);
+    if (!keep) dead.push(e._id);
+  }
+  if (dead.length) await PointEntry.deleteMany({ _id: { $in: dead } });
 }
 
 /** Runs the daily scans + month rollup at most once a day (no cron needed). */
@@ -1041,6 +1088,7 @@ export async function maybeRunDaily() {
   //    (and the re-score must apply promptly, not a day later).
   try { await catchUpHistory(b); } catch (e) { console.error('history catch-up failed', e?.message); }
   try { await seedForwardRules(); } catch (e) { console.error('forward-rule seed failed', e?.message); }
+  try { await seedOverdueDripRule(); } catch (e) { console.error('overdue-drip seed failed', e?.message); }
   try { await rescoreAssignedTasks(b); } catch (e) { console.error('task re-score failed', e?.message); }
   const today = ymdInTz(new Date());
   if (b.lastPenaltyRun === today) return;
