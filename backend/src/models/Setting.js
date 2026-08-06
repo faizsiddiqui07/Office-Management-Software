@@ -202,11 +202,16 @@ settingSchema.statics.getSingleton = async function getSingleton() {
   return inFlight;
 };
 
-/** The image fields only (plus name/colour), plain object, long-cached. */
+/**
+ * Logos only (plus name/colour), plain object, long-cached. Deliberately does NOT fetch
+ * the two background photos — they are the bulk of the megabytes and nothing that calls
+ * this (login-page branding, PDF headers) renders them; on a throttled cluster pulling
+ * them here alone cost ~8s per cache miss. Backgrounds ride with getFullSingleton.
+ */
 settingSchema.statics.getBranding = async function getBranding() {
   if (brandingCached && Date.now() - brandingAt < BRANDING_FRESH_MS) return brandingCached;
   const doc = await this.findOne({ key: 'global' })
-    .select(['companyName', 'brandColor', ...HEAVY_FIELDS].join(' '))
+    .select('companyName brandColor logoUrl logoLight logoDark')
     .lean();
   brandingCached = {
     companyName: doc?.companyName || 'Office Management',
@@ -214,8 +219,6 @@ settingSchema.statics.getBranding = async function getBranding() {
     logoUrl: doc?.logoUrl || '',
     logoLight: doc?.logoLight || '',
     logoDark: doc?.logoDark || '',
-    bgLight: doc?.bgLight || '',
-    bgDark: doc?.bgDark || '',
   };
   brandingAt = Date.now();
   return brandingCached;
