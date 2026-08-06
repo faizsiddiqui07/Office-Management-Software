@@ -34,8 +34,9 @@ export default function LoginPage() {
   const { data: branding } = usePublicBranding();
   const companyName = branding?.companyName?.trim() || 'Architectus Bureau';
   // Left panel is always a dark gradient → always use the light (dark-mode) logo.
-  // No static fallback — logos come from Settings (S3); absent one, the name renders.
-  const panelLogo = branding?.logoDark || branding?.logoUrl || branding?.logoLight || '';
+  // Falls back to the static app mark (the one file that stays in the frontend for the
+  // favicon/PWA icon) until a wordmark is uploaded through Settings.
+  const panelLogo = branding?.logoDark || branding?.logoUrl || branding?.logoLight || '/logo.png';
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
   const [loading, setLoading] = React.useState(false);
