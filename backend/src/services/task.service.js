@@ -268,10 +268,7 @@ export async function setStatus(actor, id, status) {
   // awareness: the assignee does the work, so a collaborator must NOT be able to
   // complete it (bypassing the assignee and the approval gate) or reopen it.
   const sharedPersonal = !task.assignedBy;
-  // The ASSIGNER may reopen finished delegated work (see the reopen rule below) — that is
-  // their call to make, so they have to get past this gate to reach it.
-  const assignerReopening = isAssigner && status !== 'DONE' && task.status === 'DONE';
-  if (!isOwner && !assignerReopening && !(isCollaborator && sharedPersonal)) {
+  if (!isOwner && !(isCollaborator && sharedPersonal)) {
     throw httpError(403, 'FORBIDDEN', 'Only the task owner can update this task');
   }
 
@@ -292,24 +289,15 @@ export async function setStatus(actor, id, status) {
     return populated(task);
   }
 
-  // ── Reopening a finished task ────────────────────────────
-  // Un-doing wipes the approval trail and every point entry the task earned, so on
-  // DELEGATED work it belongs to the assigner, not the assignee: otherwise an assignee
-  // could quietly erase their own late penalty (and the assigner's approval) with one
-  // tap. Personal work stays entirely the owner's to reopen.
-  if (!wantDone && task.status === 'DONE' && task.assignedBy && !isAssigner) {
-    throw httpError(403, 'ASSIGNER_ONLY', 'This task is finished \u2014 ask the person who assigned it to reopen it');
-  }
-
   // ── Work handed further down ─────────────────────────────
   // A copy that was forwarded is not this person's to finish: the chain closes when the
   // person they forwarded to finishes (settleParent walks it up). Without this guard the
   // forwarder could mark their own copy done and the payout would pay the WHOLE tree,
-  // including a junior whose copy is still pending \u2014 points for work nobody did.
+  // including a junior whose copy is still pending — points for work nobody did.
   if (wantDone) {
     const openChild = await Task.findOne({ forwardedFrom: task._id, status: { $ne: 'DONE' } }).select('_id');
     if (openChild) {
-      throw httpError(409, 'FORWARDED_OPEN', 'You forwarded this task \u2014 it closes when the person you forwarded it to finishes');
+      throw httpError(409, 'FORWARDED_OPEN', 'You forwarded this task — it closes when the person you forwarded it to finishes');
     }
   }
 
@@ -537,11 +525,9 @@ export async function forwardTask(actor, id, { assignTo, requiresApproval, notes
     status: 'PENDING',
   });
 
-  // The parent copy is now a forwarder, not a doer — drop the overdue MARK it picked up
-  // while it sat in their list; their reward now comes from the chain settling (a
-  // forwarder bonus), scored on the root when the whole chain is finally approved. The
-  // per-day drips stay: those days really were spent late in their hands, and clearing
-  // them would make forwarding an escape hatch for accumulated penalties.
+  // The parent copy is now a forwarder, not a doer — drop any overdue penalty it had picked
+  // up while it sat in their list. Their reward now comes from the chain settling (a
+  // forwarder bonus), scored on the root when the whole chain is finally approved.
   try { await onAssignedTaskUndone(parent._id); } catch (e) { console.error('bonus hook (forward) failed', e?.message); }
 
   await notify({
@@ -709,15 +695,14 @@ export async function updateTask(actor, id, data) {
             (d) => d.status !== 'DONE' && !d.awaitingApproval,
           );
           await mm.deleteOne(); // drop a not-yet-started copy for someone taken off the task
-          // The copy is gone for them — clear its drips too (nothing left to be late on).
-          try { await onAssignedTaskUndone(mm._id, { all: true }); } catch (e) { console.error('bonus hook (reassign remove) failed', e?.message); }
+          try { await onAssignedTaskUndone(mm._id); } catch (e) { console.error('bonus hook (reassign remove) failed', e?.message); }
           await notify({ user: mm.owner, type: 'TASK_ASSIGNED', title: `${actor.name} removed a task`, message: mm.title, link: '/todo' });
           for (const d of orphans) {
             const ownerId = d.owner;
             const title = d.title;
             const wasOpen = d.status !== 'DONE';
             await d.deleteOne();
-            try { await onAssignedTaskUndone(d._id, { all: true }); } catch (e) { console.error('bonus hook (reassign cascade) failed', e?.message); }
+            try { await onAssignedTaskUndone(d._id); } catch (e) { console.error('bonus hook (reassign cascade) failed', e?.message); }
             if (wasOpen && String(ownerId) !== String(actor._id)) {
               await notify({ user: ownerId, type: 'TASK_ASSIGNED', title: `${actor.name} removed a task`, message: title, link: '/todo' });
             }
@@ -874,30 +859,23 @@ export async function deleteTask(actor, id) {
   // Take the whole forward chain with it: if the sir removes a task, the junior and the
   // super-junior it was passed to shouldn't be left holding a copy of work that no
   // longer exists. Collected BEFORE the delete so the links are still intact.
-  //
-  // But finished or submitted work down the chain is somebody else's record: deleting it
-  // would erase their history and take back the points they earned. The reassignment path
-  // already protects exactly this (see updateTask) — the two must agree.
-  const allDescendants = await collectForwardDescendants([task._id]);
-  const descendants = allDescendants.filter((d) => d.status !== 'DONE' && !d.awaitingApproval);
-  const keptCount = allDescendants.length - descendants.length;
+  const descendants = await collectForwardDescendants([task._id]);
 
   await task.deleteOne();
-  // The task itself is gone — nothing of it should keep scoring, drips included.
-  try { await onAssignedTaskUndone(task._id, { all: true }); } catch (e) { console.error('bonus hook (delete) failed', e?.message); }
+  try { await onAssignedTaskUndone(task._id); } catch (e) { console.error('bonus hook (delete) failed', e?.message); }
 
   for (const d of descendants) {
     const ownerId = d.owner;
     const title = d.title;
     const wasOpen = d.status !== 'DONE';
     await d.deleteOne();
-    try { await onAssignedTaskUndone(d._id, { all: true }); } catch (e) { console.error('bonus hook (cascade delete) failed', e?.message); }
+    try { await onAssignedTaskUndone(d._id); } catch (e) { console.error('bonus hook (cascade delete) failed', e?.message); }
     if (wasOpen && String(ownerId) !== String(actor._id)) {
       await notify({ user: ownerId, type: 'TASK_ASSIGNED', title: `${actor.name} removed a task`, message: title, link: '/todo' });
     }
   }
 
-  return { success: true, cascaded: descendants.length, kept: keptCount };
+  return { success: true, cascaded: descendants.length };
 }
 
 /**

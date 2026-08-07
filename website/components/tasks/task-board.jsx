@@ -1054,6 +1054,16 @@ export function TaskBoard() {
     onError: (e) => toast.error(e?.message || 'Could not update the task'),
   });
 
+  // Un-doing a FINISHED delegated task takes back the points it earned (and clears the
+  // assigner's approval), so it asks first — a mis-tap on a done task shouldn't quietly
+  // cost somebody their +points. Everything else (completing, submitting, withdrawing, and
+  // your own personal to-dos) toggles straight through as before.
+  const [undoing, setUndoing] = React.useState(null);
+  const handleToggle = (t) => {
+    if (t?.status === 'DONE' && !t?.awaitingApproval && t?.assignedBy) { setUndoing(t); return; }
+    toggleMut.mutate(t);
+  };
+
   // The assigner approves or rejects a submitted task — a rejection carries a reason.
   const [rejecting, setRejecting] = React.useState(null);
   const [rejectReason, setRejectReason] = React.useState('');
@@ -1320,7 +1330,7 @@ export function TaskBoard() {
                     task={t}
                     myId={user?.id}
                     canToggle
-                    onToggle={(x) => toggleMut.mutate(x)}
+                    onToggle={handleToggle}
                     onEdit={(x) => setEditing(x)}
                     onDelete={(x) => setDeleting(x)}
                     onOpen={(x) => openTask({ task: x, canToggle: canCompleteTask(x, user?.id), allowEdit: false, allowDelete: false, assignerView: false })}
@@ -1444,7 +1454,7 @@ export function TaskBoard() {
                       task={t}
                       myId={user?.id}
                       canToggle
-                      onToggle={(x) => toggleMut.mutate(x)}
+                      onToggle={handleToggle}
                       onEdit={(x) => setEditing(x)}
                       onDelete={(x) => setDeleting(x)}
                       onOpen={(x) => openTask({ task: x, canToggle: canCompleteTask(x, user?.id), allowEdit: canMgr(x), allowDelete: canMgr(x), assignerView: false, canForward: canForwardTask(x) })}
@@ -1487,7 +1497,7 @@ export function TaskBoard() {
                         task={t}
                         myId={user?.id}
                         canToggle
-                        onToggle={(x) => toggleMut.mutate(x)}
+                        onToggle={handleToggle}
                         onEdit={(x) => setEditing(x)}
                         onDelete={(x) => setDeleting(x)}
                         onOpen={(x) => openTask({ task: x, canToggle: canCompleteTask(x, user?.id), allowEdit: canMgr(x), allowDelete: canMgr(x), assignerView: false, canForward: canForwardTask(x) })}
@@ -1516,7 +1526,7 @@ export function TaskBoard() {
                           canToggle
                           allowEdit={() => false}
                           allowDelete={() => false}
-                          onToggle={(x) => toggleMut.mutate(x)}
+                          onToggle={handleToggle}
                           onEdit={(x) => setEditing(x)}
                           onDelete={(x) => setDeleting(x)}
                           onExpand={reportSeen}
@@ -1544,7 +1554,7 @@ export function TaskBoard() {
                   task={t}
                   myId={user?.id}
                   canToggle
-                  onToggle={(x) => toggleMut.mutate(x)}
+                  onToggle={handleToggle}
                   onEdit={(x) => setEditing(x)}
                   onDelete={(x) => setDeleting(x)}
                   onOpen={(x) => openTask({ task: x, canToggle: canCompleteTask(x, user?.id), allowEdit: canMgr(x), allowDelete: canMgr(x), assignerView: false, canForward: canForwardTask(x) })}
@@ -1576,7 +1586,7 @@ export function TaskBoard() {
         onClose={() => setViewing(null)}
         onToggle={(t) => {
           setViewing(null);
-          toggleMut.mutate(t);
+          handleToggle(t);
         }}
         onApprove={(t) => {
           setViewing(null);
@@ -1614,6 +1624,22 @@ export function TaskBoard() {
         confirmLabel="Delete"
         loading={delMut.isPending}
         onConfirm={() => deleting && delMut.mutate(deleting.id)}
+      />
+
+      {/* Marking a finished task as not-done again — warn about the points first. */}
+      <ConfirmDialog
+        open={!!undoing}
+        onOpenChange={(o) => (!o ? setUndoing(null) : null)}
+        title="Mark this as not done?"
+        description={
+          undoing
+            ? `“${undoing.title}” will go back to your pending list, and the points it earned will be removed. Completing it again will score it fresh — against today's date.`
+            : ''
+        }
+        tone="destructive"
+        confirmLabel="Yes, reopen it"
+        loading={toggleMut.isPending}
+        onConfirm={() => { if (undoing) { toggleMut.mutate(undoing); setUndoing(null); } }}
       />
 
       {/* Reject with a reason — the assignee sees exactly what to fix. */}

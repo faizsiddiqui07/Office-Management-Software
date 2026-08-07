@@ -520,17 +520,8 @@ export async function onAssignedTaskDone(task) {
   }
 }
 
-/**
- * A task stopped being finished (reopened, reassigned away, deleted, or forwarded on).
- * Its completion/overdue result goes — but by default the per-day overdue DRIPS stay:
- * those days were already spent late and the rule is that they survive. `all: true`
- * clears them too, for the cases where the task itself is gone (delete) or is leaving
- * the points system entirely.
- */
-export async function onAssignedTaskUndone(taskId, { all = false } = {}) {
-  const filter = { taskRef: taskId, source: { $in: ['auto_task', 'auto_forward'] } };
-  if (!all) filter.dedupeKey = { $not: /^auto_overdue:/ };
-  await PointEntry.deleteMany(filter);
+export async function onAssignedTaskUndone(taskId) {
+  await PointEntry.deleteMany({ taskRef: taskId, source: { $in: ['auto_task', 'auto_forward'] } });
 }
 
 /**
