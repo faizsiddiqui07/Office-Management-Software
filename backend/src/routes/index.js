@@ -23,6 +23,7 @@ import { approvalsRouter } from './approvals.routes.js';
 import { snapshotRouter } from './snapshot.routes.js';
 import { rolesRouter } from './roles.routes.js';
 import { visitorsRouter } from './visitors.routes.js';
+import { rulesRouter } from './rules.routes.js';
 import { tasksRouter } from './tasks.routes.js';
 import { bonusRouter } from './bonus.routes.js';
 
@@ -82,6 +83,7 @@ apiRouter.use('/approvals', approvalsRouter);
 apiRouter.use('/my-summary', snapshotRouter);
 apiRouter.use('/roles', rolesRouter);
 apiRouter.use('/visitors', visitorsRouter);
+apiRouter.use('/rules', rulesRouter);
 apiRouter.use('/tasks', tasksRouter);
 apiRouter.use('/bonus', bonusRouter);
 

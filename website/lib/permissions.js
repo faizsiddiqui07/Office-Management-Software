@@ -1,6 +1,7 @@
 import {
   Activity,
   Award,
+  BookOpen,
   CalendarClock,
   CalendarDays,
   CalendarRange,
@@ -107,6 +108,8 @@ export const NAV_ITEMS = [
   { label: 'Reports', href: '/reports', icon: FileText, permission: 'downloadReports' },
   { label: 'Activity', href: '/activity', icon: Activity, permission: 'viewAudit' },
   { label: 'Roles', href: '/roles', icon: ShieldCheck, permission: 'manageRoles' },
+  // The office rule book — everyone reads it; CEO & President edit it on the page itself.
+  { label: 'Rules', href: '/rules', icon: BookOpen },
   { label: 'Settings', href: '/settings', icon: Settings, permission: 'manageSettings' },
 ];
 

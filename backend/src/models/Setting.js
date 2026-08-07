@@ -106,6 +106,9 @@ const settingSchema = new mongoose.Schema(
     // stops them coming back: delete Christmas and it stays deleted, instead of being
     // helpfully re-created on the next Lambda cold start.
     defaultHolidaysSeeded: { type: Boolean, default: false },
+    // The Rules & Regulations page's starting content is written once; after that the
+    // page belongs to the CEO's edits (a deliberately emptied page stays empty).
+    rulesSeeded: { type: Boolean, default: false },
     // YMD — the last day the team was pushed a birthday wish. Throttles the once-a-day
     // birthday announcement (no cron on Lambda; it rides on the dashboard load).
     lastBirthdayPing: { type: String, default: '' },
