@@ -16,6 +16,10 @@ const settingSchema = new mongoose.Schema(
     workStart: { type: String, default: '10:00' },
     workEnd: { type: String, default: '18:00' },
     graceMinutes: { type: Number, default: 0 },
+    // Overtime only counts after this many minutes PAST the shift end. e.g. shift ends
+    // 6 PM + 60 = overtime is the time worked past 7 PM. 0 = counts from the shift end.
+    // Lets the office hours stay honest (10–6) while overtime still begins an hour later.
+    overtimeAfterMinutes: { type: Number, default: 0 },
     // Minutes after check-in during which check-out stays locked. Stops the common
     // mishap where a slow phone makes someone tap again — the button has already
     // flipped to "Check out" — and they instantly check themselves out. 0 = off.

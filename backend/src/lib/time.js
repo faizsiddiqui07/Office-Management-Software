@@ -53,10 +53,17 @@ export function isLateCheckIn(checkInAt, dayInstant, workStart, graceMinutes = 0
   return checkInAt.getTime() > threshold.getTime();
 }
 
-/** Worked + overtime minutes for a completed day (overtime = time past workEnd). */
-export function computeWork(checkInAt, checkOutAt, dayInstant, workEnd) {
+/**
+ * Worked + overtime minutes for a completed day.
+ * Overtime = time worked past (workEnd + `overtimeAfterMinutes`). The buffer is the office's
+ * "overtime only counts N minutes after your shift ends" setting — e.g. shift ends 6 PM and
+ * a 60-minute buffer means overtime is only the time past 7 PM. 0 = counts from the shift
+ * end itself. workedMinutes is the full clocked time and never touched by the buffer.
+ */
+export function computeWork(checkInAt, checkOutAt, dayInstant, workEnd, overtimeAfterMinutes = 0) {
   const workEndAt = companyDayInstantAt(dayInstant, workEnd);
+  const otThreshold = new Date(workEndAt.getTime() + Math.max(0, overtimeAfterMinutes) * 60000);
   const workedMinutes = Math.max(0, Math.round((checkOutAt.getTime() - checkInAt.getTime()) / 60000));
-  const overtimeMinutes = Math.max(0, Math.round((checkOutAt.getTime() - workEndAt.getTime()) / 60000));
+  const overtimeMinutes = Math.max(0, Math.round((checkOutAt.getTime() - otThreshold.getTime()) / 60000));
   return { workedMinutes, overtimeMinutes };
 }

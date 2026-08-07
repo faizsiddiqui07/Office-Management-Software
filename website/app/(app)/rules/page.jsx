@@ -91,7 +91,7 @@ function RuleDialog({ open, onOpenChange, rule, tokens, onSave, saving }) {
     setText((t) => `${t}${t && !t.endsWith(' ') ? ' ' : ''}{${token}}`);
     document.getElementById('r-text')?.focus();
   };
-  const tokenEntries = Object.entries(tokens || {}).filter(([k]) => k !== 'graceNote');
+  const tokenEntries = Object.entries(tokens || {}).filter(([k]) => k !== 'graceNote' && k !== 'overtimeAfterNote');
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">

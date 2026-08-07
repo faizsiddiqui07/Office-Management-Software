@@ -15,7 +15,7 @@ import {
 } from '../lib/time.js';
 import { effectiveSchedule, userWeekendDays, workWindowClosed } from '../lib/schedule.js';
 import { splitByJoining, periodStartFor, joinedYMD } from '../lib/joining.js';
-import { onCheckIn, onCheckOut } from './bonus.service.js';
+import { onCheckIn, onCheckOut, recomputeUserMonthOvertime } from './bonus.service.js';
 
 function httpError(status, code, message) {
   const e = new Error(message);
@@ -138,7 +138,7 @@ export async function setAttendanceRecord(userId, dateYMD, checkIn, checkOut) {
   record.checkOutAt = checkOut ? companyDayInstantAt(day, checkOut) : null;
 
   if (record.checkInAt && record.checkOutAt) {
-    const { workedMinutes, overtimeMinutes } = computeWork(record.checkInAt, record.checkOutAt, day, sched.workEnd);
+    const { workedMinutes, overtimeMinutes } = computeWork(record.checkInAt, record.checkOutAt, day, sched.workEnd, settings.overtimeAfterMinutes || 0);
     record.workedMinutes = workedMinutes;
     record.overtimeMinutes = overtimeMinutes;
   } else {
@@ -198,7 +198,7 @@ export async function checkOut(user, meta, coords) {
 
   const geoMeta = verifyGeofence(settings.gpsAttendance, coords);
   const sched = effectiveSchedule(user, settings); // part-time overtime counts past its own end
-  const { workedMinutes, overtimeMinutes } = computeWork(record.checkInAt, now, day, sched.workEnd);
+  const { workedMinutes, overtimeMinutes } = computeWork(record.checkInAt, now, day, sched.workEnd, settings.overtimeAfterMinutes || 0);
 
   record.checkOutAt = now;
   record.checkOutMeta = { ...meta, ...geoMeta };
@@ -218,6 +218,38 @@ export async function checkOut(user, meta, coords) {
   try { await onCheckOut(user, ymdInTz(day), overtimeMinutes); } catch (e) { console.error('bonus check-out hook failed', e?.message); }
 
   return record;
+}
+
+/**
+ * Re-derive stored overtime on EVERY completed attendance record, then rebuild the bonus
+ * overtime points for each affected user-month. Run after the overtime buffer (or workEnd)
+ * changes, so every place overtime is shown — reports, dashboard, My Summary, Rewards —
+ * reflects the new rule without waiting for the next check-out. workedMinutes is untouched
+ * (the buffer only moves the overtime threshold). Each person's OWN shift end is used.
+ */
+export async function recomputeAllOvertime() {
+  const settings = await Setting.getSingleton();
+  const buffer = settings.overtimeAfterMinutes || 0;
+  const users = await User.find().select('schedule employmentType');
+  const byUser = new Map(users.map((u) => [String(u._id), u]));
+  const recs = await Attendance.find({ checkInAt: { $ne: null }, checkOutAt: { $ne: null } }).select('user date checkInAt checkOutAt overtimeMinutes');
+  const ops = [];
+  const months = new Set(); // `${userId}|YYYY-MM`
+  for (const r of recs) {
+    const sched = effectiveSchedule(byUser.get(String(r.user)) || {}, settings);
+    const { overtimeMinutes } = computeWork(r.checkInAt, r.checkOutAt, r.date, sched.workEnd, buffer);
+    if (overtimeMinutes !== (r.overtimeMinutes || 0)) {
+      ops.push({ updateOne: { filter: { _id: r._id }, update: { $set: { overtimeMinutes } } } });
+      months.add(`${r.user}|${ymdInTz(r.date).slice(0, 7)}`);
+    }
+  }
+  if (ops.length) await Attendance.bulkWrite(ops);
+  for (const key of months) {
+    const [uid, month] = key.split('|');
+    // eslint-disable-next-line no-await-in-loop
+    try { await recomputeUserMonthOvertime(uid, month); } catch (e) { console.error('overtime points recompute failed', uid, month, e?.message); }
+  }
+  return { records: ops.length, months: months.size };
 }
 
 /** Payload for the live check-in/out card (own record + the day's work-window instants). */

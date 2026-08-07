@@ -61,6 +61,7 @@ export default function SettingsPage() {
         workStart: s.workStart ?? '10:00',
         workEnd: s.workEnd ?? '18:00',
         graceMinutes: s.graceMinutes ?? 0,
+        overtimeAfterMinutes: s.overtimeAfterMinutes ?? 0,
         checkOutCooldownMinutes: s.checkOutCooldownMinutes ?? 30,
         eodDigestTime: s.eodDigest?.time ?? '19:00',
         eodDigestEnabled: s.eodDigest?.enabled !== false,
@@ -225,6 +226,7 @@ export default function SettingsPage() {
       await api.put('/settings', {
         ...form,
         graceMinutes: Number(form.graceMinutes),
+        overtimeAfterMinutes: Number(form.overtimeAfterMinutes),
         checkOutCooldownMinutes: Number(form.checkOutCooldownMinutes),
         eodDigest: { enabled: !!form.eodDigestEnabled, time: form.eodDigestTime },
         annualLeaveQuota: Number(form.annualLeaveQuota),
@@ -483,6 +485,13 @@ export default function SettingsPage() {
               <div className="space-y-1.5">
                 <Label htmlFor="s-grace">Grace period (minutes)</Label>
                 <Input id="s-grace" type="number" min={0} max={180} value={form.graceMinutes} onChange={(e) => set('graceMinutes', e.target.value)} className="bg-background/50" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="s-ot">Overtime counts after (minutes)</Label>
+                <Input id="s-ot" type="number" min={0} max={600} value={form.overtimeAfterMinutes} onChange={(e) => set('overtimeAfterMinutes', e.target.value)} className="bg-background/50" />
+                <p className="text-xs text-muted-foreground">
+                  Overtime only starts this many minutes AFTER the shift end. e.g. office ends 6:00 PM + 60 = overtime counts from 7:00 PM. 0 = from the shift end. Changing this re-calculates everyone’s overtime everywhere.
+                </p>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="s-cooldown">Check-out lock (minutes)</Label>

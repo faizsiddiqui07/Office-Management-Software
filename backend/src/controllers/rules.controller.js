@@ -52,10 +52,26 @@ async function ruleTokens(user) {
   const sched = effectiveSchedule(user, s);
   const pts = (key) => Math.abs(Number((b.autoRules || []).find((r) => r.key === key)?.points) || 0);
   const grace = sched.graceMinutes ?? 0;
+  // Overtime buffer: when overtime starts, in the viewer's own shift terms.
+  const otBuffer = Math.max(0, s.overtimeAfterMinutes || 0);
+  const [weH, weM] = String(sched.workEnd || '0:0').split(':').map(Number);
+  const otStartMin = (weH * 60 + (weM || 0) + otBuffer) % 1440;
+  const otStart = fmt12(`${String(Math.floor(otStartMin / 60)).padStart(2, '0')}:${String(otStartMin % 60).padStart(2, '0')}`);
+  let overtimeAfterNote;
+  if (otBuffer <= 0) {
+    overtimeAfterNote = `as soon as you work past your end time (${fmt12(sched.workEnd)})`;
+  } else {
+    const bh = Math.floor(otBuffer / 60);
+    const bm = otBuffer % 60;
+    const dur = bh && bm ? `${bh}h ${bm}m` : bh ? `${bh} hour${bh > 1 ? 's' : ''}` : `${bm} minutes`;
+    overtimeAfterNote = `${dur} after your end time — from ${otStart}`;
+  }
   return {
     workStart: fmt12(sched.workStart),
     workEnd: fmt12(sched.workEnd),
     graceMinutes: grace,
+    overtimeAfterMinutes: otBuffer,
+    overtimeAfterNote,
     // Reads as part of a sentence — empty when there is no grace, so "after your start
     // time counts as LATE" never says "0 minutes".
     graceNote: grace > 0 ? ` (a ${grace}-minute grace is allowed)` : '',

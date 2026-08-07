@@ -591,6 +591,17 @@ export async function onCheckOut(user, dateYMD) {
   await recomputeMonthlyOvertime(b, user._id, dateYMD.slice(0, 7));
 }
 
+/**
+ * Rebuild one user-month's overtime points from attendance — used by the office-wide
+ * overtime recompute after the overtime buffer (or workEnd) changes. No-op if bonus is off.
+ */
+export async function recomputeUserMonthOvertime(userId, month) {
+  const s = await Setting.getSingleton();
+  const b = s.bonus || {};
+  if (!b.enabled) return;
+  await recomputeMonthlyOvertime(b, userId, month);
+}
+
 // ── Daily scans + month rollup (run opportunistically, no cron) ───────────────
 
 // The per-day overdue drip only counts days from August 2026 - the month the rule was

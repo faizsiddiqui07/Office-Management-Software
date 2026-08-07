@@ -5,6 +5,7 @@ import { User } from '../models/User.js';
 import { audit } from '../models/AuditLog.js';
 import { saveCompanyLogo, saveBackground } from '../lib/brand.js';
 import { deleteAsset } from '../lib/s3Assets.js';
+import { recomputeAllOvertime } from '../services/attendance.service.js';
 import { verifyPassword } from '../lib/password.js';
 import { encryptSecret } from '../lib/secretBox.js';
 import { sendTestEmail } from '../lib/mailer.js';
@@ -67,8 +68,18 @@ export async function updateSettings(req, res, next) {
   try {
     const body = updateSettingsSchema.parse(req.body);
     const s = await Setting.getFullSingleton();
+    // Changing the shift end or the overtime buffer changes every stored day's overtime, so
+    // note whether either moved and re-derive all of it after saving.
+    const otBefore = { workEnd: s.workEnd, buffer: s.overtimeAfterMinutes || 0 };
     Object.assign(s, body);
     await s.save();
+    Setting.invalidateCache(); // so the recompute below reads the just-saved values
+    const otChanged =
+      (body.workEnd !== undefined && body.workEnd !== otBefore.workEnd) ||
+      (body.overtimeAfterMinutes !== undefined && (body.overtimeAfterMinutes || 0) !== otBefore.buffer);
+    if (otChanged) {
+      try { await recomputeAllOvertime(); } catch (e) { console.error('overtime recompute after settings save failed', e?.message); }
+    }
     await audit({ actor: req.user._id, action: 'settings.update', entityType: 'Setting', entityId: 'global', meta: body });
     res.json(ok({ settings: s.toJSON() }));
   } catch (err) {
