@@ -6,6 +6,7 @@ import { Task } from '../models/Task.js';
 import { Attendance } from '../models/Attendance.js';
 import { LeaveRequest } from '../models/LeaveRequest.js';
 import { can } from '../lib/permissions.js';
+import { ownerRoleKeys } from '../lib/roles.js';
 import { ymdInTz, companyDayFromYMD, dayOfWeekInTz } from '../lib/time.js';
 import { userWeekendDays } from '../lib/schedule.js';
 import { hadAccessOn, splitByJoining, periodStartFor } from '../lib/joining.js';
@@ -370,13 +371,62 @@ async function awardOnce(key, { user, month, points, reason, source, taskRef = n
 // ── Event hooks (called from other services) ─────────────────────────────────
 
 /** Every copy forwarded off `rootId`, at any depth (the tree BELOW the root, root excluded). */
+// ── Owner-tier visibility gate (user rule, 2026-08-07) ────────────────────────
+// A task counts for points ONLY when the CEO & President can see it: they assigned it
+// themselves, or at least one of them is TAGGED on it (collaborators). Otherwise the task
+// is FULLY out of the points system — no rewards, no penalties, no leaderboard. Resolved
+// by ROLE (the owner tier), never by name, so a role change adjusts the rule by itself.
+
+let ownerIdsCache = null;
+let ownerIdsAt = 0;
+/** User-ids of everyone in the owner tier (CEO & President). Cached ~60s. */
+async function ownerTierIds() {
+  if (ownerIdsCache && Date.now() - ownerIdsAt < 60_000) return ownerIdsCache;
+  const keys = ownerRoleKeys();
+  const users = keys.length ? await User.find({ role: { $in: keys } }).select('_id') : [];
+  ownerIdsCache = new Set(users.map((u) => String(u._id)));
+  ownerIdsAt = Date.now();
+  return ownerIdsCache;
+}
+
+/** Does THIS copy pass the gate on its own (owner-tier assigner, or one of them tagged)? */
+function taskEligible(task, ownerIds) {
+  // Roles not loaded (a cold path) must never read as "wipe everything".
+  if (!ownerIds.size) return true;
+  if (task.assignedBy && ownerIds.has(String(task.assignedBy))) return true;
+  return (task.collaborators || []).some((c) => ownerIds.has(String(c)));
+}
+
+/**
+ * Gate for a chain member: eligible if this copy OR any ancestor up the forward chain
+ * passes (the root is where the assigner/tags live; forwarded copies inherit the chain's
+ * visibility). `memo` de-dups ancestor fetches across a scan.
+ */
+async function chainEligible(task, ownerIds, memo = new Map()) {
+  if (taskEligible(task, ownerIds)) return true;
+  let cur = task;
+  for (let depth = 0; cur.forwardedFrom && depth < 12; depth += 1) {
+    const pid = String(cur.forwardedFrom);
+    let parent = memo.get(pid);
+    if (parent === undefined) {
+      // eslint-disable-next-line no-await-in-loop
+      parent = await Task.findById(pid).select('assignedBy collaborators forwardedFrom');
+      memo.set(pid, parent);
+    }
+    if (!parent) break;
+    if (taskEligible(parent, ownerIds)) return true;
+    cur = parent;
+  }
+  return false;
+}
+
 async function collectChainCopies(rootId) {
   const out = [];
   let frontier = [rootId];
   let depth = 0;
   while (frontier.length && depth < 12) {
     // eslint-disable-next-line no-await-in-loop
-    const kids = await Task.find({ forwardedFrom: { $in: frontier } }).select('owner forwardedFrom title');
+    const kids = await Task.find({ forwardedFrom: { $in: frontier } }).select('owner forwardedFrom title assignedBy collaborators');
     if (!kids.length) break;
     out.push(...kids);
     frontier = kids.map((k) => k._id);
@@ -410,6 +460,18 @@ export async function onAssignedTaskDone(task) {
 
   const descendants = await collectChainCopies(task._id);
   const copies = [task, ...descendants];
+
+  // Owner-tier visibility gate: not assigned by the CEO & President and none of them
+  // tagged anywhere on the chain -> the whole chain is out of the points system. Any
+  // points written before (or before the task was untagged) are removed, so the daily
+  // re-score keeps history honest in BOTH directions — tag later and it pays, untag and
+  // it un-pays.
+  const ownerIds = await ownerTierIds();
+  if (!copies.some((c) => taskEligible(c, ownerIds))) {
+    await PointEntry.deleteMany({ taskRef: { $in: copies.map((c) => c._id) }, source: { $in: ['auto_task', 'auto_forward'] } });
+    return;
+  }
+
   // The ids of copies that were forwarded onward — those owners are forwarders, the rest doers.
   const forwarderIds = new Set(descendants.map((c) => String(c.forwardedFrom)));
 
@@ -553,10 +615,15 @@ async function scanOverdueTasks(b) {
   // from August; work that was already due in July predates the rule and must not be
   // dinged for it now. (A July task finished LATE still gets the ordinary late-completion
   // penalty via onAssignedTaskDone — that is a separate, pre-existing rule.)
-  const tasks = await Task.find({ assignedBy: { $ne: null }, status: 'PENDING', dueYMD: { $gte: DRIP_FLOOR_YMD }, submittedAt: null, _id: { $nin: forwardedParentIds } }).select('owner dueYMD title');
+  const tasks = await Task.find({ assignedBy: { $ne: null }, status: 'PENDING', dueYMD: { $gte: DRIP_FLOOR_YMD }, submittedAt: null, _id: { $nin: forwardedParentIds } }).select('owner dueYMD title assignedBy collaborators forwardedFrom');
+  const ownerIds = tasks.length ? await ownerTierIds() : new Set();
+  const chainMemo = new Map();
   for (const t of tasks) {
     const duePlus = addDays(t.dueYMD, b.graceDays || 0);
     if (duePlus >= today) continue;
+    // Owner-tier visibility gate: an untagged task is fully out — no mark, no drip.
+    // eslint-disable-next-line no-await-in-loop
+    if (!(await chainEligible(t, ownerIds, chainMemo))) continue;
     // -- One-time overdue mark: -assignedTaskLate the moment it passes due + grace --
     // Belt and braces on top of the dedupe key: an entry written before keys existed
     // carries only taskRef, so keying alone would not see it and would penalise the same
@@ -882,7 +949,7 @@ export async function backfillMonth(month) {
     // with the per-task forward-chain lookup that unbounded scan blew past the 30s timeout.
     const monthStart = companyDayFromYMD(from);
     const monthEndExclusive = companyDayFromYMD(`${nextMonth(month)}-01`);
-    const tasks = await Task.find({ status: 'DONE', assignedBy: { $ne: null }, forwardedFrom: null, completedAt: { $gte: monthStart, $lt: monthEndExclusive } }).select('owner dueYMD title completedAt submittedAt requiresApproval assignedBy forwardedFrom');
+    const tasks = await Task.find({ status: 'DONE', assignedBy: { $ne: null }, forwardedFrom: null, completedAt: { $gte: monthStart, $lt: monthEndExclusive } }).select('owner dueYMD title completedAt submittedAt requiresApproval assignedBy forwardedFrom collaborators');
     for (const t of tasks) {
       const doneYMD = ymdInTz(t.completedAt); // the completion/approval day decides the month
       if (doneYMD < from || doneYMD > to) continue;
@@ -1096,7 +1163,7 @@ async function rescoreAllDoneAssigned() {
   // timeout (and dragging the whole app down). App-driven edits still re-score instantly.
   const cutoff = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000);
   const tasks = await Task.find({ status: 'DONE', assignedBy: { $ne: null }, completedAt: { $gte: cutoff }, forwardedFrom: null })
-    .select('owner completedBy dueYMD title completedAt submittedAt requiresApproval assignedBy status forwardedFrom')
+    .select('owner completedBy dueYMD title completedAt submittedAt requiresApproval assignedBy status forwardedFrom collaborators')
     .limit(5000);
   for (const t of tasks) {
     try {
@@ -1125,7 +1192,7 @@ async function rescoreAssignedTasks(b) {
   const forwardedParentIds = await Task.distinct('forwardedFrom', { forwardedFrom: { $ne: null } });
   if (forwardedParentIds.length) {
     const roots = await Task.find({ _id: { $in: forwardedParentIds }, forwardedFrom: null, status: 'DONE', assignedBy: { $ne: null }, completedAt: { $ne: null } })
-      .select('owner completedBy dueYMD title completedAt submittedAt requiresApproval assignedBy status forwardedFrom')
+      .select('owner completedBy dueYMD title completedAt submittedAt requiresApproval assignedBy status forwardedFrom collaborators')
       .limit(5000);
     for (const t of roots) {
       try {
@@ -1153,11 +1220,27 @@ async function pruneOrphanTaskEntries() {
     .limit(20000);
   if (!entries.length) return;
   const ids = [...new Set(entries.map((e) => String(e.taskRef)))];
-  const tasks = await Task.find({ _id: { $in: ids }, assignedBy: { $ne: null } }).select('status');
+  const tasks = await Task.find({ _id: { $in: ids }, assignedBy: { $ne: null } }).select('status assignedBy collaborators forwardedFrom');
   const byId = new Map(tasks.map((t) => [String(t._id), t]));
+  const ownerIds = await ownerTierIds();
+  const chainMemo = new Map();
+  // Owner-tier visibility gate, retroactively: entries on a task whose chain nobody in
+  // the owner tier can see (not their assignment, none of them tagged) are removed —
+  // whatever the month. This is the pass that cleans history when the rule arrives (or
+  // when a tag is taken off later).
+  const eligibleById = new Map();
+  for (const t of tasks) {
+    // eslint-disable-next-line no-await-in-loop
+    eligibleById.set(String(t._id), await chainEligible(t, ownerIds, chainMemo));
+  }
   const dead = [];
   for (const e of entries) {
     const t = byId.get(String(e.taskRef));
+    if (t && !eligibleById.get(String(t._id))) {
+      dead.push(e._id);
+      // eslint-disable-next-line no-continue
+      continue;
+    }
     // A COMPLETION result (positive) needs a task that's still DONE; a PENALTY (the
     // overdue mark and the per-day drips, all negative) is legitimate on a task that is
     // merely still PENDING - deleting those daily would re-date them on every re-add.
