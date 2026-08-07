@@ -31,6 +31,36 @@ async function ensureSeeded() {
   Setting.invalidateCache();
 }
 
+// Content updates to the DEFAULT rule text after the first seed. The seed runs once and the
+// page then belongs to the CEO's edits, so later wording fixes can't ride the seed. This
+// applies them by EXACT-matching the old default text — a rule the CEO has since edited (its
+// text differs) is left untouched. Version-gated so it runs once per bump.
+const RULES_TEXT_VERSION = 2;
+const RULE_TEXT_UPDATES = [
+  {
+    from: 'Every full hour of overtime earns +{overtimeHourPoints} point(s). Overtime is totalled once for the whole month: full hours pay in full, and a leftover of more than 30 minutes pays half.',
+    to: 'Every full hour of overtime earns +{overtimeHourPoints} point(s). Overtime is totalled once for the whole month, and only FULL hours are paid — any leftover minutes add nothing, so they only count once they add up to another full hour.',
+  },
+  {
+    from: 'Seniors can assign tasks to their team. Only ASSIGNED tasks earn or cut points — your personal to-dos never affect points.',
+    to: 'Seniors can assign tasks to their team. Only ASSIGNED tasks earn or cut points — and only if the CEO & President can see the task: they assigned it themselves, or at least one of them is TAGGED on it. If a senior assigns work to a junior WITHOUT tagging a CEO/President, that task earns no points either. Personal to-dos never affect points.',
+  },
+];
+async function migrateRuleText() {
+  const s = await Setting.getSingleton();
+  if ((s.rulesTextVersion || 0) >= RULES_TEXT_VERSION) return;
+  for (const u of RULE_TEXT_UPDATES) {
+    // eslint-disable-next-line no-await-in-loop
+    await RuleSection.updateMany(
+      { 'rules.text': u.from },
+      { $set: { 'rules.$[e].text': u.to } },
+      { arrayFilters: [{ 'e.text': u.from }] },
+    );
+  }
+  await Setting.updateOne({ key: 'global' }, { $set: { rulesTextVersion: RULES_TEXT_VERSION } });
+  Setting.invalidateCache();
+}
+
 /** 'HH:mm' → '10:00 AM' — timings read naturally on the page. */
 function fmt12(hhmm) {
   const m = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm || ''));
@@ -102,6 +132,7 @@ function resolveText(text, tokens) {
 export async function list(req, res, next) {
   try {
     await ensureSeeded();
+    await migrateRuleText();
     const tokens = await ruleTokens(req.user);
     const sections = await RuleSection.find().sort({ order: 1, createdAt: 1 });
     const canManage = isOwnerRole(req.user.role);

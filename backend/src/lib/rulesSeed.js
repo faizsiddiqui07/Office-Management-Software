@@ -14,7 +14,7 @@ export const DEFAULT_RULE_SECTIONS = [
     icon: 'ListTodo',
     rules: [
       { text: 'Everyone has a To-Do page. Add your own tasks with a due date and tick them off as you finish — this is your personal work list.' },
-      { text: 'Seniors can assign tasks to their team. Only ASSIGNED tasks earn or cut points — your personal to-dos never affect points.' },
+      { text: 'Seniors can assign tasks to their team. Only ASSIGNED tasks earn or cut points — and only if the CEO & President can see the task: they assigned it themselves, or at least one of them is TAGGED on it. If a senior assigns work to a junior WITHOUT tagging a CEO/President, that task earns no points either. Personal to-dos never affect points.' },
       { text: 'POINTS ELIGIBILITY: a task counts for points ONLY when the CEO & President can see it — either they assigned it themselves, or at least one of them is TAGGED on the task. Without that, the task is fully outside the points system: no rewards, no penalties, and it never appears on the leaderboard.' },
       { text: 'Every assigned task has a due date. Finish the work and submit it on or before that date.' },
       { text: 'Tasks that need approval count as DONE on the day they are APPROVED, not the day you submit — so submit early enough for your senior to review.' },
@@ -44,7 +44,7 @@ export const DEFAULT_RULE_SECTIONS = [
     rules: [
       { text: 'Overtime means working past your own office end time ({workEnd}). It follows YOUR shift — if your hours differ, overtime counts after YOUR end time, not the office default.' },
       { text: 'Overtime begins {overtimeAfterNote} — anything before that is not overtime.' },
-      { text: 'Every full hour of overtime earns +{overtimeHourPoints} point(s). It is totalled once for the WHOLE month, not day by day: full hours pay in full, a leftover of MORE than 30 minutes pays half the rate, and 30 minutes or less adds nothing — so a few extra minutes here and there only start paying once they add up.' },
+      { text: 'Every full hour of overtime earns +{overtimeHourPoints} point(s). Overtime is totalled once for the whole month, and only FULL hours are paid — any leftover minutes add nothing, so they only count once they add up to another full hour.' },
     ],
   },
   {

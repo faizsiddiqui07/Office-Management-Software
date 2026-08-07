@@ -545,9 +545,9 @@ function otLabel(min) {
 
 /**
  * Overtime is scored as ONE row per person per month, off the month's TOTAL overtime —
- * never a separate row for each day. Full hours pay the per-hour rate; a leftover of MORE
- * than 30 minutes adds half the rate (rounded), 30 minutes or less adds nothing. So at
- * 2 points/hour, 9h 46m earns 9×2 + 1 = 19, while 9h 20m earns just 18.
+ * never a separate row for each day. ONLY full hours pay the per-hour rate; leftover
+ * minutes add nothing (no half-hour bonus). So at 2 points/hour, 9h 46m and 9h 20m both
+ * earn 9×2 = 18 — the leftover only counts once it completes another hour.
  *
  * Always re-derived from attendance, and every older overtime row for that user-month —
  * the per-day ones, keyless legacy ones, and the monthly row itself — is cleared first,
@@ -573,8 +573,7 @@ async function recomputeMonthlyOvertime(b, userId, month) {
   }
   if (total <= 0) return;
   const hours = Math.floor(total / 60);
-  const leftover = total % 60;
-  const points = hours * pts + (leftover > 30 ? Math.round(pts / 2) : 0);
+  const points = hours * pts; // full hours only — no half-hour bonus
   if (points <= 0) return;
   await awardOnce(
     `auto_ot:${userId}:${month}`,
