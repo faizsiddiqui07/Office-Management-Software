@@ -13,7 +13,7 @@ import { APP_LIVE_YMD } from '../lib/appLive.js';
 import { leaveYearOf } from '../lib/leaveYear.js';
 import { getTodayPayload, attendanceOverview } from './attendance.service.js';
 import { listHolidays, maybeAnnounceBirthdays } from './holiday.service.js';
-import { balanceJSON } from './leave.service.js';
+import { balanceJSONReadOnly } from './leave.service.js';
 import { listVisible } from './announcement.service.js';
 import { expenseSummary } from './expense.service.js';
 import { computePeriod } from './report.service.js';
@@ -28,21 +28,30 @@ const COMPANY_TZ = 'Asia/Kolkata';
 async function ownerTierUserIds() {
   const roles = await Role.find({}).select('key rank').lean();
   if (!roles.length) return [];
+  // If NO role carries a numeric rank (a corrupted/hand-edited roles collection), every
+  // role would tie at the default and the owner gate would silently widen to everyone.
+  // An honest empty board beats a silently wrong one.
+  if (!roles.some((r) => typeof r.rank === 'number')) return [];
   const minRank = Math.min(...roles.map((r) => (typeof r.rank === 'number' ? r.rank : 100)));
   const topKeys = roles.filter((r) => (typeof r.rank === 'number' ? r.rank : 100) === minRank).map((r) => r.key);
-  const users = await User.find({ role: { $in: topKeys }, isActive: true }).select('_id').lean();
+  // Deliberately NO isActive filter: owner involvement is a property of the TASK, not of
+  // the person's current status. Deactivating the sole CEO account (a handover) used to
+  // blank the whole task leaderboard including history.
+  const users = await User.find({ role: { $in: topKeys } }).select('_id').lean();
   return users.map((u) => u._id);
 }
 
 /** [{ name, minutes }] — most overtime first, within a window of company-day instants. */
 async function overtimeLeaderboard(fromDay, toDay) {
+  // Over-fetch, then keep only ACTIVE users (withNames drops the rest) and take 5 — a
+  // departed employee must not occupy a slot on a board the whole office sees.
   const agg = await Attendance.aggregate([
     { $match: { date: { $gte: fromDay, $lte: toDay }, overtimeMinutes: { $gt: 0 } } },
     { $group: { _id: '$user', overtimeMinutes: { $sum: '$overtimeMinutes' } } },
     { $sort: { overtimeMinutes: -1 } },
-    { $limit: 5 },
+    { $limit: 10 },
   ]);
-  return withNames(agg, (o) => ({ overtimeMinutes: o.overtimeMinutes }));
+  return (await withNames(agg, (o) => ({ overtimeMinutes: o.overtimeMinutes }))).slice(0, 5);
 }
 
 /**
@@ -116,17 +125,23 @@ async function taskLeaderboard(ceoIds, forwardedParentIds, range, graceDays = 0)
     },
     { $group: { _id: { $ifNull: ['$completedBy', '$owner'] }, count: { $sum: 1 } } },
     { $sort: { count: -1 } },
-    { $limit: 5 },
+    { $limit: 10 },
   ]);
-  return withNames(agg, (o) => ({ count: o.count }));
+  return (await withNames(agg, (o) => ({ count: o.count }))).slice(0, 5);
 }
 
-/** Attach display names to an aggregation of { _id: userId, ... }. */
+/**
+ * Attach display names to an aggregation of { _id: userId, ... } — and drop rows whose
+ * user is deactivated or gone. A leaderboard slot belongs to the current team; a departed
+ * employee's history stays in reports, not on the board everyone sees.
+ */
 async function withNames(agg, extra) {
   if (!agg.length) return [];
-  const users = await User.find({ _id: { $in: agg.map((o) => o._id) } }).select('name').lean();
-  const nameOf = new Map(users.map((u) => [String(u._id), u.name]));
-  return agg.map((o) => ({ name: nameOf.get(String(o._id)) ?? '—', ...extra(o) }));
+  const users = await User.find({ _id: { $in: agg.map((o) => o._id) } }).select('name isActive').lean();
+  const byId = new Map(users.map((u) => [String(u._id), u]));
+  return agg
+    .filter((o) => byId.get(String(o._id))?.isActive !== false && byId.has(String(o._id)))
+    .map((o) => ({ name: byId.get(String(o._id)).name, ...extra(o) }));
 }
 
 /**
@@ -141,18 +156,32 @@ export async function whosOut(todayYMD, settings) {
   const in7 = plus7.toISOString().slice(0, 10);
 
   const [leaveToday, wfhToday, upcoming] = await Promise.all([
-    LeaveRequest.find({ status: 'APPROVED', type: { $ne: 'WFH' }, startYMD: { $lte: todayYMD }, endYMD: { $gte: todayYMD } }).populate('user', 'name').sort({ startYMD: 1 }),
-    LeaveRequest.find({ status: 'APPROVED', type: 'WFH', startYMD: { $lte: todayYMD }, endYMD: { $gte: todayYMD } }).populate('user', 'name'),
-    LeaveRequest.find({ status: 'APPROVED', type: { $ne: 'WFH' }, startYMD: { $gt: todayYMD, $lte: in7 } }).populate('user', 'name').sort({ startYMD: 1 }).limit(10),
+    LeaveRequest.find({ status: 'APPROVED', type: { $ne: 'WFH' }, startYMD: { $lte: todayYMD }, endYMD: { $gte: todayYMD } }).populate('user', 'name isActive').sort({ startYMD: 1 }),
+    LeaveRequest.find({ status: 'APPROVED', type: 'WFH', startYMD: { $lte: todayYMD }, endYMD: { $gte: todayYMD } }).populate('user', 'name isActive'),
+    LeaveRequest.find({ status: 'APPROVED', type: { $ne: 'WFH' }, startYMD: { $gt: todayYMD, $lte: in7 } }).populate('user', 'name isActive').sort({ startYMD: 1 }).limit(10),
   ]);
+
+  // Deactivating someone does not cancel their already-approved leaves, so without this
+  // an ex-employee kept showing to the whole company as "on leave today". Also dedupes:
+  // two overlapping approved requests must not list the same person twice.
+  const activeOnce = (docs) => {
+    const seen = new Set();
+    return docs.filter((l) => {
+      if (!l.user || l.user.isActive === false) return false;
+      const id = String(l.user._id);
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+  };
 
   const officeWfh = (settings.wfhDays || []).some((d) => d.ymd === todayYMD);
   return {
-    onLeave: leaveToday.map((l) => ({ name: l.user?.name ?? '—', type: l.type })),
+    onLeave: activeOnce(leaveToday).map((l) => ({ name: l.user.name, type: l.type })),
     // On an office-wide WFH day everyone is home — say it once, don't list 15 names.
-    wfh: officeWfh ? [] : wfhToday.map((l) => l.user?.name ?? '—'),
+    wfh: officeWfh ? [] : activeOnce(wfhToday).map((l) => l.user.name),
     officeWfh,
-    upcoming: upcoming.map((l) => ({ name: l.user?.name ?? '—', type: l.type, startYMD: l.startYMD })),
+    upcoming: activeOnce(upcoming).map((l) => ({ name: l.user.name, type: l.type, startYMD: l.startYMD })),
   };
 }
 
@@ -199,16 +228,22 @@ export async function buildDashboard(user) {
 
   // ── Common (everyone) ─────────────────────────────────────
   out.today = await getTodayPayload(user);
-  // balanceJSON, not the raw document: the "overtime banked" figure is derived from
-  // the attendance days rather than read from a stored total nothing writes any more.
-  out.balance = await balanceJSON(user._id, year);
+  // READ-ONLY balance, and only for roles that actually self-track: a dashboard open
+  // must never CREATE a LeaveBalance row (that froze the new fiscal year's quota at
+  // whatever the setting was on that person's first login), and leadership — who can
+  // neither check in nor take leave — shouldn't pay these queries at all.
+  const selfTracksAttendance = can(user, 'markAttendance');
+  const selfTracksLeave = can(user, 'applyLeave');
+  out.balance = selfTracksAttendance || selfTracksLeave ? await balanceJSONReadOnly(user, year) : null;
   out.announcements = (await listVisible(user)).slice(0, 5);
   // Goes through the service so yearly repeats are expanded. Querying the table
   // directly showed a repeating 15 August only in its anchor year and then never again,
   // because the stored endYMD stays in the past forever. A year's horizon keeps
   // "the next five, whenever they are" true without an unbounded scan.
   out.upcomingHolidays = (await listHolidays({ from: todayYMD, to: `${Number(todayYMD.slice(0, 4)) + 1}-12-31` })).slice(0, 5);
-  out.myPendingLeaves = (await LeaveRequest.find({ user: user._id, status: 'PENDING' }).sort({ appliedAt: -1 })).map((l) => l.toJSON());
+  out.myPendingLeaves = selfTracksLeave
+    ? (await LeaveRequest.find({ user: user._id, status: 'PENDING' }).sort({ appliedAt: -1 })).map((l) => l.toJSON())
+    : [];
   // Everyone sees who's on leave / WFH today (and who's out soon) — no role gate.
   out.whosOut = await whosOut(todayYMD, settings);
 
@@ -254,6 +289,9 @@ export async function buildDashboard(user) {
       absent: overview.summary.absent,
       onLeave: overview.summary.onLeave,
       wfh: overview.summary.wfh || 0,
+      // Not yet arrived, but their office day isn't over either — neither present nor
+      // absent. Without this the morning numbers looked like half the office vanished.
+      awaited: overview.summary.awaited || 0,
       pendingApprovals: await LeaveRequest.countDocuments({ status: 'PENDING' }),
     };
     // team overtime this month
@@ -281,8 +319,9 @@ export async function buildDashboard(user) {
         { $match: { dateYMD: { $gte: month.from, $lte: todayYMD } } },
         { $group: { _id: '$dateYMD', total: { $sum: '$amount' } } },
       ]),
-      // Every still-open task across the company — the 4th analytics stat.
-      Task.countDocuments({ status: 'PENDING' }),
+      // Open DELEGATED work only — personal to-dos are private reminders leadership can
+      // neither see nor act on, and they were inflating this KPI.
+      Task.countDocuments({ status: 'PENDING', assignedBy: { $ne: null } }),
       LeaveRequest.find({ status: 'PENDING' }).sort({ appliedAt: -1 }).limit(6).populate('user', 'name employeeId'),
       LeaveRequest.countDocuments({ status: 'PENDING' }),
       // Recent activity is the audit feed — only fetch it for users who may view the activity log.
@@ -313,6 +352,21 @@ export async function buildDashboard(user) {
         absent: overview.summary.absent,
         onLeave: overview.summary.onLeave,
         wfh: overview.summary.wfh || 0,
+        // "Not in yet" — so the donut's slices sum to the real headcount and the centre
+        // %-figure stops contradicting the visible slices every morning.
+        awaited: overview.summary.awaited || 0,
+        // Part-timers' own off-days (HOLIDAY rows) — in summary.total but previously in
+        // no slice. Derived here so the shared attendanceOverview stays untouched.
+        offToday: Math.max(
+          0,
+          overview.summary.total -
+            overview.summary.present -
+            overview.summary.late -
+            overview.summary.absent -
+            (overview.summary.awaited || 0) -
+            overview.summary.onLeave -
+            (overview.summary.wfh || 0),
+        ),
       },
       // The same list the common leaderboard already computed — no second query.
       overtimeLeaders: out.leaderboards.overtime,

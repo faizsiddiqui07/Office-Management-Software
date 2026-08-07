@@ -179,6 +179,27 @@ export async function getBalanceForUser(userId) {
 }
 
 /**
+ * The same shape as balanceJSON but READ-ONLY — it never creates the year's row. The
+ * dashboard uses this: a landing-page GET must not seed a LeaveBalance as a side effect
+ * (that froze the new year's quota at whatever the setting was on first open, and wrote
+ * rows for leadership who can't take leave at all). When no row exists yet, it shows the
+ * quota the year WOULD open with — same rule as the ledger download — and the real row
+ * is still created by the leave flow itself (getOrCreateBalance) when it's needed.
+ * Takes the USER DOC (not an id): the provisional quota needs the joining date.
+ */
+export async function balanceJSONReadOnly(user, year) {
+  const [bal, overtimeMinutes, wfh] = await Promise.all([
+    LeaveBalance.findOne({ user: user._id, year }),
+    overtimeMinutesForYear(user._id, year),
+    wfhUsage(user._id, year),
+  ]);
+  if (bal) return { ...bal.toJSON(), overtimeMinutes, wfh };
+  const settings = await Setting.getSingleton();
+  const quota = quotaForJoiner(joinedYMD(user), year, settings.annualLeaveQuota);
+  return { user: String(user._id), year, totalQuota: quota, used: 0, remaining: quota, overtimeMinutes, wfh };
+}
+
+/**
  * One employee's leave ledger for a fiscal year (Apr–Mar): the balance, a by-type
  * summary of what was approved, and every request that touches the year. Shaped for the
  * PDF renderer (renderLeaveLedgerToStream). `year` is the starting calendar year.

@@ -44,10 +44,10 @@ export function fmtCountdown(ms) {
  */
 export function useAttendanceToday() {
   const qc = useQueryClient();
-  const [now, setNow] = React.useState(() => Date.now());
+  const [tick, setTick] = React.useState(() => Date.now());
 
   React.useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000);
+    const t = setInterval(() => setTick(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
 
@@ -57,7 +57,24 @@ export function useAttendanceToday() {
     refetchOnWindowFocus: true,
   });
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['attendance'] });
+  // The device clock is not trusted for anything the user SEES: a phone 10 minutes fast
+  // told its owner "you'd be late" while the server would have marked them on time, and a
+  // slow one showed check-out unlocked while the server still refused it. The API sends
+  // serverNow with the payload — capture the offset when it lands and tick in SERVER time.
+  // (Enforcement was always server-side; this makes the display agree with it.)
+  const offsetRef = React.useRef(0);
+  React.useEffect(() => {
+    if (data?.serverNow) offsetRef.current = new Date(data.serverNow).getTime() - Date.now();
+  }, [data?.serverNow]);
+  const now = tick + offsetRef.current;
+
+  // The dashboard's "Today" card and team counts render from the ['dashboard'] query —
+  // without invalidating it too, checking in from the dashboard left that same screen
+  // saying "Not in" (and the Present count one short) until a full page hop.
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ['attendance'] });
+    qc.invalidateQueries({ queryKey: ['dashboard'] });
+  };
 
   const checkInMut = useMutation({
     mutationFn: async (lateReason) => {

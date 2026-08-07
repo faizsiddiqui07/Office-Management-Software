@@ -161,14 +161,14 @@ export default function DashboardPage() {
   const isApprover = can(user, 'approveLeave');
   const canAudit = can(user, 'viewAudit'); // Recent activity = the audit feed
   const canApplyLeave = can(user, 'applyLeave'); // leadership can't take leave → no "my leaves"
-  const selfTracks = can(user, 'markAttendance') || canApplyLeave; // leadership doesn't self-track
+  const canMark = can(user, 'markAttendance'); // some roles hold applyLeave WITHOUT attendance
 
   return (
     <div className="space-y-8">
       <PageHeader
         eyebrow={roleName(data) || 'Overview'}
         title={`${greeting()}, ${firstName(user?.name)}`}
-        description={`Here’s your snapshot for ${new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}.`}
+        description={`Here’s your snapshot for ${new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Kolkata' })}.`}
       />
 
       {/* Quick actions */}
@@ -195,31 +195,40 @@ export default function DashboardPage() {
         ) : null}
       </div>
 
-      {/* Personal stats — only for roles that self-track attendance/leave */}
-      {selfTracks ? (
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Today" value={ts.value} icon={UserCheck} tone={ts.tone} hint={ts.hint} />
-        <StatCard
-          label="Leave balance"
-          value={`${balance.remaining}/${balance.totalQuota}`}
-          icon={Plane}
-          tone="info"
-          hint="days available"
-        />
-        <StatCard
-          label="Pending leaves"
-          value={myPendingLeaves.length}
-          icon={Inbox}
-          tone={myPendingLeaves.length ? 'warning' : 'default'}
-          hint="awaiting approval"
-        />
-        <StatCard
-          label="Overtime banked"
-          value={formatDuration(balance.overtimeMinutes || 0)}
-          icon={TimerReset}
-          tone="default"
-          hint="this year"
-        />
+      {/* Personal stats — each card gated on the permission that makes it TRUE for this
+          person. "Today"/"Overtime" need markAttendance (a role that can't check in was
+          stuck with a permanent amber "Not in" warning it could never clear); the leave
+          cards need applyLeave. */}
+      {canMark || canApplyLeave ? (
+      <div className={cn('grid grid-cols-1 gap-4', canMark && canApplyLeave ? 'sm:grid-cols-2 xl:grid-cols-4' : 'sm:grid-cols-2')}>
+        {canMark ? <StatCard label="Today" value={ts.value} icon={UserCheck} tone={ts.tone} hint={ts.hint} /> : null}
+        {canApplyLeave ? (
+          <StatCard
+            label="Leave balance"
+            value={`${balance?.remaining ?? 0}/${balance?.totalQuota ?? 0}`}
+            icon={Plane}
+            tone="info"
+            hint="days available"
+          />
+        ) : null}
+        {canApplyLeave ? (
+          <StatCard
+            label="Pending leaves"
+            value={myPendingLeaves.length}
+            icon={Inbox}
+            tone={myPendingLeaves.length ? 'warning' : 'default'}
+            hint="awaiting approval"
+          />
+        ) : null}
+        {canMark ? (
+          <StatCard
+            label="Overtime banked"
+            value={formatDuration(balance?.overtimeMinutes || 0)}
+            icon={TimerReset}
+            tone="default"
+            hint="this year"
+          />
+        ) : null}
       </div>
       ) : null}
 
@@ -238,7 +247,13 @@ export default function DashboardPage() {
             Team today
           </SectionTitle>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard label="Present" value={`${team.present}/${team.total}`} icon={Users} tone="success" hint={team.late ? `${team.late} late today` : 'incl. late check-ins'} />
+            <StatCard
+              label="Present"
+              value={`${team.present}/${team.total}`}
+              icon={Users}
+              tone="success"
+              hint={[team.late ? `${team.late} late` : '', team.awaited ? `${team.awaited} not in yet` : ''].filter(Boolean).join(' · ') || 'incl. late check-ins'}
+            />
             <StatCard label="On leave" value={team.onLeave} icon={Plane} tone="info" />
             <StatCard label="Absent" value={team.absent} icon={CalendarDays} tone={team.absent ? 'destructive' : 'default'} />
             <StatCard label="Team overtime" value={formatDuration(team.overtimeMinutes || 0)} icon={TimerReset} tone="default" hint="this month" />
@@ -246,8 +261,10 @@ export default function DashboardPage() {
         </section>
       ) : null}
 
-      {/* Expenses snapshot — admin manager (leadership sees the trend chart below) */}
-      {expenses && !analytics ? (
+      {/* Expenses snapshot — month total + categories for every expense viewer. (The
+          old `&& !analytics` gate made this DEAD CODE for the admin manager, who also
+          holds leadershipDashboard; the trend chart below complements, not repeats, it.) */}
+      {expenses ? (
         <section className="space-y-3">
           <SectionTitle action={<Link href="/expenses" className="text-sm font-medium text-primary hover:underline">Manage →</Link>}>
             Expenses this month
@@ -331,7 +348,13 @@ export default function DashboardPage() {
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <StatCard label="Headcount" value={analytics.headcount} icon={Users} tone="default" hint="active employees" />
-            <StatCard label="Attendance rate" value={`${analytics.attendanceRate}%`} icon={TrendingUp} tone="success" hint="present today" />
+            <StatCard
+              label="Attendance rate"
+              value={`${analytics.attendanceRate}%`}
+              icon={TrendingUp}
+              tone="success"
+              hint={analytics.breakdown?.awaited ? `${analytics.breakdown.awaited} not in yet` : 'present today'}
+            />
             <StatCard
               label="Pending approvals"
               value={analytics.pendingApprovalsCount ?? analytics.pendingApprovals.length}
@@ -344,7 +367,7 @@ export default function DashboardPage() {
               value={analytics.openTasks}
               icon={ListTodo}
               tone={analytics.openTasks ? 'warning' : 'default'}
-              hint="pending across the company"
+              hint="delegated work pending"
             />
           </div>
 
@@ -366,7 +389,11 @@ export default function DashboardPage() {
             <GlassCard className="p-5">
               <div className="mb-3 flex items-center justify-between">
                 <p className="text-sm font-medium">Pending approvals</p>
-                <Link href="/leaves" className="text-xs font-medium text-primary hover:underline">Review →</Link>
+                {/* A leadershipDashboard holder without approveLeave could see this list
+                    but the link was a dead end — read-only for them. */}
+                {isApprover ? (
+                  <Link href="/leaves" className="text-xs font-medium text-primary hover:underline">Review →</Link>
+                ) : null}
               </div>
               {analytics.pendingApprovals.length ? (
                 <ul className="space-y-2.5">

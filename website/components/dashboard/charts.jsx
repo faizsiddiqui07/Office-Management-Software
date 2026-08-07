@@ -23,9 +23,11 @@ const ATT_COLORS = {
   absent: 'var(--chart-5)',
   onLeave: 'var(--chart-2)',
   wfh: 'var(--chart-1)',
+  awaited: '#94a3b8', // neutral — not judged yet
+  offToday: '#64748b', // a part-timer's own off-day
 };
 
-const ATT_LABELS = { present: 'Present', late: 'Late', absent: 'Absent', onLeave: 'On leave', wfh: 'From home' };
+const ATT_LABELS = { present: 'Present', late: 'Late', absent: 'Absent', onLeave: 'On leave', wfh: 'From home', awaited: 'Not in yet', offToday: 'Off today' };
 
 function dayOfMonth(ymd) {
   return Number(ymd.slice(8, 10));
@@ -73,12 +75,12 @@ function GlassTooltip({ active, payload, label, formatter }) {
 
 export function AttendanceDonut({ breakdown, rate }) {
   // WFH must be a slice of its own, or people working from home vanish from the donut
-  // and its total stops matching the headcount.
-  const data = ['present', 'late', 'absent', 'onLeave', 'wfh'].map((k) => ({
-    key: k,
-    name: ATT_LABELS[k],
-    value: breakdown[k] ?? 0,
-  }));
+  // and its total stops matching the headcount. Same for "not in yet" (awaited) and a
+  // part-timer's off-day — without them the morning donut showed 2 people as the whole
+  // office while the centre said 20%.
+  const data = ['present', 'late', 'absent', 'onLeave', 'wfh', 'awaited', 'offToday']
+    .map((k) => ({ key: k, name: ATT_LABELS[k], value: breakdown[k] ?? 0 }))
+    .filter((d) => d.key === 'present' || d.value > 0); // zero slices add legend noise only
   const total = data.reduce((s, d) => s + d.value, 0);
 
   return (
