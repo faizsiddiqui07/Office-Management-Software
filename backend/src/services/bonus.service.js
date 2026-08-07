@@ -571,10 +571,12 @@ async function scanOverdueTasks(b) {
       await awardOnce(`auto_task:${t._id}`, { user: t.owner, month: today.slice(0, 7), points: -Math.abs(pts), reason: `Overdue: ${t.title}`, source: 'auto_task', taskRef: t._id, earnedYMD: today });
     }
     // -- Escalating drip: -N for each FURTHER day it stays overdue --
-    // Today only (no retroactive fill), and never on the first late day (that day carries
-    // the one-time mark above). Once the task is finished these day entries STAY — they
-    // were the price of those days — while the main entry flips to the completion result.
-    if (dripPts && today > addDays(duePlus, 1)) {
+    // Timeline (grace 0): due day → nothing; due+1 → the -5 mark; due+2 → one buffer day,
+    // still nothing; due+3 onward → -1 each day until the task is done + approved. So the
+    // drip only begins TWO days after the due date (one after the -5). Today only (no
+    // retroactive fill). Once finished these day entries STAY — they were the price of
+    // those days — while the main entry flips to the completion result.
+    if (dripPts && today > addDays(duePlus, 2)) {
       // eslint-disable-next-line no-await-in-loop
       await awardOnce(`auto_overdue:${t._id}:${today}`, { user: t.owner, month: today.slice(0, 7), points: -Math.abs(dripPts), reason: `Still overdue: ${t.title}`, source: 'auto_task', taskRef: t._id, earnedYMD: today });
     }
