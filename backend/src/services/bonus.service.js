@@ -1149,6 +1149,35 @@ async function relabelStreakEntries() {
   Setting.invalidateCache();
 }
 
+/**
+ * One-time: put every punctual-week entry's DATE on its real week-ending Saturday.
+ *
+ * A streak's dedupe key ends in the week's MONDAY. An older repair pass copied that
+ * Monday into earnedYMD (and the go-live clamp then dragged the first week's onto
+ * 1 July) — so the breakdown showed "Punctual week ending 2026-07-01" (a Wednesday) and
+ * "ending 2026-07-13" (a Monday). The award itself, its month and its points were always
+ * right; only the displayed day was wrong. This recomputes earnedYMD = key-Monday + 5
+ * (the Saturday) and rewrites the label to match. Month is deliberately untouched —
+ * totals and carry-over must not move.
+ */
+async function fixStreakDates() {
+  const s = await Setting.getSingleton();
+  if (s.bonus?.streakDatesFixed) return;
+  const rows = await PointEntry.find({ source: 'auto_streak' }).select('dedupeKey earnedYMD reason');
+  for (const r of rows) {
+    const mon = (r.dedupeKey || '').match(/(\d{4}-\d{2}-\d{2})$/)?.[1];
+    if (!mon) continue;
+    const sat = addDays(mon, 5);
+    if (r.earnedYMD !== sat || r.reason !== `Punctual week ending ${sat}`) {
+      // eslint-disable-next-line no-await-in-loop
+      await PointEntry.updateOne({ _id: r._id }, { $set: { earnedYMD: sat, reason: `Punctual week ending ${sat}` } });
+    }
+  }
+  s.bonus.streakDatesFixed = true;
+  await s.save();
+  Setting.invalidateCache();
+}
+
 async function seedOverdueDripRule() {
   const s = await Setting.getSingleton();
   if (s.bonus?.overdueDripSeeded) return;
@@ -1279,6 +1308,7 @@ export async function maybeRunDaily() {
   try { await seedForwardRules(); } catch (e) { console.error('forward-rule seed failed', e?.message); }
   try { await seedOverdueDripRule(); } catch (e) { console.error('overdue-drip seed failed', e?.message); }
   try { await relabelStreakEntries(); } catch (e) { console.error('streak relabel failed', e?.message); }
+  try { await fixStreakDates(); } catch (e) { console.error('streak date fix failed', e?.message); }
   try { await rescoreAssignedTasks(b); } catch (e) { console.error('task re-score failed', e?.message); }
   const today = ymdInTz(new Date());
   if (b.lastPenaltyRun === today) return;

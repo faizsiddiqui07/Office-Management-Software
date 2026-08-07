@@ -99,6 +99,9 @@ const settingSchema = new mongoose.Schema(
       overdueDripSeeded: { type: Boolean, default: false },
       // One-time flag: punctual-week labels rewritten to read by the week-ending day.
       streakLabelFixed: { type: Boolean, default: false },
+      // One-time flag: streak earnedYMD/labels moved onto the real week-ending Saturday
+      // (an old repair had copied the key's MONDAY into earnedYMD).
+      streakDatesFixed: { type: Boolean, default: false },
       // One-time flag: overdue-pending penalties (mark + drip) on July-due tasks removed.
       julyOverdueCleaned: { type: Boolean, default: false },
       lastMonthRollup: { type: String, default: '' }, // YYYY-MM — last month whose month-end awards ran
