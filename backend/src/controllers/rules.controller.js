@@ -39,7 +39,7 @@ const RULES_TEXT_VERSION = 2;
 const RULE_TEXT_UPDATES = [
   {
     from: 'Every full hour of overtime earns +{overtimeHourPoints} point(s). Overtime is totalled once for the whole month: full hours pay in full, and a leftover of more than 30 minutes pays half.',
-    to: 'Every full hour of overtime earns +{overtimeHourPoints} point(s). Overtime is totalled once for the whole month, and only FULL hours are paid — any leftover minutes add nothing, so they only count once they add up to another full hour.',
+    to: 'Every full hour of overtime earns +{overtimeHourPoints} point(s). Overtime is totalled once for the whole month, not day by day.',
   },
   {
     from: 'Seniors can assign tasks to their team. Only ASSIGNED tasks earn or cut points — your personal to-dos never affect points.',

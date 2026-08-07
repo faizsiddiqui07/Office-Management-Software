@@ -44,7 +44,7 @@ export const DEFAULT_RULE_SECTIONS = [
     rules: [
       { text: 'Overtime means working past your own office end time ({workEnd}). It follows YOUR shift — if your hours differ, overtime counts after YOUR end time, not the office default.' },
       { text: 'Overtime begins {overtimeAfterNote} — anything before that is not overtime.' },
-      { text: 'Every full hour of overtime earns +{overtimeHourPoints} point(s). Overtime is totalled once for the whole month, and only FULL hours are paid — any leftover minutes add nothing, so they only count once they add up to another full hour.' },
+      { text: 'Every full hour of overtime earns +{overtimeHourPoints} point(s). Overtime is totalled once for the whole month, not day by day.' },
     ],
   },
   {
