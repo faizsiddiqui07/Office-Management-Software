@@ -138,7 +138,7 @@ export async function setAttendanceRecord(userId, dateYMD, checkIn, checkOut) {
   record.checkOutAt = checkOut ? companyDayInstantAt(day, checkOut) : null;
 
   if (record.checkInAt && record.checkOutAt) {
-    const { workedMinutes, overtimeMinutes } = computeWork(record.checkInAt, record.checkOutAt, day, sched.workEnd, settings.overtimeAfterMinutes || 0);
+    const { workedMinutes, overtimeMinutes } = computeWork(record.checkInAt, record.checkOutAt, day, sched.workEnd, sched.overtimeAfterMinutes);
     record.workedMinutes = workedMinutes;
     record.overtimeMinutes = overtimeMinutes;
   } else {
@@ -198,7 +198,7 @@ export async function checkOut(user, meta, coords) {
 
   const geoMeta = verifyGeofence(settings.gpsAttendance, coords);
   const sched = effectiveSchedule(user, settings); // part-time overtime counts past its own end
-  const { workedMinutes, overtimeMinutes } = computeWork(record.checkInAt, now, day, sched.workEnd, settings.overtimeAfterMinutes || 0);
+  const { workedMinutes, overtimeMinutes } = computeWork(record.checkInAt, now, day, sched.workEnd, sched.overtimeAfterMinutes);
 
   record.checkOutAt = now;
   record.checkOutMeta = { ...meta, ...geoMeta };
@@ -227,17 +227,19 @@ export async function checkOut(user, meta, coords) {
  * reflects the new rule without waiting for the next check-out. workedMinutes is untouched
  * (the buffer only moves the overtime threshold). Each person's OWN shift end is used.
  */
-export async function recomputeAllOvertime() {
+export async function recomputeAllOvertime({ userId = null } = {}) {
   const settings = await Setting.getSingleton();
-  const buffer = settings.overtimeAfterMinutes || 0;
-  const users = await User.find().select('schedule employmentType');
+  const users = await User.find(userId ? { _id: userId } : {}).select('schedule employmentType');
   const byUser = new Map(users.map((u) => [String(u._id), u]));
-  const recs = await Attendance.find({ checkInAt: { $ne: null }, checkOutAt: { $ne: null } }).select('user date checkInAt checkOutAt overtimeMinutes');
+  const recFilter = { checkInAt: { $ne: null }, checkOutAt: { $ne: null } };
+  if (userId) recFilter.user = userId;
+  const recs = await Attendance.find(recFilter).select('user date checkInAt checkOutAt overtimeMinutes');
   const ops = [];
   const months = new Set(); // `${userId}|YYYY-MM`
   for (const r of recs) {
+    // Each person's OWN shift end + their OWN overtime buffer (or the office default).
     const sched = effectiveSchedule(byUser.get(String(r.user)) || {}, settings);
-    const { overtimeMinutes } = computeWork(r.checkInAt, r.checkOutAt, r.date, sched.workEnd, buffer);
+    const { overtimeMinutes } = computeWork(r.checkInAt, r.checkOutAt, r.date, sched.workEnd, sched.overtimeAfterMinutes);
     if (overtimeMinutes !== (r.overtimeMinutes || 0)) {
       ops.push({ updateOne: { filter: { _id: r._id }, update: { $set: { overtimeMinutes } } } });
       months.add(`${r.user}|${ymdInTz(r.date).slice(0, 7)}`);

@@ -154,7 +154,7 @@ async function applyToAttendance(reg) {
     record.checkOutAt = companyDayInstantAt(day, reg.requestedCheckOut);
   }
   if (record.checkInAt && record.checkOutAt) {
-    const { workedMinutes, overtimeMinutes } = computeWork(record.checkInAt, record.checkOutAt, day, sched.workEnd, settings.overtimeAfterMinutes || 0);
+    const { workedMinutes, overtimeMinutes } = computeWork(record.checkInAt, record.checkOutAt, day, sched.workEnd, sched.overtimeAfterMinutes);
     record.workedMinutes = workedMinutes;
     record.overtimeMinutes = overtimeMinutes;
   }

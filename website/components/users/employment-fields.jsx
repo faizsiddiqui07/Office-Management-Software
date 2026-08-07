@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/select';
 
 /** A blank schedule = "follow the office hours". Custom values override them. */
-export const DEFAULT_SCHEDULE = { workStart: '', workEnd: '', graceMinutes: 0, workDays: [] };
+export const DEFAULT_SCHEDULE = { workStart: '', workEnd: '', graceMinutes: 0, workDays: [], overtimeAfterMinutes: '' };
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -33,7 +33,7 @@ export function EmploymentFields({ employmentType, schedule, onTypeChange, onSch
       ...s,
       workDays: workDays.includes(d) ? workDays.filter((x) => x !== d) : [...workDays, d].sort((a, b) => a - b),
     });
-  const clearHours = () => onScheduleChange({ workStart: '', workEnd: '', graceMinutes: 0, workDays: [] });
+  const clearHours = () => onScheduleChange({ workStart: '', workEnd: '', graceMinutes: 0, workDays: [], overtimeAfterMinutes: '' });
   const hasCustom = !!(s.workStart || s.workEnd || workDays.length);
 
   return (
@@ -74,18 +74,36 @@ export function EmploymentFields({ employmentType, schedule, onTypeChange, onSch
             <TimePicker id="emp-out" value={s.workEnd || ''} onChange={setSchedV('workEnd')} className="bg-background/50" />
           </div>
         </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="emp-grace">Grace (minutes)</Label>
-          <Input
-            id="emp-grace"
-            type="number"
-            min="0"
-            max="180"
-            value={s.graceMinutes ?? 0}
-            onChange={setSched('graceMinutes')}
-            className="bg-background/50"
-          />
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="emp-grace">Grace (minutes)</Label>
+            <Input
+              id="emp-grace"
+              type="number"
+              min="0"
+              max="180"
+              value={s.graceMinutes ?? 0}
+              onChange={setSched('graceMinutes')}
+              className="bg-background/50"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="emp-ot">Overtime after (min)</Label>
+            <Input
+              id="emp-ot"
+              type="number"
+              min="0"
+              max="600"
+              placeholder="Office default"
+              value={s.overtimeAfterMinutes ?? ''}
+              onChange={setSched('overtimeAfterMinutes')}
+              className="bg-background/50"
+            />
+          </div>
         </div>
+        <p className="-mt-1 text-xs text-muted-foreground">
+          Overtime counts this many minutes after their end time. Leave blank to use the office-wide setting.
+        </p>
 
         <div className="space-y-1.5">
           <Label>Working days</Label>

@@ -15,6 +15,7 @@ import { AnnouncementRead } from '../models/AnnouncementRead.js';
 import { LedgerEntry } from '../models/LedgerEntry.js';
 import { PointEntry } from '../models/PointEntry.js';
 import { Setting } from '../models/Setting.js';
+import { recomputeAllOvertime } from './attendance.service.js';
 import { can, canAssignRole } from '../lib/permissions.js';
 import { clearFailures } from '../lib/loginGuard.js';
 import { leaveYearOf } from '../lib/leaveYear.js';
@@ -30,16 +31,22 @@ function httpError(status, code, message) {
 
 /** Any user may have a custom schedule; empty fields mean "follow office hours/week". */
 function normalizeSchedule(_employmentType, schedule) {
-  if (!schedule) return { workStart: '', workEnd: '', graceMinutes: 0, workDays: [] };
+  if (!schedule) return { workStart: '', workEnd: '', graceMinutes: 0, workDays: [], overtimeAfterMinutes: null };
   // De-dupe + sort the working-day numbers (0=Sun…6=Sat); [] = follow office weekends.
   const workDays = Array.isArray(schedule.workDays)
     ? [...new Set(schedule.workDays.map(Number).filter((d) => d >= 0 && d <= 6))].sort((a, b) => a - b)
     : [];
+  // Blank ('' / null / not a number) = follow the office overtime buffer; a number pins it.
+  const otRaw = schedule.overtimeAfterMinutes;
+  const overtimeAfterMinutes = otRaw === '' || otRaw === null || otRaw === undefined || !Number.isFinite(Number(otRaw))
+    ? null
+    : Math.max(0, Math.min(600, Math.round(Number(otRaw))));
   return {
     workStart: schedule.workStart || '',
     workEnd: schedule.workEnd || '',
     graceMinutes: Number(schedule.graceMinutes) || 0,
     workDays,
+    overtimeAfterMinutes,
   };
 }
 
@@ -250,12 +257,18 @@ export async function updateUser(actor, id, data) {
   if (data.employmentType !== undefined) {
     user.employmentType = data.employmentType === 'PART_TIME' ? 'PART_TIME' : 'FULL_TIME';
   }
-  if (data.employmentType !== undefined || data.schedule !== undefined) {
+  const scheduleTouched = data.employmentType !== undefined || data.schedule !== undefined;
+  if (scheduleTouched) {
     // Re-normalize so switching to full-time clears any old custom hours.
     user.schedule = normalizeSchedule(user.employmentType, data.schedule ?? user.schedule);
   }
 
   await user.save();
+  // A changed shift end or overtime buffer changes this person's stored overtime, so
+  // re-derive it (and their bonus overtime points) — every report reads the stored value.
+  if (scheduleTouched) {
+    try { await recomputeAllOvertime({ userId: user._id }); } catch (e) { console.error('overtime recompute after user edit failed', e?.message); }
+  }
   return user.toJSON();
 }
 

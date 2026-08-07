@@ -74,6 +74,7 @@ export function EditUserDialog({ user: target, open, onOpenChange }) {
       workEnd: target.schedule?.workEnd || DEFAULT_SCHEDULE.workEnd,
       graceMinutes: target.schedule?.graceMinutes ?? 0,
       workDays: Array.isArray(target.schedule?.workDays) ? target.schedule.workDays : [],
+      overtimeAfterMinutes: target.schedule?.overtimeAfterMinutes ?? '', // '' = follow office
     });
     setAssignMode(target.taskAssign?.mode || 'NONE');
     setAssignUsers(new Set((target.taskAssign?.users || []).map(String)));

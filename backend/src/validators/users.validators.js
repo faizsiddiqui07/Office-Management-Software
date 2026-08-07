@@ -11,6 +11,8 @@ const scheduleSchema = z.object({
   workStart: hm.optional(),
   workEnd: hm.optional(),
   graceMinutes: z.coerce.number().int().min(0).max(180).optional(),
+  // '' (blank) → null = follow the office overtime buffer; a number pins it for this person.
+  overtimeAfterMinutes: z.preprocess((v) => (v === '' ? null : v), z.coerce.number().int().min(0).max(600).nullable().optional()),
   workDays: z.array(z.coerce.number().int().min(0).max(6)).optional(),
 });
 

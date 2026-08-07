@@ -22,6 +22,11 @@ export function effectiveSchedule(user, settings) {
     workStart: s.workStart || settings.workStart,
     workEnd: s.workEnd || settings.workEnd,
     graceMinutes: hasHours ? (Number.isFinite(s.graceMinutes) ? s.graceMinutes : 0) : settings.graceMinutes,
+    // Per-person overtime buffer overrides the office one when set (a number, incl. 0);
+    // null/unset falls back to the office-wide overtimeAfterMinutes.
+    overtimeAfterMinutes: Number.isFinite(s.overtimeAfterMinutes)
+      ? s.overtimeAfterMinutes
+      : (settings.overtimeAfterMinutes || 0),
     custom: hasHours,
     partTime: user?.employmentType === 'PART_TIME',
   };

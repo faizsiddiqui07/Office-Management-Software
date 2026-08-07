@@ -15,6 +15,9 @@ const userSchema = new mongoose.Schema(
       workStart: { type: String, default: '' }, // 'HH:mm' company time
       workEnd: { type: String, default: '' }, // 'HH:mm'
       graceMinutes: { type: Number, default: 0 },
+      // Overtime starts this many minutes past THIS person's end time. null = follow the
+      // office-wide overtimeAfterMinutes; a number (incl. 0) overrides it for this person.
+      overtimeAfterMinutes: { type: Number, default: null },
       // Day-of-week numbers (0=Sun…6=Sat) a part-timer works. Empty = follow the
       // company weekend config; non-empty = works ONLY these days.
       workDays: { type: [Number], default: [] },
