@@ -95,6 +95,8 @@ const settingSchema = new mongoose.Schema(
       overdueDripSeeded: { type: Boolean, default: false },
       // One-time flag: punctual-week labels rewritten to read by the week-ending day.
       streakLabelFixed: { type: Boolean, default: false },
+      // One-time flag: overdue-pending penalties (mark + drip) on July-due tasks removed.
+      julyOverdueCleaned: { type: Boolean, default: false },
       lastMonthRollup: { type: String, default: '' }, // YYYY-MM — last month whose month-end awards ran
       // YMD — the last day the absence scan actually FINISHED. Separate from the
       // throttle above so a failed run doesn't quietly declare its days done.
