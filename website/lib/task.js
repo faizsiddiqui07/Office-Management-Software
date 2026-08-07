@@ -26,6 +26,24 @@ export function isOverdue(dueYMD) {
   return !!dueYMD && dueYMD < todayYMD();
 }
 
+/** 'YYYY-MM-DD' + n days, still as 'YYYY-MM-DD'. */
+export function addDaysYMD(ymd, n) {
+  const d = new Date(`${ymd}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * The LAST day work still counts as on time: the due date plus the office's grace days
+ * (Settings — Bonus). Scoring compares the completion day against exactly this, so the
+ * UI can promise the same thing the points system will actually do. No due date means
+ * nothing to be late for.
+ */
+export function onTimeUntil(dueYMD, graceDays = 0) {
+  if (!dueYMD) return null;
+  return graceDays > 0 ? addDaysYMD(dueYMD, graceDays) : dueYMD;
+}
+
 /**
  * @param {string} scope  what to include: all | pending | completed | week | month | year
  * @param {'mine'|'tagged'|'assigned'} view  WHICH list — my own work, work I'm only

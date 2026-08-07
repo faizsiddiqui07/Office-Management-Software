@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Task } from '../models/Task.js';
 import { User } from '../models/User.js';
+import { Setting } from '../models/Setting.js';
 import { notify, clearNotificationsFor } from '../models/Notification.js';
 import { roleLabel } from '../lib/roles.js';
 import { can } from '../lib/permissions.js';
@@ -1120,7 +1121,13 @@ export async function listTasks(actor, { scope = 'mine', status, search, period,
     }
   }
 
-  return { tasks: out, total, page, limit, noDueHidden };
+  // The bonus grace days ride along so the UI can say exactly when a task stops counting
+  // as on-time (the same number scanOverdueTasks and the completion scoring use). It is a
+  // single cached settings read, and it is 0 unless leadership sets one.
+  const gSettings = await Setting.getSingleton();
+  const graceDays = Math.max(0, gSettings.bonus?.graceDays ?? 0);
+
+  return { tasks: out, total, page, limit, noDueHidden, graceDays };
 }
 
 export async function taskSummary(actor) {

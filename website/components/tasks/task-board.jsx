@@ -28,7 +28,7 @@ import { TaskDialog } from './task-dialog';
 import { AssignDialog } from './assign-dialog';
 import { ForwardDialog } from './forward-dialog';
 import { DateRange } from '@/components/ui/date-range';
-import { PDF_SCOPES, downloadTasksPdf, isOverdue, todayYMD } from '@/lib/task';
+import { PDF_SCOPES, downloadTasksPdf, isOverdue, todayYMD, onTimeUntil } from '@/lib/task';
 
 // WHICH date a range means, per tab. My tasks and Assigned are lists of work still to be
 // done: every date on them is a DEADLINE, they group and sort by it, so that is what a
@@ -123,6 +123,24 @@ function initials(name = '') {
       .join('')
       .toUpperCase() || '?'
   );
+}
+
+/**
+ * What un-doing a finished task will actually cost, said plainly.
+ *
+ * Re-completing scores against the day it is finished, so the honest answer depends on
+ * the deadline: still time left — say so and name the date; deadline already gone — warn
+ * that it will count as late; no deadline at all — nothing to lose. `graceDays` is the
+ * office's setting (0 today, and the wording follows it automatically if that changes).
+ */
+function undoWarning(task, graceDays = 0) {
+  const base = `“${task.title}” will go back to your pending list, and the points it earned will be removed.`;
+  const until = onTimeUntil(task.dueYMD, graceDays);
+  if (!until) return `${base} It has no due date, so finishing it again scores the same as before.`;
+  if (until >= todayYMD()) {
+    return `${base} Finish it again by ${fmtDate(until)} and you get them straight back.`;
+  }
+  return `${base} The deadline (${fmtDate(task.dueYMD)}) has already passed — finishing it again will count as LATE, so it will lose points instead of earning them.`;
 }
 
 function fmtDate(d) {
@@ -1631,11 +1649,7 @@ export function TaskBoard() {
         open={!!undoing}
         onOpenChange={(o) => (!o ? setUndoing(null) : null)}
         title="Mark this as not done?"
-        description={
-          undoing
-            ? `“${undoing.title}” will go back to your pending list, and the points it earned will be removed. Completing it again will score it fresh — against today's date.`
-            : ''
-        }
+        description={undoing ? undoWarning(undoing, data?.graceDays ?? 0) : ''}
         tone="destructive"
         confirmLabel="Yes, reopen it"
         loading={toggleMut.isPending}
