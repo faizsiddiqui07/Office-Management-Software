@@ -426,7 +426,7 @@ async function collectChainCopies(rootId) {
   let depth = 0;
   while (frontier.length && depth < 12) {
     // eslint-disable-next-line no-await-in-loop
-    const kids = await Task.find({ forwardedFrom: { $in: frontier } }).select('owner forwardedFrom title assignedBy collaborators');
+    const kids = await Task.find({ forwardedFrom: { $in: frontier } }).select('owner forwardedFrom title assignedBy collaborators status');
     if (!kids.length) break;
     out.push(...kids);
     frontier = kids.map((k) => k._id);
@@ -483,6 +483,13 @@ export async function onAssignedTaskDone(task) {
   const late = task.dueYMD && rawYMD > addDays(task.dueYMD, b.graceDays || 0);
 
   for (const copy of copies) {
+    // Defence in depth: only FINISHED copies are paid. The task service blocks closing a
+    // copy while the one below it is still open, but a chain settled by any other route
+    // must never hand a completion award to somebody whose copy is still pending.
+    if (copy.status && copy.status !== 'DONE') {
+      // eslint-disable-next-line no-continue
+      continue;
+    }
     const isForwarder = forwarderIds.has(String(copy._id));
     const key = isForwarder ? `auto_forward:${copy._id}` : `auto_task:${copy._id}`;
     const source = isForwarder ? 'auto_forward' : 'auto_task';
@@ -513,8 +520,17 @@ export async function onAssignedTaskDone(task) {
   }
 }
 
-export async function onAssignedTaskUndone(taskId) {
-  await PointEntry.deleteMany({ taskRef: taskId, source: { $in: ['auto_task', 'auto_forward'] } });
+/**
+ * A task stopped being finished (reopened, reassigned away, deleted, or forwarded on).
+ * Its completion/overdue result goes — but by default the per-day overdue DRIPS stay:
+ * those days were already spent late and the rule is that they survive. `all: true`
+ * clears them too, for the cases where the task itself is gone (delete) or is leaving
+ * the points system entirely.
+ */
+export async function onAssignedTaskUndone(taskId, { all = false } = {}) {
+  const filter = { taskRef: taskId, source: { $in: ['auto_task', 'auto_forward'] } };
+  if (!all) filter.dedupeKey = { $not: /^auto_overdue:/ };
+  await PointEntry.deleteMany(filter);
 }
 
 /**
