@@ -11,6 +11,8 @@ const holidayFields = z.object({
   endYMD: ymd.optional(),
   description: z.string().max(1000).optional().default(''),
   repeatsYearly: z.boolean().optional(),
+  // For a BIRTHDAY: the employee it belongs to (24-hex id), '' or null to unlink.
+  userId: z.union([z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid employee'), z.literal(''), z.null()]).optional(),
 });
 
 // A repeat is shifted year by year and its length added to the shifted start, so

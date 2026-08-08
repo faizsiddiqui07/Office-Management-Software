@@ -269,6 +269,44 @@ function repeatStart(startYMD) {
   return startYMD > today ? startYMD : today;
 }
 
+/**
+ * Mirror a user's profile date-of-birth onto their BIRTHDAY calendar entry. Called after
+ * the profile saves a date of birth (the other direction — calendar → profile — lives in
+ * createHoliday/updateHoliday): creates the entry when missing, moves it when the date
+ * changes, removes it when the date is cleared. Idempotent, so repeated saves are safe.
+ */
+export async function syncBirthdayForUser(user) {
+  const dob = (user?.dateOfBirth || '').slice(0, 10);
+  const existing = await Holiday.findOne({ type: 'BIRTHDAY', userId: user._id });
+  if (!dob) {
+    if (existing) await existing.deleteOne();
+    return;
+  }
+  const day = companyDayFromYMD(dob);
+  if (existing) {
+    existing.title = user.name;
+    existing.startYMD = dob;
+    existing.endYMD = dob;
+    existing.startDate = day;
+    existing.endDate = day;
+    existing.repeatsYearly = true;
+    if (!existing.repeatsFromYMD) existing.repeatsFromYMD = repeatStart(dob);
+    await existing.save();
+  } else {
+    await Holiday.create({
+      title: user.name,
+      type: 'BIRTHDAY',
+      startYMD: dob,
+      endYMD: dob,
+      startDate: day,
+      endDate: day,
+      repeatsYearly: true,
+      repeatsFromYMD: repeatStart(dob),
+      userId: user._id,
+    });
+  }
+}
+
 export async function createHoliday(creator, data) {
   const type = data.type || 'HOLIDAY';
   const startYMD = data.startYMD;
@@ -279,9 +317,18 @@ export async function createHoliday(creator, data) {
     throw httpError(400, 'BAD_DOB', 'A date of birth can’t be in the future');
   }
   const repeatsYearly = type === 'BIRTHDAY' ? true : !!data.repeatsYearly;
+  // A birthday can be tied to a person (picked from the employee list). When it is, that
+  // person's name is the label, and their profile date-of-birth is kept in sync from here.
+  const linkedUserId = type === 'BIRTHDAY' && data.userId ? data.userId : null;
+  let title = data.title;
+  if (linkedUserId) {
+    const u = await User.findById(linkedUserId).select('name');
+    if (!u) throw httpError(404, 'NOT_FOUND', 'Selected employee not found');
+    title = u.name;
+  }
 
   const holiday = await Holiday.create({
-    title: data.title,
+    title,
     type,
     description: data.description || '',
     startYMD,
@@ -290,8 +337,10 @@ export async function createHoliday(creator, data) {
     endDate: companyDayFromYMD(endYMD),
     repeatsYearly,
     repeatsFromYMD: repeatsYearly ? repeatStart(startYMD) : '',
+    userId: linkedUserId,
     createdBy: creator._id,
   });
+  if (linkedUserId) await User.updateOne({ _id: linkedUserId }, { $set: { dateOfBirth: startYMD } });
   await holiday.populate('createdBy', 'name');
   return holiday.toJSON();
 }
@@ -303,6 +352,9 @@ export async function updateHoliday(id, data) {
   if (data.title !== undefined) holiday.title = data.title;
   if (data.type !== undefined) holiday.type = data.type;
   if (data.description !== undefined) holiday.description = data.description;
+  // Re-link (or unlink) the birthday to an employee. When linked, the person's name is
+  // the label and their profile date-of-birth is written back after the save below.
+  if (data.userId !== undefined) holiday.userId = data.userId || null;
   if (data.startYMD !== undefined) {
     holiday.startYMD = data.startYMD;
     holiday.startDate = companyDayFromYMD(data.startYMD);
@@ -322,8 +374,17 @@ export async function updateHoliday(id, data) {
     holiday.endYMD = holiday.startYMD;
     holiday.endDate = holiday.startDate;
     if (holiday.startYMD > ymdInTz(new Date())) throw httpError(400, 'BAD_DOB', 'A date of birth can’t be in the future');
-  } else if (data.type !== undefined && data.type !== 'BIRTHDAY' && data.repeatsYearly === undefined && wasRepeating) {
-    holiday.repeatsYearly = false; // was only repeating because it was a birthday
+    // Linked to a person → their name is the label (kept current even if they're renamed).
+    if (holiday.userId) {
+      const u = await User.findById(holiday.userId).select('name');
+      if (!u) throw httpError(404, 'NOT_FOUND', 'Selected employee not found');
+      holiday.title = u.name;
+    }
+  } else {
+    holiday.userId = null; // a non-birthday can't be tied to a person's date of birth
+    if (data.type !== undefined && data.type !== 'BIRTHDAY' && data.repeatsYearly === undefined && wasRepeating) {
+      holiday.repeatsYearly = false; // was only repeating because it was a birthday
+    }
   }
 
   if (holiday.repeatsYearly && !holiday.repeatsFromYMD) holiday.repeatsFromYMD = repeatStart(holiday.startYMD);
@@ -332,6 +393,10 @@ export async function updateHoliday(id, data) {
   if (holiday.endYMD < holiday.startYMD) throw httpError(400, 'BAD_RANGE', 'End date is before the start date');
 
   await holiday.save();
+  // Write the date of birth back to the linked profile so the two never disagree.
+  if (holiday.type === 'BIRTHDAY' && holiday.userId) {
+    await User.updateOne({ _id: holiday.userId }, { $set: { dateOfBirth: holiday.startYMD } });
+  }
   await holiday.populate('createdBy', 'name');
   return holiday.toJSON();
 }
@@ -418,7 +483,13 @@ export async function ensureDefaultHolidays() {
 }
 
 export async function deleteHoliday(id) {
-  const holiday = await Holiday.findByIdAndDelete(id);
+  const holiday = await Holiday.findById(id);
   if (!holiday) throw httpError(404, 'NOT_FOUND', 'Holiday not found');
+  await holiday.deleteOne();
+  // A linked birthday and the profile date-of-birth are one fact in two places — removing
+  // the calendar entry clears the profile date too, so they can never fall out of step.
+  if (holiday.type === 'BIRTHDAY' && holiday.userId) {
+    await User.updateOne({ _id: holiday.userId }, { $set: { dateOfBirth: '' } });
+  }
   return { success: true };
 }

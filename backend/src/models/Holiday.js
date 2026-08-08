@@ -19,6 +19,11 @@ const holidaySchema = new mongoose.Schema(
     // attendance sheet or a report that has already been read and acted on. The
     // calendar still SHOWS the entry in every year — only the maths is bounded.
     repeatsFromYMD: { type: String, default: '' },
+    // For a BIRTHDAY entry, the person it belongs to. Set when it's created/edited by
+    // picking an employee (or when their profile date-of-birth is saved), so the calendar
+    // entry and the user's `dateOfBirth` stay in sync. null = a plain, unlinked entry
+    // (a free-typed name, or any non-birthday row) — kept working exactly as before.
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null, index: true },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   },
   { timestamps: true },

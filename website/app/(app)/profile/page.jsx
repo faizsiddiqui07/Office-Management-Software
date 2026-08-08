@@ -18,7 +18,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PasswordInput } from '@/components/ui/password-input';
 import { Label } from '@/components/ui/label';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Switch } from '@/components/ui/switch';
+import { todayYMDLocal } from '@/lib/calendar';
 
 function initialsOf(name = '') {
   return name.split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase();
@@ -29,7 +31,7 @@ export default function ProfilePage() {
   const { theme, setTheme } = useTheme();
   const { lite, setLiteMode } = useLiteMode();
 
-  const [form, setForm] = React.useState({ name: '', phone: '', avatarUrl: '' });
+  const [form, setForm] = React.useState({ name: '', phone: '', dateOfBirth: '', avatarUrl: '' });
   const [savingProfile, setSavingProfile] = React.useState(false);
   const [photoBusy, setPhotoBusy] = React.useState(false);
   const photoRef = React.useRef(null);
@@ -37,7 +39,7 @@ export default function ProfilePage() {
   const [savingPwd, setSavingPwd] = React.useState(false);
 
   React.useEffect(() => {
-    if (user) setForm({ name: user.name ?? '', phone: user.phone ?? '', avatarUrl: user.avatarUrl ?? '' });
+    if (user) setForm({ name: user.name ?? '', phone: user.phone ?? '', dateOfBirth: user.dateOfBirth ?? '', avatarUrl: user.avatarUrl ?? '' });
   }, [user]);
 
   if (!user) return null;
@@ -180,6 +182,21 @@ export default function ProfilePage() {
               <div className="space-y-1.5">
                 <Label htmlFor="p-phone">Phone</Label>
                 <Input id="p-phone" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} placeholder="+91 …" className="bg-background/50" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="p-dob">Date of birth</Label>
+                <DatePicker
+                  id="p-dob"
+                  value={form.dateOfBirth}
+                  min="1940-01-01"
+                  max={todayYMDLocal()}
+                  onChange={(v) => setForm((f) => ({ ...f, dateOfBirth: v }))}
+                  placeholder="Pick your date of birth"
+                  className="bg-background/50"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Shows on the company calendar as your birthday — and you won’t be marked late if you come in on it.
+                </p>
               </div>
             </div>
 

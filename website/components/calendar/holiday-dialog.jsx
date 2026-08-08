@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Repeat, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -27,6 +27,7 @@ export function HolidayDialog({ open, onOpenChange, holiday, defaultStartYMD }) 
   const qc = useQueryClient();
   const [title, setTitle] = React.useState('');
   const [type, setType] = React.useState('HOLIDAY');
+  const [userId, setUserId] = React.useState('');
   const [start, setStart] = React.useState('');
   const [end, setEnd] = React.useState('');
   const [desc, setDesc] = React.useState('');
@@ -37,6 +38,7 @@ export function HolidayDialog({ open, onOpenChange, holiday, defaultStartYMD }) 
     if (!open) return;
     setTitle(holiday?.title || '');
     setType(holiday?.type || 'HOLIDAY');
+    setUserId(holiday?.userId || '');
     // Edit the entry, not the occurrence you happened to tap. Opening a birthday from
     // 2027 and saving must not move the date of birth to 2027.
     setStart(holiday?.anchorStartYMD || holiday?.startYMD || defaultStartYMD || '');
@@ -46,6 +48,14 @@ export function HolidayDialog({ open, onOpenChange, holiday, defaultStartYMD }) 
   }, [open, holiday, defaultStartYMD]);
 
   const isBirthday = type === 'BIRTHDAY';
+  // Employee list for the birthday picker — linking a birthday to a person keeps their
+  // profile date-of-birth in sync. Only loaded when it's actually a birthday.
+  const { data: usersData } = useQuery({
+    queryKey: ['users'],
+    queryFn: () => api.get('/users'),
+    enabled: open && isBirthday,
+  });
+  const people = (usersData?.users || []).filter((u) => u.isActive !== false);
   // A birthday always comes back and is always one day — there is no other sensible
   // reading of it, so those two choices are made rather than asked.
   const effectiveRepeats = isBirthday ? true : repeats;
@@ -59,6 +69,7 @@ export function HolidayDialog({ open, onOpenChange, holiday, defaultStartYMD }) 
         endYMD: isBirthday ? start : end || start,
         description: desc,
         repeatsYearly: effectiveRepeats,
+        ...(isBirthday ? { userId: userId || '' } : {}),
       };
       return isEdit ? api.put(`/holidays/${holiday.id}`, payload) : api.post('/holidays', payload);
     },
@@ -81,7 +92,11 @@ export function HolidayDialog({ open, onOpenChange, holiday, defaultStartYMD }) 
   });
 
   const submit = () => {
-    if (!title.trim()) return toast.error('Add a title');
+    if (isBirthday) {
+      if (!userId && !title.trim()) return toast.error('Pick whose birthday it is');
+    } else if (!title.trim()) {
+      return toast.error('Add a title');
+    }
     if (!start) return toast.error(isBirthday ? 'Pick the date of birth' : 'Pick a date');
     if (isBirthday && start > todayYMDLocal()) return toast.error('A date of birth can’t be in the future');
     saveMut.mutate();
@@ -109,10 +124,38 @@ export function HolidayDialog({ open, onOpenChange, holiday, defaultStartYMD }) 
       }
     >
       <div className="max-h-[60vh] space-y-4 overflow-y-auto py-2">
-        <div className="space-y-1.5">
-          <Label htmlFor="h-title">Title</Label>
-          <Input id="h-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Independence Day" className="bg-background/50" />
-        </div>
+        {isBirthday ? (
+          <div className="space-y-1.5">
+            <Label htmlFor="h-person">Whose birthday?</Label>
+            <Select
+              value={userId}
+              onValueChange={(v) => {
+                setUserId(v);
+                const p = people.find((x) => x.id === v);
+                if (p) setTitle(p.name);
+              }}
+            >
+              <SelectTrigger id="h-person" className="w-full bg-background/50">
+                <SelectValue placeholder={title || 'Pick an employee'} />
+              </SelectTrigger>
+              <SelectContent>
+                {people.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name}{p.employeeId ? ` · ${p.employeeId}` : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Links this to the employee — their profile date of birth is filled in too, and the two stay in sync.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            <Label htmlFor="h-title">Title</Label>
+            <Input id="h-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Independence Day" className="bg-background/50" />
+          </div>
+        )}
         <div className="space-y-1.5">
           <Label htmlFor="h-type">Type</Label>
           <Select value={type} onValueChange={setType}>

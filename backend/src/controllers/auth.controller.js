@@ -11,6 +11,8 @@ import { publicAppUrl } from '../lib/appUrl.js';
 import { audit } from '../models/AuditLog.js';
 import { saveAvatar } from '../lib/brand.js';
 import { deleteAsset } from '../lib/s3Assets.js';
+import { syncBirthdayForUser } from '../services/holiday.service.js';
+import { ymdInTz } from '../lib/time.js';
 import { permissionsForRole, roleLabel, isOwnerRole } from '../lib/roles.js';
 import { clientIp, lockedFor, recordFailure, clearFailures } from '../lib/loginGuard.js';
 
@@ -97,10 +99,18 @@ export function me(req, res) {
 
 export async function updateProfile(req, res, next) {
   try {
-    const { name, phone, avatarUrl } = req.body;
+    const { name, phone, avatarUrl, dateOfBirth } = req.body;
     const user = await User.findById(req.user._id);
     if (name !== undefined) user.name = name;
     if (phone !== undefined) user.phone = phone;
+    let birthdayChanged = false;
+    if (dateOfBirth !== undefined) {
+      if (dateOfBirth && dateOfBirth > ymdInTz(new Date())) {
+        return res.status(400).json(fail('BAD_DOB', 'Date of birth can’t be in the future'));
+      }
+      birthdayChanged = (user.dateOfBirth || '') !== (dateOfBirth || '');
+      user.dateOfBirth = dateOfBirth || '';
+    }
     let previousAvatar = null;
     if (avatarUrl !== undefined) {
       previousAvatar = user.avatarUrl;
@@ -113,6 +123,10 @@ export async function updateProfile(req, res, next) {
     await user.save();
     // AFTER the save — drop the replaced S3 avatar (no-op for legacy base64 / empty).
     if (previousAvatar !== null && previousAvatar !== user.avatarUrl) await deleteAsset(previousAvatar);
+    // Mirror a changed date of birth onto (or off) the calendar so the two stay in sync.
+    if (birthdayChanged) {
+      try { await syncBirthdayForUser(user); } catch (e) { console.error('birthday sync failed', e?.message); }
+    }
     await audit({ actor: user._id, action: 'auth.update_profile', entityType: 'User', entityId: user._id.toString() });
     return res.json(ok({ user: user.toJSON() }));
   } catch (err) {

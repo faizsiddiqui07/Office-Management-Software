@@ -31,6 +31,11 @@ const userSchema = new mongoose.Schema(
     department: { type: String, default: '' },
     designation: { type: String, default: '' },
     phone: { type: String, default: '' },
+    // Date of birth (YYYY-MM-DD, company TZ). Kept in two-way sync with the person's
+    // BIRTHDAY entry on the calendar: set it here (profile) and the calendar entry
+    // follows; the CEO sets it from the calendar and this follows. Its month-day is what
+    // exempts a birthday from the late-arrival penalty. Blank = not recorded.
+    dateOfBirth: { type: String, default: '' },
     avatarUrl: { type: String, default: '' },
     dateOfJoining: { type: Date, default: Date.now },
     // Offboarding: the person's last working day (YYYY-MM-DD, company TZ). Set when winding
