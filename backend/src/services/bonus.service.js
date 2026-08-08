@@ -755,6 +755,9 @@ async function backfillOverdueRuleV2() {
       }
     }
   }
+  // Write the -5 overdue marks NOW (incl. July-due tasks), so the switch-on applies the
+  // moment it deploys instead of waiting for the throttled daily scan tomorrow.
+  await scanOverdueTasks(b);
   s.bonus.overdueRuleV2 = true;
   await s.save();
   Setting.invalidateCache();
@@ -965,15 +968,19 @@ export async function runRollingStreak(b) {
  * by the rolling scan (clearing the watermark makes its very next run walk go-live →
  * yesterday). The old relabel/date-fix migrations died with the rows they repaired.
  */
-async function rebuildStreakV2() {
+async function rebuildStreakV2(b) {
   const s = await Setting.getSingleton();
   if (s.bonus?.streakV2) return;
   await PointEntry.deleteMany({ source: 'auto_streak' });
   s.bonus.streakRuns = {};
   s.bonus.lastStreakScan = '';
-  s.bonus.streakV2 = true;
   s.markModified('bonus.streakRuns');
   await s.save();
+  Setting.invalidateCache();
+  // Re-score the whole history NOW (walks go-live → yesterday off the cleared watermark),
+  // so the switch-on applies on deploy rather than a day later behind the daily throttle.
+  await runRollingStreak(b || s.bonus);
+  await Setting.updateOne({ key: 'global' }, { $set: { 'bonus.streakV2': true } });
   Setting.invalidateCache();
 }
 
@@ -1353,6 +1360,12 @@ export async function maybeRunDaily() {
   try { await seedForwardRules(); } catch (e) { console.error('forward-rule seed failed', e?.message); }
   try { await seedOverdueDripRule(); } catch (e) { console.error('overdue-drip seed failed', e?.message); }
   try { await rescoreAssignedTasks(b); } catch (e) { console.error('task re-score failed', e?.message); }
+  // One-time recalcs for the owner's new rules (2026-08-08) — flag-gated, so a no-op once
+  // done. ABOVE the daily throttle on purpose: each writes its own -5 marks / streak
+  // rebuild inline, so a rule switched on today applies on this very tick instead of
+  // waiting a day behind the throttle (the exact gap that left them unapplied on deploy).
+  try { await backfillOverdueRuleV2(); } catch (e) { console.error('overdue rule-v2 backfill failed', e?.message); }
+  try { await rebuildStreakV2(b); } catch (e) { console.error('streak v2 rebuild failed', e?.message); }
   const today = ymdInTz(new Date());
   if (b.lastPenaltyRun === today) return;
   // Where the absence catch-up starts. Kept SEPARATE from the once-a-day throttle and
@@ -1374,14 +1387,13 @@ export async function maybeRunDaily() {
   // Drop points for tasks deleted / un-done straight in the database (self-heal). Once a day
   // is plenty — direct-DB deletes are rare, and it's a full distinct scan.
   try { await pruneOrphanTaskEntries(); } catch (e) { console.error('orphan prune failed', e?.message); }
-  try { await backfillOverdueRuleV2(); } catch (e) { console.error('overdue rule-v2 backfill failed', e?.message); }
   try { await scanOverdueTasks(b); } catch (e) { console.error('overdue scan failed', e?.message); }
   // Once a day, re-sync every finished task's points with the task table, so a due date or
   // completion date changed directly in the database is reflected without waiting for an
   // in-app edit. (In-app edits already re-score at the moment they happen.)
   try { await rescoreAllDoneAssigned(); } catch (e) { console.error('daily task re-sync failed', e?.message); }
   // Rolling 6-day punctual streak — watermarked, so a daily run judges each day once.
-  try { await rebuildStreakV2(); } catch (e) { console.error('streak v2 rebuild failed', e?.message); }
+  // (The one-time V2 rebuild ran above the throttle; this is the ongoing daily pass.)
   try { await runRollingStreak(b); } catch (e) { console.error('rolling streak failed', e?.message); }
   try {
     await scanAbsences(b, scanFrom);
