@@ -106,11 +106,17 @@ export function useAttendanceToday() {
   const checkedOut = !!record?.checkOutAt;
   const workEndAt = data?.workEndAt ? new Date(data.workEndAt).getTime() : null;
 
+  // Overtime is only credited once you pass shift-end PLUS the buffer (Settings, or this
+  // person's own override) — so the live ticker starts from that same instant. Counting
+  // from bare workEnd made the card promise minutes the check-out would then score as 0.
+  const overtimeBufferMs = (data?.settings?.overtimeAfterMinutes || 0) * 60000;
+  const overtimeStartAt = workEndAt != null ? workEndAt + overtimeBufferMs : null;
+
   let elapsedMin = 0;
   let overtimeMin = 0;
   if (checkedIn && !checkedOut) {
     elapsedMin = (now - new Date(record.checkInAt).getTime()) / 60000;
-    overtimeMin = workEndAt ? Math.max(0, (now - workEndAt) / 60000) : 0;
+    overtimeMin = overtimeStartAt != null ? Math.max(0, (now - overtimeStartAt) / 60000) : 0;
   } else if (checkedOut) {
     elapsedMin = record.workedMinutes;
     overtimeMin = record.overtimeMinutes;

@@ -6,7 +6,8 @@ import { notify, clearNotificationsFor } from '../models/Notification.js';
 import { LEADERSHIP } from '../lib/permissions.js';
 import { companyDayFromYMD, companyDayInstantAt, isLateCheckIn, computeWork } from '../lib/time.js';
 import { effectiveSchedule } from '../lib/schedule.js';
-import { onCheckOut } from './bonus.service.js';
+import { onCheckOut, clearAbsencePenalty, reconcileLatePenalty } from './bonus.service.js';
+import { isOffDayFor } from './attendance.service.js';
 
 function httpError(status, code, message) {
   const e = new Error(message);
@@ -127,9 +128,12 @@ export async function remove(id) {
 /** Apply an approved correction to the attendance record for that day. */
 async function applyToAttendance(reg) {
   const settings = await Setting.getSingleton();
-  const owner = await User.findById(reg.user).select('employmentType schedule');
+  const owner = await User.findById(reg.user).select('employmentType schedule dateOfBirth');
   const sched = effectiveSchedule(owner, settings); // part-time uses its own hours
   const day = companyDayFromYMD(reg.dateYMD);
+  // A holiday / this person's weekend / their birthday is never "late" — same rule as
+  // self check-in, so a corrected time on such a day records PRESENT, not LATE.
+  const offDay = await isOffDayFor(owner, reg.dateYMD, settings);
   let record = await Attendance.findOne({ user: reg.user, date: day });
   // Checked again at approval time, not just when the request was raised: a leave can
   // be approved in between, and overwriting an untouched ON_LEAVE marker here would
@@ -148,7 +152,7 @@ async function applyToAttendance(reg) {
   if (reg.requestedCheckIn) {
     const inAt = companyDayInstantAt(day, reg.requestedCheckIn);
     record.checkInAt = inAt;
-    record.status = isLateCheckIn(inAt, day, sched.workStart, sched.graceMinutes) ? 'LATE' : 'PRESENT';
+    record.status = !offDay && isLateCheckIn(inAt, day, sched.workStart, sched.graceMinutes) ? 'LATE' : 'PRESENT';
   }
   if (reg.requestedCheckOut) {
     record.checkOutAt = companyDayInstantAt(day, reg.requestedCheckOut);
@@ -162,6 +166,14 @@ async function applyToAttendance(reg) {
   // An approved correction changes the day's overtime, so the points awarded for that
   // day have to be recomputed — otherwise the figure from the original check-out stands.
   try { await onCheckOut(owner, reg.dateYMD, record.overtimeMinutes || 0); } catch (e) { console.error('bonus hook (correction) failed', e?.message); }
+  // If the day had been auto-marked absent, the correction just made it a worked day —
+  // remove that stale absent penalty.
+  if (record.checkInAt) {
+    try { await clearAbsencePenalty(reg.user, reg.dateYMD); } catch (e) { console.error('bonus hook (correction clear absence) failed', e?.message); }
+  }
+  // Keep the late penalty in step with the corrected day: apply it if it's now LATE (and
+  // not excused), remove it if the correction made it on-time or absent.
+  try { await reconcileLatePenalty(reg.user, reg.dateYMD, record.status === 'LATE' && !record.excused); } catch (e) { console.error('bonus hook (correction late reconcile) failed', e?.message); }
 }
 
 export async function decide(approver, id, decision, note) {

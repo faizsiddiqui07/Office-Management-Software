@@ -542,6 +542,35 @@ export async function onCheckIn(user, dateYMD, isLate) {
   }
 }
 
+/**
+ * Make a day's late-arrival penalty match reality. `shouldPenalise` = the day is a LATE
+ * that is NOT excused. When true (and the scheme + rule are on) the penalty is written
+ * once; otherwise any existing penalty for that day is removed. This is what lets an
+ * "excuse (on-duty)" actually take the minus back, and un-excusing put it back.
+ */
+export async function reconcileLatePenalty(userId, dateYMD, shouldPenalise) {
+  const s = await Setting.getSingleton();
+  const b = s.bonus || {};
+  const key = `auto_late:${userId}:${dateYMD}`;
+  if (b.enabled && shouldPenalise) {
+    const pts = rulePoints(b, 'lateArrival');
+    if (pts) {
+      await awardOnce(key, { user: userId, month: dateYMD.slice(0, 7), points: -Math.abs(pts), reason: `Late arrival · ${dateYMD}`, source: 'auto_late', earnedYMD: dateYMD });
+      return;
+    }
+  }
+  await PointEntry.deleteMany({ dedupeKey: key });
+}
+
+/**
+ * A day is no longer an absence (a check-in was recorded, or leave/WFH was applied), so
+ * the daily scan's absent penalty for it must go. The scan's watermark has usually moved
+ * past the day by the time it's corrected, so it would never self-heal without this.
+ */
+export async function clearAbsencePenalty(userId, dateYMD) {
+  await PointEntry.deleteMany({ dedupeKey: `auto_absent:${userId}:${dateYMD}` });
+}
+
 /** A human overtime total: "9h 46m", "18h", "46m". */
 function otLabel(min) {
   const h = Math.floor(min / 60);

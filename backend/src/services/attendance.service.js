@@ -15,13 +15,27 @@ import {
 } from '../lib/time.js';
 import { effectiveSchedule, userWeekendDays, workWindowClosed } from '../lib/schedule.js';
 import { splitByJoining, periodStartFor, joinedYMD } from '../lib/joining.js';
-import { onCheckIn, onCheckOut, recomputeUserMonthOvertime } from './bonus.service.js';
+import { onCheckIn, onCheckOut, recomputeUserMonthOvertime, reconcileLatePenalty, clearAbsencePenalty } from './bonus.service.js';
 
 function httpError(status, code, message) {
   const e = new Error(message);
   e.status = status;
   e.code = code;
   return e;
+}
+
+/**
+ * Is `dateYMD` a day this person can't be "late" on — a company holiday, one of their
+ * own weekend/off-days (Sunday for most), or their birthday? On such a day coming in is
+ * voluntary, so it's recorded PRESENT and never draws the late-arrival penalty. The user
+ * doc must carry `dateOfBirth` for the birthday check; anything without it just skips it.
+ */
+export async function isOffDayFor(user, dateYMD, settings) {
+  if ((await holidayYMDSet(dateYMD, dateYMD)).has(dateYMD)) return true;
+  if (userWeekendDays(user, settings).includes(dayOfWeekInTz(companyDayFromYMD(dateYMD)))) return true;
+  const dob = user?.dateOfBirth || '';
+  if (dob.length >= 10 && dob.slice(5, 10) === dateYMD.slice(5, 10)) return true; // same month-day, any year
+  return false;
 }
 
 /**
@@ -69,10 +83,25 @@ export async function checkIn(user, meta, coords, lateReason) {
   if (existing && existing.status === 'WFH') {
     throw httpError(409, 'WFH_DAY', 'You’re working from home today — your attendance is already marked, no check-in needed.');
   }
+  // A FULL-day approved leave already accounts for the day: the balance is spent and the
+  // request is approved. Checking in would flip the marker to PRESENT while the balance
+  // stays charged — the day counted twice, with nothing on screen saying so. A HALF-day
+  // leave is the opposite: the person is expected to work the other half, so they MAY
+  // check in — handled below, keeping the half-day flag and skipping the late penalty.
+  if (existing && existing.status === 'ON_LEAVE' && !existing.halfDayLeave) {
+    throw httpError(409, 'ON_LEAVE', 'You’re on approved leave today. If you actually came in, ask for the leave to be cancelled first.');
+  }
 
   const geoMeta = verifyGeofence(settings.gpsAttendance, coords);
   const sched = effectiveSchedule(user, settings); // part-time uses its own hours
-  const isLate = isLateCheckIn(now, day, sched.workStart, sched.graceMinutes);
+  const ymd = ymdInTz(day);
+  // A day this person can't be "late" on — company holiday, their own weekend/off-day,
+  // their birthday, or the worked half of a half-day leave — is recorded PRESENT with no
+  // late penalty. Their overtime still counts on check-out. (findOneAndUpdate's $set does
+  // not touch halfDayLeave, so a half-day leave stays flagged and charged 0.5.)
+  const onHalfDayLeave = !!(existing && existing.status === 'ON_LEAVE' && existing.halfDayLeave);
+  const offDay = onHalfDayLeave || (await isOffDayFor(user, ymd, settings));
+  const isLate = !offDay && isLateCheckIn(now, day, sched.workStart, sched.graceMinutes);
   const status = isLate ? 'LATE' : 'PRESENT';
   const reason = isLate ? cleanLateReason(lateReason) : null; // reason only meaningful when late
 
@@ -96,11 +125,14 @@ export async function checkIn(user, meta, coords, lateReason) {
  * user's effective schedule. Both times blank clears the record (→ absent).
  */
 export async function setAttendanceRecord(userId, dateYMD, checkIn, checkOut) {
-  const user = await User.findById(userId).select('employmentType schedule');
+  const user = await User.findById(userId).select('employmentType schedule dateOfBirth');
   if (!user) throw httpError(404, 'NOT_FOUND', 'User not found');
   const settings = await Setting.getSingleton();
   const sched = effectiveSchedule(user, settings);
   const day = companyDayFromYMD(dateYMD);
+  // Same working-day rule as self check-in: a holiday / this person's weekend / their
+  // birthday is never "late", so a time typed in on such a day records PRESENT, not LATE.
+  const offDay = await isOffDayFor(user, dateYMD, settings);
 
   let record = await Attendance.findOne({ user: userId, date: day });
 
@@ -130,7 +162,7 @@ export async function setAttendanceRecord(userId, dateYMD, checkIn, checkOut) {
   if (checkIn) {
     const inAt = companyDayInstantAt(day, checkIn);
     record.checkInAt = inAt;
-    record.status = isLateCheckIn(inAt, day, sched.workStart, sched.graceMinutes) ? 'LATE' : 'PRESENT';
+    record.status = !offDay && isLateCheckIn(inAt, day, sched.workStart, sched.graceMinutes) ? 'LATE' : 'PRESENT';
   } else {
     record.checkInAt = null;
     record.status = 'ABSENT';
@@ -151,6 +183,15 @@ export async function setAttendanceRecord(userId, dateYMD, checkIn, checkOut) {
   // change with it — otherwise an inflated award from the original check-out stands
   // even after the time is corrected. onCheckOut rewrites (or clears) that day's entry.
   try { await onCheckOut(user, dateYMD, record.overtimeMinutes || 0); } catch (e) { console.error('bonus hook (attendance edit) failed', e?.message); }
+  // A corrected day that now has a check-in is no longer an absence — drop the daily
+  // scan's absent penalty for it (it wouldn't self-heal: the watermark has moved on).
+  if (record.checkInAt) {
+    try { await clearAbsencePenalty(userId, dateYMD); } catch (e) { console.error('bonus hook (clear absence) failed', e?.message); }
+  }
+  // Late penalty must match the corrected day: a leadership-typed LATE now draws the same
+  // penalty a self check-in would (so nobody dodges it by having leadership record it),
+  // and a day corrected to on-time / absent loses the old one. Excused days never draw it.
+  try { await reconcileLatePenalty(userId, dateYMD, record.status === 'LATE' && !record.excused); } catch (e) { console.error('bonus hook (late reconcile) failed', e?.message); }
   return record.toJSON();
 }
 
@@ -162,6 +203,9 @@ export async function excuseLate(approver, attendanceId, excused) {
   record.excusedBy = record.excused ? approver._id : null;
   record.excusedAt = record.excused ? new Date() : null;
   await record.save();
+  // On-duty (excused) means it no longer counts as late anywhere else — so take the
+  // late-arrival minus back too (and put it back if it's being un-excused).
+  try { await reconcileLatePenalty(record.user, ymdInTz(record.date), record.status === 'LATE' && !record.excused); } catch (e) { console.error('bonus hook (excuse) failed', e?.message); }
   return record;
 }
 
@@ -281,6 +325,9 @@ export async function getTodayPayload(user) {
       graceMinutes: sched.graceMinutes,
       timezone: settings.timezone,
       checkOutCooldownMinutes: settings.checkOutCooldownMinutes ?? 30,
+      // How many minutes past the shift end overtime starts (office setting, or this
+      // person's own override) — so the live ticker matches what check-out will score.
+      overtimeAfterMinutes: sched.overtimeAfterMinutes ?? 0,
       // THIS person's non-working weekdays (0=Sun…6=Sat) — the office weekend, or a
       // part-timer's own off-days. Sent so the leave dialog can show the same day
       // count the server will actually deduct; it used to assume Sunday for everyone,
