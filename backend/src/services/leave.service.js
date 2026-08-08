@@ -599,8 +599,9 @@ export async function recordLeaveForUser(actor, userId, { type, startYMD, endYMD
  * meant somebody who came in anyway (or whose leave was approved after they had already
  * worked the day) paid for a day the sheet still shows them present for.
  */
-async function markAttendanceOnLeave(userId, fromYMD, toYMD, halfDay, weekendDays, holidays, session) {
+async function markAttendanceOnLeave(userId, fromYMD, toYMD, halfDay, weekendDays, holidays, session, halfDayPart = null) {
   const { workingDates } = computeWorkingDays({ fromYMD, toYMD, halfDay, weekendDays, holidays });
+  const part = halfDay ? (halfDayPart === 'SECOND' ? 'SECOND' : 'FIRST') : null; // which half is off
   let marked = 0;
   for (const ymd of workingDates) {
     const day = companyDayFromYMD(ymd);
@@ -608,7 +609,7 @@ async function markAttendanceOnLeave(userId, fromYMD, toYMD, halfDay, weekendDay
     const existing = await Attendance.findOne({ user: userId, date: day }).session(session);
     if (!existing) {
       // eslint-disable-next-line no-await-in-loop
-      await Attendance.create([{ user: userId, date: day, status: 'ON_LEAVE', halfDayLeave: !!halfDay }], { session });
+      await Attendance.create([{ user: userId, date: day, status: 'ON_LEAVE', halfDayLeave: !!halfDay, halfDayPart: part }], { session });
       marked += 1;
     } else if (existing.status === 'WFH' && !existing.wfhOfficeWide) {
       // A work-from-home day they REQUESTED is a worked day. Treat it exactly like a
@@ -628,6 +629,7 @@ async function markAttendanceOnLeave(userId, fromYMD, toYMD, halfDay, weekendDay
       // for it, so recording the date as a whole day away had the two records
       // disagreeing about the same day.
       existing.halfDayLeave = !!halfDay;
+      existing.halfDayPart = part;
       // eslint-disable-next-line no-await-in-loop
       await existing.save({ session });
       marked += 1;
@@ -640,6 +642,7 @@ async function markAttendanceOnLeave(userId, fromYMD, toYMD, halfDay, weekendDay
       // flag the half-day, so the sheet says "present" (true) while the balance is
       // charged 0.5 (also true).
       existing.halfDayLeave = true;
+      existing.halfDayPart = part;
       // eslint-disable-next-line no-await-in-loop
       await existing.save({ session });
       marked += 1;
@@ -712,10 +715,33 @@ async function revertAttendanceOnLeave(userId, fromYMD, toYMD, session, type = n
         halfDayLeave: true,
         checkInAt: { $ne: null },
       },
-      { $set: { halfDayLeave: false } },
+      { $set: { halfDayLeave: false, halfDayPart: null } },
       { session },
     );
   }
+}
+
+/**
+ * One-time: stamp the missing `halfDayPart` onto attendance rows that a half-day leave
+ * flagged before the field existed. Reads the part off the (single, non-overlapping)
+ * APPROVED half-day leave covering each such day. Anything it can't resolve defaults to
+ * FIRST — a sane, visible default rather than a blank. Idempotent (only touches rows
+ * still missing the part). Runs from runSetupTasks, gated by Setting.halfDayPartBackfilled.
+ */
+export async function backfillHalfDayPart() {
+  const s = await Setting.getSingleton();
+  if (s.halfDayPartBackfilled) return;
+  const rows = await Attendance.find({ halfDayLeave: true, $or: [{ halfDayPart: { $exists: false } }, { halfDayPart: null }] }).select('user date');
+  for (const r of rows) {
+    const ymd = ymdInTz(r.date);
+    // eslint-disable-next-line no-await-in-loop
+    const lv = await LeaveRequest.findOne({ user: r.user, status: 'APPROVED', halfDay: true, startYMD: { $lte: ymd }, endYMD: { $gte: ymd } }).select('halfDayPart');
+    const part = lv?.halfDayPart === 'SECOND' ? 'SECOND' : 'FIRST';
+    // eslint-disable-next-line no-await-in-loop
+    await Attendance.updateOne({ _id: r._id }, { $set: { halfDayPart: part } });
+  }
+  await Setting.updateOne({ key: 'global' }, { $set: { halfDayPartBackfilled: true } });
+  Setting.invalidateCache();
 }
 
 export async function decideLeave(approver, id, decision, note, { replaceAttendance = false } = {}) {
@@ -840,7 +866,7 @@ export async function decideLeave(approver, id, decision, note, { replaceAttenda
     // would still bill for days the sheet shows them present for. Taking the count from
     // the marking itself is the only version where the balance and the attendance
     // cannot disagree.
-    const days = await markAttendanceOnLeave(fresh.user, fresh.startYMD, fresh.endYMD, fresh.halfDay, ownerWeekends, holidays, session);
+    const days = await markAttendanceOnLeave(fresh.user, fresh.startYMD, fresh.endYMD, fresh.halfDay, ownerWeekends, holidays, session, fresh.halfDayPart);
     if (days <= 0) {
       throw httpError(409, 'NO_WORKING_DAYS', 'There is nothing left to approve on those dates — they are holidays, non-working days, or days already worked. Reject the request instead.');
     }

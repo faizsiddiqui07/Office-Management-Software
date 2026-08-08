@@ -135,6 +135,8 @@ async function applyToAttendance(reg) {
   // self check-in, so a corrected time on such a day records PRESENT, not LATE.
   const offDay = await isOffDayFor(owner, reg.dateYMD, settings);
   let record = await Attendance.findOne({ user: reg.user, date: day });
+  // A half-day leave day is never "late" — only the other half was owed.
+  const halfLeave = !!record?.halfDayLeave;
   // Checked again at approval time, not just when the request was raised: a leave can
   // be approved in between, and overwriting an untouched ON_LEAVE marker here would
   // leave the day counted as both leave (balance still spent) and present.
@@ -152,7 +154,7 @@ async function applyToAttendance(reg) {
   if (reg.requestedCheckIn) {
     const inAt = companyDayInstantAt(day, reg.requestedCheckIn);
     record.checkInAt = inAt;
-    record.status = !offDay && isLateCheckIn(inAt, day, sched.workStart, sched.graceMinutes) ? 'LATE' : 'PRESENT';
+    record.status = !offDay && !halfLeave && isLateCheckIn(inAt, day, sched.workStart, sched.graceMinutes) ? 'LATE' : 'PRESENT';
   }
   if (reg.requestedCheckOut) {
     record.checkOutAt = companyDayInstantAt(day, reg.requestedCheckOut);

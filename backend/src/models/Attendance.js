@@ -32,6 +32,10 @@ const attendanceSchema = new mongoose.Schema(
     // the balance was charged 0.5. Without this the sheet reported a whole day away
     // against a half-day deduction.
     halfDayLeave: { type: Boolean, default: false },
+    // Which half the half-day leave covers — 'FIRST' (morning off, worked the afternoon)
+    // or 'SECOND' (worked the morning, afternoon off). Mirrors the LeaveRequest so the
+    // sheet can show the two halves in the right order. null when it's not a half-day.
+    halfDayPart: { type: String, enum: ['FIRST', 'SECOND', null], default: null },
     // This WFH day was DECLARED BY THE OFFICE for everyone, not requested by the person.
     // It is what lets the declaration be undone again, and what keeps an office day out
     // of anybody's personal yearly WFH allowance (which is counted from their requests,

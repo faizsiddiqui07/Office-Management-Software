@@ -130,6 +130,9 @@ const settingSchema = new mongoose.Schema(
     // Bumped when the DEFAULT rule wording changes post-seed; migrateRuleText applies the
     // new text to rules still carrying the old default (CEO-edited rules are left alone).
     rulesTextVersion: { type: Number, default: 0 },
+    // One-time: stamped `halfDayPart` onto older half-day attendance rows that predate
+    // the field (see backfillHalfDayPart).
+    halfDayPartBackfilled: { type: Boolean, default: false },
     // YMD — the last day the team was pushed a birthday wish. Throttles the once-a-day
     // birthday announcement (no cron on Lambda; it rides on the dashboard load).
     lastBirthdayPing: { type: String, default: '' },

@@ -934,7 +934,9 @@ export async function runRollingStreak(b) {
       const rec = recByUserDay.get(`${uid}|${d}`);
       const onLeave = leaves.some((l) => String(l.user) === uid && l.startYMD <= d && l.endYMD >= d);
       if (rec && (rec.status === 'WFH' || rec.status === 'ON_LEAVE')) continue; // neutral
-      if (rec && rec.status === 'LATE' && !rec.excused) { count = 0; continue; } // reset — next day starts fresh
+      // A half-day leave never carries a penalty (owner's rule) — a late arrival for the
+      // worked half must not reset the run; it counts as an on-time day.
+      if (rec && rec.status === 'LATE' && !rec.excused && !rec.halfDayLeave) { count = 0; continue; } // reset — next day starts fresh
       if (!rec || rec.status === 'ABSENT') {
         if (onLeave) continue; // approved leave → neutral
         count = 0; continue; // unexplained absence → reset

@@ -22,3 +22,23 @@ export function attendanceStatusLabel(status) {
   if (status === 'AWAITED') return '—';
   return (status || '').replace('_', ' ');
 }
+
+/**
+ * A half-day leave splits the day in two, shown IN ORDER: the half that's off reads
+ * "Half day", the working half reads its real state (Present / On duty / — if not in
+ * yet). First-half leave → [Half day, <worked>]; second-half leave → [<worked>, Half day].
+ * Returns null when it isn't a half-day, so callers fall back to the single badge.
+ */
+export function halfDayChips(att) {
+  if (!att?.halfDayLeave) return null;
+  const leave = { label: 'Half day', tone: 'info' };
+  let worked;
+  if (att.checkInAt) {
+    worked = att.status === 'LATE' && att.excused
+      ? { label: 'On duty', tone: 'success' }
+      : { label: 'Present', tone: 'success' };
+  } else {
+    worked = { label: '—', tone: 'neutral' }; // the working half isn't clocked yet
+  }
+  return att.halfDayPart === 'SECOND' ? [worked, leave] : [leave, worked];
+}

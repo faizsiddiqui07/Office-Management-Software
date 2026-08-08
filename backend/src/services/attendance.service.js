@@ -135,6 +135,9 @@ export async function setAttendanceRecord(userId, dateYMD, checkIn, checkOut) {
   const offDay = await isOffDayFor(user, dateYMD, settings);
 
   let record = await Attendance.findOne({ user: userId, date: day });
+  // A half-day leave day is never "late" either — the person only owed the other half,
+  // so a time typed on it records PRESENT with no late penalty, whichever half is off.
+  const halfLeave = !!record?.halfDayLeave;
 
   if (record && record.status === 'ON_LEAVE') {
     throw httpError(409, 'ON_LEAVE', 'This day is marked on leave — cancel the leave first to edit attendance');
@@ -162,7 +165,7 @@ export async function setAttendanceRecord(userId, dateYMD, checkIn, checkOut) {
   if (checkIn) {
     const inAt = companyDayInstantAt(day, checkIn);
     record.checkInAt = inAt;
-    record.status = !offDay && isLateCheckIn(inAt, day, sched.workStart, sched.graceMinutes) ? 'LATE' : 'PRESENT';
+    record.status = !offDay && !halfLeave && isLateCheckIn(inAt, day, sched.workStart, sched.graceMinutes) ? 'LATE' : 'PRESENT';
   } else {
     record.checkInAt = null;
     record.status = 'ABSENT';
