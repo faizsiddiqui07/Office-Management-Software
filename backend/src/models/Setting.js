@@ -136,6 +136,9 @@ const settingSchema = new mongoose.Schema(
     // One-time: cleared the LATE status + late penalty off half-day rows where the person
     // had checked in late before the half-day leave was approved (see fixHalfDayLatePenalties).
     halfDayLateFixed: { type: Boolean, default: false },
+    // One-time: pulled pre-existing calendar birthdays into matching profiles + collapsed
+    // the duplicates that profile-sync created (see backfillBirthdaysToProfiles).
+    birthdaysLinkedToProfiles: { type: Boolean, default: false },
     // YMD — the last day the team was pushed a birthday wish. Throttles the once-a-day
     // birthday announcement (no cron on Lambda; it rides on the dashboard load).
     lastBirthdayPing: { type: String, default: '' },

@@ -9,7 +9,7 @@ import { connectDB } from './config/db.js';
 import { apiRouter } from './routes/index.js';
 import { errorHandler, notFoundHandler } from './middleware/error.js';
 import { ensureSystemRoles, runRoleMigrations, ensureRoleManagerExists, loadRoles } from './lib/roles.js';
-import { ensureDefaultHolidays } from './services/holiday.service.js';
+import { ensureDefaultHolidays, backfillBirthdaysToProfiles } from './services/holiday.service.js';
 import { backfillHalfDayPart, fixHalfDayLatePenalties } from './services/leave.service.js';
 
 /**
@@ -111,6 +111,7 @@ export async function runSetupTasks() {
   }
   try { await backfillHalfDayPart(); } catch (e) { console.error('half-day part backfill failed', e?.message); }
   try { await fixHalfDayLatePenalties(); } catch (e) { console.error('half-day late-penalty fix failed', e?.message); }
+  try { await backfillBirthdaysToProfiles(); } catch (e) { console.error('birthday→profile backfill failed', e?.message); }
 }
 
 export function initApp() {

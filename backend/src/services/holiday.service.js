@@ -269,42 +269,103 @@ function repeatStart(startYMD) {
   return startYMD > today ? startYMD : today;
 }
 
+/** Lower-cased name words, parentheticals + punctuation stripped ("Uma S. (Gunner)" → [uma, s]). */
+function nameTokens(s) {
+  return String(s || '').toLowerCase().replace(/\(.*?\)/g, ' ').replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
+}
+/** Is every token of `a` present in `b`? (a non-empty ⊆ b) */
+function isTokenSubset(a, b) {
+  if (!a.length) return false;
+  const set = new Set(b);
+  return a.every((t) => set.has(t));
+}
+
 /**
- * Mirror a user's profile date-of-birth onto their BIRTHDAY calendar entry. Called after
- * the profile saves a date of birth (the other direction — calendar → profile — lives in
- * createHoliday/updateHoliday): creates the entry when missing, moves it when the date
- * changes, removes it when the date is cleared. Idempotent, so repeated saves are safe.
+ * Every BIRTHDAY entry that belongs to `user`: the one linked by id, PLUS any old
+ * free-typed entry whose name is theirs — its words are a subset of the user's name
+ * ("Faiz" ⊆ "Mohd Faiz") AND no OTHER active user also fits, so a shared surname can't
+ * mis-adopt. `activeUsers` is passed in for that uniqueness test. This is what lets a
+ * profile save ADOPT the pre-existing calendar birthday instead of adding a duplicate.
+ */
+async function birthdaysOwnedBy(user, activeUsers) {
+  const uTokens = nameTokens(user.name);
+  const all = await Holiday.find({ type: 'BIRTHDAY' });
+  return all.filter((h) => {
+    if (h.userId) return String(h.userId) === String(user._id);
+    const t = nameTokens(h.title);
+    if (!isTokenSubset(t, uTokens)) return false;
+    const fits = activeUsers.filter((u) => isTokenSubset(t, nameTokens(u.name)));
+    return fits.length === 1 && String(fits[0]._id) === String(user._id);
+  });
+}
+
+/**
+ * Mirror a user's profile date-of-birth onto their BIRTHDAY calendar entry, keeping exactly
+ * ONE entry per person. Called after the profile saves a date of birth (calendar → profile
+ * lives in createHoliday/updateHoliday). It ADOPTS a pre-existing free-typed birthday for
+ * that person (matched by name) rather than adding a second one — the fix for the duplicate
+ * that appeared when someone whose birthday was already on the calendar set it in profile
+ * too. Any extra duplicates are collapsed into the one kept. Idempotent.
  */
 export async function syncBirthdayForUser(user) {
   const dob = (user?.dateOfBirth || '').slice(0, 10);
-  const existing = await Holiday.findOne({ type: 'BIRTHDAY', userId: user._id });
+  const activeUsers = await User.find({ isActive: true }).select('name');
+  const mine = await birthdaysOwnedBy(user, activeUsers);
   if (!dob) {
-    if (existing) await existing.deleteOne();
+    if (mine.length) await Holiday.deleteMany({ _id: { $in: mine.map((m) => m._id) } });
     return;
   }
   const day = companyDayFromYMD(dob);
-  if (existing) {
-    existing.title = user.name;
-    existing.startYMD = dob;
-    existing.endYMD = dob;
-    existing.startDate = day;
-    existing.endDate = day;
-    existing.repeatsYearly = true;
-    if (!existing.repeatsFromYMD) existing.repeatsFromYMD = repeatStart(dob);
-    await existing.save();
+  const keep = mine.find((h) => String(h.userId) === String(user._id)) || mine[0];
+  if (keep) {
+    keep.userId = user._id;
+    keep.title = user.name;
+    keep.startYMD = dob;
+    keep.endYMD = dob;
+    keep.startDate = day;
+    keep.endDate = day;
+    keep.repeatsYearly = true;
+    if (!keep.repeatsFromYMD) keep.repeatsFromYMD = repeatStart(dob);
+    await keep.save();
+    const extra = mine.filter((h) => String(h._id) !== String(keep._id));
+    if (extra.length) await Holiday.deleteMany({ _id: { $in: extra.map((e) => e._id) } });
   } else {
     await Holiday.create({
-      title: user.name,
-      type: 'BIRTHDAY',
-      startYMD: dob,
-      endYMD: dob,
-      startDate: day,
-      endDate: day,
-      repeatsYearly: true,
-      repeatsFromYMD: repeatStart(dob),
-      userId: user._id,
+      title: user.name, type: 'BIRTHDAY', startYMD: dob, endYMD: dob,
+      startDate: day, endDate: day, repeatsYearly: true, repeatsFromYMD: repeatStart(dob), userId: user._id,
     });
   }
+}
+
+/**
+ * One-time: pull every pre-existing calendar birthday into the matching employee's profile
+ * (auto-fetch the owner asked for) and collapse duplicates. For each active user, find the
+ * birthdays that are theirs (linked, or a unique name-subset match), fill their profile
+ * date-of-birth from it if blank, then run the sync so exactly one linked entry remains —
+ * which also deletes the "Faiz" duplicate left beside a profile-created "Mohd Faiz".
+ * Gated by Setting.birthdaysLinkedToProfiles; runs from runSetupTasks.
+ */
+export async function backfillBirthdaysToProfiles() {
+  const s = await Setting.getSingleton();
+  if (s.birthdaysLinkedToProfiles) return;
+  const activeUsers = await User.find({ isActive: true }).select('name dateOfBirth');
+  for (const u of activeUsers) {
+    // eslint-disable-next-line no-await-in-loop
+    const mine = await birthdaysOwnedBy(u, activeUsers);
+    if (!mine.length) continue;
+    if (!u.dateOfBirth) {
+      const src = mine.find((h) => h.userId) || mine[0];
+      if (src.startYMD) {
+        u.dateOfBirth = src.startYMD;
+        // eslint-disable-next-line no-await-in-loop
+        await User.updateOne({ _id: u._id }, { $set: { dateOfBirth: src.startYMD } });
+      }
+    }
+    // eslint-disable-next-line no-await-in-loop
+    await syncBirthdayForUser(u); // links one, deletes the rest
+  }
+  await Setting.updateOne({ key: 'global' }, { $set: { birthdaysLinkedToProfiles: true } });
+  Setting.invalidateCache();
 }
 
 export async function createHoliday(creator, data) {
@@ -325,6 +386,11 @@ export async function createHoliday(creator, data) {
     const u = await User.findById(linkedUserId).select('name');
     if (!u) throw httpError(404, 'NOT_FOUND', 'Selected employee not found');
     title = u.name;
+    // One birthday per person: clear any existing entry for them (a profile-synced one, or
+    // an old free-typed one they own) so picking them here can't leave a duplicate behind.
+    const activeUsers = await User.find({ isActive: true }).select('name');
+    const owned = await birthdaysOwnedBy(u, activeUsers);
+    if (owned.length) await Holiday.deleteMany({ _id: { $in: owned.map((h) => h._id) } });
   }
 
   const holiday = await Holiday.create({
