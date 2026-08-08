@@ -14,6 +14,7 @@ import { leaveYearOf, currentLeaveYear } from '../lib/leaveYear.js';
 import { APP_LIVE_YMD } from '../lib/appLive.js';
 import { computeWorkingDays } from './workingDays.service.js';
 import { holidayYMDSet } from './holiday.service.js';
+import { reconcileLatePenalty } from './bonus.service.js';
 import { userWeekendDays } from '../lib/schedule.js';
 import { runTransaction } from '../lib/transaction.js';
 
@@ -643,6 +644,10 @@ async function markAttendanceOnLeave(userId, fromYMD, toYMD, halfDay, weekendDay
       // charged 0.5 (also true).
       existing.halfDayLeave = true;
       existing.halfDayPart = part;
+      // A half-day is never "late" for the worked half (owner's rule): if they'd checked
+      // in late before this was approved, drop the LATE status here. The -1 penalty the
+      // late check-in wrote is taken back post-commit in decideLeave (reconcileLatePenalty).
+      if (existing.status === 'LATE') existing.status = 'PRESENT';
       // eslint-disable-next-line no-await-in-loop
       await existing.save({ session });
       marked += 1;
@@ -741,6 +746,29 @@ export async function backfillHalfDayPart() {
     await Attendance.updateOne({ _id: r._id }, { $set: { halfDayPart: part } });
   }
   await Setting.updateOne({ key: 'global' }, { $set: { halfDayPartBackfilled: true } });
+  Setting.invalidateCache();
+}
+
+/**
+ * One-time: fix half-day rows that were marked LATE because the person checked in late for
+ * the worked half BEFORE the half-day leave was approved (the approval flagged the day but
+ * left the LATE status and its -1 in place). Sets them PRESENT and removes that day's
+ * late penalty — the owner's rule is no penalty on a half-day, whichever half. Idempotent;
+ * runs from runSetupTasks, gated by Setting.halfDayLateFixed. (Going forward, the leave
+ * flow handles this itself — markAttendanceOnLeave + decideLeave's reconcile.)
+ */
+export async function fixHalfDayLatePenalties() {
+  const s = await Setting.getSingleton();
+  if (s.halfDayLateFixed) return;
+  const rows = await Attendance.find({ halfDayLeave: true, status: 'LATE' }).select('user date');
+  for (const r of rows) {
+    const ymd = ymdInTz(r.date);
+    // eslint-disable-next-line no-await-in-loop
+    await Attendance.updateOne({ _id: r._id }, { $set: { status: 'PRESENT' } });
+    // eslint-disable-next-line no-await-in-loop
+    await reconcileLatePenalty(r.user, ymd, false); // take the -1 back
+  }
+  await Setting.updateOne({ key: 'global' }, { $set: { halfDayLateFixed: true } });
   Setting.invalidateCache();
 }
 
@@ -893,6 +921,13 @@ export async function decideLeave(approver, id, decision, note, { replaceAttenda
     await fresh.save({ session });
     return fresh;
   });
+
+  // A half-day never carries a late penalty. If they checked in late for the worked half
+  // before this approval, the -1 is already on the ledger — take it back now (best-effort,
+  // post-commit like every other bonus hook; the status was already fixed in the txn).
+  if (!wfh && result.halfDay) {
+    try { await reconcileLatePenalty(result.user, result.startYMD, false); } catch (e) { console.error('half-day late reconcile failed', e?.message); }
+  }
 
   await notify({
     user: result.user,

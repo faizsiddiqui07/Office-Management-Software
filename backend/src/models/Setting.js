@@ -133,6 +133,9 @@ const settingSchema = new mongoose.Schema(
     // One-time: stamped `halfDayPart` onto older half-day attendance rows that predate
     // the field (see backfillHalfDayPart).
     halfDayPartBackfilled: { type: Boolean, default: false },
+    // One-time: cleared the LATE status + late penalty off half-day rows where the person
+    // had checked in late before the half-day leave was approved (see fixHalfDayLatePenalties).
+    halfDayLateFixed: { type: Boolean, default: false },
     // YMD — the last day the team was pushed a birthday wish. Throttles the once-a-day
     // birthday announcement (no cron on Lambda; it rides on the dashboard load).
     lastBirthdayPing: { type: String, default: '' },

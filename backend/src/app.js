@@ -10,7 +10,7 @@ import { apiRouter } from './routes/index.js';
 import { errorHandler, notFoundHandler } from './middleware/error.js';
 import { ensureSystemRoles, runRoleMigrations, ensureRoleManagerExists, loadRoles } from './lib/roles.js';
 import { ensureDefaultHolidays } from './services/holiday.service.js';
-import { backfillHalfDayPart } from './services/leave.service.js';
+import { backfillHalfDayPart, fixHalfDayLatePenalties } from './services/leave.service.js';
 
 /**
  * The Express app is built here and shared by BOTH entry points:
@@ -110,6 +110,7 @@ export async function runSetupTasks() {
     console.log(`🗓️  Calendar: added ${added} national holiday(s), set ${converted} existing one(s) + ${birthdays} birthday(s) to repeat`);
   }
   try { await backfillHalfDayPart(); } catch (e) { console.error('half-day part backfill failed', e?.message); }
+  try { await fixHalfDayLatePenalties(); } catch (e) { console.error('half-day late-penalty fix failed', e?.message); }
 }
 
 export function initApp() {
