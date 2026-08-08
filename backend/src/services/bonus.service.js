@@ -577,6 +577,32 @@ export async function clearAbsencePenalty(userId, dateYMD) {
   await PointEntry.deleteMany({ dedupeKey: `auto_absent:${userId}:${dateYMD}` });
 }
 
+/**
+ * Bring the "no leave taken all month" award for one past month back in line with reality
+ * after a leave is approved or cancelled. The month rollup decides this award exactly once
+ * when the month ends, so a leave approved/cancelled afterwards would otherwise leave a
+ * stale award (or a missing one) forever. Only touches a month that is genuinely OVER —
+ * the current month's no-leave isn't decided until its own rollup. Write-or-delete, like
+ * reconcileLatePenalty.
+ */
+export async function reconcileNoLeaveMonth(userId, month) {
+  if (!/^\d{4}-\d{2}$/.test(String(month || '')) || month >= currentMonth()) return;
+  const s = await Setting.getSingleton();
+  const b = s.bonus || {};
+  const key = `auto_noleave:${userId}:${month}`;
+  const from = `${month}-01`;
+  const lastDay = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate();
+  const monthEnd = `${month}-${String(lastDay).padStart(2, '0')}`;
+  const pts = rulePoints(b, 'noLeaveMonth');
+  // WFH is not leave — it must not cost the award (mirrors runMonthRollup).
+  const took = await LeaveRequest.countDocuments({ user: userId, status: 'APPROVED', type: { $ne: 'WFH' }, startYMD: { $lte: monthEnd }, endYMD: { $gte: from } });
+  if (b.enabled && pts && took === 0) {
+    await awardOnce(key, { user: userId, month, points: Math.abs(pts), reason: 'No leave taken all month', source: 'auto_noleave', earnedYMD: monthEnd });
+  } else {
+    await PointEntry.deleteMany({ dedupeKey: key });
+  }
+}
+
 /** A human overtime total: "9h 46m", "18h", "46m". */
 function otLabel(min) {
   const h = Math.floor(min / 60);

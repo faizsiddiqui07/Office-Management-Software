@@ -5,8 +5,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Check, X } from 'lucide-react';
 import { api } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
 import { DataTable } from '@/components/glass/data-table';
 import { StatusBadge, STATUS_TONES } from '@/components/glass/status-badge';
+import { ConfirmDialog } from '@/components/glass/confirm-dialog';
 import { TableSkeleton } from '@/components/glass/skeletons';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -24,9 +26,11 @@ import { CoverageWarning } from './coverage-warning';
 
 export function RequestsQueue() {
   const qc = useQueryClient();
+  const { user: me } = useAuth();
   const [statusFilter, setStatusFilter] = React.useState('ALL'); // show the whole queue first, not just pending
   const [viewing, setViewing] = React.useState(null); // row-click detail
   const [note, setNote] = React.useState('');
+  const [cancelling, setCancelling] = React.useState(null); // approved leave being cancelled
 
   const { data, isLoading } = useQuery({
     queryKey: ['leaves', 'queue', statusFilter],
@@ -45,6 +49,26 @@ export function RequestsQueue() {
     },
     onError: (e) => toast.error(e?.message || 'Could not submit decision'),
   });
+
+  // Cancel an ALREADY-APPROVED leave — restores the balance and clears the ON_LEAVE days.
+  const cancelMut = useMutation({
+    mutationFn: (id) => api.post(`/leaves/${id}/cancel`),
+    onSuccess: () => {
+      toast.success('Approved leave cancelled — balance restored');
+      qc.invalidateQueries({ queryKey: ['leaves'] });
+      setCancelling(null);
+      setViewing(null);
+    },
+    onError: (e) => toast.error(e?.message || 'Could not cancel'),
+  });
+
+  // Who may cancel an approved leave: an approver, but never their own (self-dealing) —
+  // and an approved WFH day only the owner tier can undo. Mirrors the server's rule so the
+  // button only shows when it will actually work.
+  const canCancelApproved = (l) =>
+    !!l && l.status === 'APPROVED'
+    && String(l.user?.id ?? l.user) !== String(me?.id)
+    && (!isWFHType(l.type) || me?.isOwner);
 
   const open = (row) => {
     setNote('');
@@ -137,7 +161,14 @@ export function RequestsQueue() {
               </Button>
             </div>
           ) : (
-            <Button variant="outline" onClick={() => setViewing(null)}>Close</Button>
+            <div className="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              {canCancelApproved(viewing) ? (
+                <Button variant="ghost" className="mr-auto text-destructive" onClick={() => setCancelling(viewing)} disabled={cancelMut.isPending}>
+                  <X className="size-4" /> Cancel approved leave
+                </Button>
+              ) : null}
+              <Button variant="outline" onClick={() => setViewing(null)}>Close</Button>
+            </div>
           )
         }
       >
@@ -156,6 +187,20 @@ export function RequestsQueue() {
         ) : null}
       </LeaveDetailDialog>
 
+      <ConfirmDialog
+        open={!!cancelling}
+        onOpenChange={(o) => (!o ? setCancelling(null) : null)}
+        title="Cancel this approved leave?"
+        description={
+          cancelling
+            ? `${cancelling.user?.name}'s ${requestTypeLabel(cancelling.type)} (${formatRange(cancelling.startYMD, cancelling.endYMD)}) will be cancelled — the balance goes back and those days stop being marked on leave.`
+            : ''
+        }
+        tone="destructive"
+        confirmLabel="Cancel leave"
+        loading={cancelMut.isPending}
+        onConfirm={() => cancelling && cancelMut.mutate(cancelling.id)}
+      />
     </div>
   );
 }

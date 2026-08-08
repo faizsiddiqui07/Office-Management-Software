@@ -14,7 +14,7 @@ import { leaveYearOf, currentLeaveYear } from '../lib/leaveYear.js';
 import { APP_LIVE_YMD } from '../lib/appLive.js';
 import { computeWorkingDays } from './workingDays.service.js';
 import { holidayYMDSet } from './holiday.service.js';
-import { reconcileLatePenalty } from './bonus.service.js';
+import { reconcileLatePenalty, clearAbsencePenalty, reconcileNoLeaveMonth } from './bonus.service.js';
 import { userWeekendDays } from '../lib/schedule.js';
 import { runTransaction } from '../lib/transaction.js';
 
@@ -35,6 +35,19 @@ function httpError(status, code, message) {
   e.status = status;
   e.code = code;
   return e;
+}
+
+/** The YYYY-MM months a date range touches, inclusive (usually one, two if it straddles). */
+function monthsBetween(startYMD, endYMD) {
+  const out = [];
+  let ym = String(startYMD).slice(0, 7);
+  const end = String(endYMD).slice(0, 7);
+  while (ym <= end) {
+    out.push(ym);
+    const [y, m] = ym.split('-').map(Number);
+    ym = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
+  }
+  return out;
 }
 
 /**
@@ -922,11 +935,29 @@ export async function decideLeave(approver, id, decision, note, { replaceAttenda
     return fresh;
   });
 
-  // A half-day never carries a late penalty. If they checked in late for the worked half
-  // before this approval, the -1 is already on the ledger — take it back now (best-effort,
-  // post-commit like every other bonus hook; the status was already fixed in the txn).
-  if (!wfh && result.halfDay) {
-    try { await reconcileLatePenalty(result.user, result.startYMD, false); } catch (e) { console.error('half-day late reconcile failed', e?.message); }
+  // Points reconciliation for an approved leave (best-effort, post-commit like every other
+  // bonus hook). WFH is a worked day — none of this applies to it.
+  if (!wfh) {
+    // A half-day never carries a late penalty. If they checked in late for the worked half
+    // before this approval, the -1 is already on the ledger — take it back (status was
+    // already fixed to PRESENT inside the txn).
+    if (result.halfDay) {
+      try { await reconcileLatePenalty(result.user, result.startYMD, false); } catch (e) { console.error('half-day late reconcile failed', e?.message); }
+    }
+    // L1: a day that is now on leave is no longer an absence — drop any absent penalty the
+    // daily scan wrote for it. Backdated sick leave is the common case: the scan had
+    // already marked the day absent before the request came in.
+    const { workingDates } = computeWorkingDays({ fromYMD: result.startYMD, toYMD: result.endYMD, halfDay: result.halfDay, weekendDays: ownerWeekends, holidays });
+    for (const ymd of workingDates) {
+      // eslint-disable-next-line no-await-in-loop
+      try { await clearAbsencePenalty(result.user, ymd); } catch (e) { console.error('leave absence-clear failed', e?.message); }
+    }
+    // L2: the month(s) this leave covers are no longer "no leave taken" — re-decide that
+    // award for any month already rolled up (a no-op for the current/future month).
+    for (const m of monthsBetween(result.startYMD, result.endYMD)) {
+      // eslint-disable-next-line no-await-in-loop
+      try { await reconcileNoLeaveMonth(result.user, m); } catch (e) { console.error('no-leave reconcile (approve) failed', e?.message); }
+    }
   }
 
   await notify({
@@ -1150,6 +1181,15 @@ export async function cancelLeave(viewer, id) {
     await fresh.save({ session });
     return fresh;
   });
+
+  // L2: cancelling may make a past month leave-free again — re-decide its no-leave award
+  // (a no-op for the current/future month). WFH was never leave, so it never affected it.
+  if (!isWFH(result.type)) {
+    for (const m of monthsBetween(result.startYMD, result.endYMD)) {
+      // eslint-disable-next-line no-await-in-loop
+      try { await reconcileNoLeaveMonth(result.user, m); } catch (e) { console.error('no-leave reconcile (cancel) failed', e?.message); }
+    }
+  }
 
   // Belt and braces: the pending "approve this" was normally cleared when this was
   // approved, but clear again so cancelling an approved leave never leaves one behind.
