@@ -43,7 +43,7 @@ const Pts = ({ n }) => <span className={n < 0 ? 'font-medium text-destructive' :
 const SOURCE_LABEL = {
   auto_task: 'Assigned task',
   auto_forward: 'Forwarded a task',
-  auto_streak: 'Punctual week',
+  auto_streak: 'Punctual streak',
   auto_late: 'Late arrival',
   auto_ot: 'Overtime',
   auto_absent: 'Absent day',

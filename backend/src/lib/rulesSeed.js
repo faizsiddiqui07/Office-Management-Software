@@ -33,7 +33,7 @@ export const DEFAULT_RULE_SECTIONS = [
       { text: 'Your office hours: {workStart} to {workEnd}. This shows YOUR OWN shift — if your timing differs from the office default, your timing is what counts.' },
       { text: 'Check in when you arrive and check out when you leave, every working day, from the Attendance page.' },
       { text: 'Checking in after your start time{graceNote} counts as LATE. Each late arrival cuts −{lateArrivalPoints} point(s).' },
-      { text: 'A fully punctual week — Monday to Saturday, no unexcused late and no unexplained absence — earns +{streakPoints} points. Sundays, holidays, approved leave and WFH never break the week.' },
+      { text: 'Being on time 6 working days in a row earns +{streakPoints} points — and then the count starts again towards the next 6. A late arrival or an unexplained absence resets the count to 0, and the very next day starts a fresh one. Sundays, holidays, approved leave and WFH neither break the run nor count towards the 6.' },
       { text: 'Perfect attendance for the WHOLE month (no absents, no lates) earns +{perfectMonthPoints} bonus points when the month ends.' },
       { text: 'A working day with no attendance and no approved leave counts as ABSENT and cuts −{absentPoints} point(s). If you cannot come, apply for leave — never just skip.' },
     ],

@@ -108,6 +108,17 @@ const settingSchema = new mongoose.Schema(
       // YMD — the last day the absence scan actually FINISHED. Separate from the
       // throttle above so a failed run doesn't quietly declare its days done.
       lastAbsenceScan: { type: String, default: '' },
+      // One-time flag: the owner's 2026-08-08 overdue rule (-5 with no month floor, drip
+      // runs while a submission waits) back-filled the drip days the old scan skipped.
+      overdueRuleV2: { type: Boolean, default: false },
+      // One-time flag: weekly "punctual week" awards wiped and the whole history
+      // re-scored under the rolling 6-day streak rule (owner's call, 2026-08-08).
+      streakV2: { type: Boolean, default: false },
+      // YMD — the last day the rolling punctual-streak scan judged; it walks forward
+      // from here, so each day is classified exactly once.
+      lastStreakScan: { type: String, default: '' },
+      // Per-user rolling streak counters as of lastStreakScan: { userId: daysSoFar }.
+      streakRuns: { type: mongoose.Schema.Types.Mixed, default: {} },
     },
     // The four national holidays are put in once, on first boot. This flag is what
     // stops them coming back: delete Christmas and it stays deleted, instead of being

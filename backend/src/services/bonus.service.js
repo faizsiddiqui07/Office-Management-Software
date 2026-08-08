@@ -35,7 +35,7 @@ export const AUTO_RULES = [
   { key: 'assignedTaskOverdueDaily', label: 'Each extra day an assigned task stays overdue', hint: 'Per day after the first late mark, until done — approval-gated tasks until approved (tasks due from 1 Aug 2026)', sign: 'penalty' },
   { key: 'forwardOnTime', label: 'Forwarded a task, done on time', hint: 'For whoever passed the work down — when the chain finishes on time', sign: 'reward' },
   { key: 'forwardLate', label: 'Forwarded a task, done late', hint: 'For whoever passed the work down — when the chain finishes late', sign: 'penalty' },
-  { key: 'punctualStreak', label: 'Punctual week', hint: 'On time all week (Mon–Sat); leave / WFH / Sunday don’t break it', sign: 'reward' },
+  { key: 'punctualStreak', label: 'Punctual streak', hint: '6 on-time days in a row — Sunday/holiday/leave/WFH neither break nor count; a late or unexplained absence resets the count', sign: 'reward' },
   { key: 'lateArrival', label: 'Each late arrival', hint: 'Every day they check in late', sign: 'penalty' },
   { key: 'overtimeHour', label: 'Each hour of overtime', hint: 'Per full hour worked past the shift', sign: 'reward' },
   { key: 'absentDay', label: 'Each absent day', hint: 'A working day with no attendance and no leave', sign: 'penalty' },
@@ -223,7 +223,7 @@ export async function guide() {
       const meta = AUTO_RULES.find((x) => x.key === r.key);
       if (!meta || !r.points) return null;
       const signed = meta.sign === 'penalty' ? -Math.abs(r.points) : r.points;
-      const label = r.key === 'punctualStreak' ? 'Punctual week (on time all week)' : meta.label;
+      const label = r.key === 'punctualStreak' ? 'Punctual streak (6 days on time in a row)' : meta.label;
       return { label, points: signed };
     })
     .filter(Boolean);
@@ -530,10 +530,11 @@ export async function onAssignedTaskUndone(taskId) {
 }
 
 /**
- * After a check-in: a late arrival is penalised. The punctual-streak reward is NO LONGER
- * decided here — it's a full-week thing now (Mon–Sat), evaluated once the week closes in
- * runWeeklyStreak (called from the daily scan). Deciding it per check-in couldn't work:
- * a week whose last working day is a holiday/leave has no final check-in to trigger on.
+ * After a check-in: a late arrival is penalised. The punctual-streak reward is NOT
+ * decided here — the rolling 6-day count is evaluated once a day is over, in
+ * runRollingStreak (called from the daily scan). Deciding it per check-in couldn't work:
+ * a day can still turn into an absence-with-leave, and a run whose 6th day is followed
+ * by leave/holiday has no check-in to trigger on.
  */
 export async function onCheckIn(user, dateYMD, isLate) {
   const s = await Setting.getSingleton();
@@ -885,70 +886,93 @@ async function runMonthRollup(b, forMonth = null) {
   return target;
 }
 
-/** The most recent fully-finished Mon–Sat week (its Saturday falls before today). */
-function lastCompletedWeek() {
-  let end = prevDay(ymdInTz(new Date()));
-  for (let i = 0; i < 7 && dayOfWeekInTz(companyDayFromYMD(end)) !== 6; i += 1) end = prevDay(end);
-  return { start: addDays(end, -5), end }; // Monday … Saturday
-}
+// ── Rolling punctual streak (owner's rule, 2026-08-08) ───────────────────────
+// 6 on-time days in a row = one punctualStreak award, then the count starts over
+// (12 straight days = two awards). NOT tied to Mon–Sat weeks any more: an unexcused
+// late or an unexplained absence resets the count to 0 and the very NEXT day starts a
+// fresh one. Sundays/off-days, holidays, approved leave and WFH are NEUTRAL — they
+// neither break the run nor count towards the 6. An excused (on-duty) late counts as
+// an on-time day. The award is filed under the 6th day itself, so a run straddling a
+// month boundary simply pays in the month it completes — nothing resets at month end.
+const STREAK_LEN = 6;
 
 /**
- * Weekly punctual-week award. Once a Mon–Sat week is over, anyone who — across their OWN
- * working days that week — was never unexcused-late and never absent-without-leave earns
- * the `punctualStreak` points. Per the office rule, Sunday, holidays, approved leave and
- * WFH are all NEUTRAL: they never break the week (a full leave/WFH week still qualifies).
- * Only a late check-in or an unexplained no-show disqualifies. Awarded once per week
- * (dedup keyed on the week's Monday); the entry's month is the week-ending Saturday's.
- * Part-timers are judged on their own workdays inside the span; mid-week joiners / the
- * go-live week only on the days they actually had access.
+ * Judge every finished day since the last scan (up to YESTERDAY — today is still in
+ * progress) and extend/reset each person's running count, awarding on every 6th
+ * qualifying day. Counters + the watermark live on Setting.bonus (`streakRuns` /
+ * `lastStreakScan`), so each day is classified exactly once and a missed day is caught
+ * up on the next run. With no watermark it walks from go-live — which is exactly how
+ * the one-time V2 rebuild re-scores the whole history.
  */
-export async function runWeeklyStreak(b, week = null) {
+export async function runRollingStreak(b) {
   const pts = rulePoints(b, 'punctualStreak');
   if (!pts) return;
-  // Defaults to the week that just finished; a caller (the backfill) may name any week.
-  const { start, end } = week || lastCompletedWeek();
-  if (end < APP_LIVE_YMD) return; // the week ended before the system went live
-
+  const yesterday = prevDay(ymdInTz(new Date()));
+  if (yesterday < APP_LIVE_YMD) return;
   const s = await Setting.getSingleton();
-  const holidays = await holidayYMDSet(start, end);
-  const roster = (await User.find({ isActive: true }).select('name role employmentType schedule dateOfJoining')).filter((u) => can({ role: u.role }, 'markAttendance'));
-  const { included: users } = splitByJoining(roster, start, end);
-  if (!users.length) return;
+  const lastScan = s.bonus?.lastStreakScan || '';
+  const start = lastScan ? addDays(lastScan, 1) : APP_LIVE_YMD;
+  if (start > yesterday) return; // nothing new to judge
+  const runs = { ...(s.bonus?.streakRuns || {}) };
 
-  const recs = await Attendance.find({ date: { $gte: companyDayFromYMD(start), $lte: companyDayFromYMD(end) } }).select('user date status excused');
+  const holidays = await holidayYMDSet(start, yesterday);
+  const roster = (await User.find({ isActive: true }).select('name role employmentType schedule dateOfJoining')).filter((u) => can({ role: u.role }, 'markAttendance'));
+  const { included: users } = splitByJoining(roster, start, yesterday);
+  const recs = await Attendance.find({ date: { $gte: companyDayFromYMD(start), $lte: companyDayFromYMD(yesterday) } }).select('user date status excused');
   const recByUserDay = new Map(recs.map((r) => [`${r.user}|${ymdInTz(r.date)}`, r]));
-  const leaves = await LeaveRequest.find({ status: 'APPROVED', startYMD: { $lte: end }, endYMD: { $gte: start } }).select('user startYMD endYMD');
-  const monthOfAward = end.slice(0, 7); // week-ending Saturday's month
+  const leaves = await LeaveRequest.find({ status: 'APPROVED', startYMD: { $lte: yesterday }, endYMD: { $gte: start } }).select('user startYMD endYMD');
 
   for (const u of users) {
+    const uid = String(u._id);
     const startedOn = periodStartFor(u, start);
     const off = userWeekendDays(u, s);
-    let workingDays = 0;
-    let broke = false;
-    for (let d = start; d <= end; d = addDays(d, 1)) {
+    let count = Number(runs[uid]) || 0;
+    for (let d = start; d <= yesterday; d = addDays(d, 1)) {
       if (d < startedOn) continue; // before they had access (joiner / go-live)
       const dow = dayOfWeekInTz(companyDayFromYMD(d));
       if (off.includes(dow) || holidays.has(d)) continue; // Sunday / off-day / holiday → neutral
-      workingDays += 1;
-      const rec = recByUserDay.get(`${u._id}|${d}`);
-      const onLeave = leaves.some((l) => String(l.user) === String(u._id) && l.startYMD <= d && l.endYMD >= d);
-      if (rec) {
-        if (rec.status === 'LATE' && !rec.excused) { broke = true; break; } // an unexcused late breaks it
-        if (rec.status === 'ABSENT' && !onLeave) { broke = true; break; } // marked absent, no leave
-      } else if (!onLeave) {
-        broke = true; break; // no record and no approved leave = unexplained absence
+      const rec = recByUserDay.get(`${uid}|${d}`);
+      const onLeave = leaves.some((l) => String(l.user) === uid && l.startYMD <= d && l.endYMD >= d);
+      if (rec && (rec.status === 'WFH' || rec.status === 'ON_LEAVE')) continue; // neutral
+      if (rec && rec.status === 'LATE' && !rec.excused) { count = 0; continue; } // reset — next day starts fresh
+      if (!rec || rec.status === 'ABSENT') {
+        if (onLeave) continue; // approved leave → neutral
+        count = 0; continue; // unexplained absence → reset
       }
-      // PRESENT (on time), WFH, ON_LEAVE, or an approved-leave day → all fine
+      // PRESENT on time (or an excused, on-duty late) → one more day on the run.
+      count += 1;
+      if (count >= STREAK_LEN) {
+        // eslint-disable-next-line no-await-in-loop
+        await awardOnce(`auto_streak:${uid}:${d}`, { user: u._id, month: d.slice(0, 7), points: Math.abs(pts), reason: `Punctual streak · ${STREAK_LEN} days on time · ${d}`, source: 'auto_streak', earnedYMD: d });
+        count = 0; // the next run starts from scratch
+      }
     }
-    if (workingDays > 0 && !broke) {
-      // eslint-disable-next-line no-await-in-loop
-      // Label by the week-ENDING day (the Saturday this entry is filed under), not the
-      // Monday it started. A week that straddles a month boundary (e.g. Mon 27 Jul → Sat
-      // 1 Aug) is filed in the ending month; leading the label with the July Monday made
-      // an August entry read as if July had leaked into the August breakdown.
-      await awardOnce(`auto_streak:${u._id}:${start}`, { user: u._id, month: monthOfAward, points: Math.abs(pts), reason: `Punctual week ending ${end}`, source: 'auto_streak', earnedYMD: end });
-    }
+    runs[uid] = count;
   }
+
+  s.bonus.streakRuns = runs;
+  s.bonus.lastStreakScan = yesterday;
+  s.markModified('bonus.streakRuns'); // Mixed — mongoose can't see inside it
+  await s.save();
+  Setting.invalidateCache();
+}
+
+/**
+ * One-time switch to the rolling rule (owner's call, 2026-08-08): every weekly
+ * "punctual week" entry is removed and the whole history — July included — is re-scored
+ * by the rolling scan (clearing the watermark makes its very next run walk go-live →
+ * yesterday). The old relabel/date-fix migrations died with the rows they repaired.
+ */
+async function rebuildStreakV2() {
+  const s = await Setting.getSingleton();
+  if (s.bonus?.streakV2) return;
+  await PointEntry.deleteMany({ source: 'auto_streak' });
+  s.bonus.streakRuns = {};
+  s.bonus.lastStreakScan = '';
+  s.bonus.streakV2 = true;
+  s.markModified('bonus.streakRuns');
+  await s.save();
+  Setting.invalidateCache();
 }
 
 /**
@@ -1012,14 +1036,11 @@ export async function backfillMonth(month) {
   // 2. Absences — the same scan the daily job runs, pointed at this month.
   await scanAbsences(b, start, end);
 
-  // 3. Punctual weeks: every Mon–Sat week whose SATURDAY lands in this month, which is
-  //    the month such an award belongs to (a week may straddle two months).
-  let sat = start;
-  while (dayOfWeekInTz(companyDayFromYMD(sat)) !== 6) sat = addDays(sat, 1);
-  for (; sat <= end; sat = addDays(sat, 7)) {
-    // eslint-disable-next-line no-await-in-loop
-    await runWeeklyStreak(b, { start: addDays(sat, -5), end: sat });
-  }
+  // 3. Punctual streaks are NOT re-run here: the rolling scan owns them end-to-end via
+  //    its own watermark (each day is classified exactly once; a backfilled week would
+  //    double-judge days the scan has already counted). If attendance for a past day was
+  //    corrected and its streaks must be re-judged, clear bonus.lastStreakScan (and
+  //    delete the affected auto_streak entries) so the next scan re-walks from go-live.
 
   // 4. Assigned tasks finished in the month — scored by the same hook the live path uses,
   //    so on-time/late, grace days and the forwarded-copy rule all behave identically.
@@ -1106,12 +1127,10 @@ async function repairEarnedDates() {
     const key = r.dedupeKey || '';
     const day = key.match(/:(\d{4}-\d{2}-\d{2})$/);
     const mon = key.match(/:(\d{4}-\d{2})$/);
-    if (r.source === 'auto_streak' && day) {
-      // A streak key ends in the week's MONDAY, but the award belongs to the week-ending
-      // Saturday (Monday + 5) — the day it is filed under. Using the Monday would land a
-      // straddling week in the wrong month.
-      ymd = addDays(day[1], 5);
-    } else if (day) {
+    if (day) {
+      // Keys end in the day the award was earned — a rolling streak's 6th on-time day,
+      // a late/absent/drip day. (The old weekly-streak keys ended in a MONDAY and needed
+      // +5; those rows were wiped by the streak V2 rebuild.)
       [, ymd] = day;
     } else if (r.source === 'auto_task' && taskById.has(String(r.taskRef))) {
       const t = taskById.get(String(r.taskRef));
@@ -1197,52 +1216,10 @@ async function seedForwardRules() {
  * drip works out of the box - editable/removable in Settings like any other rule, and the
  * flag stops it re-appearing after leadership removes it.
  */
-/**
- * One-time: rewrite existing punctual-week labels to read by the week-ENDING day, matching
- * the new format. Old rows read "Punctual week · <Monday> to <Saturday>", which made a
- * month-straddling week look like it belonged to the previous month in the breakdown; this
- * aligns them to their earnedYMD (the Saturday they're already filed under). Guarded by a
- * flag so it runs once and never again.
- */
-async function relabelStreakEntries() {
-  const s = await Setting.getSingleton();
-  if (s.bonus?.streakLabelFixed) return;
-  await PointEntry.updateMany({ source: 'auto_streak', earnedYMD: { $ne: '' } }, [
-    { $set: { reason: { $concat: ['Punctual week ending ', '$earnedYMD'] } } },
-  ]);
-  s.bonus.streakLabelFixed = true;
-  await s.save();
-  Setting.invalidateCache();
-}
-
-/**
- * One-time: put every punctual-week entry's DATE on its real week-ending Saturday.
- *
- * A streak's dedupe key ends in the week's MONDAY. An older repair pass copied that
- * Monday into earnedYMD (and the go-live clamp then dragged the first week's onto
- * 1 July) — so the breakdown showed "Punctual week ending 2026-07-01" (a Wednesday) and
- * "ending 2026-07-13" (a Monday). The award itself, its month and its points were always
- * right; only the displayed day was wrong. This recomputes earnedYMD = key-Monday + 5
- * (the Saturday) and rewrites the label to match. Month is deliberately untouched —
- * totals and carry-over must not move.
- */
-async function fixStreakDates() {
-  const s = await Setting.getSingleton();
-  if (s.bonus?.streakDatesFixed) return;
-  const rows = await PointEntry.find({ source: 'auto_streak' }).select('dedupeKey earnedYMD reason');
-  for (const r of rows) {
-    const mon = (r.dedupeKey || '').match(/(\d{4}-\d{2}-\d{2})$/)?.[1];
-    if (!mon) continue;
-    const sat = addDays(mon, 5);
-    if (r.earnedYMD !== sat || r.reason !== `Punctual week ending ${sat}`) {
-      // eslint-disable-next-line no-await-in-loop
-      await PointEntry.updateOne({ _id: r._id }, { $set: { earnedYMD: sat, reason: `Punctual week ending ${sat}` } });
-    }
-  }
-  s.bonus.streakDatesFixed = true;
-  await s.save();
-  Setting.invalidateCache();
-}
+// (The old punctual-week relabel/date-fix migrations are gone: the rolling-streak V2
+// rebuild deletes every weekly row they existed to repair, and their key math — "the
+// key ends in the week's Monday" — would corrupt the new keys, which end in the day
+// the 6th on-time day landed. Their flags remain in old databases, inert.)
 
 async function seedOverdueDripRule() {
   const s = await Setting.getSingleton();
@@ -1373,8 +1350,6 @@ export async function maybeRunDaily() {
   try { await catchUpHistory(b); } catch (e) { console.error('history catch-up failed', e?.message); }
   try { await seedForwardRules(); } catch (e) { console.error('forward-rule seed failed', e?.message); }
   try { await seedOverdueDripRule(); } catch (e) { console.error('overdue-drip seed failed', e?.message); }
-  try { await relabelStreakEntries(); } catch (e) { console.error('streak relabel failed', e?.message); }
-  try { await fixStreakDates(); } catch (e) { console.error('streak date fix failed', e?.message); }
   try { await rescoreAssignedTasks(b); } catch (e) { console.error('task re-score failed', e?.message); }
   const today = ymdInTz(new Date());
   if (b.lastPenaltyRun === today) return;
@@ -1403,8 +1378,9 @@ export async function maybeRunDaily() {
   // completion date changed directly in the database is reflected without waiting for an
   // in-app edit. (In-app edits already re-score at the moment they happen.)
   try { await rescoreAllDoneAssigned(); } catch (e) { console.error('daily task re-sync failed', e?.message); }
-  // Weekly punctual-week award — dedup-keyed on the week's Monday, so a daily run is safe.
-  try { await runWeeklyStreak(b); } catch (e) { console.error('weekly streak failed', e?.message); }
+  // Rolling 6-day punctual streak — watermarked, so a daily run judges each day once.
+  try { await rebuildStreakV2(); } catch (e) { console.error('streak v2 rebuild failed', e?.message); }
+  try { await runRollingStreak(b); } catch (e) { console.error('rolling streak failed', e?.message); }
   try {
     await scanAbsences(b, scanFrom);
     // Only now are those days genuinely accounted for.
