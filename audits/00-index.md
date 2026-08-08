@@ -10,8 +10,8 @@
 |---|---|---|---|---|---|
 | 01 | Dashboard | [01-dashboard.md](01-dashboard.md) | ✅ RED fixed | `f0f260c` (pushed) | P1–P14 perf, 3 security-lite, UX+features role-wise |
 | 02 | To-Do / Tasks | [02-todo.md](02-todo.md) | ✅ RED fixed (3 owner-reverted) | `30fa00e` fix, `ff41ece` revert, `b7e7a2b` smart warning (pushed) | T1–T10 perf, 5 security ⚠, UX+features role-wise, 1 open sawaal (eligibility UI) |
-| 03 | Attendance | [03-attendance.md](03-attendance.md) | ✅ RED fixed (A3 intentionally nahi) + 🎂 birthday feature | **local, push pending** | A8/A9 security, A10/A11 perf, UX+features role-wise |
-| 04 | Leaves | — | ⏭️ NEXT | — | — |
+| 03 | Attendance | [03-attendance.md](03-attendance.md) | ✅ RED fixed (A3 intentionally nahi) + 🎂 birthday feature | commits `a324595`/`19e99a1`/`3cde85b` + zip (local, push pending) | A8/A9 security, A10/A11 perf, UX+features role-wise |
+| 04 | Leaves | [04-leaves.md](04-leaves.md) | 🔴 audited, 3 RED VERIFIED, awaiting owner explain/approve; **verify round incomplete (session limit)** | none yet | 3 RED (L1/L2/L3), ~7 security + 4 perf + 7 cross-edge + 13 UX all UNVERIFIED, features role-wise |
 | 05 | Rewards | — | queued | — | — |
 | 06 | My Summary | — | queued | — | — |
 | 07 | Reports | — | queued | — | — |
@@ -24,13 +24,13 @@
 
 Har pattern ke aage: kahan mila ✔, kahan check karna baaki ⏳.
 
-1. **State change pe points reverse/apply nahi hote** — To-Do ✔ (undo/reopen/delete), Attendance ✔ (A1/A2/A7 — ab `reconcileLatePenalty`/`clearAbsencePenalty` helpers hain). ⏳ Leaves (cancel/approve pe kya hota hai?), Rewards (manual entries), Expenses.
+1. **State change pe points reverse/apply nahi hote** — To-Do ✔ (undo/reopen/delete), Attendance ✔ (A1/A2/A7 — ab `reconcileLatePenalty`/`clearAbsencePenalty` helpers hain), **Leaves ✔✔ (L1: backdated leave auto_absent clear nahi hota; L2: no-leave bonus reconcile nahi hota — leave.service koi bonus function import hi nahi karta)**. ⏳ Rewards (manual entries), Expenses.
 2. **isActive / day-type guards missing** — Dashboard ✔ (leaderboards/whosOut), To-Do ✔ (scanOverdueTasks deactivated users ko penalise karta hai), Attendance ✔ (A4/A5). ⏳ Team, Reports, Rewards.
 3. **PII over-exposure in list payloads** — Attendance ✔ (A8: GPS/IP/UA/email). ⏳ Team, Users, Reports, Visitors ke list endpoints.
 4. **$nin(forwardedFrom) unbounded growth** — Dashboard ✔ (P4), To-Do ✔ (source: listTasks/eodDigest/badges) — ek `wasForwarded` flag teeno theek karega. ⏳ consolidated me ek saath.
 5. **Missing indexes** — Dashboard P5 + To-Do T9 → ek index migration me: `LeaveRequest {status,endYMD}/{status,startYMD}`, `Task {status,assignedBy,completedAt}`, `submittedAt`, `dueYMD`, `completedAt`. ⏳ har naye page ke queries se list badhao.
 6. **Polling / standing load budget** — Dashboard P1/P6/P8/P11 (app-open burst, EOD 5-min, points badge, badges+notifications 60s), To-Do T1 (2×20s limit=10000 — sabse bada M0 burner). ⏳ ek app-wide polling review consolidated me.
-7. **Sync heavy work request path pe / write-on-GET** — Dashboard ✔ (balance write-on-read fixed), Attendance ✔ (A10 settings-save recompute). ⏳ Settings, Rules seed, announcements publish.
+7. **Sync heavy work request path pe / write-on-GET** — Dashboard ✔ (balance write-on-read fixed), Attendance ✔ (A10 settings-save recompute), **Leaves ⚠ (GET /leaves/balance + GET /users/:id/leave-balance ab bhi getOrCreateBalance = write path; dashboard fix yahan reh gaya — UNVERIFIED)**. ⏳ Settings, Rules seed, announcements publish.
 8. **Device-clock vs server-time** — Dashboard ✔ (fixed: serverNow offset), Attendance ✔ (A6 fixed). ⏳ koi bhi naya live ticker.
 9. **Period/month math har jagah alag** (computePeriod vs manual) — Dashboard ✔ note. ⏳ Reports, My Summary, Rewards boundaries.
 10. **Stale comments/docs vs code** — Rules page ✔ (pehle bite kiya), To-Do ✔ (3 stale "submit day" comments). ⏳ har page pe.
