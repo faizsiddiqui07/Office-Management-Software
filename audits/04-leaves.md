@@ -11,7 +11,10 @@
 > **L3 fix:** `RequestsQueue` me APPROVED leave ke detail footer me approver ke liye **"Cancel approved leave"** button + confirm dialog (self-cancel + WFH-owner rule frontend pe bhi mirror; backend pehle se enforce karta hai).
 > **Verified:** L1+L2 isolated-DB test (10 checks incl. current-month guard + cancel-restores) + L3 website build clean.
 >
-> **⚠️ Do RELATED edges — owner se pucha, abhi NAHI kiye (owner decide karega):** (a) **perfect-attendance (+20)** bhi leave approve/cancel se reconcile nahi hota — backdated leave ek absent din ko ON_LEAVE bana de to +20 milna chahiye (abhi nahi milta); cancel pe hatna chahiye. (b) **cancel-reverse-absence** — approved past leave cancel karne par din wapas ABSENT ho jaata hai par `auto_absent` −N wapas nahi lagta (L1 ne approve pe hataya tha). Dono same class; owner ki marzi pe add karenge.
+> **✅ Do RELATED edges bhi FIX ho gaye (2026-08-08, owner-approved "dono edge fix kr do"):**
+> **(a) Perfect-attendance (+20) reconcile:** naya `reconcilePerfectMonth(userId, month)` (bonus.service, write-or-delete, past months only, runMonthRollup ki exact perfect logic mirror) — approve pe agar absent din ON_LEAVE ban ke mahina perfect ho jaaye to +20 milta hai; cancel pe absent wapas aaye to +20 hat jaata hai. `decideLeave` + `cancelLeave` dono post-commit call karte hain.
+> **(b) Cancel-reverse-absence:** naya `reconcileAbsence(userId, dateYMD)` (bonus.service, scanAbsences ki ek iteration mirror) — approved past leave cancel pe har reverted working-din ka `auto_absent` −N wapas lag jaata hai (holiday/weekend/worked/today+future skip). `cancelLeave` post-commit har range-din pe call karta hai.
+> **Verified:** isolated-DB test — approve→+20 awarded + −10 cleared; cancel→+20 removed + −10 re-applied. All pass.
 
 ## 🔴 RED — VERIFIED → ✅ FIXED (3)
 

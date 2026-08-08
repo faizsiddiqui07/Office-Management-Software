@@ -14,7 +14,7 @@ import { leaveYearOf, currentLeaveYear } from '../lib/leaveYear.js';
 import { APP_LIVE_YMD } from '../lib/appLive.js';
 import { computeWorkingDays } from './workingDays.service.js';
 import { holidayYMDSet } from './holiday.service.js';
-import { reconcileLatePenalty, clearAbsencePenalty, reconcileNoLeaveMonth } from './bonus.service.js';
+import { reconcileLatePenalty, clearAbsencePenalty, reconcileNoLeaveMonth, reconcilePerfectMonth, reconcileAbsence } from './bonus.service.js';
 import { userWeekendDays } from '../lib/schedule.js';
 import { runTransaction } from '../lib/transaction.js';
 
@@ -35,6 +35,13 @@ function httpError(status, code, message) {
   e.status = status;
   e.code = code;
   return e;
+}
+
+/** A YYYY-MM-DD date shifted by n days (UTC-safe string math). */
+function addDaysYMD(ymd, n) {
+  const d = new Date(`${ymd}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
 }
 
 /** The YYYY-MM months a date range touches, inclusive (usually one, two if it straddles). */
@@ -952,11 +959,15 @@ export async function decideLeave(approver, id, decision, note, { replaceAttenda
       // eslint-disable-next-line no-await-in-loop
       try { await clearAbsencePenalty(result.user, ymd); } catch (e) { console.error('leave absence-clear failed', e?.message); }
     }
-    // L2: the month(s) this leave covers are no longer "no leave taken" — re-decide that
-    // award for any month already rolled up (a no-op for the current/future month).
+    // L2 + perfect-attendance: the month(s) this leave covers may now qualify differently
+    // — re-decide the no-leave AND perfect-attendance awards for any rolled-up month (an
+    // absent day turned ON_LEAVE can newly EARN perfect attendance). No-op for the current
+    // month. Runs post-commit, so the attendance change is already on the sheet.
     for (const m of monthsBetween(result.startYMD, result.endYMD)) {
       // eslint-disable-next-line no-await-in-loop
       try { await reconcileNoLeaveMonth(result.user, m); } catch (e) { console.error('no-leave reconcile (approve) failed', e?.message); }
+      // eslint-disable-next-line no-await-in-loop
+      try { await reconcilePerfectMonth(result.user, m); } catch (e) { console.error('perfect reconcile (approve) failed', e?.message); }
     }
   }
 
@@ -1182,12 +1193,24 @@ export async function cancelLeave(viewer, id) {
     return fresh;
   });
 
-  // L2: cancelling may make a past month leave-free again — re-decide its no-leave award
-  // (a no-op for the current/future month). WFH was never leave, so it never affected it.
+  // Points reconciliation after a cancel (best-effort, post-commit). WFH was a worked day,
+  // never leave — none of this applies to it.
   if (!isWFH(result.type)) {
+    // A day that reverted from ON_LEAVE back to nothing is an absence again — put the
+    // −absentDay back where it's due (undoes L1's clear-on-approve). reconcileAbsence
+    // itself skips holidays / off-days / days with attendance / today+future, so walking
+    // every calendar day of the range is safe.
+    for (let ymd = result.startYMD; ymd <= result.endYMD; ymd = addDaysYMD(ymd, 1)) {
+      // eslint-disable-next-line no-await-in-loop
+      try { await reconcileAbsence(result.user, ymd); } catch (e) { console.error('absence reconcile (cancel) failed', e?.message); }
+    }
+    // The month(s) may now be leave-free again (no-leave earned) and/or have an absence
+    // back (perfect attendance spoiled) — re-decide both for any rolled-up month.
     for (const m of monthsBetween(result.startYMD, result.endYMD)) {
       // eslint-disable-next-line no-await-in-loop
       try { await reconcileNoLeaveMonth(result.user, m); } catch (e) { console.error('no-leave reconcile (cancel) failed', e?.message); }
+      // eslint-disable-next-line no-await-in-loop
+      try { await reconcilePerfectMonth(result.user, m); } catch (e) { console.error('perfect reconcile (cancel) failed', e?.message); }
     }
   }
 

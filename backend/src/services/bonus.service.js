@@ -603,6 +603,89 @@ export async function reconcileNoLeaveMonth(userId, month) {
   }
 }
 
+/**
+ * Bring the "perfect attendance all month" award for one PAST month back in line after a
+ * leave changes the sheet. Approving a backdated leave turns an ABSENT day into ON_LEAVE
+ * (neutral), which can make an otherwise-spoiled month perfect; cancelling a leave turns
+ * the day back into an absence, which spoils it. The month rollup decided this once when
+ * the month ended, so without this the award would be stale in either direction. Only a
+ * month that is genuinely OVER is touched. Mirrors runMonthRollup's perfect-attendance
+ * logic exactly (roster filter, own working days, off-days/holidays neutral, unexcused
+ * late or absent spoils it). Write-or-delete.
+ */
+export async function reconcilePerfectMonth(userId, month) {
+  if (!/^\d{4}-\d{2}$/.test(String(month || '')) || month >= currentMonth()) return;
+  const s = await Setting.getSingleton();
+  const b = s.bonus || {};
+  const key = `auto_perfect:${userId}:${month}`;
+  const pts = rulePoints(b, 'perfectAttendanceMonth');
+  const user = await User.findById(userId).select('role employmentType schedule dateOfJoining');
+  // Only roster members (self-track attendance) are ever judged — same as the rollup.
+  if (!b.enabled || !pts || !user || !can({ role: user.role }, 'markAttendance')) {
+    await PointEntry.deleteMany({ dedupeKey: key });
+    return;
+  }
+  const from = `${month}-01`;
+  const lastDay = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate();
+  const monthEnd = `${month}-${String(lastDay).padStart(2, '0')}`;
+  const startedOn = periodStartFor(user, from);
+  const holidays = await holidayYMDSet(from, monthEnd);
+  const recs = await Attendance.find({ user: userId, date: { $gte: companyDayFromYMD(from), $lte: companyDayFromYMD(monthEnd) } }).select('date status excused');
+  const byDay = new Map(recs.map((r) => [ymdInTz(r.date), r]));
+  const offDays = userWeekendDays(user, s);
+  let absent = 0;
+  let lateBad = 0;
+  let workingDays = 0;
+  for (let d = 1; d <= lastDay; d += 1) {
+    const ymd = `${month}-${String(d).padStart(2, '0')}`;
+    if (ymd < startedOn) continue; // before they joined
+    const dow = dayOfWeekInTz(companyDayFromYMD(ymd));
+    if (offDays.includes(dow) || holidays.has(ymd)) continue;
+    workingDays += 1;
+    const rec = byDay.get(ymd);
+    if (!rec) absent += 1;
+    else if (rec.status === 'LATE' && !rec.excused) lateBad += 1;
+    else if (rec.status === 'ABSENT') absent += 1;
+  }
+  if (workingDays > 0 && absent === 0 && lateBad === 0) {
+    await awardOnce(key, { user: userId, month, points: Math.abs(pts), reason: 'Perfect attendance all month', source: 'auto_perfect', earnedYMD: monthEnd });
+  } else {
+    await PointEntry.deleteMany({ dedupeKey: key });
+  }
+}
+
+/**
+ * Re-decide a single day's absence penalty — used when a leave is CANCELLED and the day
+ * reverts from ON_LEAVE back to nothing. If it's a finished PAST working day with no
+ * attendance and no other approved leave, the −absentDay is put back (the person really
+ * was absent); otherwise any stray entry is cleared. Mirrors one iteration of
+ * scanAbsences. Never touches today/future (not absent yet) or pre-go-live days.
+ */
+export async function reconcileAbsence(userId, dateYMD) {
+  const s = await Setting.getSingleton();
+  const b = s.bonus || {};
+  const key = `auto_absent:${userId}:${dateYMD}`;
+  const today = ymdInTz(new Date());
+  const pts = rulePoints(b, 'absentDay');
+  // Only a finished past day can be an absence; nothing before go-live is tracked.
+  if (!b.enabled || !pts || dateYMD >= today || dateYMD < APP_LIVE_YMD) {
+    await PointEntry.deleteMany({ dedupeKey: key });
+    return;
+  }
+  const user = await User.findById(userId).select('role employmentType schedule dateOfJoining');
+  const holidays = await holidayYMDSet(dateYMD, dateYMD);
+  const dow = dayOfWeekInTz(companyDayFromYMD(dateYMD));
+  const rec = await Attendance.findOne({ user: userId, date: companyDayFromYMD(dateYMD) }).select('_id');
+  const onLeave = await LeaveRequest.findOne({ user: userId, status: 'APPROVED', type: { $ne: 'WFH' }, startYMD: { $lte: dateYMD }, endYMD: { $gte: dateYMD } }).select('_id');
+  const isAbsent = user && can({ role: user.role }, 'markAttendance') && hadAccessOn(user, dateYMD)
+    && !holidays.has(dateYMD) && !userWeekendDays(user, s).includes(dow) && !rec && !onLeave;
+  if (isAbsent) {
+    await awardOnce(key, { user: userId, month: dateYMD.slice(0, 7), points: -Math.abs(pts), reason: `Absent · ${dateYMD}`, source: 'auto_absent', earnedYMD: dateYMD });
+  } else {
+    await PointEntry.deleteMany({ dedupeKey: key });
+  }
+}
+
 /** A human overtime total: "9h 46m", "18h", "46m". */
 function otLabel(min) {
   const h = Math.floor(min / 60);
