@@ -31,8 +31,8 @@ function httpError(status, code, message) {
  */
 export const AUTO_RULES = [
   { key: 'assignedTaskOnTime', label: 'Assigned task done on time', hint: 'Only tasks someone assigns — not self-made', sign: 'reward' },
-  { key: 'assignedTaskLate', label: 'Assigned task done or left late', hint: 'After the due date + grace days', sign: 'penalty' },
-  { key: 'assignedTaskOverdueDaily', label: 'Each extra day an assigned task stays overdue', hint: 'Per day after the first late mark, until it is finished', sign: 'penalty' },
+  { key: 'assignedTaskLate', label: 'Assigned task done or left late', hint: 'Cut the moment the due date passes unfinished — done late or not done at all', sign: 'penalty' },
+  { key: 'assignedTaskOverdueDaily', label: 'Each extra day an assigned task stays overdue', hint: 'Per day after the first late mark, until done — approval-gated tasks until approved (tasks due from 1 Aug 2026)', sign: 'penalty' },
   { key: 'forwardOnTime', label: 'Forwarded a task, done on time', hint: 'For whoever passed the work down — when the chain finishes on time', sign: 'reward' },
   { key: 'forwardLate', label: 'Forwarded a task, done late', hint: 'For whoever passed the work down — when the chain finishes late', sign: 'penalty' },
   { key: 'punctualStreak', label: 'Punctual week', hint: 'On time all week (Mon–Sat); leave / WFH / Sunday don’t break it', sign: 'reward' },
@@ -481,6 +481,11 @@ export async function onAssignedTaskDone(task) {
   // judged on the real day.
   const completedYMD = rawYMD < APP_LIVE_YMD ? APP_LIVE_YMD : rawYMD;
   const late = task.dueYMD && rawYMD > addDays(task.dueYMD, b.graceDays || 0);
+  // The cut happens when the due date passes (owner's rule): a LATE result is filed under
+  // that day — same day/month as the -5 overdue mark it replaces — so finishing a stale
+  // task months later never drags the penalty into a new month. On-time results are filed
+  // under the completion day as before.
+  const filedYMD = late ? overdueDayFor(task.dueYMD, b.graceDays) : completedYMD;
 
   for (const copy of copies) {
     // Defence in depth: only FINISHED copies are paid. The task service blocks closing a
@@ -510,12 +515,12 @@ export async function onAssignedTaskDone(task) {
     // eslint-disable-next-line no-await-in-loop
     await awardOnce(key, {
       user: copy.owner,
-      month: completedYMD.slice(0, 7),
+      month: filedYMD.slice(0, 7),
       points: late ? -Math.abs(pts) : Math.abs(pts),
       reason: `${what}: ${copy.title || task.title}`,
       source,
       taskRef: copy._id,
-      earnedYMD: completedYMD,
+      earnedYMD: filedYMD,
     }, { replace: true }); // replace: the finished result supersedes any overdue penalty
   }
 }
@@ -643,10 +648,19 @@ export async function recomputeUserMonthOvertime(userId, month) {
 
 // ── Daily scans + month rollup (run opportunistically, no cron) ───────────────
 
-// The per-day overdue drip only counts days from August 2026 - the month the rule was
-// introduced. It never back-fills: each day's entry is written on that day itself, so
-// July (or any earlier month) can never grow new penalties.
+// The per-day overdue drip only counts for tasks DUE from August 2026 — the month the
+// drip rule was introduced. The one-time -5 overdue mark has NO floor (owner's rule,
+// 2026-08-08): any assigned task, whatever its due month, is marked the moment its due
+// date passes unfinished.
 const DRIP_FLOOR_YMD = '2026-08-01';
+
+/** The day a task became overdue (due + grace + 1), never before go-live. The -5 mark
+ *  and a late completion are both filed under THIS day — the cut happens when the due
+ *  date passes, not whenever the task is eventually finished or the scan gets to it. */
+function overdueDayFor(dueYMD, graceDays) {
+  const d = addDays(dueYMD, (graceDays || 0) + 1);
+  return d < APP_LIVE_YMD ? APP_LIVE_YMD : d;
+}
 
 async function scanOverdueTasks(b) {
   const pts = rulePoints(b, 'assignedTaskLate');
@@ -655,17 +669,12 @@ async function scanOverdueTasks(b) {
   const today = ymdInTz(new Date());
   // Work that was passed further down is now somebody else's to deliver (the copy left
   // behind stays PENDING until the bottom finishes); the leaderboard excludes these and
-  // the penalties have to agree with it. Submitted-for-approval tasks are skipped too:
-  // the assignee did the work, so neither the mark nor the drip runs while a review sits
-  // with the approver.
+  // the penalties have to agree with it. Submitted-for-approval tasks are NOT skipped
+  // (owner's rule, 2026-08-08): an approval-gated task counts as unfinished until it is
+  // APPROVED — the mark and the drip both keep running while a review sits unapproved,
+  // whoever's desk it is on. Only a task with no due date is outside this rule.
   const forwardedParentIds = await Task.distinct('forwardedFrom', { forwardedFrom: { $ne: null } });
-  // Only tasks DUE on/after the August floor are penalised AT ALL. A task due in July is
-  // exempt entirely — no overdue mark AND no drip — because this whole overdue-pending
-  // penalty (the -5 for "not done by the due date" and the per-day -1 drip) was introduced
-  // from August; work that was already due in July predates the rule and must not be
-  // dinged for it now. (A July task finished LATE still gets the ordinary late-completion
-  // penalty via onAssignedTaskDone — that is a separate, pre-existing rule.)
-  const tasks = await Task.find({ assignedBy: { $ne: null }, status: 'PENDING', dueYMD: { $gte: DRIP_FLOOR_YMD }, submittedAt: null, _id: { $nin: forwardedParentIds } }).select('owner dueYMD title assignedBy collaborators forwardedFrom');
+  const tasks = await Task.find({ assignedBy: { $ne: null }, status: 'PENDING', dueYMD: { $nin: ['', null] }, _id: { $nin: forwardedParentIds } }).select('owner dueYMD title assignedBy collaborators forwardedFrom');
   const ownerIds = tasks.length ? await ownerTierIds() : new Set();
   const chainMemo = new Map();
   for (const t of tasks) {
@@ -684,15 +693,21 @@ async function scanOverdueTasks(b) {
     if (pts && !marked) {
       // Same key the completion award uses, so the task's MAIN auto entry is replaced by
       // the result once it's finished. (The drips below are separate per-day entries.)
+      // Filed under the day the due date passed — a July-due task's -5 lands in July,
+      // however late the scan writes it.
+      const overdueDay = overdueDayFor(t.dueYMD, b.graceDays);
       // eslint-disable-next-line no-await-in-loop
-      await awardOnce(`auto_task:${t._id}`, { user: t.owner, month: today.slice(0, 7), points: -Math.abs(pts), reason: `Overdue: ${t.title}`, source: 'auto_task', taskRef: t._id, earnedYMD: today });
+      await awardOnce(`auto_task:${t._id}`, { user: t.owner, month: overdueDay.slice(0, 7), points: -Math.abs(pts), reason: `Overdue: ${t.title}`, source: 'auto_task', taskRef: t._id, earnedYMD: overdueDay });
     }
     // -- Escalating drip: -N for each FURTHER day it stays overdue --
     // Timeline (grace 0): due day → nothing; due+1 → the -5 mark; due+2 onward → -1 each
-    // day until the task is done + approved. No buffer — the drip starts the day right
-    // after the -5. Today only (no retroactive fill). Once finished these day entries STAY
-    // — they were the price of those days — while the main entry flips to the result.
-    if (dripPts && today > addDays(duePlus, 1)) {
+    // day until the task is DONE — for an approval-gated task that means APPROVED, so the
+    // drip keeps running while a submission waits. Today only (no retroactive fill; the
+    // one-time backfill below covered the switch-on). Once finished these day entries
+    // STAY — they were the price of those days — while the main entry flips to the
+    // result. Drips apply only to tasks DUE on/after the August floor (the drip rule's
+    // start); the -5 mark above has no floor.
+    if (dripPts && t.dueYMD >= DRIP_FLOOR_YMD && today > addDays(duePlus, 1)) {
       // eslint-disable-next-line no-await-in-loop
       await awardOnce(`auto_overdue:${t._id}:${today}`, { user: t.owner, month: today.slice(0, 7), points: -Math.abs(dripPts), reason: `Still overdue: ${t.title}`, source: 'auto_task', taskRef: t._id, earnedYMD: today });
     }
@@ -700,31 +715,46 @@ async function scanOverdueTasks(b) {
 }
 
 /**
- * One-time cleanup: remove overdue-pending penalties that a pre-fix scan wrote against
- * tasks DUE before the August floor. The overdue-penalty rule (the -5 mark + the per-day
- * drip) only ever applied from August, but an earlier version penalised every overdue
- * pending task regardless of its due month, so July-due tasks picked up -5s and drips —
- * dated in August — that should never have existed. This strips them once.
- *
- * Only PENDING tasks lose their -5 mark (a DONE task's negative auto_task entry is a
- * late-COMPLETION result — a different, kept rule); drips are removed for every July-due
- * task since a drip is never legitimate for one.
+ * One-time switch-on of the owner's 2026-08-08 overdue rule, so history matches it:
+ * the -5 mark applies to EVERY assigned task whose due date passed unfinished (July-due
+ * included — the earlier August floor on the mark is gone), and the per-day drip runs
+ * for every day a task due on/after 1 Aug stayed unfinished — approval included, so days
+ * a submission sat unapproved count too (the old scan skipped them). The daily scan only
+ * writes "today", so this back-fills the missed drip days once; the marks themselves
+ * need no backfill (the scan re-adds them, filed under the day the due date passed).
+ * awardOnce's insert-only upsert makes re-running this harmless.
  */
-async function cleanJulyOverduePenalties() {
+async function backfillOverdueRuleV2() {
   const s = await Setting.getSingleton();
-  if (s.bonus?.julyOverdueCleaned) return;
-  const julyTasks = await Task.find({ assignedBy: { $ne: null }, dueYMD: { $ne: '', $lt: DRIP_FLOOR_YMD } }).select('_id status');
-  if (julyTasks.length) {
-    const allIds = julyTasks.map((t) => t._id);
-    const pendingIds = julyTasks.filter((t) => t.status !== 'DONE').map((t) => t._id);
-    // Drips: never legitimate for a July-due task.
-    await PointEntry.deleteMany({ source: 'auto_task', taskRef: { $in: allIds }, dedupeKey: { $regex: /^auto_overdue:/ } });
-    // Overdue-pending -5 mark: only for tasks still PENDING (keep late-completion results).
-    if (pendingIds.length) {
-      await PointEntry.deleteMany({ source: 'auto_task', taskRef: { $in: pendingIds }, dedupeKey: { $not: /^auto_overdue:/ }, points: { $lt: 0 } });
+  if (s.bonus?.overdueRuleV2) return;
+  const b = s.bonus || {};
+  const dripPts = rulePoints(b, 'assignedTaskOverdueDaily');
+  const today = ymdInTz(new Date());
+  if (dripPts) {
+    const forwardedParentIds = await Task.distinct('forwardedFrom', { forwardedFrom: { $ne: null } });
+    const tasks = await Task.find({ assignedBy: { $ne: null }, dueYMD: { $gte: DRIP_FLOOR_YMD }, _id: { $nin: forwardedParentIds } })
+      .select('owner dueYMD title status completedAt assignedBy collaborators forwardedFrom');
+    const ownerIds = await ownerTierIds();
+    const memo = new Map();
+    for (const t of tasks) {
+      // eslint-disable-next-line no-await-in-loop
+      if (!(await chainEligible(t, ownerIds, memo))) continue;
+      const duePlus = addDays(t.dueYMD, b.graceDays || 0);
+      const first = addDays(duePlus, 2); // day after the -5 mark
+      // Drips stop the day the task reached DONE (= approval, for gated tasks); a still-
+      // open task drips through today. Days are written under their own date/month.
+      let last = today;
+      if (t.status === 'DONE' && t.completedAt) {
+        const doneYMD = ymdInTz(t.completedAt);
+        if (prevDay(doneYMD) < last) last = prevDay(doneYMD);
+      }
+      for (let d = first; d <= last; d = addDays(d, 1)) {
+        // eslint-disable-next-line no-await-in-loop
+        await awardOnce(`auto_overdue:${t._id}:${d}`, { user: t.owner, month: d.slice(0, 7), points: -Math.abs(dripPts), reason: `Still overdue: ${t.title}`, source: 'auto_task', taskRef: t._id, earnedYMD: d });
+      }
     }
   }
-  s.bonus.julyOverdueCleaned = true;
+  s.bonus.overdueRuleV2 = true;
   await s.save();
   Setting.invalidateCache();
 }
@@ -1367,7 +1397,7 @@ export async function maybeRunDaily() {
   // Drop points for tasks deleted / un-done straight in the database (self-heal). Once a day
   // is plenty — direct-DB deletes are rare, and it's a full distinct scan.
   try { await pruneOrphanTaskEntries(); } catch (e) { console.error('orphan prune failed', e?.message); }
-  try { await cleanJulyOverduePenalties(); } catch (e) { console.error('july overdue cleanup failed', e?.message); }
+  try { await backfillOverdueRuleV2(); } catch (e) { console.error('overdue rule-v2 backfill failed', e?.message); }
   try { await scanOverdueTasks(b); } catch (e) { console.error('overdue scan failed', e?.message); }
   // Once a day, re-sync every finished task's points with the task table, so a due date or
   // completion date changed directly in the database is reflected without waiting for an
