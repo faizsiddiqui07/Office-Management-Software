@@ -12,7 +12,7 @@
 | 02 | To-Do / Tasks | [02-todo.md](02-todo.md) | ✅ RED fixed (3 owner-reverted) | `30fa00e` fix, `ff41ece` revert, `b7e7a2b` smart warning (pushed) | T1–T10 perf, 5 security ⚠, UX+features role-wise, 1 open sawaal (eligibility UI) |
 | 03 | Attendance | [03-attendance.md](03-attendance.md) | ✅ RED fixed (A3 intentionally nahi) + 🎂 birthday feature | commits `a324595`/`19e99a1`/`3cde85b` + zip (local, push pending) | A8/A9 security, A10/A11 perf, UX+features role-wise |
 | 04 | Leaves | [04-leaves.md](04-leaves.md) | ✅ 3 RED FIXED (L1/L2/L3) + 2 related edges (perfect-attendance, cancel-reverse-absence); **verify round still incomplete (session limit)** | local commits (push/zip on owner's word) | ~7 security + 4 perf + 5 cross-edge + 13 UX still UNVERIFIED; features role-wise |
-| 05 | Rewards | — | queued | — | — |
+| 05 | Rewards / Bonus | [05-rewards.md](05-rewards.md) | 🔴 audited: **5 distinct RED** (7 confirmed findings, 1 refuted); 2 self-verified by me. Awaiting owner approval | none yet | 57 findings UNVERIFIED (ledger/jobs/security/perf/UX) + role-wise features |
 | 06 | My Summary | — | queued | — | — |
 | 07 | Reports | — | queued | — | — |
 | 08 | Team / Users / Roles | — | queued | — | — |
@@ -35,7 +35,9 @@ Har pattern ke aage: kahan mila ✔, kahan check karna baaki ⏳.
 9. **Period/month math har jagah alag** (computePeriod vs manual) — Dashboard ✔ note. ⏳ Reports, My Summary, Rewards boundaries.
 10. **Stale comments/docs vs code** — Rules page ✔ (pehle bite kiya), To-Do ✔ (3 stale "submit day" comments). ⏳ har page pe.
 11. **`:id` params unvalidated → 500** — To-Do ✔, Attendance ✔ (low). ⏳ ek app-wide param-validation middleware consolidated me.
-12. **Frontend-only validation** (server pe nahi) — To-Do ✔ (due-date floors sirf UI pe). ⏳ Leaves dates, Expenses amounts.
+12. **Frontend-only validation** (server pe nahi) — To-Do ✔ (due-date floors sirf UI pe), Rewards ✔ (`?month=` bilkul unvalidated → infinite loop). ⏳ Expenses amounts.
+13. **NAYA (Rewards R1): config save runtime-state ko WIPE kar deta hai** — `s.bonus = {...}` poora subdoc replace karta hai, flags/watermarks delete. ⏳ **Har us jagah check karo jahan `x.subdoc = {...}` hota hai** — Settings ke doosre panels (attendance, expenses, visitors, rules), Users ka schedule/taskAssign.
+14. **NAYA (Rewards R2): closed month ka concept hi nahi** — 11 write paths purane mahine badal sakte hain, aur mutation ADHURA hai (sirf tasks+overtime re-price hote hain) → ek mahina do price-lists pe. Reports ki stability isi pe tiki hai.
 
 ## 📊 Data flows (kaun page kis page ka data dikhata hai)
 
