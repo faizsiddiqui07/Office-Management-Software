@@ -3,7 +3,7 @@ import { Task } from '../models/Task.js';
 import { User } from '../models/User.js';
 import { Setting } from '../models/Setting.js';
 import { notify, clearNotificationsFor } from '../models/Notification.js';
-import { roleLabel } from '../lib/roles.js';
+import { roleLabel, isOwnerRole } from '../lib/roles.js';
 import { can } from '../lib/permissions.js';
 import { companyDayFromYMD, ymdInTz, COMPANY_TZ } from '../lib/time.js';
 import { onAssignedTaskDone, onAssignedTaskUndone } from './bonus.service.js';
@@ -96,13 +96,18 @@ export async function assignableUsers(actor) {
   const users = await User.find({ isActive: true, _id: { $ne: actor._id } }).select('name designation role').sort({ name: 1 });
   return users
     .filter((u) => canAssignTo(actor, u))
-    .map((u) => ({ id: u.id, name: u.name, designation: u.designation || '', role: u.role, roleLabel: roleLabel(u.role) }));
+    .map((u) => ({ id: u.id, name: u.name, designation: u.designation || '', role: u.role, roleLabel: roleLabel(u.role), isOwner: isOwnerRole(u.role) }));
 }
 
-/** Everyone in the office, for tagging — anyone can be a colleague on a task. */
+/**
+ * Everyone in the office, for tagging — anyone can be a colleague on a task.
+ * `isOwner` marks the CEO & President tier, so the assign dialog can tell the assigner
+ * whether the task will count for points (resolved by ROLE here, never by a role name
+ * hard-coded in the client).
+ */
 export async function taggableUsers(actor) {
   const users = await User.find({ isActive: true, _id: { $ne: actor._id } }).select('name designation role').sort({ name: 1 });
-  return users.map((u) => ({ id: u.id, name: u.name, designation: u.designation || '', role: u.role, roleLabel: roleLabel(u.role) }));
+  return users.map((u) => ({ id: u.id, name: u.name, designation: u.designation || '', role: u.role, roleLabel: roleLabel(u.role), isOwner: isOwnerRole(u.role) }));
 }
 
 /**

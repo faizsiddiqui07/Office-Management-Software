@@ -16,7 +16,7 @@ export const DEFAULT_RULE_SECTIONS = [
       { text: 'Everyone has a To-Do page. Add your own tasks with a due date and tick them off as you finish — this is your personal work list.' },
       { text: 'Seniors can assign tasks to their team. Only ASSIGNED tasks earn or cut points — and only if the CEO & President can see the task: they assigned it themselves, or at least one of them is TAGGED on it. If a senior assigns work to a junior WITHOUT tagging a CEO/President, that task earns no points either. Personal to-dos never affect points.' },
       { text: 'POINTS ELIGIBILITY: a task counts for points ONLY when the CEO & President can see it — either they assigned it themselves, or at least one of them is TAGGED on the task. Without that, the task is fully outside the points system: no rewards, no penalties, and it never appears on the leaderboard.' },
-      { text: 'Every assigned task has a due date. Finish the work and submit it on or before that date.' },
+      { text: 'Every assigned task should carry a due date. Finish the work and submit it on or before that date. A task handed out WITHOUT a due date is outside the points system altogether — it earns nothing and costs nothing, because there is no deadline to be on time against.' },
       { text: 'Tasks that need approval count as DONE on the day they are APPROVED, not the day you submit — so submit early enough for your senior to review.' },
       { text: 'Assigned task done on time: +{onTimePoints} points.' },
       { text: 'Assigned task NOT done by the due date: −{latePoints} points are cut the very next day.' },

@@ -3,8 +3,9 @@
 import * as React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Check, ThumbsUp, UserRoundPlus, Users } from 'lucide-react';
+import { AlertTriangle, Check, ThumbsUp, UserRoundPlus, Users } from 'lucide-react';
 import { api } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 import { AppDialog } from '@/components/glass/app-dialog';
 import { Button } from '@/components/ui/button';
@@ -16,6 +17,7 @@ import { Textarea } from '@/components/ui/textarea';
 
 export function AssignDialog() {
   const qc = useQueryClient();
+  const { user: me } = useAuth();
   const [open, setOpen] = React.useState(false);
   const [assignTo, setAssignTo] = React.useState([]); // ids of people to assign to
   const [collaborators, setCollaborators] = React.useState([]); // tagged (for awareness — anyone)
@@ -68,6 +70,16 @@ export function AssignDialog() {
     },
     onError: (e) => toast.error(e?.message || 'Could not assign the task'),
   });
+
+  // ── Will this task count for points? ────────────────────────────────────────
+  // Two rules decide it, and both are invisible unless we say so here: the work only
+  // counts when the CEO & President can see it (they assigned it, or one of them is
+  // tagged), and there has to be a due date to be on time against. An owner-tier
+  // assigner satisfies the first rule by assigning, so they never see that half.
+  const ownerTagged = collaborators.some((id) => taggable.find((p) => p.id === id)?.isOwner);
+  const needsOwnerTag = !me?.isOwner && !ownerTagged;
+  const needsDueDate = !dueYMD;
+  const showPointsWarning = assignTo.length > 0 && (needsOwnerTag || needsDueDate);
 
   const submit = () => {
     if (!assignTo.length) return toast.error('Pick at least one person');
@@ -195,6 +207,22 @@ export function AssignDialog() {
             </p>
           ) : null}
         </div>
+
+        {/* Points eligibility — the two rules that quietly decide whether this work will
+            score anything. Sits right under the tag picker so the fix is one tap away. */}
+        {showPointsWarning ? (
+          <div className="flex items-start gap-2.5 rounded-xl bg-warning/[0.08] p-3 ring-1 ring-warning/30">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />
+            <div className="min-w-0 space-y-1">
+              <p className="text-sm font-medium">This task won’t earn any points</p>
+              <ul className="space-y-0.5 text-xs text-muted-foreground">
+                {needsOwnerTag ? <li>· Tag a CEO or President above — work they can’t see stays out of the points system.</li> : null}
+                {needsDueDate ? <li>· Set a due date — without a deadline there is nothing to be on time against.</li> : null}
+              </ul>
+              <p className="text-xs text-muted-foreground">You can still assign it — it just won’t count for or against anyone.</p>
+            </div>
+          </div>
+        ) : null}
 
         {/* Approval gate — the assignee's "done" becomes a request you approve first. */}
         <div className="flex items-start justify-between gap-3 rounded-xl bg-primary/[0.05] p-3 ring-1 ring-primary/15">

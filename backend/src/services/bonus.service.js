@@ -389,6 +389,24 @@ async function ownerTierIds() {
   return ownerIdsCache;
 }
 
+// ── No-deadline gate (owner's rule, 2026-08-09) ───────────────────────────────
+// An assigned task with NO due date has nothing to be "on time" against, so from
+// 1 Aug 2026 it sits outside the points system entirely — no reward, no penalty.
+// Tasks assigned BEFORE that date are grandfathered: whatever they already earned
+// stays, because the rule didn't exist when the work was handed out.
+const NO_DUE_FLOOR_YMD = '2026-08-01';
+
+/**
+ * Can this task be scored at all? A due date makes it scorable; without one it is only
+ * scorable if it was assigned before the floor. An unknown createdAt reads as OLD on
+ * purpose — a missing projection must never silently strip somebody's points.
+ */
+function hasScorableDeadline(task) {
+  if (task?.dueYMD) return true;
+  const created = task?.createdAt ? ymdInTz(task.createdAt) : '';
+  return !created || created < NO_DUE_FLOOR_YMD;
+}
+
 /** Does THIS copy pass the gate on its own (owner-tier assigner, or one of them tagged)? */
 function taskEligible(task, ownerIds) {
   // Roles not loaded (a cold path) must never read as "wipe everything".
@@ -468,6 +486,13 @@ export async function onAssignedTaskDone(task) {
   // it un-pays.
   const ownerIds = await ownerTierIds();
   if (!copies.some((c) => taskEligible(c, ownerIds))) {
+    await PointEntry.deleteMany({ taskRef: { $in: copies.map((c) => c._id) }, source: { $in: ['auto_task', 'auto_forward'] } });
+    return;
+  }
+  // No deadline, no score. Judged on the ROOT (forwarded copies inherit its due date),
+  // so a whole chain handed out without a due date is out together. Same shape as the
+  // owner-tier gate: anything written before stays consistent by being removed here.
+  if (!hasScorableDeadline(task)) {
     await PointEntry.deleteMany({ taskRef: { $in: copies.map((c) => c._id) }, source: { $in: ['auto_task', 'auto_forward'] } });
     return;
   }
@@ -843,7 +868,7 @@ async function backfillOverdueRuleV2() {
   if (dripPts) {
     const forwardedParentIds = await Task.distinct('forwardedFrom', { forwardedFrom: { $ne: null } });
     const tasks = await Task.find({ assignedBy: { $ne: null }, dueYMD: { $gte: DRIP_FLOOR_YMD }, _id: { $nin: forwardedParentIds } })
-      .select('owner dueYMD title status completedAt assignedBy collaborators forwardedFrom');
+      .select('owner dueYMD title status completedAt assignedBy collaborators forwardedFrom createdAt');
     const ownerIds = await ownerTierIds();
     const memo = new Map();
     for (const t of tasks) {
@@ -1168,7 +1193,7 @@ export async function backfillMonth(month) {
     // with the per-task forward-chain lookup that unbounded scan blew past the 30s timeout.
     const monthStart = companyDayFromYMD(from);
     const monthEndExclusive = companyDayFromYMD(`${nextMonth(month)}-01`);
-    const tasks = await Task.find({ status: 'DONE', assignedBy: { $ne: null }, forwardedFrom: null, completedAt: { $gte: monthStart, $lt: monthEndExclusive } }).select('owner dueYMD title completedAt submittedAt requiresApproval assignedBy forwardedFrom collaborators');
+    const tasks = await Task.find({ status: 'DONE', assignedBy: { $ne: null }, forwardedFrom: null, completedAt: { $gte: monthStart, $lt: monthEndExclusive } }).select('owner dueYMD title completedAt submittedAt requiresApproval assignedBy forwardedFrom collaborators createdAt');
     for (const t of tasks) {
       const doneYMD = ymdInTz(t.completedAt); // the completion/approval day decides the month
       if (doneYMD < from || doneYMD > to) continue;
@@ -1367,7 +1392,7 @@ async function rescoreAllDoneAssigned() {
   // timeout (and dragging the whole app down). App-driven edits still re-score instantly.
   const cutoff = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000);
   const tasks = await Task.find({ status: 'DONE', assignedBy: { $ne: null }, completedAt: { $gte: cutoff }, forwardedFrom: null })
-    .select('owner completedBy dueYMD title completedAt submittedAt requiresApproval assignedBy status forwardedFrom collaborators')
+    .select('owner completedBy dueYMD title completedAt submittedAt requiresApproval assignedBy status forwardedFrom collaborators createdAt')
     .limit(5000);
   for (const t of tasks) {
     try {
@@ -1396,7 +1421,7 @@ async function rescoreAssignedTasks(b) {
   const forwardedParentIds = await Task.distinct('forwardedFrom', { forwardedFrom: { $ne: null } });
   if (forwardedParentIds.length) {
     const roots = await Task.find({ _id: { $in: forwardedParentIds }, forwardedFrom: null, status: 'DONE', assignedBy: { $ne: null }, completedAt: { $ne: null } })
-      .select('owner completedBy dueYMD title completedAt submittedAt requiresApproval assignedBy status forwardedFrom collaborators')
+      .select('owner completedBy dueYMD title completedAt submittedAt requiresApproval assignedBy status forwardedFrom collaborators createdAt')
       .limit(5000);
     for (const t of roots) {
       try {
@@ -1424,7 +1449,7 @@ async function pruneOrphanTaskEntries() {
     .limit(20000);
   if (!entries.length) return;
   const ids = [...new Set(entries.map((e) => String(e.taskRef)))];
-  const tasks = await Task.find({ _id: { $in: ids }, assignedBy: { $ne: null } }).select('status assignedBy collaborators forwardedFrom');
+  const tasks = await Task.find({ _id: { $in: ids }, assignedBy: { $ne: null } }).select('status assignedBy collaborators forwardedFrom dueYMD createdAt');
   const byId = new Map(tasks.map((t) => [String(t._id), t]));
   const ownerIds = await ownerTierIds();
   const chainMemo = new Map();
@@ -1440,7 +1465,9 @@ async function pruneOrphanTaskEntries() {
   const dead = [];
   for (const e of entries) {
     const t = byId.get(String(e.taskRef));
-    if (t && !eligibleById.get(String(t._id))) {
+    // Same two gates the award path uses, applied retroactively: nobody in the owner tier
+    // can see the chain, or (from the floor date) it was handed out with no due date.
+    if (t && (!eligibleById.get(String(t._id)) || !hasScorableDeadline(t))) {
       dead.push(e._id);
       // eslint-disable-next-line no-continue
       continue;

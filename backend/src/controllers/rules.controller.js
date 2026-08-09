@@ -35,8 +35,12 @@ async function ensureSeeded() {
 // page then belongs to the CEO's edits, so later wording fixes can't ride the seed. This
 // applies them by EXACT-matching the old default text — a rule the CEO has since edited (its
 // text differs) is left untouched. Version-gated so it runs once per bump.
-const RULES_TEXT_VERSION = 3;
+const RULES_TEXT_VERSION = 4;
 const RULE_TEXT_UPDATES = [
+  {
+    from: 'Every assigned task has a due date. Finish the work and submit it on or before that date.',
+    to: 'Every assigned task should carry a due date. Finish the work and submit it on or before that date. A task handed out WITHOUT a due date is outside the points system altogether — it earns nothing and costs nothing, because there is no deadline to be on time against.',
+  },
   {
     from: 'A fully punctual week — Monday to Saturday, no unexcused late and no unexplained absence — earns +{streakPoints} points. Sundays, holidays, approved leave and WFH never break the week.',
     to: 'Being on time 6 working days in a row earns +{streakPoints} points — and then the count starts again towards the next 6. A late arrival or an unexplained absence resets the count to 0, and the very next day starts a fresh one. Sundays, holidays, approved leave and WFH neither break the run nor count towards the 6.',
