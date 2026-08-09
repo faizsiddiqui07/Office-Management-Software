@@ -65,6 +65,21 @@ function nextMonthYM(ym) {
 }
 
 /**
+ * A real 'YYYY-MM' or nothing. Every month that reaches the ledger comes off a query
+ * string, and the month-by-month walks below compare it as a STRING — so a value like
+ * 'zz' or '9999-99' sits above every real month and the walk never reaches it. (It can't
+ * even overshoot: nextMonthYM('9999-12') gives '10000-01', whose slice(0,7) is '10000-0',
+ * which maps back to itself — a fixed point the loop can never leave.) Rejecting the
+ * input here is the guard; MAX_MONTH_WALK below is the belt-and-braces.
+ */
+const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
+export function isValidMonth(ym) {
+  return MONTH_RE.test(String(ym || ''));
+}
+/** Hard ceiling on any month-by-month walk (go-live + 100 years) — a loop can never hang. */
+const MAX_MONTH_WALK = 1200;
+
+/**
  * The deficit a person carries INTO `targetMonth` — always ≤ 0.
  *
  * Only a NEGATIVE month total carries forward, and it keeps compounding until it's cleared:
@@ -76,14 +91,15 @@ function nextMonthYM(ym) {
  */
 async function carryInFor(userId, targetMonth) {
   const goLive = APP_LIVE_YMD.slice(0, 7);
-  if (targetMonth <= goLive) return 0;
+  if (!isValidMonth(targetMonth) || targetMonth <= goLive) return 0;
   const rows = await PointEntry.aggregate([
     { $match: { user: toId(userId), month: { $gte: goLive, $lt: targetMonth } } },
     { $group: { _id: '$month', earned: { $sum: '$points' } } },
   ]);
   const byMonth = new Map(rows.map((r) => [r._id, r.earned]));
   let carry = 0;
-  for (let ym = goLive; ym < targetMonth; ym = nextMonthYM(ym)) {
+  let steps = 0;
+  for (let ym = goLive; ym < targetMonth && steps < MAX_MONTH_WALK; ym = nextMonthYM(ym), steps += 1) {
     carry = Math.min(0, (byMonth.get(ym) || 0) + carry);
   }
   return carry;
@@ -128,24 +144,31 @@ export async function updateConfig(patch) {
   const neverRun = !b.lastMonthRollup && !b.lastPenaltyRun;
   const turningOn = patch.enabled !== undefined && !!patch.enabled && !b.enabled && neverRun;
   const today = ymdInTz(new Date());
-  s.bonus = {
-    enabled: patch.enabled !== undefined ? !!patch.enabled : b.enabled,
-    rupeesPerPoint: Math.max(0, num(patch.rupeesPerPoint, b.rupeesPerPoint || 0)),
-    graceDays: Math.max(0, num(patch.graceDays, b.graceDays ?? 1)),
-    autoRules: Array.isArray(patch.autoRules)
-      ? patch.autoRules.filter((r) => r && RULE_KEYS.has(r.key)).map((r) => ({ key: r.key, points: Math.round(num(r.points, 0)) }))
-      : (b.autoRules || []),
-    manualItems: Array.isArray(patch.manualItems)
-      ? patch.manualItems.filter((m) => m && String(m.label || '').trim()).slice(0, 100)
-          .map((m) => ({ id: m.id || rand(), label: String(m.label).trim().slice(0, 80), points: Math.round(num(m.points, 0)) }))
-      : (b.manualItems || []),
-    historyScored: b.historyScored || '', // never reset by a settings save
-    rescoreVersion: b.rescoreVersion || '', // one-time re-score watermark, preserved
-    lastPenaltyRun: turningOn ? today : b.lastPenaltyRun || '',
-    lastMonthRollup: turningOn ? prevMonth(currentMonth()) : b.lastMonthRollup || '',
-    lastAbsenceScan: turningOn ? today : b.lastAbsenceScan || '',
-  };
+  // Assign FIELD BY FIELD, never `s.bonus = {…}`.
+  //
+  // A whole-object assign makes mongoose emit `$set: { bonus: {…} }`, which REPLACES the
+  // subdocument in MongoDB — every key not in the literal is deleted. That silently wiped
+  // the runtime state that lives alongside the config: the seed flags (so a rule the CEO
+  // had just deleted re-appeared minutes later), the one-time migration flags (so those
+  // migrations re-armed and re-ran), and the rolling-streak counters + watermark. Setting
+  // each key on its own touches only that key and leaves everything else alone.
+  s.bonus.enabled = patch.enabled !== undefined ? !!patch.enabled : b.enabled;
+  s.bonus.rupeesPerPoint = Math.max(0, num(patch.rupeesPerPoint, b.rupeesPerPoint || 0));
+  s.bonus.graceDays = Math.max(0, num(patch.graceDays, b.graceDays ?? 1));
+  if (Array.isArray(patch.autoRules)) {
+    s.bonus.autoRules = patch.autoRules.filter((r) => r && RULE_KEYS.has(r.key)).map((r) => ({ key: r.key, points: Math.round(num(r.points, 0)) }));
+  }
+  if (Array.isArray(patch.manualItems)) {
+    s.bonus.manualItems = patch.manualItems.filter((m) => m && String(m.label || '').trim()).slice(0, 100)
+      .map((m) => ({ id: m.id || rand(), label: String(m.label).trim().slice(0, 80), points: Math.round(num(m.points, 0)) }));
+  }
+  if (turningOn) {
+    s.bonus.lastPenaltyRun = today;
+    s.bonus.lastMonthRollup = prevMonth(currentMonth());
+    s.bonus.lastAbsenceScan = today;
+  }
   await s.save();
+  Setting.invalidateCache();
   return getConfig();
 }
 
@@ -171,7 +194,8 @@ export async function userMonthTotal(userId, month = currentMonth()) {
 export async function mySummary(user, params = {}) {
   const cfg = await getConfig();
   const isRange = !!(params.from && params.to);
-  const month = isRange ? undefined : params.month || currentMonth();
+  // A month off a query string is only honoured when it's a real one — see isValidMonth.
+  const month = isRange ? undefined : (isValidMonth(params.month) ? params.month : currentMonth());
 
   const matchMonth = isRange ? { $gte: params.from, $lte: params.to } : month;
   const [agg] = await PointEntry.aggregate([
@@ -282,7 +306,8 @@ export async function leaderboard(params = {}) {
   } else {
     // Single month: rank by NET standing (earned this month + any carried-in deficit), so
     // the board agrees with the header badge and each person's own Rewards page.
-    const targetMonth = p.month || currentMonth();
+    // A junk month falls back to today's rather than walking off the end of the calendar.
+    const targetMonth = isValidMonth(p.month) ? p.month : currentMonth();
     const goLive = APP_LIVE_YMD.slice(0, 7);
     const agg = await PointEntry.aggregate([
       { $match: { month: { $gte: goLive, $lte: targetMonth } } },
@@ -297,7 +322,8 @@ export async function leaderboard(params = {}) {
     rows = [];
     for (const [uid, months] of byUser) {
       let carry = 0;
-      for (let ym = goLive; ym < targetMonth; ym = nextMonthYM(ym)) carry = Math.min(0, (months.get(ym) || 0) + carry);
+      let steps = 0;
+      for (let ym = goLive; ym < targetMonth && steps < MAX_MONTH_WALK; ym = nextMonthYM(ym), steps += 1) carry = Math.min(0, (months.get(ym) || 0) + carry);
       const net = (months.get(targetMonth) || 0) + carry;
       // Skip anyone who nets zero and did nothing this month — no point listing a flat 0.
       if (net !== 0 || months.has(targetMonth)) rows.push({ _id: uid, points: net });
@@ -552,6 +578,60 @@ export async function onAssignedTaskDone(task) {
 
 export async function onAssignedTaskUndone(taskId) {
   await PointEntry.deleteMany({ taskRef: taskId, source: { $in: ['auto_task', 'auto_forward'] } });
+  // Wiping alone would forgive every day the task HAS sat overdue. Rebuild the overdue
+  // history against the deadline as it stands now — see rebuildOverdueForTask.
+  try { await rebuildOverdueForTask(taskId); } catch (e) { console.error('overdue rebuild failed', e?.message); }
+}
+
+/**
+ * Recompute a task's overdue penalties from its CURRENT due date — the mark and every
+ * day it has stayed overdue since.
+ *
+ * Correcting a due date used to be an amnesty: the undo hook deleted the mark and all the
+ * per-day drips, and the daily scan only ever writes "today", so the days in between were
+ * simply forgiven (a task 18 days overdue came back costing 1 day). The office rule is
+ * that the deadline decides, so moving it re-prices the whole history rather than erasing
+ * it: due D + grace → nothing on D itself, the mark on D+1, and −N for every day from D+2
+ * up to today (or, for a finished task, up to the day before it was done — those days
+ * were still late). Drips stay scoped to tasks due on/after the drip rule's start date;
+ * the mark has no floor.
+ *
+ * Deliberately narrow about WHOSE task it is: a forwarded copy never scores on its own, a
+ * copy that was handed further down belongs to whoever has it now, and a task the owner
+ * tier can't see is outside the points system entirely.
+ */
+export async function rebuildOverdueForTask(taskId) {
+  const s = await Setting.getSingleton();
+  const b = s.bonus || {};
+  if (!b.enabled) return;
+  const t = await Task.findById(taskId).select('owner dueYMD title status completedAt assignedBy collaborators forwardedFrom');
+  if (!t || !t.assignedBy || !t.dueYMD || t.forwardedFrom) return;
+  if (await Task.exists({ forwardedFrom: t._id })) return; // passed further down — not this copy's cost
+  if (!(await chainEligible(t, await ownerTierIds()))) return;
+
+  // Start from a clean slate for the day entries, then rebuild them for the new deadline.
+  await PointEntry.deleteMany({ taskRef: t._id, dedupeKey: { $regex: /^auto_overdue:/ } });
+
+  const today = ymdInTz(new Date());
+  const duePlus = addDays(t.dueYMD, b.graceDays || 0);
+  if (duePlus >= today) return; // the new deadline hasn't passed — nothing is owed
+  const done = t.status === 'DONE' && t.completedAt ? ymdInTz(t.completedAt) : null;
+
+  // The one-time mark. A finished task's entry is the completion RESULT (onAssignedTaskDone
+  // owns it and shares this dedupe key), so only an unfinished one is marked here.
+  const pts = rulePoints(b, 'assignedTaskLate');
+  if (pts && t.status !== 'DONE') {
+    const overdueDay = overdueDayFor(t.dueYMD, b.graceDays);
+    await awardOnce(`auto_task:${t._id}`, { user: t.owner, month: overdueDay.slice(0, 7), points: -Math.abs(pts), reason: `Overdue: ${t.title}`, source: 'auto_task', taskRef: t._id, earnedYMD: overdueDay });
+  }
+
+  const dripPts = rulePoints(b, 'assignedTaskOverdueDaily');
+  if (!dripPts || t.dueYMD < DRIP_FLOOR_YMD) return;
+  const last = done ? prevDay(done) : today; // a finished task stops the day it was done
+  for (let d = addDays(duePlus, 2); d <= last; d = addDays(d, 1)) {
+    // eslint-disable-next-line no-await-in-loop
+    await awardOnce(`auto_overdue:${t._id}:${d}`, { user: t.owner, month: d.slice(0, 7), points: -Math.abs(dripPts), reason: `Still overdue: ${t.title}`, source: 'auto_task', taskRef: t._id, earnedYMD: d });
+  }
 }
 
 /**
@@ -591,6 +671,26 @@ export async function reconcileLatePenalty(userId, dateYMD, shouldPenalise) {
     }
   }
   await PointEntry.deleteMany({ dedupeKey: key });
+}
+
+/**
+ * One-time: clear late penalties sitting on days that were EXCUSED (on-duty) or were a
+ * half-day. Both cost nothing under the office rule, and both are already handled going
+ * forward — but a backfill pass used to re-add the penalty for them (it filtered on the
+ * record's status, which an excuse leaves as LATE), and nothing else ever clears a
+ * resurrected row. This sweeps up what those passes left behind. Gated by a flag, so it
+ * runs once. Idempotent regardless.
+ */
+async function clearExcusedLatePenalties() {
+  const s = await Setting.getSingleton();
+  if (s.bonus?.excusedLateSwept) return;
+  const recs = await Attendance.find({ status: 'LATE', $or: [{ excused: true }, { halfDayLeave: true }] }).select('user date');
+  for (const r of recs) {
+    // eslint-disable-next-line no-await-in-loop
+    await PointEntry.deleteMany({ dedupeKey: `auto_late:${r.user}:${ymdInTz(r.date)}` });
+  }
+  await Setting.updateOne({ key: 'global' }, { $set: { 'bonus.excusedLateSwept': true } });
+  Setting.invalidateCache();
 }
 
 /**
@@ -1158,11 +1258,25 @@ export async function backfillMonth(month) {
   const latePts = rulePoints(b, 'lateArrival');
   const otPts = rulePoints(b, 'overtimeHour');
   if (latePts) {
-    const recs = await Attendance.find({ date: { $gte: companyDayFromYMD(start), $lte: companyDayFromYMD(end) }, status: 'LATE' }).select('user date');
+    // EXCUSED and half-day lates are not late for points (the office rule everywhere else:
+    // an on-duty excuse, and a half-day, cost nothing). Excusing keeps the record's status
+    // as LATE and only deletes the point entry, so a backfill that filtered on status alone
+    // could not see the excuse — and its insert-only upsert quietly RE-ADDED the penalty a
+    // month later. Both are filtered here, and any penalty a previous pass resurrected is
+    // removed, since nothing else in the system would ever clear it again.
+    const recFilter = { date: { $gte: companyDayFromYMD(start), $lte: companyDayFromYMD(end) }, status: 'LATE' };
+    const recs = await Attendance.find(recFilter).select('user date excused halfDayLeave');
     for (const r of recs) {
       const ymd = ymdInTz(r.date);
+      const key = `auto_late:${r.user}:${ymd}`;
+      if (r.excused || r.halfDayLeave) {
+        // eslint-disable-next-line no-await-in-loop
+        await PointEntry.deleteMany({ dedupeKey: key });
+        // eslint-disable-next-line no-continue
+        continue;
+      }
       // eslint-disable-next-line no-await-in-loop
-      await awardOnce(`auto_late:${r.user}:${ymd}`, { user: r.user, month: ymd.slice(0, 7), points: -Math.abs(latePts), reason: `Late arrival · ${ymd}`, source: 'auto_late', earnedYMD: ymd });
+      await awardOnce(key, { user: r.user, month: ymd.slice(0, 7), points: -Math.abs(latePts), reason: `Late arrival · ${ymd}`, source: 'auto_late', earnedYMD: ymd });
     }
   }
   // Overtime is one row per person for the whole month, so recompute it per person rather
@@ -1502,6 +1616,7 @@ export async function maybeRunDaily() {
   // waiting a day behind the throttle (the exact gap that left them unapplied on deploy).
   try { await backfillOverdueRuleV2(); } catch (e) { console.error('overdue rule-v2 backfill failed', e?.message); }
   try { await rebuildStreakV2(b); } catch (e) { console.error('streak v2 rebuild failed', e?.message); }
+  try { await clearExcusedLatePenalties(); } catch (e) { console.error('excused-late sweep failed', e?.message); }
   const today = ymdInTz(new Date());
   if (b.lastPenaltyRun === today) return;
   // Where the absence catch-up starts. Kept SEPARATE from the once-a-day throttle and

@@ -114,6 +114,9 @@ const settingSchema = new mongoose.Schema(
       // One-time flag: weekly "punctual week" awards wiped and the whole history
       // re-scored under the rolling 6-day streak rule (owner's call, 2026-08-08).
       streakV2: { type: Boolean, default: false },
+      // One-time flag: late penalties cleared off excused / half-day records that an
+      // older backfill pass had resurrected (see clearExcusedLatePenalties).
+      excusedLateSwept: { type: Boolean, default: false },
       // YMD — the last day the rolling punctual-streak scan judged; it walks forward
       // from here, so each day is classified exactly once.
       lastStreakScan: { type: String, default: '' },

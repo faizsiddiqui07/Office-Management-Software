@@ -6,7 +6,7 @@ import { notify, clearNotificationsFor } from '../models/Notification.js';
 import { roleLabel, isOwnerRole } from '../lib/roles.js';
 import { can } from '../lib/permissions.js';
 import { companyDayFromYMD, ymdInTz, COMPANY_TZ } from '../lib/time.js';
-import { onAssignedTaskDone, onAssignedTaskUndone } from './bonus.service.js';
+import { onAssignedTaskDone, onAssignedTaskUndone, rebuildOverdueForTask } from './bonus.service.js';
 
 function httpError(status, code, message) {
   const e = new Error(message);
@@ -791,8 +791,12 @@ export async function updateTask(actor, id, data) {
         // points frozen.
         if (dueChanged && mm.assignedBy) {
           try {
-            if (mm.status === 'DONE') await onAssignedTaskDone(mm);
-            else await onAssignedTaskUndone(mm._id);
+            if (mm.status === 'DONE') {
+              await onAssignedTaskDone(mm);
+              // The result is re-priced above; the per-day overdue charges have to follow
+              // the new deadline too, or a finished task keeps days it was never late for.
+              await rebuildOverdueForTask(mm._id);
+            } else await onAssignedTaskUndone(mm._id);
           } catch (e) { console.error('bonus hook (due-date edit) failed', e?.message); }
         }
         if (mm.status !== 'DONE' && String(mm.owner) !== String(actor._id)) {
