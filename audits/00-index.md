@@ -13,7 +13,7 @@
 | 03 | Attendance | [03-attendance.md](03-attendance.md) | ✅ RED fixed (A3 intentionally nahi) + 🎂 birthday feature | commits `a324595`/`19e99a1`/`3cde85b` + zip (local, push pending) | A8/A9 security, A10/A11 perf, UX+features role-wise |
 | 04 | Leaves | [04-leaves.md](04-leaves.md) | ✅ 3 RED FIXED (L1/L2/L3) + 2 related edges (perfect-attendance, cancel-reverse-absence); **verify round still incomplete (session limit)** | local commits (push/zip on owner's word) | ~7 security + 4 perf + 5 cross-edge + 13 UX still UNVERIFIED; features role-wise |
 | 05 | Rewards / Bonus | [05-rewards.md](05-rewards.md) | 🔴 audited: **5 distinct RED** (7 confirmed findings, 1 refuted); 2 self-verified by me. Awaiting owner approval | none yet | 57 findings UNVERIFIED (ledger/jobs/security/perf/UX) + role-wise features |
-| 06 | My Summary | — | queued | — | — |
+| 06 | My Summary | [06-my-summary.md](06-my-summary.md) | 🔴 audited: **3 RED + 1 MEDIUM** (8 confirmed findings, 4 = same bug; 0 refuted). Awaiting owner approval | none yet | 32 findings UNVERIFIED + role-wise features |
 | 07 | Reports | — | queued | — | — |
 | 08 | Team / Users / Roles | — | queued | — | — |
 | 09 | Expenses / Dues | — | queued | — | — |
@@ -37,7 +37,10 @@ Har pattern ke aage: kahan mila ✔, kahan check karna baaki ⏳.
 11. **`:id` params unvalidated → 500** — To-Do ✔, Attendance ✔ (low). ⏳ ek app-wide param-validation middleware consolidated me.
 12. **Frontend-only validation** (server pe nahi) — To-Do ✔ (due-date floors sirf UI pe), Rewards ✔ (`?month=` bilkul unvalidated → infinite loop). ⏳ Expenses amounts.
 13. **NAYA (Rewards R1): config save runtime-state ko WIPE kar deta hai** — `s.bonus = {...}` poora subdoc replace karta hai, flags/watermarks delete. ⏳ **Har us jagah check karo jahan `x.subdoc = {...}` hota hai** — Settings ke doosre panels (attendance, expenses, visitors, rules), Users ka schedule/taskAssign.
-14. **NAYA (Rewards R2): closed month ka concept hi nahi** — 11 write paths purane mahine badal sakte hain, aur mutation ADHURA hai (sirf tasks+overtime re-price hote hain) → ek mahina do price-lists pe. Reports ki stability isi pe tiki hai.
+14. **NAYA (My Summary S2): `.limit(N)` wali list se FIGURE banana** — snapshot ka "Points earned" latest 100 rows ka reduce hai, aggregate nahi → yearly view galat. ⏳ Har us jagah check karo jahan ek list fetch karke uska sum/count dikhaya jaata hai (To-Do limit=10000, prune 20000, queue 200).
+15. **NAYA (My Summary S3): overlap-query ke rows ko window se CLIP na karna** — poore request ke din har overlapping period me ginte hain. ⏳ Leaves/Reports ke overlap queries me bhi dekho.
+16. **NAYA (My Summary S4): period-anchored vs today-anchored standing** — "Right now" figures period ke fiscal year se bandhe hain. ⏳ Reports/Dashboard me bhi ye distinction check karo.
+17. **NAYA (Rewards R2): closed month ka concept hi nahi** — 11 write paths purane mahine badal sakte hain, aur mutation ADHURA hai (sirf tasks+overtime re-price hote hain) → ek mahina do price-lists pe. Reports ki stability isi pe tiki hai.
 
 ## 📊 Data flows (kaun page kis page ka data dikhata hai)
 
