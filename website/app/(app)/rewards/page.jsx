@@ -21,6 +21,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { cn } from '@/lib/utils';
 import { formatRupees } from '@/lib/expense';
 import { monthOptions, fyOptions, paramsForSelection } from '@/lib/reward-periods';
+import { formatYMD } from '@/lib/leave';
 
 /**
  * Accepts an ISO instant OR a plain 'YYYY-MM-DD' (which is what earnedYMD is). A plain
@@ -197,6 +198,49 @@ function PersonBreakdownDialog({ person, params, label, isRange, onOpenChange, o
 }
 
 /** The price list — what each action is worth — behind a button. */
+/**
+ * What each thing was worth DURING the period being viewed — not what it is worth today.
+ * Rule values are effective-dated, so an old month keeps the prices it was scored on;
+ * printing them here is what lets anyone check a total instead of taking it on trust.
+ * More than one block means the values changed part-way through the period.
+ */
+function RatesPanel({ rates, periodLabel }) {
+  if (!rates?.length) return null;
+  const changed = rates.length > 1;
+  return (
+    <GlassPanel className="p-2">
+      <div className="px-3 py-2">
+        <span className="text-sm font-semibold">Point values · {periodLabel}</span>
+        <p className="text-xs text-muted-foreground">
+          {changed
+            ? 'The values changed during this period — each block shows the dates it applied to. Points already earned keep the value they were earned at.'
+            : 'What each thing was worth in this period. Changing a value later never re-prices points already earned.'}
+        </p>
+      </div>
+      <div className="space-y-3 px-3 pb-3">
+        {rates.map((p) => (
+          <div key={p.from} className="rounded-xl bg-foreground/[0.03] p-3 ring-1 ring-border/50">
+            {changed ? (
+              <p className="mb-2 text-xs font-medium text-muted-foreground">{formatYMD(p.from)} – {formatYMD(p.to)}</p>
+            ) : null}
+            <ul className="divide-y divide-border/40">
+              {p.rules.map((r) => (
+                <li key={r.key} className="flex items-center justify-between gap-3 py-1.5 text-sm">
+                  <span className="min-w-0 truncate">{r.label}</span>
+                  <Pts n={r.points} />
+                </li>
+              ))}
+            </ul>
+            {p.graceDays ? (
+              <p className="mt-2 text-xs text-muted-foreground">Task grace: {p.graceDays} day{p.graceDays > 1 ? 's' : ''} after the due date.</p>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </GlassPanel>
+  );
+}
+
 function HowPointsDialog({ open, onOpenChange, guide }) {
   const rows = [...(guide?.autoRules ?? []), ...(guide?.manualItems ?? [])];
   return (
@@ -482,6 +526,8 @@ export default function RewardsPage() {
               <p className="px-3 py-6 text-center text-sm text-muted-foreground">No points in {periodLabel} — keep it up!</p>
             )}
           </GlassPanel>
+
+          <RatesPanel rates={me?.rates} periodLabel={periodLabel} />
 
           {isLeader ? (
             <LeadershipTools

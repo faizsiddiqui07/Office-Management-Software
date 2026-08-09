@@ -131,6 +131,37 @@ function RewardsSection({ data }) {
           ? 'Monthly net standing — this month’s points plus any deficit carried in, exactly like the Rewards leaderboard. Payout applies to a positive standing only.'
           : 'Points earned on days inside this period (raw, no month-to-month carry-over). Payout applies to a positive total only.'}
       </p>
+      {/* The price list these very figures were scored on. Rule values are effective-dated,
+          so an old report keeps the rates that applied then — printing them is what makes
+          the numbers checkable rather than asserted. */}
+      {r.rates?.length ? (
+        <div className="rounded-xl bg-foreground/[0.03] p-3 ring-1 ring-border/50">
+          <p className="text-sm font-medium">Point values in this period</p>
+          <p className="mb-2 text-xs text-muted-foreground">
+            {r.rates.length > 1
+              ? 'The values changed during this period — each block shows the dates it applied to.'
+              : 'Changing a value later never re-prices points already earned.'}
+          </p>
+          <div className={cn('grid gap-3', r.rates.length > 1 && 'sm:grid-cols-2')}>
+            {r.rates.map((p) => (
+              <div key={p.from}>
+                {r.rates.length > 1 ? <p className="mb-1 text-xs font-medium text-muted-foreground">{p.from} – {p.to}</p> : null}
+                <ul className="divide-y divide-border/40">
+                  {p.rules.map((rule) => (
+                    <li key={rule.key} className="flex items-center justify-between gap-3 py-1 text-sm">
+                      <span className="min-w-0 truncate">{rule.label}</span>
+                      <span className={cn('tabular-nums font-medium', rule.points < 0 ? 'text-destructive' : 'text-success')}>
+                        {rule.points > 0 ? `+${rule.points}` : rule.points}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                {p.graceDays ? <p className="mt-1 text-xs text-muted-foreground">Task grace: {p.graceDays} day{p.graceDays > 1 ? 's' : ''}.</p> : null}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </ReportSection>
   );
 }

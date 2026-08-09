@@ -83,6 +83,23 @@ const settingSchema = new mongoose.Schema(
         type: [{ _id: false, id: String, label: String, points: Number }],
         default: [],
       },
+      // EFFECTIVE-DATED price list. Every change to the rule values (or the grace days)
+      // appends an entry here, and a day is always scored with the rates that were in
+      // force ON THAT DAY — so raising a reward today can never re-price work already
+      // done, and a finished month's report never moves again. The first entry is seeded
+      // at go-live with whatever the rules were then, so nothing already on the books
+      // shifts. Newest wins for any date on/after its effectiveFrom.
+      rateHistory: {
+        type: [{
+          _id: false,
+          effectiveFrom: String, // 'YYYY-MM-DD' — the first day these rates apply
+          graceDays: Number,
+          rules: [{ _id: false, key: String, points: Number }],
+          changedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+          changedAt: { type: Date, default: Date.now },
+        }],
+        default: [],
+      },
       lastPenaltyRun: { type: String, default: '' }, // YMD — throttles the daily scan
       // 'YYYY-MM' — the last past month scored by the one-time history catch-up. The
       // scheme is usually switched on part-way through the office's life, leaving the

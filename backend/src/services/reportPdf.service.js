@@ -251,6 +251,21 @@ function companyRewardsSection(d, accent) {
     { label: 'Payout', w: '21%', align: 'right' },
   ];
   const rows = r.perEmployee.map((e) => [e.name, e.employeeId, String(e.points), e.rupees ? rupee(e.rupees) : '—']);
+  // The price list this period was scored on. Rule values are effective-dated, so a
+  // printed report stays checkable against the rates that applied when it was earned —
+  // a later change can't quietly re-price it. Two blocks = the values moved mid-period.
+  const rateBlocks = (r.rates || []).map((p, i) =>
+    E(
+      View,
+      { key: `rt${i}`, wrap: false },
+      (r.rates.length > 1
+        ? E(Text, { style: styles.empty }, `${p.from} to ${p.to}${p.graceDays ? ` · grace ${p.graceDays}d` : ''}`)
+        : null),
+      table(
+        [{ label: 'What', w: '70%' }, { label: 'Points', w: '30%', align: 'right' }],
+        p.rules.map((rule) => [rule.label, rule.points > 0 ? `+${rule.points}` : String(rule.points)]),
+      ),
+    ));
   return E(
     View,
     { key: 'rewards' },
@@ -264,6 +279,14 @@ function companyRewardsSection(d, accent) {
         ? 'Monthly net standing — this month’s points plus any deficit carried in. Payout applies to a positive standing only.'
         : 'Points earned on days inside this period (raw, no carry-over). Payout applies to a positive total only.',
     ),
+    ...(rateBlocks.length
+      ? [
+        E(Text, { style: styles.empty }, r.rates.length > 1
+          ? 'Point values in this period — they changed part-way through, so each block shows the dates it applied to.'
+          : 'Point values in this period. Changing a value later never re-prices points already earned.'),
+        ...rateBlocks,
+      ]
+      : []),
   );
 }
 

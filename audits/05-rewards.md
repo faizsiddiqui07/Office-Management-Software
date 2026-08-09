@@ -4,7 +4,11 @@
 >
 > **Do sabse critical claims maine KHUD independently test karke confirm kiye** (isolated DB + pure logic) — R1 (config save state wipe) aur R5 (infinite loop). Baaki verifiers ne kai claims ko **PARTIAL** kiya (numbers/scope correct kiye) — wo corrections neeche shamil hain.
 >
-> **STATUS: kuch bhi fix NAHI hua.** Har bug owner ko samjha ke, approval ke baad hi fix hoga ([[explain-bugs-before-fixing]]).
+> **STATUS (2026-08-09): saare 5 RED FIXED.** R1/R3/R4/R5 chhote fixes; **R2 owner ke design se** — *effective-dated rates*.
+>
+> **R2 ka fix (owner ka design, mere month-snapshot plan se behtar):** rule values ab **tareekh se bandhe** hain. 20 Aug ko on-time +10 → +15 karo to **1–19 Aug ke tasks +10 hi rahenge**, sirf 20 Aug se aage +15. `Setting.bonus.rateHistory` me har change ki entry; har scoring apne **us din** ka rate use karti hai (`ratesOn`/`rulePoints(key, forYMD)`/`graceDaysOn`). Go-live (1 Jul) se aaj ke rates seed hote hain, isliye **koi purana point nahi badla**. Har mahine ka **snapshot table** ab Rewards page + report screen + report PDF teeno pe dikhta hai (rate beech me badla to dono period alag-alag). Config change ka **before/after ab audit log me** bhi jaata hai.
+>
+> Verified: 11-check rates suite + 13-check R1/R3/R4/R5 suite + PDF render check + clean website build.
 
 Ye module ab tak ka sabse bada hai (`bonus.service.js` akela 1515 lines) aur **aaj hi kaafi kuch badla** (overdue rule V2, rolling streak, half-day, leave reconciles) — agents ko wo sab "intended" bataya gaya tha, isliye ye findings un decisions ke bare me NAHI hain.
 

@@ -105,10 +105,57 @@ async function carryInFor(userId, targetMonth) {
   return carry;
 }
 
-/** Points configured for an auto rule (0 if the CEO hasn't switched it on). */
-function rulePoints(bonus, key) {
-  const r = (bonus?.autoRules || []).find((x) => x.key === key);
+/**
+ * The price list in force on a given day.
+ *
+ * Rule values are EFFECTIVE-DATED: changing a reward today must not re-price work that
+ * was already done, so every scoring decision looks up the rates as they stood on the day
+ * being scored. `rateHistory` holds one entry per change, newest wins for any date on or
+ * after its `effectiveFrom`. A date earlier than the first entry falls back to that first
+ * entry (it is seeded at go-live, so this only happens for pre-go-live artefacts), and an
+ * empty history falls back to the live config — which keeps every "is this rule even on?"
+ * check working unchanged.
+ */
+function ratesOn(bonus, forYMD) {
+  const live = { rules: bonus?.autoRules || [], graceDays: bonus?.graceDays ?? 1 };
+  const hist = bonus?.rateHistory || [];
+  if (!hist.length || !forYMD) return live;
+  let best = null;
+  let earliest = null;
+  for (const h of hist) {
+    if (!earliest || h.effectiveFrom < earliest.effectiveFrom) earliest = h;
+    if (h.effectiveFrom <= forYMD && (!best || h.effectiveFrom > best.effectiveFrom)) best = h;
+  }
+  const pick = best || earliest;
+  return { rules: pick.rules || [], graceDays: pick.graceDays ?? live.graceDays };
+}
+
+/**
+ * Points for an auto rule (0 when the CEO hasn't switched it on). Pass `forYMD` — the day
+ * the entry belongs to — whenever a real award is being priced, so it uses that day's
+ * rates. Omit it only for "is this rule on at all" checks, which read the live config.
+ */
+function rulePoints(bonus, key, forYMD) {
+  const r = ratesOn(bonus, forYMD).rules.find((x) => x.key === key);
   return r ? Number(r.points) || 0 : 0;
+}
+
+/** Last day of a 'YYYY-MM' — the day a month-end award belongs to, and is priced at. */
+function monthEndOf(ym) {
+  const last = new Date(Date.UTC(Number(String(ym).slice(0, 4)), Number(String(ym).slice(5, 7)), 0)).getUTCDate();
+  return `${ym}-${String(last).padStart(2, '0')}`;
+}
+
+/** Grace days in force on `forYMD` (the deadline's own terms — see ratesOn). */
+function graceDaysOn(bonus, forYMD) {
+  return Math.max(0, ratesOn(bonus, forYMD).graceDays || 0);
+}
+
+/** Are two price lists the same? (order-insensitive on rules) */
+function sameRates(a, b) {
+  if ((a?.graceDays ?? -1) !== (b?.graceDays ?? -1)) return false;
+  const norm = (list) => [...(list || [])].map((r) => `${r.key}:${Number(r.points) || 0}`).sort().join('|');
+  return norm(a?.rules) === norm(b?.rules);
 }
 
 // ── Config ───────────────────────────────────────────────────────────────────
@@ -126,7 +173,7 @@ export async function getConfig() {
   };
 }
 
-export async function updateConfig(patch) {
+export async function updateConfig(patch, actorId = null) {
   const s = await Setting.getSingleton();
   const b = s.bonus || {};
   const num = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d);
@@ -167,9 +214,73 @@ export async function updateConfig(patch) {
     s.bonus.lastMonthRollup = prevMonth(currentMonth());
     s.bonus.lastAbsenceScan = today;
   }
+  // Record the new price list against TODAY, so it prices today onward and leaves every
+  // earlier day at the rates it was actually scored under. Two saves on the same day
+  // collapse into one entry (the last one wins for that day), and a save that doesn't
+  // actually change any value adds nothing.
+  const next = { rules: s.bonus.autoRules || [], graceDays: s.bonus.graceDays };
+  const hist = [...(s.bonus.rateHistory || [])].sort((x, y) => (x.effectiveFrom < y.effectiveFrom ? -1 : 1));
+  const latest = hist[hist.length - 1];
+  if (!latest || !sameRates(latest, next)) {
+    const entry = { effectiveFrom: today, graceDays: next.graceDays, rules: next.rules.map((r) => ({ key: r.key, points: r.points })), changedBy: actorId || null, changedAt: new Date() };
+    const sameDay = hist.findIndex((h) => h.effectiveFrom === today);
+    if (sameDay >= 0) hist[sameDay] = entry; else hist.push(entry);
+    s.bonus.rateHistory = hist;
+  }
   await s.save();
   Setting.invalidateCache();
   return getConfig();
+}
+
+/**
+ * Seed the price-list history once, dated at go-live, from whatever the rules are now.
+ * Everything already on the books was scored with these values, so anchoring them to the
+ * start of time makes the history agree with the ledger and changes nobody's points.
+ */
+async function seedRateHistory() {
+  const s = await Setting.getSingleton();
+  if ((s.bonus?.rateHistory || []).length) return;
+  s.bonus.rateHistory = [{
+    effectiveFrom: APP_LIVE_YMD,
+    graceDays: s.bonus?.graceDays ?? 1,
+    rules: (s.bonus?.autoRules || []).map((r) => ({ key: r.key, points: r.points })),
+    changedBy: null,
+    changedAt: new Date(),
+  }];
+  await s.save();
+  Setting.invalidateCache();
+}
+
+/**
+ * The price lists that applied across a window, in order — what a month's report shows so
+ * anyone can see what each thing was worth at the time. A window with no change returns a
+ * single period; one where the CEO changed a value mid-month returns a period per rate.
+ */
+export async function ratesForPeriod(fromYMD, toYMD) {
+  const s = await Setting.getSingleton();
+  const b = s.bonus || {};
+  if (!b.enabled) return [];
+  const hist = [...(b.rateHistory || [])].sort((x, y) => (x.effectiveFrom < y.effectiveFrom ? -1 : 1));
+  if (!hist.length) return [{ from: fromYMD, to: toYMD, graceDays: b.graceDays ?? 1, rules: labelRules(b.autoRules || []) }];
+  // Every boundary inside the window, plus the rate already running when it opened.
+  const starts = hist.filter((h) => h.effectiveFrom > fromYMD && h.effectiveFrom <= toYMD).map((h) => h.effectiveFrom);
+  const bounds = [fromYMD, ...starts];
+  return bounds.map((start, i) => {
+    const end = i + 1 < bounds.length ? prevDay(bounds[i + 1]) : toYMD;
+    const r = ratesOn(b, start);
+    return { from: start, to: end, graceDays: r.graceDays, rules: labelRules(r.rules) };
+  });
+}
+
+/** Rule rows with their human label + intended sign, for display. */
+function labelRules(rules) {
+  return (rules || [])
+    .filter((r) => RULE_KEYS.has(r.key) && Number(r.points))
+    .map((r) => {
+      const meta = AUTO_RULES.find((x) => x.key === r.key);
+      const pts = Number(r.points) || 0;
+      return { key: r.key, label: meta?.label || r.key, points: meta?.sign === 'penalty' ? -Math.abs(pts) : pts };
+    });
 }
 
 // ── Reads ────────────────────────────────────────────────────────────────────
@@ -224,6 +335,13 @@ export async function mySummary(user, params = {}) {
     // Payout is for a positive net only; a deficit doesn't pay a negative wage, it carries.
     rupees: cfg.rupeesPerPoint && points > 0 ? Math.round(points * cfg.rupeesPerPoint) : 0,
     rupeesPerPoint: cfg.rupeesPerPoint,
+    // What each thing was worth DURING this period — the rates these very points were
+    // scored on, not today's. Lets anyone check an old month against the prices that
+    // applied then instead of taking the total on trust.
+    rates: await ratesForPeriod(
+      isRange ? params.from : `${month}-01`,
+      isRange ? params.to : monthEndOf(month),
+    ),
     entries: entries.map((e) => e.toJSON()),
   };
 }
@@ -531,12 +649,12 @@ export async function onAssignedTaskDone(task) {
   // page before that person had access. Clamp forward for FILING only — lateness is still
   // judged on the real day.
   const completedYMD = rawYMD < APP_LIVE_YMD ? APP_LIVE_YMD : rawYMD;
-  const late = task.dueYMD && rawYMD > addDays(task.dueYMD, b.graceDays || 0);
+  const late = task.dueYMD && rawYMD > addDays(task.dueYMD, graceDaysOn(b, task.dueYMD));
   // The cut happens when the due date passes (owner's rule): a LATE result is filed under
   // that day — same day/month as the -5 overdue mark it replaces — so finishing a stale
   // task months later never drags the penalty into a new month. On-time results are filed
   // under the completion day as before.
-  const filedYMD = late ? overdueDayFor(task.dueYMD, b.graceDays) : completedYMD;
+  const filedYMD = late ? overdueDayFor(task.dueYMD, graceDaysOn(b, task.dueYMD)) : completedYMD;
 
   for (const copy of copies) {
     // Defence in depth: only FINISHED copies are paid. The task service blocks closing a
@@ -553,7 +671,7 @@ export async function onAssignedTaskDone(task) {
     // copy that turns out to be a forwarder), so a re-score never leaves a stale row behind.
     // eslint-disable-next-line no-await-in-loop
     await PointEntry.deleteMany({ taskRef: copy._id, source: isForwarder ? 'auto_task' : 'auto_forward' });
-    const pts = rulePoints(b, isForwarder ? (late ? 'forwardLate' : 'forwardOnTime') : (late ? 'assignedTaskLate' : 'assignedTaskOnTime'));
+    const pts = rulePoints(b, isForwarder ? (late ? 'forwardLate' : 'forwardOnTime') : (late ? 'assignedTaskLate' : 'assignedTaskOnTime'), filedYMD);
     if (!pts) {
       // eslint-disable-next-line no-await-in-loop
       await PointEntry.deleteMany({ dedupeKey: key });
@@ -613,7 +731,7 @@ export async function rebuildOverdueForTask(taskId) {
   await PointEntry.deleteMany({ taskRef: t._id, dedupeKey: { $regex: /^auto_overdue:/ } });
 
   const today = ymdInTz(new Date());
-  const duePlus = addDays(t.dueYMD, b.graceDays || 0);
+  const duePlus = addDays(t.dueYMD, graceDaysOn(b, t.dueYMD));
   if (duePlus >= today) return; // the new deadline hasn't passed — nothing is owed
   const done = t.status === 'DONE' && t.completedAt ? ymdInTz(t.completedAt) : null;
 
@@ -621,8 +739,8 @@ export async function rebuildOverdueForTask(taskId) {
   // owns it and shares this dedupe key), so only an unfinished one is marked here.
   const pts = rulePoints(b, 'assignedTaskLate');
   if (pts && t.status !== 'DONE') {
-    const overdueDay = overdueDayFor(t.dueYMD, b.graceDays);
-    await awardOnce(`auto_task:${t._id}`, { user: t.owner, month: overdueDay.slice(0, 7), points: -Math.abs(pts), reason: `Overdue: ${t.title}`, source: 'auto_task', taskRef: t._id, earnedYMD: overdueDay });
+    const overdueDay = overdueDayFor(t.dueYMD, graceDaysOn(b, t.dueYMD));
+    await awardOnce(`auto_task:${t._id}`, { user: t.owner, month: overdueDay.slice(0, 7), points: -Math.abs(rulePoints(b, 'assignedTaskLate', overdueDay)), reason: `Overdue: ${t.title}`, source: 'auto_task', taskRef: t._id, earnedYMD: overdueDay });
   }
 
   const dripPts = rulePoints(b, 'assignedTaskOverdueDaily');
@@ -630,7 +748,7 @@ export async function rebuildOverdueForTask(taskId) {
   const last = done ? prevDay(done) : today; // a finished task stops the day it was done
   for (let d = addDays(duePlus, 2); d <= last; d = addDays(d, 1)) {
     // eslint-disable-next-line no-await-in-loop
-    await awardOnce(`auto_overdue:${t._id}:${d}`, { user: t.owner, month: d.slice(0, 7), points: -Math.abs(dripPts), reason: `Still overdue: ${t.title}`, source: 'auto_task', taskRef: t._id, earnedYMD: d });
+    await awardOnce(`auto_overdue:${t._id}:${d}`, { user: t.owner, month: d.slice(0, 7), points: -Math.abs(rulePoints(b, 'assignedTaskOverdueDaily', d)), reason: `Still overdue: ${t.title}`, source: 'auto_task', taskRef: t._id, earnedYMD: d });
   }
 }
 
@@ -646,7 +764,7 @@ export async function onCheckIn(user, dateYMD, isLate) {
   const b = s.bonus || {};
   if (!b.enabled) return;
   if (isLate) {
-    const pts = rulePoints(b, 'lateArrival');
+    const pts = rulePoints(b, 'lateArrival', dateYMD);
     if (pts) {
       await awardOnce(`auto_late:${user._id}:${dateYMD}`, { user: user._id, month: dateYMD.slice(0, 7), points: -Math.abs(pts), reason: `Late arrival · ${dateYMD}`, source: 'auto_late', earnedYMD: dateYMD });
     }
@@ -664,7 +782,7 @@ export async function reconcileLatePenalty(userId, dateYMD, shouldPenalise) {
   const b = s.bonus || {};
   const key = `auto_late:${userId}:${dateYMD}`;
   if (b.enabled && shouldPenalise) {
-    const pts = rulePoints(b, 'lateArrival');
+    const pts = rulePoints(b, 'lateArrival', dateYMD);
     if (pts) {
       await awardOnce(key, { user: userId, month: dateYMD.slice(0, 7), points: -Math.abs(pts), reason: `Late arrival · ${dateYMD}`, source: 'auto_late', earnedYMD: dateYMD });
       return;
@@ -718,7 +836,7 @@ export async function reconcileNoLeaveMonth(userId, month) {
   const from = `${month}-01`;
   const lastDay = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate();
   const monthEnd = `${month}-${String(lastDay).padStart(2, '0')}`;
-  const pts = rulePoints(b, 'noLeaveMonth');
+  const pts = rulePoints(b, 'noLeaveMonth', monthEnd);
   // WFH is not leave — it must not cost the award (mirrors runMonthRollup).
   const took = await LeaveRequest.countDocuments({ user: userId, status: 'APPROVED', type: { $ne: 'WFH' }, startYMD: { $lte: monthEnd }, endYMD: { $gte: from } });
   if (b.enabled && pts && took === 0) {
@@ -743,7 +861,7 @@ export async function reconcilePerfectMonth(userId, month) {
   const s = await Setting.getSingleton();
   const b = s.bonus || {};
   const key = `auto_perfect:${userId}:${month}`;
-  const pts = rulePoints(b, 'perfectAttendanceMonth');
+  const pts = rulePoints(b, 'perfectAttendanceMonth', monthEnd);
   const user = await User.findById(userId).select('role employmentType schedule dateOfJoining');
   // Only roster members (self-track attendance) are ever judged — same as the rollup.
   if (!b.enabled || !pts || !user || !can({ role: user.role }, 'markAttendance')) {
@@ -791,7 +909,7 @@ export async function reconcileAbsence(userId, dateYMD) {
   const b = s.bonus || {};
   const key = `auto_absent:${userId}:${dateYMD}`;
   const today = ymdInTz(new Date());
-  const pts = rulePoints(b, 'absentDay');
+  const pts = rulePoints(b, 'absentDay', dateYMD);
   // Only a finished past day can be an absence; nothing before go-live is tracked.
   if (!b.enabled || !pts || dateYMD >= today || dateYMD < APP_LIVE_YMD) {
     await PointEntry.deleteMany({ dedupeKey: key });
@@ -835,7 +953,7 @@ function otLabel(min) {
  */
 async function recomputeMonthlyOvertime(b, userId, month) {
   await PointEntry.deleteMany({ user: userId, source: 'auto_ot', month });
-  const pts = Math.abs(rulePoints(b, 'overtimeHour'));
+  const pts = Math.abs(rulePoints(b, 'overtimeHour', monthEndOf(month)));
   if (!pts) return;
   const from = `${month}-01`;
   const lastDay = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate();
@@ -913,7 +1031,7 @@ async function scanOverdueTasks(b) {
   const ownerIds = tasks.length ? await ownerTierIds() : new Set();
   const chainMemo = new Map();
   for (const t of tasks) {
-    const duePlus = addDays(t.dueYMD, b.graceDays || 0);
+    const duePlus = addDays(t.dueYMD, graceDaysOn(b, t.dueYMD));
     if (duePlus >= today) continue;
     // Owner-tier visibility gate: an untagged task is fully out — no mark, no drip.
     // eslint-disable-next-line no-await-in-loop
@@ -930,9 +1048,10 @@ async function scanOverdueTasks(b) {
       // the result once it's finished. (The drips below are separate per-day entries.)
       // Filed under the day the due date passed — a July-due task's -5 lands in July,
       // however late the scan writes it.
-      const overdueDay = overdueDayFor(t.dueYMD, b.graceDays);
+      const overdueDay = overdueDayFor(t.dueYMD, graceDaysOn(b, t.dueYMD));
+      const markPts = rulePoints(b, 'assignedTaskLate', overdueDay); // the day the deadline passed sets the price
       // eslint-disable-next-line no-await-in-loop
-      await awardOnce(`auto_task:${t._id}`, { user: t.owner, month: overdueDay.slice(0, 7), points: -Math.abs(pts), reason: `Overdue: ${t.title}`, source: 'auto_task', taskRef: t._id, earnedYMD: overdueDay });
+      await awardOnce(`auto_task:${t._id}`, { user: t.owner, month: overdueDay.slice(0, 7), points: -Math.abs(markPts), reason: `Overdue: ${t.title}`, source: 'auto_task', taskRef: t._id, earnedYMD: overdueDay });
     }
     // -- Escalating drip: -N for each FURTHER day it stays overdue --
     // Timeline (grace 0): due day → nothing; due+1 → the -5 mark; due+2 onward → -1 each
@@ -944,7 +1063,7 @@ async function scanOverdueTasks(b) {
     // start); the -5 mark above has no floor.
     if (dripPts && t.dueYMD >= DRIP_FLOOR_YMD && today > addDays(duePlus, 1)) {
       // eslint-disable-next-line no-await-in-loop
-      await awardOnce(`auto_overdue:${t._id}:${today}`, { user: t.owner, month: today.slice(0, 7), points: -Math.abs(dripPts), reason: `Still overdue: ${t.title}`, source: 'auto_task', taskRef: t._id, earnedYMD: today });
+      await awardOnce(`auto_overdue:${t._id}:${today}`, { user: t.owner, month: today.slice(0, 7), points: -Math.abs(rulePoints(b, 'assignedTaskOverdueDaily', today)), reason: `Still overdue: ${t.title}`, source: 'auto_task', taskRef: t._id, earnedYMD: today });
     }
   }
 }
@@ -974,7 +1093,7 @@ async function backfillOverdueRuleV2() {
     for (const t of tasks) {
       // eslint-disable-next-line no-await-in-loop
       if (!(await chainEligible(t, ownerIds, memo))) continue;
-      const duePlus = addDays(t.dueYMD, b.graceDays || 0);
+      const duePlus = addDays(t.dueYMD, graceDaysOn(b, t.dueYMD));
       const first = addDays(duePlus, 2); // day after the -5 mark
       // Drips stop the day the task reached DONE (= approval, for gated tasks); a still-
       // open task drips through today. Days are written under their own date/month.
@@ -985,7 +1104,7 @@ async function backfillOverdueRuleV2() {
       }
       for (let d = first; d <= last; d = addDays(d, 1)) {
         // eslint-disable-next-line no-await-in-loop
-        await awardOnce(`auto_overdue:${t._id}:${d}`, { user: t.owner, month: d.slice(0, 7), points: -Math.abs(dripPts), reason: `Still overdue: ${t.title}`, source: 'auto_task', taskRef: t._id, earnedYMD: d });
+        await awardOnce(`auto_overdue:${t._id}:${d}`, { user: t.owner, month: d.slice(0, 7), points: -Math.abs(rulePoints(b, 'assignedTaskOverdueDaily', d)), reason: `Still overdue: ${t.title}`, source: 'auto_task', taskRef: t._id, earnedYMD: d });
       }
     }
   }
@@ -1055,7 +1174,7 @@ async function scanAbsences(b, since, until = null) {
       if (userWeekendDays(u, s).includes(dow)) continue;
       if (present.has(String(u._id)) || onLeave.has(String(u._id))) continue;
       // eslint-disable-next-line no-await-in-loop
-      await awardOnce(`auto_absent:${u._id}:${ymd}`, { user: u._id, month, points: -Math.abs(pts), reason: `Absent · ${ymd}`, source: 'auto_absent', earnedYMD: ymd });
+      await awardOnce(`auto_absent:${u._id}:${ymd}`, { user: u._id, month, points: -Math.abs(rulePoints(b, 'absentDay', ymd)), reason: `Absent · ${ymd}`, source: 'auto_absent', earnedYMD: ymd });
     }
   }
 }
@@ -1070,8 +1189,8 @@ async function runMonthRollup(b, forMonth = null) {
   const done = b.lastMonthRollup;
   const target = forMonth || prevMonth(thisMonth);
   if (!forMonth && done === target) return target; // already processed
-  const noLeavePts = rulePoints(b, 'noLeaveMonth');
-  const perfectPts = rulePoints(b, 'perfectAttendanceMonth');
+  const noLeavePts = rulePoints(b, 'noLeaveMonth', monthEndOf(target));
+  const perfectPts = rulePoints(b, 'perfectAttendanceMonth', monthEndOf(target));
   if (!noLeavePts && !perfectPts) return target;
 
   const from = `${target}-01`;
@@ -1182,7 +1301,7 @@ export async function runRollingStreak(b) {
       count += 1;
       if (count >= STREAK_LEN) {
         // eslint-disable-next-line no-await-in-loop
-        await awardOnce(`auto_streak:${uid}:${d}`, { user: u._id, month: d.slice(0, 7), points: Math.abs(pts), reason: `Punctual streak · ${STREAK_LEN} days on time · ${d}`, source: 'auto_streak', earnedYMD: d });
+        await awardOnce(`auto_streak:${uid}:${d}`, { user: u._id, month: d.slice(0, 7), points: Math.abs(rulePoints(b, 'punctualStreak', d)), reason: `Punctual streak · ${STREAK_LEN} days on time · ${d}`, source: 'auto_streak', earnedYMD: d });
         count = 0; // the next run starts from scratch
       }
     }
@@ -1255,9 +1374,8 @@ export async function backfillMonth(month) {
   const before = await PointEntry.countDocuments({ month });
 
   // 1. Attendance-derived awards, straight off what was recorded that month.
-  const latePts = rulePoints(b, 'lateArrival');
   const otPts = rulePoints(b, 'overtimeHour');
-  if (latePts) {
+  if (rulePoints(b, 'lateArrival')) {
     // EXCUSED and half-day lates are not late for points (the office rule everywhere else:
     // an on-duty excuse, and a half-day, cost nothing). Excusing keeps the record's status
     // as LATE and only deletes the point entry, so a backfill that filtered on status alone
@@ -1276,7 +1394,7 @@ export async function backfillMonth(month) {
         continue;
       }
       // eslint-disable-next-line no-await-in-loop
-      await awardOnce(key, { user: r.user, month: ymd.slice(0, 7), points: -Math.abs(latePts), reason: `Late arrival · ${ymd}`, source: 'auto_late', earnedYMD: ymd });
+      await awardOnce(key, { user: r.user, month: ymd.slice(0, 7), points: -Math.abs(rulePoints(b, 'lateArrival', ymd)), reason: `Late arrival · ${ymd}`, source: 'auto_late', earnedYMD: ymd });
     }
   }
   // Overtime is one row per person for the whole month, so recompute it per person rather
@@ -1617,6 +1735,7 @@ export async function maybeRunDaily() {
   try { await backfillOverdueRuleV2(); } catch (e) { console.error('overdue rule-v2 backfill failed', e?.message); }
   try { await rebuildStreakV2(b); } catch (e) { console.error('streak v2 rebuild failed', e?.message); }
   try { await clearExcusedLatePenalties(); } catch (e) { console.error('excused-late sweep failed', e?.message); }
+  try { await seedRateHistory(); } catch (e) { console.error('rate-history seed failed', e?.message); }
   const today = ymdInTz(new Date());
   if (b.lastPenaltyRun === today) return;
   // Where the absence catch-up starts. Kept SEPARATE from the once-a-day throttle and

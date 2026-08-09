@@ -51,8 +51,20 @@ export async function getConfig(_req, res, next) {
 
 export async function updateConfig(req, res, next) {
   try {
-    const cfg = await svc.updateConfig(req.body || {});
-    await audit({ actor: req.user._id, action: 'bonus.config', entityType: 'Bonus', entityId: 'config' });
+    const before = await svc.getConfig();
+    const cfg = await svc.updateConfig(req.body || {}, req.user._id);
+    // Rule values decide what people are paid, so the change itself is the record —
+    // "config was edited" alone left no way to see what moved.
+    await audit({
+      actor: req.user._id,
+      action: 'bonus.config',
+      entityType: 'Bonus',
+      entityId: 'config',
+      meta: {
+        before: { graceDays: before.graceDays, rules: before.autoRules },
+        after: { graceDays: cfg.graceDays, rules: cfg.autoRules },
+      },
+    });
     res.json(ok(cfg));
   } catch (err) {
     handleErr(res, err, next);

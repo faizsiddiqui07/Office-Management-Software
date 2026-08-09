@@ -15,7 +15,7 @@ import { holidayYMDSet } from './holiday.service.js';
 import { expenseSummary } from './expense.service.js';
 import { ledgerFor } from './dues.service.js';
 import { wfhUsage } from './leave.service.js';
-import { periodPoints } from './bonus.service.js';
+import { periodPoints, ratesForPeriod } from './bonus.service.js';
 import { APP_LIVE_YMD } from '../lib/appLive.js';
 
 const pad = (n) => String(n).padStart(2, '0');
@@ -451,6 +451,11 @@ export async function buildReport(type, dateYMD, range) {
       enabled: true,
       rupeesPerPoint: rp.rupeesPerPoint,
       monthlyNet: type === 'monthly', // true = month NET (carry-in), else raw earned in-window
+      // The price list this period was actually scored on. Rule values are effective-dated,
+      // so a later change can't re-price these figures — printing the rates alongside them
+      // is what makes an old report checkable instead of just asserted. More than one row
+      // means the values changed part-way through the window.
+      rates: await ratesForPeriod(from, to),
       perEmployee: perEmployeeR,
       totals: perEmployeeR.reduce(
         (acc, e) => ({ points: acc.points + e.points, rupees: acc.rupees + e.rupees }),
