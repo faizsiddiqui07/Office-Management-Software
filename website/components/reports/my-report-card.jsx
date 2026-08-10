@@ -16,6 +16,7 @@ import { PeriodPicker } from './period-picker';
 import { OngoingNotice } from './report-preview';
 import { SELF_REPORT_SECTIONS } from '@/lib/report';
 import { companyTodayYMD, formatMoney } from '@/lib/expense';
+import { formatYMD } from '@/lib/leave';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
@@ -137,7 +138,10 @@ export function MyReportCard() {
             {selfTracks && bal ? (
               <Mini label="Leave balance" value={`${bal.remaining} left`} hint={`${bal.used} used of ${bal.total}`} />
             ) : null}
-            <Mini label="Dues" value={duesValue} hint={data.period.label} />
+            {/* The balance is what is owed TODAY (the whole ledger), not what this period
+                added — labelling it with the period had the card contradicting its own
+                PDF, whose table only lists the period's entries. */}
+            <Mini label="Dues" value={duesValue} hint={data.dues?.balanceAsOfYMD ? `as on ${formatYMD(data.dues.balanceAsOfYMD)}` : 'current balance'} />
           </div>
         </>
       ) : null}

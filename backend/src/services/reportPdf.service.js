@@ -290,6 +290,20 @@ function companyRewardsSection(d, accent) {
   );
 }
 
+/**
+ * Who is on the roster but NOT in the attendance table, and why. The screen says this
+ * plainly; the PDF — the copy that actually gets printed and forwarded — used to drop it,
+ * leaving a reader to reconcile "Headcount 15" against twelve attendance rows on their
+ * own. Deliberately says "attendance table", not "this report": these people DO appear in
+ * Roster, Tasks and Rewards, they simply had not joined during the period being measured.
+ */
+function joinedLaterNote(d) {
+  const list = d.joinedLater || [];
+  if (!list.length) return null;
+  const names = list.map((p) => `${p.name}${p.joinedYMD ? ` (joined ${p.joinedYMD})` : ''}`).join(', ');
+  return E(Text, { style: styles.empty }, `Not in the attendance table — joined after this period: ${names}`);
+}
+
 function attendanceSection(d, accent) {
   const t = d.attendance.totals;
   const stats = [
@@ -316,7 +330,16 @@ function attendanceSection(d, accent) {
     { label: 'OT', w: '10%', align: 'right' },
   ];
   const rows = d.attendance.perEmployee.map((e) => [e.name, e.employeeId, e.present, e.late, e.absent, e.onLeave, e.wfh ?? 0, dur(e.workedMinutes), dur(e.overtimeMinutes)]);
-  return E(View, { key: 'attendance' }, sectionTitle('Attendance summary', accent), E(View, { style: styles.statRow }, ...stats), table(headers, rows));
+  return E(
+    View,
+    { key: 'attendance' },
+    sectionTitle('Attendance summary', accent),
+    E(View, { style: styles.statRow }, ...stats),
+    table(headers, rows),
+    // Lives here, not at the top of the page: it explains THIS table's short row count,
+    // and if attendance isn't one of the chosen sections there is nothing to explain.
+    joinedLaterNote(d),
+  );
 }
 
 function leavesSection(d, accent) {
@@ -544,7 +567,14 @@ function selfLeavesSection(d, accent) {
 }
 
 function selfDuesSection(d, accent) {
-  const stats = [stat('Pending', money(d.dues.pending), 'd1'), stat('Advance', money(d.dues.advance), 'd2'), stat('Entries (period)', d.dues.entries.length, 'd3')];
+  // The first two are the running balance TODAY, not this period's movement — say so, or
+  // the page header ("Period: ...") reads as if they were.
+  const asOn = d.dues.balanceAsOfYMD ? ` (as on ${d.dues.balanceAsOfYMD})` : '';
+  const stats = [
+    stat(`Pending${asOn}`, money(d.dues.pending), 'd1'),
+    stat(`Advance${asOn}`, money(d.dues.advance), 'd2'),
+    stat('Entries (period)', d.dues.entries.length, 'd3'),
+  ];
   const headers = [
     { label: 'Date', w: '15%' },
     { label: 'Type', w: '13%' },

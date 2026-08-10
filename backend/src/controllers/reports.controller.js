@@ -24,6 +24,15 @@ const isYMD = (v) => {
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
 };
 
+// The day-by-day builders allocate one row per day, so an unbounded span is a way to
+// burn the whole Lambda: 46,000 days already blows the 6 MB response limit and 740,000
+// times it out entirely. The same guard (and the same number) is on the per-user report
+// in users.controller — a limit that only some callers of a function respect isn't one.
+const MAX_RANGE_DAYS = 400;
+function spanTooWide(from, to) {
+  return (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000 > MAX_RANGE_DAYS;
+}
+
 function dateOrToday(query) {
   return isYMD(query.date) ? query.date : ymdInTz(new Date());
 }
@@ -87,8 +96,12 @@ export function requireCompanyReports(req, res, next) {
 export async function preview(req, res, next) {
   try {
     if (!TYPES.includes(req.params.type)) return res.status(400).json(fail('BAD_TYPE', 'Invalid report type'));
+    const range = rangeOf(req.query);
+    if (range.from && range.to && spanTooWide(range.from, range.to)) {
+      return res.status(400).json(fail('RANGE_TOO_WIDE', 'Pick a range of at most about a year.'));
+    }
     const access = sectionAccess(req.user);
-    const data = await buildReport(req.params.type, dateOrToday(req.query), rangeOf(req.query));
+    const data = await buildReport(req.params.type, dateOrToday(req.query), range);
     // Strip sections the user may not see.
     if (!access.expenses) delete data.expenses;
     if (!access.attendance) {
@@ -111,6 +124,10 @@ export async function download(req, res, next) {
   try {
     const { type } = req.params;
     if (!TYPES.includes(type)) return res.status(400).json(fail('BAD_TYPE', 'Invalid report type'));
+    const range = rangeOf(req.query);
+    if (range.from && range.to && spanTooWide(range.from, range.to)) {
+      return res.status(400).json(fail('RANGE_TOO_WIDE', 'Pick a range of at most about a year.'));
+    }
 
     const access = sectionAccess(req.user);
     const requested = parseSections(req.query.sections, COMPANY_SECTIONS);
@@ -118,7 +135,7 @@ export async function download(req, res, next) {
     if (!sections.length) return res.status(403).json(fail('FORBIDDEN', 'No permitted sections to include'));
 
     const date = dateOrToday(req.query);
-    const data = await buildReport(type, date, rangeOf(req.query));
+    const data = await buildReport(type, date, range);
     await audit({ actor: req.user._id, action: 'report.download', entityType: 'Report', entityId: type, meta: { scope: 'company', date, sections } });
 
     res.setHeader('Content-Type', 'application/pdf');
@@ -137,7 +154,11 @@ export async function download(req, res, next) {
 
 export async function selfPreview(req, res, next) {
   try {
-    const data = await buildSelfReport({ user: req.user, type: typeOrMonthly(req.query), dateYMD: dateOrToday(req.query), range: rangeOf(req.query) });
+    const range = rangeOf(req.query);
+    if (range.from && range.to && spanTooWide(range.from, range.to)) {
+      return res.status(400).json(fail('RANGE_TOO_WIDE', 'Pick a range of at most about a year.'));
+    }
+    const data = await buildSelfReport({ user: req.user, type: typeOrMonthly(req.query), dateYMD: dateOrToday(req.query), range });
     return res.json(ok(data));
   } catch (err) {
     return next(err);
@@ -149,8 +170,12 @@ export async function selfDownload(req, res, next) {
     const type = typeOrMonthly(req.query);
     const date = dateOrToday(req.query);
     const sections = parseSections(req.query.sections, SELF_SECTIONS);
+    const range = rangeOf(req.query);
+    if (range.from && range.to && spanTooWide(range.from, range.to)) {
+      return res.status(400).json(fail('RANGE_TOO_WIDE', 'Pick a range of at most about a year.'));
+    }
 
-    const data = await buildSelfReport({ user: req.user, type, dateYMD: date, range: rangeOf(req.query) });
+    const data = await buildSelfReport({ user: req.user, type, dateYMD: date, range });
     await audit({ actor: req.user._id, action: 'report.download', entityType: 'Report', entityId: 'me', meta: { scope: 'me', type, date, sections } });
 
     res.setHeader('Content-Type', 'application/pdf');

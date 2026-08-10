@@ -68,7 +68,7 @@ function TasksSection({ data }) {
     <ReportSection icon={ListTodo} title="Tasks" meta={`${t.done} done · ${t.onTime} on time`}>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label="Tasks done" value={t.done} icon={ListTodo} tone="default" hint="assigned work only" />
-        <StatCard label="On time" value={t.onTime} icon={UserCheck} tone="success" hint={t.done ? `${Math.round((t.onTime / Math.max(1, t.onTime + t.late)) * 100)}% of dated work` : '—'} />
+        <StatCard label="On time" value={t.onTime} icon={UserCheck} tone="success" hint={t.done ? `${Math.round((t.onTime / t.done) * 100)}% of tasks done` : '—'} />
         <StatCard label="Late" value={t.late} icon={Clock} tone={t.late ? 'warning' : 'default'} hint={`over ${grace} day${grace === 1 ? '' : 's'} past due`} />
         <StatCard label="Tagged on" value={t.tagged} icon={UserX} tone="info" hint="kept in the loop" />
       </div>
@@ -343,8 +343,12 @@ export function OngoingNotice({ data, workingDays }) {
 }
 
 /**
- * People who joined after this period and so aren't in it. Stated plainly, because a
- * report that quietly omits names is worse than one that explains the omission.
+ * People who joined after this period and so have no attendance in it. Stated plainly,
+ * because a table that quietly omits names is worse than one that explains the omission.
+ *
+ * "Attendance table", not "this report": these people still appear under Roster, Tasks
+ * and Rewards. Only the attendance/leave counts — which are per working day — have
+ * nothing to show for a period that ended before they joined.
  */
 export function JoinedLaterNotice({ data }) {
   const later = data?.joinedLater ?? [];
@@ -354,7 +358,7 @@ export function JoinedLaterNotice({ data }) {
       <UserPlus className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
       <p className="text-muted-foreground">
         <span className="font-medium text-foreground">
-          {later.length} {later.length > 1 ? 'people are' : 'person is'} not in this report
+          {later.length} {later.length > 1 ? 'people are' : 'person is'} not in the attendance table
         </span>{' '}
         — they joined after {formatYMD(data.period.to)}:{' '}
         {later.map((p) => `${p.name} (joined ${formatYMD(p.joinedYMD)})`).join(', ')}.

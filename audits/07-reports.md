@@ -4,7 +4,8 @@
 >
 > Confirmed 8 me se **do ek hi bug hain** (#2 aur #4 — attendance rate ka din-cutoff) → asli me **7 distinct RED**.
 >
-> **STATUS: kuch bhi fix NAHI hua.** Har bug owner ko samjha ke, approval ke baad hi ([[explain-bugs-before-fixing]]).
+> **STATUS (10 Aug 2026): saatoN RED ✅ FIXED + verified.** Owner ne approve kiya: *"sare bugs theek kr do lekin ek dam shi see har ek bug baar baar verify krna har condition me verify krna"*. Baaki **56 PARKED**.
+> Push/zip **nahi** hua — owner ke kehne par hi hoga ([[no-auto-push]]).
 
 Ye module sabse **nazuk** hai: har page ka data ek jagah aata hai, aur iske **PDF bahar jaate hain** (records, accountant). Isliye teen sabse bade findings **attendance ke figures** ke hain — wahi cheez jo payroll decide karti hai.
 
@@ -150,6 +151,64 @@ Screen saaf likhta hai *"3 log is report me nahi — wo baad me joined"*. **PDF 
 Padhne wala samjhega data missing hai. **Attendance CSV export tak ye footer chhapta hai** — report PDF akela chhoot gaya.
 
 **⚠️ Verifier ne fix ka wording sudhara:** wo 3 log report se **gayab nahi** hain — Roster, Tasks (0/0/0) aur Rewards (0 points) me **aate hain**, sirf **Attendance table** se bahar hain. To line honi chahiye *"3 log attendance table me nahi (baad me joined)"*, **na ki** *"report me nahi"*.
+
+---
+
+## ✅ FIX + VERIFICATION LOG (10 Aug 2026)
+
+Sab kuch ek **throwaway DB** pe test hua (`MONGODB_DB=reports_fix_test`, shuru aur ant dono me `dropDatabase`) — prod ko chhua tak nahi ([[isolated-db-testing]]).
+Suite: `backend/_tmp_reports_test.mjs` (gitignored) — **95 assertions, 95 pass**.
+
+**Sabse zaroori: har bug ka "pehle toota tha" proof.** Fixes ko `git stash` se hataaya, wahi suite chalaayi, phir wapas laaye — pehle jo fail hota tha wahi ab pass hota hai:
+
+| Bug | Fix ke **pehle** kya nikla | Fix ke **baad** |
+|---|---|---|
+| **R1** | company rate **103%**; 2 Sunday-visit wale ki 2 asli absence **0** ho gayi; holiday-visit / pre-joining row bhi absence kha gaye; self report ne 28 working days bataye jahan company 26 | rate 96% (≤100 hamesha), absent 2 / 1 / 1 sahi, self == company **paanchon** employee pe |
+| **R2** | aaj ki daily report: **0 working days, 0%** — jabki 1 banda present; monthly `asOfYMD` **kal** ka; Sunday-only report **0%**; aaj join hone wala **joinedLater** me chala gaya | 1 working day, **50%** (2 me se 1 aaya), `asOfYMD` = aaj + naya `absentAsOfYMD` = kal, Sunday report `null`, aaj-joiner report ke andar |
+| **R3** | 5 din **aage** ki leave **"li hui"** gin li — onLeave **1.5**, absent **0.5**, working days **10** (mahina abhi 8 tarikh pe), rate **80%** | wo din **UPCOMING**, onLeave 0, absent 0, working days 8, rate **100%** |
+| **R4** | 401-din ka custom range **chal gaya** (koi rok nahi) | chaaron endpoint pe `RANGE_TOO_WIDE`; **theek 400 din allowed** (boundary inclusive) |
+| **R6** | `dues.balanceAsOfYMD` **undefined** — July report ka balance July ka lagta tha | July report me bhi `"2026-08-10"` (aaj) |
+| **R7** | joiner ke saath aur bina joiner ke PDF **bilkul same size — 3433 = 3433 bytes** (note kahin nahi gaya) | joiner wala PDF bada; note attendance table ke neeche |
+
+### Kaun se scenario chale (95 assertions)
+
+**R1 — off-day/holiday/pre-joining attendance asli absence nahi kha sakti**
+- 2 Sunday check-in + 2 asli gair-haazri → present 26, offDayPresent 2, showedWorkingDays 24, **absent 2**
+- Holiday pe aana + 1 gair-haazri → **absent 1**, working days me holiday nahi
+- Perfect attendance + 3 Sunday → **rate 100%, 111% nahi**; present > workingDays (off-day kaam asli hai, dikhta hai)
+- Sunday ko **WFH** → `wfhWorkingDays` 0, offDayPresent 1, absent 1
+- Joining se **pehle** ki attendance row (data anomaly) → absence nahi khaati
+- Paanchon pe **self report == company report** (workingDays, absent, rate)
+
+**R2 — chalte hue period ka do-window rule**
+- Aaj ki daily, **office khula** → aaj ginta hai, koi absent nahi, rate 50%
+- Wahi din, **office band** → gair-haazri ab **absent 1**
+- Beech-mahine ki monthly → workingDays 1–aaj tak, `asOfYMD` aaj
+- **Sirf-Sunday** report → rate `null` (0% nahi — jawab hi nahi banta)
+- **Aaj join** hua banda → report ke andar, absent 0
+- **Kal join** hone wala → `joinedLater` me, apni tarikh ke saath
+- **Apna alag workEnd** wala part-timer → uska din khatam → absent; baakiyon ka nahi (per-user cutoff)
+
+**R3 — future row koi "beeta hua din" nahi**
+- 5 din aage ki poori leave + uske agle din **half-day** → dono **UPCOMING**, 0.5 absent nahi juda
+- **Aaj** ki leave → `ON_LEAVE` (aa chuka din hai), working day = true
+- **Aaj** ka WFH, office khula → UPCOMING; office band → WFH gin gaya, rate 100%
+- Chalte mahine pe **self == company** (workingDays / absent / onLeave)
+- **Beeta hua** mahina (July) → ek bhi UPCOMING nahi
+
+**R4 — 400-din cap**
+- 401 din → `preview`, `download`, `selfPreview`, `selfDownload` **chaaron** block
+- **theek 400** din → allowed; ulta from/to → phir bhi napa jaata hai; normal mahina + `monthly` (bina range) → kabhi block nahi
+
+**R5** *(screen-only, build se verify)* — `% of tasks done` (pehle `% of dated work`).
+**R6** — July aur ek-din, dono report me balance ki tarikh **aaj**.
+**R7** — bina joiner PDF (control) → `joinedLater` 0; joiner ke saath → 1, sahi tarikh, PDF bada.
+
+`npm run build` clean. Backend imports clean.
+
+### Ek cheez jo owner ko pata honi chahiye
+
+R2 ke baad **aaj ka din denominator me aa jaata hai jaise hi din shuru hota hai**. Matlab subah 9 baje, jab koi check-in nahi hua, daily report **"1 working day · 0%"** dikhayega (pehle "0 working days · 0%" dikhata tha). Jaise-jaise log aate hain wo 0 → 100% chadhta hai. **Absent phir bhi 0 hi rehta hai** jab tak office band na ho — ye important hai. Company aur self report **dono** yahi karte hain, isliye aapas me kabhi nahi ladte.
 
 ---
 

@@ -179,7 +179,11 @@ export async function buildReport(type, dateYMD, range) {
   // Nobody is accountable for a period they hadn't joined. People who arrived after it
   // drop out entirely; those who arrived during it are judged only on their own days,
   // so the report never counts a day against someone who had no access.
-  const { included: attendanceUsers, joinedLater } = splitByJoining(attendanceRoster, from, elapsedTo || to);
+  // Split on the days that have HAPPENED (today included), not on the last FINISHED day.
+  // Using the finished day pushed anyone whose joining date is today into "joined later"
+  // on today's own report — a person told they arrived after the day they arrived.
+  const countToCompany = to < todayYMD ? to : todayYMD;
+  const { included: attendanceUsers, joinedLater } = splitByJoining(attendanceRoster, from, countToCompany || to);
   const leaveUserIds = new Set(activeUsers.filter((u) => can({ role: u.role }, 'applyLeave')).map((u) => String(u._id)));
 
   // ── Attendance per employee ───────────────────────────────
@@ -201,7 +205,24 @@ export async function buildReport(type, dateYMD, range) {
     const uFinished = workWindowClosed(u, todayYMD, settings, now) ? todayYMD : yesterdayYMD;
     const uElapsedTo = to < uFinished ? to : uFinished;
     const startedOn = periodStartFor(u, from);
-    const ownWorkingDays = startedOn > uElapsedTo ? 0 : countWorkingDays(startedOn, uElapsedTo, uWeekend, holidaySet);
+    // TWO windows, deliberately different, because two different kinds of question are
+    // being asked:
+    //  • uCountTo (today) — what HAS happened: working days so far, attendance, the rate.
+    //  • uElapsedTo (last finished day) — a judgement that needs the day to be over: absent.
+    // They used to be conflated: attendance was counted to today but working days stopped
+    // at yesterday, so the rate divided a today-inclusive numerator by a yesterday-inclusive
+    // denominator — a daily report opened this morning read "0% / 0 working days" beside 25
+    // people present, and a monthly one read 114%.
+    const uCountTo = to < todayYMD ? to : todayYMD;
+    const ownWorkingDays = startedOn > uCountTo ? 0 : countWorkingDays(startedOn, uCountTo, uWeekend, holidaySet);
+    const finishedWorkingDays = startedOn > uElapsedTo ? 0 : countWorkingDays(startedOn, uElapsedTo, uWeekend, holidaySet);
+    // Is this day one of THIS person's working days at all? Coming in on a Sunday, on a
+    // holiday, or before they joined is real and is shown — but it must never enter a
+    // figure whose denominator excludes those days. Without this test every off-day
+    // attendance cancelled one real absence (and could push the rate past 100%).
+    const isOwnWorkingDay = (d) => d >= startedOn
+      && !holidaySet.has(d)
+      && !uWeekend.includes(new Date(`${d}T00:00:00Z`).getUTCDay());
 
     let present = 0;
     let late = 0;
@@ -214,37 +235,49 @@ export async function buildReport(type, dateYMD, range) {
     // show today's attendance instead of a blank table: the old cap at the last
     // FINISHED day silently dropped every row of an in-progress today.) Judgements that
     // need a finished day — absent — still cap at uElapsedTo via the *Fin counters.
-    const countTo = to < todayYMD ? to : todayYMD;
+    const countTo = uCountTo;
     let showedFin = 0;
     let onLeaveFin = 0;
     let wfhFin = 0;
+    let showedWD = 0; // attendance ON this person's working days — the rate's numerator
+    let wfhWD = 0;
+    let offDayPresent = 0; // came in on a Sunday / holiday: real, but not a working day
     for (const r of recsByUser.get(String(u._id)) || []) {
       const d = ymdInTz(new Date(r.date));
       if (d > countTo) continue;
       const finished = d <= uElapsedTo;
+      const workingDay = isOwnWorkingDay(d);
       workedMinutes += r.workedMinutes || 0;
       overtimeMinutes += r.overtimeMinutes || 0;
-      if (r.status === 'PRESENT') {
-        present += 1;
-        if (finished) showedFin += 1;
-      } else if (r.status === 'LATE') {
-        if (r.excused) present += 1; // excused (on-duty) counts as present
-        else late += 1;
-        if (finished) showedFin += 1;
+      if (r.status === 'PRESENT' || r.status === 'LATE') {
+        if (r.status === 'LATE' && !r.excused) late += 1;
+        present += 1; // every attended day, off-day work included (matches the payroll matrix)
+        if (workingDay) {
+          showedWD += 1;
+          if (finished) showedFin += 1;
+        } else {
+          offDayPresent += 1;
+        }
       } else if (r.status === 'ON_LEAVE') {
         onLeave += r.halfDayLeave ? 0.5 : 1; // half-day leave = half a day away
-        if (finished) onLeaveFin += r.halfDayLeave ? 0.5 : 1;
+        if (workingDay && finished) onLeaveFin += r.halfDayLeave ? 0.5 : 1;
       } else if (r.status === 'WFH') {
         wfh += 1; // worked, from home
-        if (finished) wfhFin += 1;
+        if (workingDay) {
+          wfhWD += 1;
+          if (finished) wfhFin += 1;
+        } else {
+          offDayPresent += 1;
+        }
       }
     }
-    const showed = present + late;
-    // WFH days were WORKED, so they are neither absent nor leave — subtract them or
-    // every work-from-home day silently reads as an absence. Absent is judged ONLY on
-    // finished working days (ownWorkingDays stops at uElapsedTo), so an in-progress
-    // today can add to Present but never to Absent.
-    const absent = Math.max(0, ownWorkingDays - showedFin - onLeaveFin - wfhFin);
+    const showed = present;
+    // WFH days were WORKED, so they are neither absent nor leave — subtract them or every
+    // work-from-home day silently reads as an absence. Absent is judged ONLY on FINISHED
+    // working days, and only working-day attendance may cancel one: an off-day check-in
+    // used to eat a real absence one-for-one, so a month with two Sunday visits and two
+    // no-shows reported "Absent 0" while the payroll matrix reported 2.
+    const absent = Math.max(0, finishedWorkingDays - showedFin - onLeaveFin - wfhFin);
     return {
       name: u.name,
       joinedYMD: joinedYMD(u),
@@ -256,10 +289,16 @@ export async function buildReport(type, dateYMD, range) {
       // A late employee still showed up — Present counts every attended day;
       // `late` is the "of which came late" indicator, not a separate bucket.
       present: showed,
+      // Of `present`, how many fell on a day that wasn't theirs to work. Surfaced so
+      // Present, Working days and Absent can be reconciled by a reader.
+      offDayPresent,
       late,
       absent,
       onLeave,
       wfh,
+      // Attendance counted ONLY on working days — what the rate divides.
+      showedWorkingDays: showedWD,
+      wfhWorkingDays: wfhWD,
       // Raw minutes so the display can show "3h 48m" (like overtime); workedHours (the
       // decimal) is kept for any older consumer.
       workedMinutes,
@@ -285,9 +324,13 @@ export async function buildReport(type, dateYMD, range) {
   // Sum each person's own working days rather than headcount × period, so a mid-period
   // joiner doesn't drag the company attendance rate down for days they weren't here.
   const denom = perEmployee.reduce((n, e) => n + (e.workingDays ?? workingDays), 0);
-  // `present` already includes late arrivals (they attended); WFH days were worked too,
-  // and they sit in the denominator, so they belong in the numerator as well.
-  totals.attendanceRate = denom > 0 ? Math.round(((totals.present + totals.wfh) / denom) * 100) : 0;
+  // Numerator and denominator describe the SAME set of days: this person's working days,
+  // up to today. `present` on its own can't be used — it includes days that aren't in the
+  // denominator at all (a Sunday visit), which is what let the rate print 114%.
+  const rateNumerator = perEmployee.reduce((n, e) => n + e.showedWorkingDays + e.wfhWorkingDays, 0);
+  // null, not 0, when there is nothing to divide — a period with no working day in it yet
+  // (a Sunday-only report) isn't "0% attendance", it's a question with no answer.
+  totals.attendanceRate = denom > 0 ? Math.round((rateNumerator / denom) * 100) : null;
 
   // ── Leaves ────────────────────────────────────────────────
   const leaves = {
@@ -476,7 +519,11 @@ export async function buildReport(type, dateYMD, range) {
     // When the period hasn't finished yet, everything above only counts days up
     // to `asOfYMD` (today) — upcoming days are NOT counted as absent.
     ongoing: to > todayYMD,
-    asOfYMD: elapsedTo,
+    // What the figures cover. Absences are judged only up to the last FINISHED day
+    // (`absentAsOfYMD`); everything else — attendance, working days, the rate — covers
+    // today too, because those are facts that have already happened.
+    asOfYMD: countToCompany,
+    absentAsOfYMD: elapsedTo,
     generatedAt: new Date().toISOString(),
     company: { name: settings.companyName, currency: settings.currency, timezone: settings.timezone, brandColor: settings.brandColor, ...(await Setting.getLogos()) },
     workingDays,
@@ -567,7 +614,15 @@ export async function buildSelfReport({ user, type, dateYMD, range }) {
     // A work-from-home day approved in ADVANCE already has its row, but it hasn't been
     // worked yet — counting it would put a future day in the attendance rate and make
     // this report disagree with the company one, which only counts finished days.
-    if (rec && rec.status === 'WFH' && !workWindowClosed(user, ymd, settings, now)) {
+    // A row for a day that HASN'T ARRIVED is not something that happened. Approving a
+    // leave writes its ON_LEAVE rows for every date at once, including weeks ahead, and
+    // those used to be tallied as elapsed days: a leave approved on the 6th for the 17th
+    // made a report run on the 10th claim eleven working days inside the first ten days
+    // of the month, at a 55% rate instead of 100%.
+    if (rec && ymd > todayYMD) {
+      status = 'UPCOMING';
+    } else if (rec && rec.status === 'WFH' && !workWindowClosed(user, ymd, settings, now)) {
+      // Work from home approved in advance for TODAY: the row exists, the day isn't worked yet.
       status = 'UPCOMING';
     } else if (rec) {
       status = rec.status === 'LATE' && rec.excused ? 'ON_DUTY' : rec.status;
@@ -595,7 +650,12 @@ export async function buildSelfReport({ user, type, dateYMD, range }) {
     }
     const halfDayLeave = status === 'ON_LEAVE' && !!rec?.halfDayLeave;
     const statusLabel = halfDayLeave ? 'On leave (half day)' : STATUS_LABEL[status] || status;
-    days.push({ ymd, weekday, status, statusLabel, halfDayLeave, checkIn, checkOut, workedHours, workedMinutes, overtimeMinutes });
+    // Was this day one of THIS person's working days, by the CALENDAR — regardless of what
+    // happened on it? Derived here rather than from `status`, because a Sunday they came in
+    // on carries status PRESENT and would otherwise be counted as a working day.
+    const isWorkingDay = ymd >= joinedOn && ymd >= APP_LIVE_YMD && !holidaySet.has(ymd)
+      && !weekendDays.includes(dow) && ymd <= todayYMD;
+    days.push({ ymd, weekday, status, statusLabel, halfDayLeave, isWorkingDay, checkIn, checkOut, workedHours, workedMinutes, overtimeMinutes });
     cur = new Date(cur.getTime() + 86400000);
   }
 
@@ -615,7 +675,15 @@ export async function buildSelfReport({ user, type, dateYMD, range }) {
   // Worked, from home. Counted as a working day (or the denominator silently shrinks
   // and the day vanishes from the report altogether) and as attended in the rate.
   const wfh = tally('WFH');
-  const workingDays = present + absent + onLeave + wfh;
+  // Counted off the CALENDAR, not by adding up statuses. Summing present+absent+onLeave+wfh
+  // let an off-day visit invent a working day — a July with two Sunday check-ins reported 29
+  // working days in a 27-working-day month, and a rate to match.
+  const workingDays = days.filter((d) => d.isWorkingDay).length;
+  // Attendance that fell on an actual working day — the rate's numerator, so it can never
+  // exceed its own denominator. Off-day work is still shown (in `present`), just not here.
+  const ATTENDED = ['PRESENT', 'LATE', 'ON_DUTY', 'WFH'];
+  const attendedWorkingDays = days.filter((d) => d.isWorkingDay && ATTENDED.includes(d.status)).length;
+  const offDayPresent = days.filter((d) => !d.isWorkingDay && ATTENDED.includes(d.status)).length;
   const attTotals = {
     present,
     late,
@@ -623,6 +691,7 @@ export async function buildSelfReport({ user, type, dateYMD, range }) {
     absent,
     onLeave,
     wfh,
+    offDayPresent,
     holidays: tally('HOLIDAY'),
     weekends: tally('WEEKEND'),
     workingDays,
@@ -634,7 +703,8 @@ export async function buildSelfReport({ user, type, dateYMD, range }) {
     workedHours: round1(records.reduce((s, r) => s + (r.workedMinutes || 0), 0) / 60),
     overtimeMinutes: days.reduce((s, d) => s + d.overtimeMinutes, 0),
     // WFH days sit in workingDays and were worked, so they belong in the numerator too.
-    attendanceRate: workingDays > 0 ? Math.round(((present + wfh) / workingDays) * 100) : 0,
+    // null (not 0) when the period holds no working day yet — see the company report.
+    attendanceRate: workingDays > 0 ? Math.round((attendedWorkingDays / workingDays) * 100) : null,
   };
 
   // ── Leaves ────────────────────────────────────────────────
@@ -647,7 +717,13 @@ export async function buildSelfReport({ user, type, dateYMD, range }) {
   };
 
   // ── Dues (current balance + entries in the period) ────────
+  // `pending`/`advance` are the LIFETIME balance as it stands TODAY — only `entries` is
+  // scoped to the period. Labelling the balance with the period made the document
+  // contradict itself: a July report showed "Rs 4,500 due · July 2026" over a table
+  // holding one Rs 1,500 row, the other Rs 3,000 having been raised in May. The date is
+  // shipped so both the card and the PDF can say what the figure is actually as of.
   const dues = {
+    balanceAsOfYMD: todayYMD,
     currency: settings.currency,
     pending: due.pending,
     advance: due.advance,
