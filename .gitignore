@@ -52,3 +52,6 @@ Thumbs.db
 
 # Claude Code local files (not part of the app)
 .claude/
+
+# Throwaway diagnostic scripts (_tmp_*.mjs) — never part of the app
+_tmp_*.mjs
