@@ -4,7 +4,9 @@
 >
 > Confirmed 8 me se **4 ek hi bug hain** (chaaron agents ne alag-alag angle se pakda) — to asli me **3 RED + 1 MEDIUM**.
 >
-> **STATUS: kuch bhi fix NAHI hua.** Har bug owner ko samjha ke, approval ke baad hi ([[explain-bugs-before-fixing]]).
+> **STATUS (2026-08-10): S1, S2, S3, S4 — chaaron FIXED** (owner-approved). 11-check isolated-DB suite + ek decisive S4 test + clean website build. 32 parked findings abhi bhi verify ke intezaar me.
+>
+> **Fix summary:** S1 — `standing` ab `{pointsThisMonth: net, pointsEarnedThisMonth, pointsCarriedOver}` bhejta hai (`carryInFor` ab exported), card NET dikhata hai + deficit hone par hint me split. S2 — `.find().limit(100)` + JS reduce ki jagah DB `$group $sum`; dead `pointRows` payload hataya. S3 — `leaveDays` ab `report.attendance.totals.onLeave` se (per-day, half-day-aware). S4 — `standing.leave`/`standing.wfh` ab `balanceJSONReadOnly(user, leaveYearOf(today))` se, period se nahi.
 
 Ye module chhota hai (backend 135 lines + frontend 261) par iska kaam hi **doosre pages ke numbers dohrana** hai — isliye har finding "ek number do jagah alag" ki shreni ka hai.
 

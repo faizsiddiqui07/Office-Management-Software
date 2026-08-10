@@ -168,11 +168,23 @@ export default function MyStandingPage() {
                 tone={now.tasksOverdue ? 'warn' : 'default'}
               />
               {shows.points ? (
+                /* The NET standing — this month's points plus any deficit carried in — which
+                   is what the header badge, the Rewards page and the leaderboard all show.
+                   It used to show raw earnings, so someone carrying a deficit read one number
+                   here and a smaller one everywhere else. When a deficit exists the hint
+                   spells the sum out, otherwise the drop would look unexplained. */
                 <Stat
                   icon={Award}
                   label="Points this month"
                   value={now.pointsThisMonth}
-                  hint={now.rupeesPerPoint ? `worth about ${formatMoney(now.pointsThisMonth * now.rupeesPerPoint * 100)}` : 'resets each month'}
+                  tone={now.pointsThisMonth < 0 ? 'warn' : 'default'}
+                  hint={
+                    now.pointsCarriedOver < 0
+                      ? `${now.pointsEarnedThisMonth} earned − ${Math.abs(now.pointsCarriedOver)} carried over`
+                      : now.rupeesPerPoint && now.pointsThisMonth > 0
+                        ? `worth about ${formatMoney(now.pointsThisMonth * now.rupeesPerPoint * 100)}`
+                        : 'resets each month'
+                  }
                 />
               ) : null}
             </div>

@@ -89,7 +89,7 @@ const MAX_MONTH_WALK = 1200;
  * stored carry-over rows (which would double-count in a range view). For each month:
  * net = that month's earned points + whatever was carried in; carry-out = min(0, net).
  */
-async function carryInFor(userId, targetMonth) {
+export async function carryInFor(userId, targetMonth) {
   const goLive = APP_LIVE_YMD.slice(0, 7);
   if (!isValidMonth(targetMonth) || targetMonth <= goLive) return 0;
   const rows = await PointEntry.aggregate([

@@ -15,7 +15,7 @@
 | 03 | Attendance | [03-attendance.md](03-attendance.md) | ✅ RED fixed (A3 intentionally nahi) + 🎂 birthday feature | commits `a324595`/`19e99a1`/`3cde85b` + zip (local, push pending) | A8/A9 security, A10/A11 perf, UX+features role-wise |
 | 04 | Leaves | [04-leaves.md](04-leaves.md) | ✅ 3 RED FIXED (L1/L2/L3) + 2 related edges (perfect-attendance, cancel-reverse-absence); **verify round still incomplete (session limit)** | local commits (push/zip on owner's word) | ~7 security + 4 perf + 5 cross-edge + 13 UX still UNVERIFIED; features role-wise |
 | 05 | Rewards / Bonus | [05-rewards.md](05-rewards.md) | 🔴 audited: **5 distinct RED** (7 confirmed findings, 1 refuted); 2 self-verified by me. Awaiting owner approval | none yet | 57 findings UNVERIFIED (ledger/jobs/security/perf/UX) + role-wise features |
-| 06 | My Summary | [06-my-summary.md](06-my-summary.md) | 🔴 audited: **3 RED + 1 MEDIUM** (8 confirmed findings, 4 = same bug; 0 refuted). Awaiting owner approval | none yet | 32 findings UNVERIFIED + role-wise features |
+| 06 | My Summary | [06-my-summary.md](06-my-summary.md) | ✅ **S1–S4 all FIXED** (3 RED + 1 MEDIUM) | local (push pending) | 32 findings UNVERIFIED + role-wise features |
 | 07 | Reports | — | queued | — | — |
 | 08 | Team / Users / Roles | — | queued | — | — |
 | 09 | Expenses / Dues | — | queued | — | — |
