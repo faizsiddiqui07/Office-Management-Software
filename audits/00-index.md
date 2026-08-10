@@ -4,6 +4,8 @@
 >
 > **Tarika (owner-approved):** har page → 5 specialist agents + adversarial verification → RED bugs owner ko detail me samjhao → jo approve ho wahi fix → baaki sab PARK. Push/zip sirf owner ke kehne par ([[no-auto-push]]).
 
+> **📌 [00-features.md](00-features.md) — saare audits ke feature ideas ka master list, role-wise.** Har audit ke baad usme add karo; consolidated phase me owner wahi se chunega.
+
 ## 🗺️ Page status
 
 | # | Page | File | Status | Fixed commits | Parked counts |

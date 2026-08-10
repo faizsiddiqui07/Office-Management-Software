@@ -128,13 +128,18 @@ Ek 6-din ki leave dono mahine milakar **12 din** ban jaati hai.
 - Mid-month joiner: *"counted up to X"* likha hai par *"counted from your joining"* nahi
 - **Quarterly period backend me poora supported hai (fiscal Q1 = Apr–Jun) par picker me hai hi nahi**
 
-## 💡 FEATURE IDEAS (role-wise — sab zero/low-backend)
-- **Employee — streak progress card:** *"aaj 4 of 6 on-time, 2 aur to +N points"* — `streakRuns` server pe **pehle se** baitha hai
-- **Employee — "kis cheez ne points kaate":** negative entries ka grouped summary; data **abhi bhi fetch ho raha hai** (wahi dead `pointRows`)
-- **Employee — "Leave left" pe pending-requests context:** `buildSelfReport` pehle se pending laata hai
-- **Pichhla mahina/quarter dekhne ka rasta:** backend quarterly + date anchor support karta hai, UI me nahi
-- **Part-timer:** apne schedule ka context kahin nahi — *"8 of 12 days"* ka 12 unexplained
-- **Leadership:** view intentionally patla hai par **honest** hai — koi jhoothi figure nahi *(positive note)*
+## 💡 FEATURE IDEAS (role-wise) — **master list: [00-features.md](00-features.md)**
+
+Ye page ke 6 ideas (poora detail + evidence master file me):
+
+- **E1 · Streak progress card** *(zero query)* — *"aaj 4 of 6 on-time, 2 aur → +8 points"*. `Setting.bonus.streakRuns[uid]` me live counter **pehle se** hai aur snapshot `Setting` already load karta hai. Ye page ka **pehla aage-dekhne wala** number hoga. Label me caveat: counter **kal tak** ka hai (aaj ka scan raat me).
+- **E2 · "Kis cheez ne points kaate"** — negative entries ka grouped one-liner: *"Late arrival −2 ×3 · Overdue task −5 · Absent −10"*. Rewards ka `SOURCE_LABEL` reuse. **S2 ke saath coordinate:** `pointRows` hat rahe hain to grouping **server-side `$group by source`** bhejo (behtar bhi — 100-row cap se grouping bhi galat ho sakti thi).
+- **E3 · "Leave left" pe pending context** *(zero query)* — *"12 of 24 · 3 din approval me (approve hue to 9)"*. `buildSelfReport` pehle se `pending` laata hai, snapshot use girata hai. Warn-tone bhi `remaining − pending` pe chale.
+- **N1 · "Last month" preset** *(zero backend)* — controller `?date=` anchor **pehle se leta hai**; abhi July dekhne ke liye Custom → 4 tap + 2 calendar navigation, aur label *"01 Jul – 31 Jul"* banta hai, saaf *"July 2026"* nahi. Expenses page pe `anchorFor` pattern **already bana hua** hai.
+- **N2 · Quarterly pill** *(ek line)* — fiscal Q1 = Apr–Jun ka math backend me poora hai (Reports isi se PDF banata hai), picker me hai hi nahi.
+- **P2 · Part-timer schedule context** — *"8 of 12 days"* ka **12 unexplained** hai; full-timer colleague *"19 of 21"* dekhta hai. `req.user` pehle se hai → zero query.
+- **J1 · Joiner context** *(zero backend)* — header me *"from your joining on 16 Aug"*; `data.joinedYMD` **payload me hai**, ek conditional.
+- ✅ **Leadership:** view intentionally patla hai par **honest** — koi jhoothi figure nahi *(positive note)*
 
 ## 🔗 CROSS-CONNECTIONS
 - **Same number, alag surfaces pe alag** — is page ka poora kaam yahi hai, aur teeno RED isi shreni ke hain. **Rewards audit ka parked #3 yahan confirm hua.**
