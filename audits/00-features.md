@@ -122,8 +122,8 @@
 |---|---|---|---|
 | U1 | **Directory pagination / server-side search** — abhi 200 sabse naye accounts par chupchaap cap hai, purane log har jagah se gayab (T11) | 🔴 BADA | 08 |
 | U2 | **Deactivated users ka alag filter/tab** — abhi wo active list ka budget khaate hain aur Team/Roles ke headcount alag-alag dikhte hain | 🟢 ZERO | 08 |
-| U3 | ~~**Offboarding checklist**~~ — ✅ **BAN GAYA** (10 Aug): delete dialog ab open tasks / delegated work / pending leave / dues / points dikhata hai, aur delegated open work kisi aur ko sonpne ko kehta hai. *(Baaki hissa — deactivate par push clear karna — T15 me hai, abhi parked)* | ✅ | 08 |
-| U4 | ~~**Delete se pehle impact preview**~~ — ✅ **BAN GAYA** (10 Aug), U3 ke saath | ✅ | 08 |
+| U3 | **Offboarding checklist** — deactivate karte waqt ek screen: sessions, push, pending tasks kis-ko, pending leave, dues, delegated tasks. Abhi ye bikhre hue hain (T15 wahin se nikla) | 🔴 BADA | 08 |
+| U4 | **Delete karne se pehle impact preview** — “is account ko hataane par N tasks ka assigner hat jaayega aur M logon ke X points par asar padega” (T3 chupchaap yahi karta hai) | 🟡 CHHOTA | 08 |
 | U5 | **Bulk import / CSV se users** — abhi ek-ek karke banana padta hai | 🔴 BADA | 08 |
 | U6 | **Temp password: copy confirm + resend** — abhi ek Esc par ekmatra copy chali jaati hai | 🟢 ZERO | 08 |
 | U7 | **Profile change history** per user (kab kya badla, kisne) — joining-date jaisi cheez chupchaap khisak jaaye to pakda jaaye | 🟡 CHHOTA | 08 |

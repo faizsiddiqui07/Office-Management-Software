@@ -231,22 +231,6 @@ Do tarah ho sakta hai, aap chunenge:
 
 **Purane data par asar:** agar aap **pehle hi** kisi ka account delete kar chuke ho, to jo points ud chuke hain wo **wapas nahi aayenge** (record hi mit gaya). Un logon ko manual points dene padenge. Isliye pehle main aapko **batauunga ki ab tak kitne accounts delete hue hain aur kitne points affected hue** — tab aap tay karenge.
 
-### ➕ Aage ka kaam — delete par **handover** (owner ne 10 Aug ko manga)
-
-T3 ka fix nuksaan rok deta hai, par ek sawaal khula chhod deta hai: *jab manager chala gaya, uske diye hue khule tasks ka zimmedaar kaun?* Pehle jawab tha "koi nahi" — wo tasks logon ki list me pade rehte the, koi naam unke saath nahi, koi unhe chase karne wala nahi.
-
-Owner ne poore vikalp dekh kar **D** chuna: *"delete karte waqt hi poochh lo ki in tasks ka naya maalik kaun hai."*
-
-**Kya bana:**
-- `deleteUser(actor, id, { reassignTasksTo })` — sirf **PENDING** aur **doosron ke** tasks naye assigner ko milte hain. Poore ho chuke tasks apni history rakhte hain (settled points ko dobara price karna khatarnaak hai), aur unke apne tasks unke saath delete ho jaate hain
-- Naya assigner **active** hona chahiye aur use **kaam delegate karne ka haq** hona chahiye (`taskAssign` NONE nahi) — warna handover sirf dikhawa hota: task par naam to hota, par wo insaan use na reassign kar sakta, na chase, na band
-- **`assignerDeleted` naya assigner milne par bhi laga rehta hai** — kyunki wo ye batata hai ki *asli* assigner gaya, aur owner-tier ka faisla dobara nahi nikala ja sakta. Isse pehle se bane points (aur penalties) surakshit rehte hain
-- Handover **optional** hai — kabhi sach me koi nahi hota jise dena ho. Dialog saaf batata hai us soorat me kya hoga
-- Galat chunav poora delete **rok deta hai** — aadha-adhoora delete kabhi nahi hota
-- Frontend: naya `delete-user-dialog.jsx` — exit summary (apne khule tasks / delegated khule / pending leave / dues / points) + person picker + "kisi ko nahi" wala saaf warning
-
-**Test:** `backend/_tmp_handover_test.mjs` — **30/30**, jisme sabse zaroori assertion ye hai ki naye assigner ke **non-owner** hone par bhi purane points daily housekeeping se **nahi udte**.
-
 ---
 
 ## 🔴 T4 — Jise "profile edit" ka haq diya, wo **apni hi shift badal kar** attendance aur points **rig** kar sakta hai
