@@ -199,70 +199,71 @@ function PersonBreakdownDialog({ person, params, label, isRange, onOpenChange, o
 
 /** The price list — what each action is worth — behind a button. */
 /**
- * What each thing was worth DURING the period being viewed — not what it is worth today.
- * Rule values are effective-dated, so an old month keeps the prices it was scored on;
- * printing them here is what lets anyone check a total instead of taking it on trust.
- * More than one block means the values changed part-way through the period.
+ * What each thing was worth — for the period being LOOKED AT, not for today.
+ *
+ * Rule values are effective-dated, so an old month keeps the prices it was scored on. This
+ * used to show the live config, which quietly contradicted an old month's totals; it now
+ * shows that period's own price list, and a period whose values changed part-way through
+ * shows one dated block per rate. Manual awards have no dated history, so they are listed
+ * once at their current value. Falls back to the live list only when there is no history
+ * (an older database).
  */
-function RatesPanel({ rates, periodLabel }) {
-  if (!rates?.length) return null;
-  const changed = rates.length > 1;
-  return (
-    <GlassPanel className="p-2">
-      <div className="px-3 py-2">
-        <span className="text-sm font-semibold">Point values · {periodLabel}</span>
-        <p className="text-xs text-muted-foreground">
-          {changed
-            ? 'The values changed during this period — each block shows the dates it applied to. Points already earned keep the value they were earned at.'
-            : 'What each thing was worth in this period. Changing a value later never re-prices points already earned.'}
-        </p>
-      </div>
-      <div className="space-y-3 px-3 pb-3">
-        {rates.map((p) => (
-          <div key={p.from} className="rounded-xl bg-foreground/[0.03] p-3 ring-1 ring-border/50">
-            {changed ? (
-              <p className="mb-2 text-xs font-medium text-muted-foreground">{formatYMD(p.from)} – {formatYMD(p.to)}</p>
-            ) : null}
-            <ul className="divide-y divide-border/40">
-              {p.rules.map((r) => (
-                <li key={r.key} className="flex items-center justify-between gap-3 py-1.5 text-sm">
-                  <span className="min-w-0 truncate">{r.label}</span>
-                  <Pts n={r.points} />
-                </li>
-              ))}
-            </ul>
-            {p.graceDays ? (
-              <p className="mt-2 text-xs text-muted-foreground">Task grace: {p.graceDays} day{p.graceDays > 1 ? 's' : ''} after the due date.</p>
-            ) : null}
-          </div>
-        ))}
-      </div>
-    </GlassPanel>
+function HowPointsDialog({ open, onOpenChange, guide, rates, periodLabel }) {
+  const periods = rates?.length ? rates : null;
+  const fallback = [...(guide?.autoRules ?? [])];
+  const manual = guide?.manualItems ?? [];
+  const changed = (periods?.length ?? 0) > 1;
+  const Row = ({ label, points }) => (
+    <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
+      <span className="text-sm">{label}</span>
+      <span className="shrink-0 tabular-nums text-sm"><Pts n={points} /></span>
+    </div>
   );
-}
-
-function HowPointsDialog({ open, onOpenChange, guide }) {
-  const rows = [...(guide?.autoRules ?? []), ...(guide?.manualItems ?? [])];
+  const Box = ({ children }) => (
+    <div className="divide-y divide-border/50 overflow-hidden rounded-xl bg-foreground/[0.03] ring-1 ring-border/50">{children}</div>
+  );
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>How points work</DialogTitle>
-          {guide?.rupeesPerPoint ? (
-            <DialogDescription>Every point is worth {money(guide.rupeesPerPoint)}.</DialogDescription>
-          ) : null}
+          <DialogTitle>Point values · {periodLabel}</DialogTitle>
+          <DialogDescription>
+            {changed
+              ? 'The values changed during this period — each block shows the dates it applied to. Points already earned keep the value they were earned at.'
+              : 'What each thing was worth in this period. Changing a value later never re-prices points already earned.'}
+            {guide?.rupeesPerPoint ? ` Every point is worth ${money(guide.rupeesPerPoint)}.` : ''}
+          </DialogDescription>
         </DialogHeader>
-        <div className="divide-y divide-border/50 overflow-hidden rounded-xl bg-foreground/[0.03] ring-1 ring-border/50">
-          {rows.length ? (
-            rows.map((r, i) => (
-              <div key={i} className="flex items-center justify-between gap-3 px-3.5 py-2.5">
-                <span className="text-sm">{r.label}</span>
-                <span className="shrink-0 tabular-nums text-sm"><Pts n={r.points} /></span>
+        <div className="max-h-[60vh] space-y-3 overflow-y-auto">
+          {periods ? (
+            periods.map((p) => (
+              <div key={p.from}>
+                {changed ? (
+                  <p className="mb-1.5 text-xs font-medium text-muted-foreground">{formatYMD(p.from)} – {formatYMD(p.to)}</p>
+                ) : null}
+                <Box>
+                  {p.rules.length
+                    ? p.rules.map((r) => <Row key={r.key} label={r.label} points={r.points} />)
+                    : <p className="px-3.5 py-4 text-sm text-muted-foreground">No point values set for these dates.</p>}
+                </Box>
+                {p.graceDays ? (
+                  <p className="mt-1.5 text-xs text-muted-foreground">Task grace: {p.graceDays} day{p.graceDays > 1 ? 's' : ''} after the due date.</p>
+                ) : null}
               </div>
             ))
           ) : (
-            <p className="px-3.5 py-4 text-sm text-muted-foreground">No point values set yet.</p>
+            <Box>
+              {fallback.length
+                ? fallback.map((r, i) => <Row key={i} label={r.label} points={r.points} />)
+                : <p className="px-3.5 py-4 text-sm text-muted-foreground">No point values set yet.</p>}
+            </Box>
           )}
+          {manual.length ? (
+            <div>
+              <p className="mb-1.5 text-xs font-medium text-muted-foreground">Awarded by leadership</p>
+              <Box>{manual.map((m, i) => <Row key={i} label={m.label} points={m.points} />)}</Box>
+            </div>
+          ) : null}
         </div>
       </DialogContent>
     </Dialog>
@@ -527,8 +528,6 @@ export default function RewardsPage() {
             )}
           </GlassPanel>
 
-          <RatesPanel rates={me?.rates} periodLabel={periodLabel} />
-
           {isLeader ? (
             <LeadershipTools
               isOwner={isOwner}
@@ -551,7 +550,7 @@ export default function RewardsPage() {
           ) : null}
 
           {/* Dialogs */}
-          <HowPointsDialog open={guideOpen} onOpenChange={setGuideOpen} guide={guide} />
+          <HowPointsDialog open={guideOpen} onOpenChange={setGuideOpen} guide={guide} rates={me?.rates} periodLabel={periodLabel} />
           <PersonBreakdownDialog
             person={person}
             params={mineParams}

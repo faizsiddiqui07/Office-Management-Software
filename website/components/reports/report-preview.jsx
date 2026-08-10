@@ -1,7 +1,9 @@
 'use client';
 
-import { Award, CalendarClock, CalendarDays, Clock, ListTodo, UserCheck, UserPlus, UserX, Users, Wallet } from 'lucide-react';
+import * as React from 'react';
+import { Award, CalendarClock, CalendarDays, Clock, Info, ListTodo, UserCheck, UserPlus, UserX, Users, Wallet } from 'lucide-react';
 import { StatCard } from '@/components/glass/stat-card';
+import { Button } from '@/components/ui/button';
 import { GlassCard } from '@/components/glass/glass-card';
 import { DataTable } from '@/components/glass/data-table';
 import { StatusBadge } from '@/components/glass/status-badge';
@@ -131,21 +133,38 @@ function RewardsSection({ data }) {
           ? 'Monthly net standing — this month’s points plus any deficit carried in, exactly like the Rewards leaderboard. Payout applies to a positive standing only.'
           : 'Points earned on days inside this period (raw, no month-to-month carry-over). Payout applies to a positive total only.'}
       </p>
-      {/* The price list these very figures were scored on. Rule values are effective-dated,
-          so an old report keeps the rates that applied then — printing them is what makes
-          the numbers checkable rather than asserted. */}
-      {r.rates?.length ? (
-        <div className="rounded-xl bg-foreground/[0.03] p-3 ring-1 ring-border/50">
-          <p className="text-sm font-medium">Point values in this period</p>
+      <RatesDisclosure rates={r.rates} />
+    </ReportSection>
+  );
+}
+
+/**
+ * The price list these very figures were scored on, behind a button rather than always
+ * open — it is reference material, not a headline. Rule values are effective-dated, so an
+ * old report keeps the rates that applied then; being able to open them is what makes the
+ * numbers checkable instead of asserted. Two blocks = the values moved mid-period.
+ * (The PDF prints them unconditionally — paper has no buttons.)
+ */
+function RatesDisclosure({ rates }) {
+  const [open, setOpen] = React.useState(false);
+  if (!rates?.length) return null;
+  const split = rates.length > 1;
+  return (
+    <div>
+      <Button variant="outline" size="sm" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+        <Info className="size-4" /> {open ? 'Hide point values' : 'Point values in this period'}
+      </Button>
+      {open ? (
+        <div className="mt-3 rounded-xl bg-foreground/[0.03] p-3 ring-1 ring-border/50">
           <p className="mb-2 text-xs text-muted-foreground">
-            {r.rates.length > 1
+            {split
               ? 'The values changed during this period — each block shows the dates it applied to.'
               : 'Changing a value later never re-prices points already earned.'}
           </p>
-          <div className={cn('grid gap-3', r.rates.length > 1 && 'sm:grid-cols-2')}>
-            {r.rates.map((p) => (
+          <div className={cn('grid gap-3', split && 'sm:grid-cols-2')}>
+            {rates.map((p) => (
               <div key={p.from}>
-                {r.rates.length > 1 ? <p className="mb-1 text-xs font-medium text-muted-foreground">{p.from} – {p.to}</p> : null}
+                {split ? <p className="mb-1 text-xs font-medium text-muted-foreground">{formatYMD(p.from)} – {formatYMD(p.to)}</p> : null}
                 <ul className="divide-y divide-border/40">
                   {p.rules.map((rule) => (
                     <li key={rule.key} className="flex items-center justify-between gap-3 py-1 text-sm">
@@ -162,7 +181,7 @@ function RewardsSection({ data }) {
           </div>
         </div>
       ) : null}
-    </ReportSection>
+    </div>
   );
 }
 
