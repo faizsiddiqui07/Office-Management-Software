@@ -17,6 +17,7 @@ import { PointEntry } from '../models/PointEntry.js';
 import { Setting } from '../models/Setting.js';
 import { recomputeAllOvertime } from './attendance.service.js';
 import { can, canAssignRole } from '../lib/permissions.js';
+import { canAssignAny } from './task.service.js';
 import { clearFailures } from '../lib/loginGuard.js';
 import { leaveYearOf } from '../lib/leaveYear.js';
 import { quotaForJoiner } from './leave.service.js';
@@ -309,8 +310,14 @@ export async function exitSummary(userId) {
  * first). Their transactional records are removed; references pointing at them
  * (delegated tasks, decisions, reportsTo, etc.) are detached so nothing breaks;
  * authored content + the audit trail are kept (with an orphaned link).
+ *
+ * `reassignTasksTo` hands the work they had DELEGATED and that is still open to
+ * somebody else, before those references are detached. Without it a departure left
+ * that work with no assigner at all — nobody to chase it, and nothing in the data
+ * that could tell it apart from a personal to-do. It stays optional: sometimes there
+ * is genuinely nobody to hand it to, and the caller is shown what that means.
  */
-export async function deleteUser(actor, id) {
+export async function deleteUser(actor, id, { reassignTasksTo } = {}) {
   if (String(actor._id) === String(id)) {
     throw httpError(403, 'FORBIDDEN', 'You cannot delete your own account');
   }
@@ -327,6 +334,40 @@ export async function deleteUser(actor, id) {
   }
 
   const uid = user._id;
+
+  // ── Hand over the still-open delegated work ────────────────────────────────
+  // Done FIRST, while the references are still intact.
+  let handedOver = 0;
+  let handedOverTo = '';
+  if (reassignTasksTo) {
+    if (!/^[a-f\d]{24}$/i.test(String(reassignTasksTo))) {
+      throw httpError(400, 'INVALID', 'Pick a valid person to take the open tasks over');
+    }
+    if (String(reassignTasksTo) === String(uid)) {
+      throw httpError(400, 'INVALID', 'Pick somebody other than the person being removed');
+    }
+    const heir = await User.findById(reassignTasksTo).select('name role isActive taskAssign');
+    if (!heir || !heir.isActive) {
+      throw httpError(400, 'INVALID', 'The person taking the tasks over must be an active user');
+    }
+    // They have to actually be able to delegate, or the handover is decorative: the
+    // task would name someone who cannot reassign, chase or close it.
+    if (!canAssignAny(heir)) {
+      throw httpError(400, 'INVALID', `${heir.name} isn’t set up to assign work — pick someone who is`);
+    }
+    // Only what is still OPEN and belongs to somebody ELSE. Finished work keeps its
+    // history (re-homing it could re-price points that are already settled), and their
+    // own copies are deleted with them a moment below.
+    // `assignerDeleted` is set even though a new assigner is named: it records that the
+    // ORIGINAL one is gone, so the rewards housekeeping never re-derives an owner-tier
+    // decision whose evidence no longer exists and deletes penalties already accrued.
+    const res = await Task.updateMany(
+      { assignedBy: uid, status: 'PENDING', owner: { $ne: uid } },
+      { $set: { assignedBy: heir._id, assignerDeleted: true } },
+    );
+    handedOver = res.modifiedCount ?? 0;
+    handedOverTo = heir.name;
+  }
 
   // Remove their own transactional data.
   await Promise.all([
@@ -358,5 +399,5 @@ export async function deleteUser(actor, id) {
   ]);
 
   await user.deleteOne();
-  return { success: true };
+  return { success: true, handedOver, handedOverTo };
 }

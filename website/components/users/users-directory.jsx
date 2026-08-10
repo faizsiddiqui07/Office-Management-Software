@@ -32,6 +32,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { CreateUserDialog } from './create-user-dialog';
 import { EditUserDialog } from './edit-user-dialog';
+import { DeleteUserDialog } from './delete-user-dialog';
 import { TempPasswordContent } from './temp-password-content';
 
 function formatJoined(iso) {
@@ -93,16 +94,6 @@ export function UsersDirectory() {
       setToggling(null);
     },
     onError: (e) => toast.error(e?.message || 'Could not update'),
-  });
-
-  const deleteMut = useMutation({
-    mutationFn: (id) => api.delete(`/users/${id}`),
-    onSuccess: () => {
-      toast.success('User deleted');
-      qc.invalidateQueries({ queryKey: ['users'] });
-      setDeleting(null);
-    },
-    onError: (e) => toast.error(e?.message || 'Could not delete user'),
   });
 
   const columns = React.useMemo(
@@ -248,18 +239,9 @@ export function UsersDirectory() {
         {resetResult ? <TempPasswordContent user={resetResult.user} temporaryPassword={resetResult.temporaryPassword} /> : null}
       </AppDialog>
 
-      <ConfirmDialog
-        open={!!deleting}
-        onOpenChange={(o) => {
-          if (!o) setDeleting(null);
-        }}
-        title={`Delete ${deleting?.name || 'this user'}?`}
-        description="This permanently removes the user and their attendance, leave, task and dues records. Content they authored and the activity log are kept. This can't be undone."
-        tone="destructive"
-        confirmLabel="Delete permanently"
-        loading={deleteMut.isPending}
-        onConfirm={() => deleting && deleteMut.mutate(deleting.id)}
-      />
+      {deleting ? (
+        <DeleteUserDialog user={deleting} open={!!deleting} onOpenChange={(o) => !o && setDeleting(null)} />
+      ) : null}
 
       <ConfirmDialog
         open={!!resetting}
