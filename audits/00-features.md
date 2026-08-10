@@ -8,7 +8,7 @@
 > 🔴 **BADA** = naya endpoint / naya model / bada UI
 >
 > **Status:** kuch nahi bana hai. Ye sirf backlog hai — consolidated phase me aapke chunne par banega.
-> Sources: [01-dashboard](01-dashboard.md) · [02-todo](02-todo.md) · [03-attendance](03-attendance.md) · [04-leaves](04-leaves.md) · [05-rewards](05-rewards.md) · [06-my-summary](06-my-summary.md) · [07-reports](07-reports.md)
+> Sources: [01-dashboard](01-dashboard.md) · [02-todo](02-todo.md) · [03-attendance](03-attendance.md) · [04-leaves](04-leaves.md) · [05-rewards](05-rewards.md) · [06-my-summary](06-my-summary.md) · [07-reports](07-reports.md) · [08-team-users-roles](08-team-users-roles.md)
 
 ---
 
@@ -103,6 +103,30 @@
 | **RP7** | **Admin Manager / Manager ke liye scoped company report** — abhi dono ko poora 403 milta hai, jabki section-gating ka poora infra maujood hai | 🔴 BADA | 07 |
 
 ---
+
+---
+
+## 🔐 Roles & access (audit 08)
+
+| # | Feature | Kaam | Audit |
+|---|---|---|---|
+| A1 | **Role rank UI** — role banate/edit karte waqt seniority set karna. Abhi har custom role rank 100 par banta hai aur badla hi nahi ja sakta, isliye poori “junior senior ko promote nahi kar sakta” guard bekaar hai (T2) | 🔴 BADA | 08 |
+| A2 | **Role permission diff + confirm** — Save se pehle “ye 6 permission jud rahi hain, 2 hat rahi hain, N logon par asar”. Abhi ek click me poora role badal jaata hai bina kuch dikhe | 🟡 CHHOTA | 08 |
+| A3 | **“Kaun kya kar sakta hai” matrix** — ek grid: roles × permissions, taki owner ek nazar me dekh le kiske paas kya hai | 🟢 ZERO | 08 |
+| A4 | **Role change history** — kis role me kab kya permission judi/hati aur kisne ki (audit log me data hai, UI nahi) | 🟡 CHHOTA | 08 |
+| A5 | **Sensitive-action alert** — owner ko notification jab koi role ko `manageRoles`/`manageSettings` mile, ya owner role edit ho | 🟡 CHHOTA | 08 |
+
+## 👥 Users & directory (audit 08)
+
+| # | Feature | Kaam | Audit |
+|---|---|---|---|
+| U1 | **Directory pagination / server-side search** — abhi 200 sabse naye accounts par chupchaap cap hai, purane log har jagah se gayab (T11) | 🔴 BADA | 08 |
+| U2 | **Deactivated users ka alag filter/tab** — abhi wo active list ka budget khaate hain aur Team/Roles ke headcount alag-alag dikhte hain | 🟢 ZERO | 08 |
+| U3 | **Offboarding checklist** — deactivate karte waqt ek screen: sessions, push, pending tasks kis-ko, pending leave, dues, delegated tasks. Abhi ye bikhre hue hain (T15 wahin se nikla) | 🔴 BADA | 08 |
+| U4 | **Delete karne se pehle impact preview** — “is account ko hataane par N tasks ka assigner hat jaayega aur M logon ke X points par asar padega” (T3 chupchaap yahi karta hai) | 🟡 CHHOTA | 08 |
+| U5 | **Bulk import / CSV se users** — abhi ek-ek karke banana padta hai | 🔴 BADA | 08 |
+| U6 | **Temp password: copy confirm + resend** — abhi ek Esc par ekmatra copy chali jaati hai | 🟢 ZERO | 08 |
+| U7 | **Profile change history** per user (kab kya badla, kisne) — joining-date jaisi cheez chupchaap khisak jaaye to pakda jaaye | 🟡 CHHOTA | 08 |
 
 ## 🎯 Meri sifarish — agar "sabse zyada fayda, sabse kam kaam" chahiye
 

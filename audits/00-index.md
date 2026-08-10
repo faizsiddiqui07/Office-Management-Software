@@ -17,10 +17,20 @@
 | 05 | Rewards / Bonus | [05-rewards.md](05-rewards.md) | 🔴 audited: **5 distinct RED** (7 confirmed findings, 1 refuted); 2 self-verified by me. Awaiting owner approval | none yet | 57 findings UNVERIFIED (ledger/jobs/security/perf/UX) + role-wise features |
 | 06 | My Summary | [06-my-summary.md](06-my-summary.md) | ✅ **S1–S4 all FIXED** (3 RED + 1 MEDIUM) | local (push pending) | 32 findings UNVERIFIED + role-wise features |
 | 07 | Reports | [07-reports.md](07-reports.md) | ✅ **saatoN RED FIXED** (R1-R7), isolated-DB suite **95/95**, pre-fix regression proof liya | R1-R7 | 56 UNVERIFIED (P1-P10 perf, security, PDF fidelity, UX) + features |
+| 08 | Team / Users / User-detail / Roles | [08-team-users-roles.md](08-team-users-roles.md) | 🔴 audited: **6 RED + 13 MEDIUM** (27 confirmed, 0 refuted, dedupe ke baad 19 distinct). Awaiting owner approval | none yet | 5 LOW |
 | 08 | Team / Users / Roles | — | queued | — | — |
 | 09 | Expenses / Dues | — | queued | — | — |
 | 10 | Visitors / Announcements / Calendar / Settings / Rules | — | queued | — | — |
 | 11 | **MASTER consolidation** (cross-page fixes + features phase) | — | end me | — | — |
+
+### 21. “aaj ka adhoora din absent gin liya” — **teesri baar**
+Attendance (A-series) aur Reports (R2) me ye mil chuka tha; ab **User-detail dossier** ki Absent tile me bhi (`dossier.service.js:108-111`). Sabse chubhne wali baat: **usi function** ki day-by-day table me guard laga hua hai (`:137-147`), sirf tile me nahi. Matlab convention likhi hui hai, lagayi har jagah nahi gayi. → kisi ek shared helper se hi “absent” nikalna chahiye.
+
+### 22. **Frontend permission model backend se alag hai**
+Backend **rank-based** hai (`canAssignRole`, `getRoleRank`), frontend abhi bhi **hardcoded key list** `LEADERSHIP = ['CEO','DIRECTOR']` maanta hai. Live deployment me koi role in keys ka hai hi nahi → filter kuch karta hi nahi, aur owner role **default pre-select** ho jaata hai. Isi jad se T9, T10 dono nikalte hain. (`/roles/options` rank ko response se **strip** kar deta hai — to frontend chah kar bhi rank nahi dekh sakta.)
+
+### 23. **Granular permission toggle sirf naam ka hai jab tak uska apna surface na ho**
+`manageUsers` / `changeRoles` / `resetCredentials` / `deactivateUsers` — chaaron ka koi apna darwaza nahi; sab `createUsers` ke peeche band hain. Ulta bhi sach hai: page ka gate (`createUsers`) aur uske data ka gate (`viewEveryone`) **alag** hain, to ek permission milne par bhi screen 403 dikha sakti hai. Har naye toggle ke saath ye poochna chahiye: *iska darwaza kahan hai, aur uske peeche ka data kis gate par hai?*
 
 ## 🔗 CROSS-PAGE PATTERNS (running list — har naye audit me check karo)
 
