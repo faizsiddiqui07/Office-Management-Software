@@ -16,7 +16,7 @@
 | 04 | Leaves | [04-leaves.md](04-leaves.md) | ✅ 3 RED FIXED (L1/L2/L3) + 2 related edges (perfect-attendance, cancel-reverse-absence); **verify round still incomplete (session limit)** | local commits (push/zip on owner's word) | ~7 security + 4 perf + 5 cross-edge + 13 UX still UNVERIFIED; features role-wise |
 | 05 | Rewards / Bonus | [05-rewards.md](05-rewards.md) | 🔴 audited: **5 distinct RED** (7 confirmed findings, 1 refuted); 2 self-verified by me. Awaiting owner approval | none yet | 57 findings UNVERIFIED (ledger/jobs/security/perf/UX) + role-wise features |
 | 06 | My Summary | [06-my-summary.md](06-my-summary.md) | ✅ **S1–S4 all FIXED** (3 RED + 1 MEDIUM) | local (push pending) | 32 findings UNVERIFIED + role-wise features |
-| 07 | Reports | — | queued | — | — |
+| 07 | Reports | [07-reports.md](07-reports.md) | 🔴 audited: **7 distinct RED** (8 confirmed, 0 refuted). Awaiting owner approval | none yet | 56 UNVERIFIED (P1-P10 perf, security, PDF fidelity, UX) + features |
 | 08 | Team / Users / Roles | — | queued | — | — |
 | 09 | Expenses / Dues | — | queued | — | — |
 | 10 | Visitors / Announcements / Calendar / Settings / Rules | — | queued | — | — |
@@ -42,6 +42,9 @@ Har pattern ke aage: kahan mila ✔, kahan check karna baaki ⏳.
 14. **NAYA (My Summary S2): `.limit(N)` wali list se FIGURE banana** — snapshot ka "Points earned" latest 100 rows ka reduce hai, aggregate nahi → yearly view galat. ⏳ Har us jagah check karo jahan ek list fetch karke uska sum/count dikhaya jaata hai (To-Do limit=10000, prune 20000, queue 200).
 15. **NAYA (My Summary S3): overlap-query ke rows ko window se CLIP na karna** — poore request ke din har overlapping period me ginte hain. ⏳ Leaves/Reports ke overlap queries me bhi dekho.
 16. **NAYA (My Summary S4): period-anchored vs today-anchored standing** — "Right now" figures period ke fiscal year se bandhe hain. ⏳ Reports/Dashboard me bhi ye distinction check karo.
+18. **NAYA (Reports): PREVIEW vs PDF fidelity** — screen aur PDF ka gating, labels aur totals alag ho sakte hain (joinedLater notice PDF me nahi; self PDF ka Tasks section kabhi print hi nahi hota; % hint sirf screen pe). ⏳ Har download-able document pe check karo.
+19. **NAYA (Reports): ek guard ek jagah, doosri jagah nahi** — custom-range ka 400-din cap `users.controller` me hai, `reports` me nahi (wahi function, wahi khatra). ⏳ Jo bhi guard kisi caller pe lage, uske SAARE callers pe lagao.
+20. **NAYA (Reports): numerator/denominator alag din-set pe** — attendance rate aaj tak ginta hai par working-days kal tak → 0% ya 114%. ⏳ Har ratio/percentage pe dono taraf ka cutoff check karo.
 17. **NAYA (Rewards R2): closed month ka concept hi nahi** — 11 write paths purane mahine badal sakte hain, aur mutation ADHURA hai (sirf tasks+overtime re-price hote hain) → ek mahina do price-lists pe. Reports ki stability isi pe tiki hai.
 
 ## 📊 Data flows (kaun page kis page ka data dikhata hai)
