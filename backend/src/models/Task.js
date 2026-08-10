@@ -19,6 +19,13 @@ const taskSchema = new mongoose.Schema(
     // its collaborators as co-owners. Always read it through gateFrozen() — an earlier
     // build shipped it under the narrower name `assignerDeleted`.
     pointsGateFrozen: { type: Boolean, default: false },
+    // Who now holds the ASSIGNER's authority over this task, after the person who
+    // delegated it was deleted and leadership named a successor. Deliberately a SEPARATE
+    // field rather than overwriting `assignedBy`: that one feeds the whole points system
+    // — who is eligible, whose penalty accrues, which month it files under — so moving it
+    // re-prices settled history. This one is only about who chases, approves, edits and
+    // closes the work; the points side stays exactly as it was frozen.
+    handedOverTo: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null, index: true },
     // Teammates tagged as also working on this task (a shared "project" task). The
     // owner keeps it in their own to-do; each collaborator sees it in "assigned to
     // me". Status is SHARED — whoever completes it, it's done for everyone.

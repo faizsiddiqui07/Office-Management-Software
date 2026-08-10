@@ -18,6 +18,7 @@ import { Setting } from '../models/Setting.js';
 import { recomputeAllOvertime } from './attendance.service.js';
 import { can, canAssignRole } from '../lib/permissions.js';
 import { isOwnerRole } from '../lib/roles.js';
+import { canAssignAny } from './task.service.js';
 import { clearFailures } from '../lib/loginGuard.js';
 import { leaveYearOf } from '../lib/leaveYear.js';
 import { quotaForJoiner } from './leave.service.js';
@@ -310,8 +311,20 @@ export async function exitSummary(userId) {
  * first). Their transactional records are removed; references pointing at them
  * (delegated tasks, decisions, reportsTo, etc.) are detached so nothing breaks;
  * authored content + the audit trail are kept (with an orphaned link).
+ *
+ * `reassignTasksTo` names who becomes responsible for the work this person had DELEGATED
+ * and that is still open. Without it those tasks are left with nobody against them: no
+ * one to chase, approve or close them, and — since the assigner check is what stops an
+ * assignee editing their own deadline — no one able to touch them at all.
+ *
+ * It writes `handedOverTo`, NOT `assignedBy`. Moving `assignedBy` would re-point the
+ * whole points system at somebody who was not there when the points were earned: a
+ * non-owner successor makes the task fail the owner-tier gate and its entries are deleted
+ * on completion, while an owner-tier one drags a task that never scored INTO the system
+ * and back-files penalties into months that are already closed. The points side stays
+ * frozen exactly as it is; only responsibility moves.
  */
-export async function deleteUser(actor, id) {
+export async function deleteUser(actor, id, { reassignTasksTo } = {}) {
   if (String(actor._id) === String(id)) {
     throw httpError(403, 'FORBIDDEN', 'You cannot delete your own account');
   }
@@ -342,6 +355,38 @@ export async function deleteUser(actor, id) {
     AnnouncementRead.deleteMany({ user: uid }),
     LedgerEntry.deleteMany({ person: uid }),
   ]);
+
+  // ── Hand the still-open delegated work over ───────────────────────────────
+  // Runs before anything is detached, while the links are still intact.
+  let handedOver = 0;
+  let handedOverTo = '';
+  if (reassignTasksTo) {
+    if (!/^[a-f\d]{24}$/i.test(String(reassignTasksTo))) {
+      throw httpError(400, 'INVALID', 'Pick a valid person to take the open tasks over');
+    }
+    if (String(reassignTasksTo) === String(uid)) {
+      throw httpError(400, 'INVALID', 'Pick somebody other than the person being removed');
+    }
+    const heir = await User.findById(reassignTasksTo).select('name isActive taskAssign');
+    if (!heir || !heir.isActive) {
+      throw httpError(400, 'INVALID', 'The person taking the tasks over must be an active user');
+    }
+    // They have to be able to delegate at all, or the handover is decorative — the task
+    // would name somebody who still cannot reassign it.
+    if (!canAssignAny(heir)) {
+      throw httpError(400, 'INVALID', `${heir.name} isn’t set up to assign work — pick someone who is`);
+    }
+    // Only work that is still OPEN and belongs to somebody ELSE. A finished task needs no
+    // chasing, and their own copies are deleted with them a few lines below. Tasks the
+    // heir already owns are skipped too: naming them responsible for their own work would
+    // let them approve their own submission.
+    const res = await Task.updateMany(
+      { assignedBy: uid, status: 'PENDING', owner: { $nin: [uid, heir._id] } },
+      { $set: { handedOverTo: heir._id } },
+    );
+    handedOver = res.modifiedCount ?? 0;
+    handedOverTo = heir.name;
+  }
 
   // A delegated task earns points only because somebody in the owner tier can see it —
   // and being TAGGED on it is one of the two ways that happens. Removing an owner-tier
@@ -377,5 +422,5 @@ export async function deleteUser(actor, id) {
   ]);
 
   await user.deleteOne();
-  return { success: true };
+  return { success: true, handedOver, handedOverTo };
 }

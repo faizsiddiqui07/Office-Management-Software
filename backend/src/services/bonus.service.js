@@ -1016,7 +1016,7 @@ function overdueDayFor(dueYMD, graceDays) {
   return d < APP_LIVE_YMD ? APP_LIVE_YMD : d;
 }
 
-async function scanOverdueTasks(b) {
+export async function scanOverdueTasks(b) {
   const pts = rulePoints(b, 'assignedTaskLate');
   const dripPts = rulePoints(b, 'assignedTaskOverdueDaily');
   if (!pts && !dripPts) return;

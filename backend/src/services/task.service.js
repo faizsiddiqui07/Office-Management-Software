@@ -232,9 +232,33 @@ export async function createTask(actor, data) {
   return { tasks: [task.toJSON()] };
 }
 
+/**
+ * Who holds the ASSIGNER's authority over this task — approve it, edit it, take it away.
+ *
+ * Normally the person who assigned it. Once their account is deleted `assignedBy` is null
+ * and the authority passes to whoever the handover named. With nobody named it passes to
+ * NO ONE, and that is the point: otherwise it falls through to the task's own assignee,
+ * who could then edit the deadline they are being judged against, or delete the work
+ * given to them outright.
+ */
+function assignerAuthority(task) {
+  return task.assignedBy || task.handedOverTo || null;
+}
+
+function isAssignerOf(task, actor) {
+  const a = assignerAuthority(task);
+  return !!a && String(a) === String(actor._id);
+}
+
+/** Was this delegated work, even if the person who delegated it has since been deleted? */
+function wasDelegated(task) {
+  return !!task.assignedBy || gateFrozen(task);
+}
+
 async function populated(task) {
   await task.populate('owner', 'name');
   await task.populate('assignedBy', 'name');
+  await task.populate('handedOverTo', 'name');
   await task.populate('collaborators', 'name');
   await task.populate('completedBy', 'name');
   await task.populate('approvedBy', 'name');
@@ -253,7 +277,7 @@ export async function getTaskDetail(actor, id) {
   const task = await Task.findById(id);
   if (!task) throw httpError(404, 'NOT_FOUND', 'Task not found');
   const me = String(actor._id);
-  const linked = [task.owner, task.assignedBy, task.completedBy, task.approvedBy, task.originalAssignedBy]
+  const linked = [task.owner, task.assignedBy, task.handedOverTo, task.completedBy, task.approvedBy, task.originalAssignedBy]
     .filter(Boolean)
     .map(String);
   const isCollaborator = (task.collaborators || []).some((c) => String(c) === me);
@@ -269,7 +293,6 @@ export async function setStatus(actor, id, status) {
   if (!task) throw httpError(404, 'NOT_FOUND', 'Task not found');
   const isOwner = String(task.owner) === String(actor._id);
   const isCollaborator = (task.collaborators || []).some((c) => String(c) === String(actor._id));
-  const isAssigner = task.assignedBy && String(task.assignedBy) === String(actor._id);
   // On a shared PERSONAL task (no assigner) a tagged teammate co-owns it — whoever
   // finishes it closes it for everyone. But on a DELEGATED task, tagging is only for
   // awareness: the assignee does the work, so a collaborator must NOT be able to
@@ -318,7 +341,7 @@ export async function setStatus(actor, id, status) {
   // SUBMITS for review instead of closing it. It sits as "awaiting approval" until the
   // assigner approves/rejects (reviewTask). The submit time is the on-time reference so
   // a slow approval never turns on-time work into "late".
-  if (wantDone && task.requiresApproval && task.assignedBy && isOwner && task.status !== 'DONE') {
+  if (wantDone && task.requiresApproval && assignerAuthority(task) && isOwner && task.status !== 'DONE') {
     // Already submitted? Re-submitting would reset its place in the approver's queue and
     // send them a duplicate notification.
     if (task.submittedAt) return populated(task);
@@ -326,7 +349,7 @@ export async function setStatus(actor, id, status) {
     task.rejectionReason = '';
     await task.save();
     await notify({
-      user: task.assignedBy,
+      user: assignerAuthority(task),
       // Its own type (not TASK_ASSIGNED, which also means "new task"/"tagged you") so
       // withdrawing/deciding can clear THIS without touching the assignment notice.
       type: 'TASK_APPROVAL',
@@ -356,8 +379,8 @@ export async function setStatus(actor, id, status) {
   await task.save();
 
   if (task.status === 'DONE') {
-    if (task.assignedBy && !isAssigner) {
-      await notify({ user: task.assignedBy, type: 'TASK_DONE', title: `${actor.name} completed a task`, message: task.title, link: todoLink(task._id, true) });
+    if (assignerAuthority(task) && !isAssignerOf(task, actor)) {
+      await notify({ user: assignerAuthority(task), type: 'TASK_DONE', title: `${actor.name} completed a task`, message: task.title, link: todoLink(task._id, true) });
     }
     // Legacy shared "collaborator" task (single doc, tagged teammates) → tell the others.
     const involved = new Set([String(task.owner), ...(task.collaborators || []).map(String)]);
@@ -393,8 +416,7 @@ export async function setStatus(actor, id, status) {
 export async function reviewTask(actor, id, approve, reason) {
   const task = await Task.findById(id);
   if (!task) throw httpError(404, 'NOT_FOUND', 'Task not found');
-  const isAssigner = task.assignedBy && String(task.assignedBy) === String(actor._id);
-  if (!isAssigner) throw httpError(403, 'FORBIDDEN', 'Only the person who assigned this task can review it');
+  if (!isAssignerOf(task, actor)) throw httpError(403, 'FORBIDDEN', 'Only the person who assigned this task can review it');
   if (!task.awaitingApproval) throw httpError(400, 'NOT_AWAITING', 'This task isn’t waiting for approval');
   // Approving a copy that was forwarded onward would settle (and pay) the whole chain
   // while the person below is still working — the same overpayment the DONE guard in
@@ -643,15 +665,17 @@ export async function updateTask(actor, id, data) {
   const task = await Task.findById(id);
   if (!task) throw httpError(404, 'NOT_FOUND', 'Task not found');
   const isOwner = String(task.owner) === String(actor._id);
-  const isAssigner = task.assignedBy && String(task.assignedBy) === String(actor._id);
   // A delegated task can only be edited by the person who assigned it — the
-  // assignee completes it (or asks), but can't change what was asked of them.
-  if (task.assignedBy) {
-    if (!isAssigner) throw httpError(403, 'ASSIGNED_TASK', 'This task was assigned to you — only the person who assigned it can edit it');
+  // assignee completes it (or asks), but can't change what was asked of them. That has to
+  // keep holding once the assigner's account is gone: `assignedBy` reads null then, and
+  // testing it directly let the assignee inherit edit rights over their own deadline.
+  if (wasDelegated(task)) {
+    if (!isAssignerOf(task, actor)) throw httpError(403, 'ASSIGNED_TASK', 'This task was assigned to you — only the person who assigned it can edit it');
   } else if (!isOwner) {
     throw httpError(403, 'FORBIDDEN', 'You cannot edit this task');
   }
 
+  const isAssigner = isAssignerOf(task, actor);
   const contentFields = ['title', 'notes', 'dueYMD'];
   const patch = {};
   for (const f of contentFields) if (data[f] !== undefined) patch[f] = data[f];
@@ -659,7 +683,9 @@ export async function updateTask(actor, id, data) {
   // ── Assigner editing a delegated task: may re-assign it, toggle approval, and edit
   //    the content of one copy or every copy of a multi-assign batch. ──────────────
   if (isAssigner) {
-    const batchQuery = task.assignBatch ? { assignBatch: task.assignBatch, assignedBy: actor._id } : { _id: task._id };
+    const batchQuery = task.assignBatch
+      ? { assignBatch: task.assignBatch, $or: [{ assignedBy: actor._id }, { handedOverTo: actor._id }] }
+      : { _id: task._id };
     let members = await Task.find(batchQuery);
 
     // Resolved up front because a reassignment creates fresh copies below, and those need
@@ -865,10 +891,12 @@ export async function deleteTask(actor, id) {
   const task = await Task.findById(id);
   if (!task) throw httpError(404, 'NOT_FOUND', 'Task not found');
   const isOwner = String(task.owner) === String(actor._id);
-  const isAssigner = task.assignedBy && String(task.assignedBy) === String(actor._id);
-  // Delegated tasks can only be deleted by the person who assigned them — the
-  // assignee must complete it (or ask the assigner), not make it disappear.
-  if (task.assignedBy && !isAssigner) {
+  // Delegated tasks can only be deleted by the person who assigned them — the assignee
+  // must complete it (or ask), not make it disappear. Same reason as editing: once the
+  // assigner is deleted `assignedBy` is null, and reading it directly handed the assignee
+  // the power to erase work that had been given to them.
+  const isAssigner = isAssignerOf(task, actor);
+  if (wasDelegated(task) && !isAssigner) {
     throw httpError(403, 'ASSIGNED_TASK', 'This task was assigned to you — only the person who assigned it can delete it');
   }
   if (!isOwner && !isAssigner) throw httpError(403, 'FORBIDDEN', 'You cannot delete this task');
@@ -944,7 +972,9 @@ export async function listTasks(actor, { scope = 'mine', status, search, period,
   //   mine     — what I actually own: my own to-dos plus work delegated TO me.
   // "mine" used to include tagged rows, which is what made a colleague's task show up
   // as the viewer's own and inflate every count built on this list.
-  if (scope === 'assigned') and.push({ assignedBy: actor._id });
+  // Work handed to me when its assigner left belongs on this tab too — it is the only
+  // place the person now responsible for it would ever see it.
+  if (scope === 'assigned') and.push({ $or: [{ assignedBy: actor._id }, { handedOverTo: actor._id }] });
   else if (scope === 'tagged') {
     // Owner-guard matters: without it a legacy row where somebody is in their own
     // collaborators list would appear as "tagged on their own task".
@@ -1158,7 +1188,7 @@ export async function taskSummary(actor) {
       { $match: { owner: actor._id, ...(passedOn.length ? { _id: { $nin: passedOn } } : {}) } },
       { $group: { _id: '$status', n: { $sum: 1 } } },
     ]),
-    Task.aggregate([{ $match: { assignedBy: actor._id } }, { $group: { _id: '$status', n: { $sum: 1 } } }]),
+    Task.aggregate([{ $match: { $or: [{ assignedBy: actor._id }, { handedOverTo: actor._id }] } }, { $group: { _id: '$status', n: { $sum: 1 } } }]),
     Task.aggregate([
       { $match: { collaborators: actor._id, owner: { $ne: actor._id } } },
       { $group: { _id: '$status', n: { $sum: 1 } } },
