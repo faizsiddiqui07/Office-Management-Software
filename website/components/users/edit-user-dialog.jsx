@@ -22,6 +22,7 @@ import {
 import { LEADERSHIP, can } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
 import { formatMoney } from '@/lib/expense';
+import { companyYMD } from '@/lib/time';
 import { useRoleOptions } from '@/lib/use-roles';
 import { EmploymentFields, DEFAULT_SCHEDULE } from './employment-fields';
 
@@ -42,6 +43,10 @@ export function EditUserDialog({ user: target, open, onOpenChange }) {
   const [isActive, setIsActive] = React.useState(true);
   const [employmentType, setEmploymentType] = React.useState('FULL_TIME');
   const [schedule, setSchedule] = React.useState({ ...DEFAULT_SCHEDULE });
+  // What the joining date was when the dialog opened, so an untouched field is never sent
+  // back. The server re-derives the leave quota whenever the joining MONTH changes, so a
+  // resend on an unrelated save (a designation fix) moved the date and the quota with it.
+  const loadedJoining = React.useRef('');
 
   const canManage = can(actor, 'manageUsers');
   const canChangeRoles = can(actor, 'changeRoles');
@@ -64,7 +69,11 @@ export function EditUserDialog({ user: target, open, onOpenChange }) {
     setName(target.name || '');
     setDepartment(target.department || '');
     setDesignation(target.designation || '');
-    setJoiningDate(target.dateOfJoining ? String(target.dateOfJoining).slice(0, 10) : '');
+    // Company time, not a UTC slice: the stored value is this day's IST midnight, whose
+    // UTC form is 18:30 the day BEFORE, so slicing showed a day that was never picked.
+    const joined = companyYMD(target.dateOfJoining);
+    loadedJoining.current = joined;
+    setJoiningDate(joined);
     setLastWorkingYMD(target.lastWorkingYMD || '');
     setRole(target.role || '');
     setIsActive(target.isActive !== false);
@@ -124,7 +133,7 @@ export function EditUserDialog({ user: target, open, onOpenChange }) {
         body.designation = designation;
         body.employmentType = employmentType;
         body.schedule = schedule; // custom timing is optional for everyone; blank = office hours
-        if (joiningDate) body.dateOfJoining = joiningDate;
+        if (joiningDate && joiningDate !== loadedJoining.current) body.dateOfJoining = joiningDate;
         body.lastWorkingYMD = lastWorkingYMD; // '' = not leaving
         body.taskAssign = { mode: assignMode, users: assignMode === 'SELECTED' ? [...assignUsers] : [] };
       }

@@ -15,6 +15,22 @@ export function safeTimeZone(tz) {
   }
 }
 
+/**
+ * The COMPANY-timezone calendar day of an instant, as 'YYYY-MM-DD'.
+ *
+ * Never slice an ISO string to get this. A company day is stored as its IST midnight,
+ * which in UTC is 18:30 of the PREVIOUS day — so `String(date).slice(0, 10)` reads one
+ * day EARLY, and a form that writes that value back walks the date one day backwards on
+ * every save. A value that is already a plain calendar day is returned untouched.
+ */
+export function companyYMD(date) {
+  if (!date) return '';
+  if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
+  const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return '';
+  return new Intl.DateTimeFormat('en-CA', { timeZone: COMPANY_TZ }).format(d);
+}
+
 function fmt(date, opts, locale = 'en-GB') {
   return new Intl.DateTimeFormat(locale, { timeZone: COMPANY_TZ, ...opts }).format(new Date(date));
 }

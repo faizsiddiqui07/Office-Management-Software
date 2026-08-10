@@ -17,7 +17,7 @@
 | 05 | Rewards / Bonus | [05-rewards.md](05-rewards.md) | 🔴 audited: **5 distinct RED** (7 confirmed findings, 1 refuted); 2 self-verified by me. Awaiting owner approval | none yet | 57 findings UNVERIFIED (ledger/jobs/security/perf/UX) + role-wise features |
 | 06 | My Summary | [06-my-summary.md](06-my-summary.md) | ✅ **S1–S4 all FIXED** (3 RED + 1 MEDIUM) | local (push pending) | 32 findings UNVERIFIED + role-wise features |
 | 07 | Reports | [07-reports.md](07-reports.md) | ✅ **saatoN RED FIXED** (R1-R7), isolated-DB suite **95/95**, pre-fix regression proof liya | R1-R7 | 56 UNVERIFIED (P1-P10 perf, security, PDF fidelity, UX) + features |
-| 08 | Team / Users / User-detail / Roles | [08-team-users-roles.md](08-team-users-roles.md) | 🔴 audited: **6 RED + 13 MEDIUM** (27 confirmed, 0 refuted, dedupe ke baad 19 distinct). Awaiting owner approval | none yet | 5 LOW |
+| 08 | Team / Users / User-detail / Roles | [08-team-users-roles.md](08-team-users-roles.md) | ✅ **T3/T5/T6 FIXED** (45/45 suite + pre-fix proof); T1/T2/T4 owner ne mana kiya | T3, T5, T6 | T7–T19 + 5 LOW → [00-open-bugs.md](00-open-bugs.md) |
 | 09 | Expenses / Dues | — | queued | — | — |
 | 10 | Visitors / Announcements / Calendar / Settings / Rules | — | queued | — | — |
 | 11 | **MASTER consolidation** (cross-page fixes + features phase) | — | end me | — | — |

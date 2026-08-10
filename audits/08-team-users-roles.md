@@ -4,7 +4,11 @@
 >
 > 27 confirmed me kaafi **overlap** tha (paanch agents ne kuch ek hi cheez alag-alag angle se pakdi) → dedupe ke baad **6 RED + 13 MEDIUM = 19 distinct bugs**.
 >
-> **STATUS: kuch bhi fix NAHI hua.** Har bug owner ko samjha ke, approval ke baad hi ([[explain-bugs-before-fixing]]).
+> **STATUS (10 Aug 2026):** owner ne detail me sab dekh kar chuna —
+> ✅ **FIXED: T3, T5, T6** (45/45 isolated-DB suite + pre-fix regression proof)
+> 🚫 **Owner ne mana kiya: T1, T2, T4** — wajah [00-open-bugs.md](00-open-bugs.md) me darj
+> ⏸️ **T7–T19 park** — saare page audit hone ke baad ek saath review honge
+> Push/zip nahi hua ([[no-auto-push]]).
 
 Ye module baaki sab se alag hai. Baaki pages me bug ka matlab tha "**galat number dikha**". Yahan bug ka matlab hai "**galat aadmi ko galat taakat mil gayi**". Isliye is baar teen sabse bade findings security ke hain, figures ke nahi. Do bug aise hain jinse ek junior role **poora system apne haath me** le sakta hai.
 

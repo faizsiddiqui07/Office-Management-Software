@@ -1674,14 +1674,22 @@ async function rescoreAssignedTasks(b) {
  * page forever, pointing at a task that no longer loads). Two cheap queries, so it can run
  * on every rewards load.
  */
-async function pruneOrphanTaskEntries() {
+export async function pruneOrphanTaskEntries() {
   const TASK_SOURCES = ['auto_task', 'auto_forward'];
   const entries = await PointEntry.find({ source: { $in: TASK_SOURCES }, taskRef: { $ne: null } })
     .select('taskRef points')
     .limit(20000);
   if (!entries.length) return;
   const ids = [...new Set(entries.map((e) => String(e.taskRef)))];
-  const tasks = await Task.find({ _id: { $in: ids }, assignedBy: { $ne: null } }).select('status assignedBy collaborators forwardedFrom dueYMD createdAt');
+  // `assignedBy: null` normally means a personal task, which can never hold task points —
+  // hence the filter. But deleting a user CLEARS the assigner on every task they handed
+  // out, and those tasks do hold points: the assignee's. Without the second arm they fell
+  // out of this lookup, were read as "task no longer exists", and every entry on them —
+  // the doers' awards AND the late-penalties — was hard-deleted on the next daily pass.
+  const tasks = await Task.find({
+    _id: { $in: ids },
+    $or: [{ assignedBy: { $ne: null } }, { assignerDeleted: true }],
+  }).select('status assignedBy assignerDeleted collaborators forwardedFrom dueYMD createdAt');
   const byId = new Map(tasks.map((t) => [String(t._id), t]));
   const ownerIds = await ownerTierIds();
   const chainMemo = new Map();
@@ -1691,8 +1699,14 @@ async function pruneOrphanTaskEntries() {
   // when a tag is taken off later).
   const eligibleById = new Map();
   for (const t of tasks) {
+    // The gate asks "did someone in the owner tier assign this, or are they tagged on it?"
+    // Once the assigner's account is deleted that question can no longer be answered — the
+    // evidence is the thing that was removed. Re-deriving it would return false for every
+    // such task and wipe points that passed the gate when they were awarded, so the
+    // decision made at award time stands. (A tagged owner still answers it on its own,
+    // and chainEligible would agree; this only covers the case where it cannot.)
     // eslint-disable-next-line no-await-in-loop
-    eligibleById.set(String(t._id), await chainEligible(t, ownerIds, chainMemo));
+    eligibleById.set(String(t._id), t.assignerDeleted ? true : await chainEligible(t, ownerIds, chainMemo));
   }
   const dead = [];
   for (const e of entries) {

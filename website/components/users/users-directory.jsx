@@ -9,6 +9,7 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can, roleName } from '@/lib/permissions';
 import { useRoleOptions } from '@/lib/use-roles';
+import { COMPANY_TZ } from '@/lib/time';
 import { DataTable } from '@/components/glass/data-table';
 import { StatusBadge } from '@/components/glass/status-badge';
 import { TableSkeleton } from '@/components/glass/skeletons';
@@ -35,7 +36,10 @@ import { TempPasswordContent } from './temp-password-content';
 
 function formatJoined(iso) {
   if (!iso) return '—';
-  return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  // Pinned to company time. This is a company calendar day held as its IST midnight, so
+  // rendering it in the viewer's own zone moved it a day for anyone outside IST — and put
+  // this column at odds with the same date on the user's detail page.
+  return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: COMPANY_TZ });
 }
 
 export function UsersDirectory() {

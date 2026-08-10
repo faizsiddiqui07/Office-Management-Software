@@ -107,7 +107,15 @@ export async function getUserDossier(userId, { from, to }) {
   }
   let absentDays = 0;
   for (const ymd of workingDates) {
-    if (!presentSet.has(ymd) && !leaveSet.has(ymd) && !wfhSet.has(ymd)) absentDays += 1;
+    if (presentSet.has(ymd) || leaveSet.has(ymd) || wfhSet.has(ymd)) continue;
+    // A working day with no check-in is only ABSENT once that person's own work window has
+    // closed. The day-by-day sheet built further down applies exactly this guard (and says
+    // so in its comment), as do the company report and the daily roster — this tally was
+    // the one place that didn't. Opened at 9 a.m., it counted today against everyone who
+    // had not badged in yet, so the tile read one more absence than the table beneath it
+    // and than the PDF for the same range, then silently dropped by one when they arrived.
+    if (!workWindowClosed(user, ymd, settings, now)) continue;
+    absentDays += 1;
   }
 
   // A full day-by-day sheet for the elapsed part of the window. The table used to show

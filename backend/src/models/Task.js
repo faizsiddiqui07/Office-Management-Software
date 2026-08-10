@@ -7,6 +7,11 @@ const taskSchema = new mongoose.Schema(
     status: { type: String, enum: ['PENDING', 'DONE'], default: 'PENDING', index: true },
     owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true }, // who does it
     assignedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null, index: true }, // set when delegated
+    // This task WAS delegated, but the person who delegated it has since been deleted, so
+    // `assignedBy` had to be cleared to keep the reference valid. Without this marker the
+    // task is indistinguishable from a personal one, and the rewards housekeeping pass
+    // read it as "the task is gone" and hard-deleted the points the DOER had earned on it.
+    assignerDeleted: { type: Boolean, default: false },
     // Teammates tagged as also working on this task (a shared "project" task). The
     // owner keeps it in their own to-do; each collaborator sees it in "assigned to
     // me". Status is SHARED — whoever completes it, it's done for everyone.

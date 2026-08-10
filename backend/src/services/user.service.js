@@ -344,7 +344,11 @@ export async function deleteUser(actor, id) {
 
   // Detach references pointing AT them so other records stay valid.
   await Promise.all([
-    Task.updateMany({ assignedBy: uid }, { $set: { assignedBy: null } }),
+    // Clearing `assignedBy` keeps the task valid, but on its own it also erases the fact
+    // that the task was ever delegated — and the points on it belong to the ASSIGNEE, not
+    // to the account being removed. The marker is what lets the rewards pass tell
+    // "delegated, assigner gone" apart from "never delegated".
+    Task.updateMany({ assignedBy: uid }, { $set: { assignedBy: null, assignerDeleted: true } }),
     LeaveRequest.updateMany({ decidedBy: uid }, { $set: { decidedBy: null } }),
     Regularization.updateMany({ decidedBy: uid }, { $set: { decidedBy: null } }),
     Attendance.updateMany({ excusedBy: uid }, { $set: { excusedBy: null } }),

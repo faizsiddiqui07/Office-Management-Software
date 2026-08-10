@@ -26,7 +26,7 @@ import { can, roleName } from '@/lib/permissions';
 import { DatePicker } from '@/components/ui/date-picker';
 import { APP_LIVE_YMD } from '@/lib/app-live';
 import { AttendanceStatusBadge, attendanceStatusText } from '@/components/attendance/attendance-status-badge';
-import { formatTime, formatDuration } from '@/lib/time';
+import { formatTime, formatDuration, companyYMD } from '@/lib/time';
 import { formatYMD } from '@/lib/leave';
 import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/glass/page-header';
@@ -202,7 +202,7 @@ export default function UserDossierPage() {
                   u.employeeId && `ID ${u.employeeId}`,
                   // When they were given access — every figure below is counted from
                   // this date, so it belongs next to their name.
-                  u.dateOfJoining && `Access since ${formatYMD(String(u.dateOfJoining).slice(0, 10))}`,
+                  u.dateOfJoining && `Access since ${formatYMD(companyYMD(u.dateOfJoining))}`,
                 ]
                   .filter(Boolean)
                   .join(' · ')
