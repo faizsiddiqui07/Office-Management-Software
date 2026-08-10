@@ -17,6 +17,7 @@ import { PointEntry } from '../models/PointEntry.js';
 import { Setting } from '../models/Setting.js';
 import { recomputeAllOvertime } from './attendance.service.js';
 import { can, canAssignRole } from '../lib/permissions.js';
+import { isOwnerRole } from '../lib/roles.js';
 import { clearFailures } from '../lib/loginGuard.js';
 import { leaveYearOf } from '../lib/leaveYear.js';
 import { quotaForJoiner } from './leave.service.js';
@@ -342,13 +343,31 @@ export async function deleteUser(actor, id) {
     LedgerEntry.deleteMany({ person: uid }),
   ]);
 
+  // A delegated task earns points only because somebody in the owner tier can see it —
+  // and being TAGGED on it is one of the two ways that happens. Removing an owner-tier
+  // account therefore takes the evidence away from every task they were tagged on, even
+  // ones they never assigned, and the nightly pass would then read those points as
+  // ineligible and delete them from whoever earned them. Freeze the decision first,
+  // while the tag is still there to be seen.
+  // Scoped to DELEGATED tasks on purpose: a personal task shared with collaborators must
+  // keep them as co-owners, and the same flag is what task.service reads to decide that.
+  if (isOwnerRole(user.role)) {
+    await Task.updateMany(
+      { collaborators: uid, assignedBy: { $ne: null } },
+      { $set: { pointsGateFrozen: true } },
+    );
+  }
+
   // Detach references pointing AT them so other records stay valid.
   await Promise.all([
     // Clearing `assignedBy` keeps the task valid, but on its own it also erases the fact
     // that the task was ever delegated — and the points on it belong to the ASSIGNEE, not
     // to the account being removed. The marker is what lets the rewards pass tell
     // "delegated, assigner gone" apart from "never delegated".
-    Task.updateMany({ assignedBy: uid }, { $set: { assignedBy: null, assignerDeleted: true } }),
+    Task.updateMany({ assignedBy: uid }, { $set: { assignedBy: null, pointsGateFrozen: true } }),
+    // Their tag itself goes, so the task doesn't carry a member who no longer exists.
+    // Runs after the freeze above — the freeze needs the tag to still be findable.
+    Task.updateMany({ collaborators: uid }, { $pull: { collaborators: uid } }),
     LeaveRequest.updateMany({ decidedBy: uid }, { $set: { decidedBy: null } }),
     Regularization.updateMany({ decidedBy: uid }, { $set: { decidedBy: null } }),
     Attendance.updateMany({ excusedBy: uid }, { $set: { excusedBy: null } }),

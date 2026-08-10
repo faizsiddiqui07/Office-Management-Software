@@ -28,7 +28,7 @@ import { TaskDialog } from './task-dialog';
 import { AssignDialog } from './assign-dialog';
 import { ForwardDialog } from './forward-dialog';
 import { DateRange } from '@/components/ui/date-range';
-import { PDF_SCOPES, downloadTasksPdf, isOverdue, todayYMD, onTimeUntil } from '@/lib/task';
+import { PDF_SCOPES, downloadTasksPdf, isOverdue, todayYMD, onTimeUntil, gateFrozen } from '@/lib/task';
 
 // WHICH date a range means, per tab. My tasks and Assigned are lists of work still to be
 // done: every date on them is a DEADLINE, they group and sort by it, so that is what a
@@ -79,7 +79,7 @@ const onlyTagged = (t, myId) => !!myId && !!t?.owner?.id && !iOwnTask(t, myId);
  * on: the assignee does that, and the approval gate is theirs. Mirrors setStatus() on the
  * server, which 403s the same cases.
  */
-const canCompleteTask = (t, myId) => iOwnTask(t, myId) || !t?.assignedBy;
+const canCompleteTask = (t, myId) => iOwnTask(t, myId) || (!t?.assignedBy && !gateFrozen(t));
 
 const STAT_TONE = {
   warning: 'bg-warning/15 text-amber-600 ring-warning/25 dark:text-amber-300',
@@ -291,7 +291,7 @@ function TaskRow({ task, myId, canToggle, onToggle, onEdit, onDelete, onOpen, as
   // Only my OWN, non-delegated task can be edited/deleted here. A delegated or
   // shared-with-me task: I can complete it, but not change or remove it. Work I handed
   // out is mine to change, so the assigner's view keeps both.
-  const canManage = assignerView || (task.owner?.id === myId && !task.assignedBy);
+  const canManage = assignerView || (task.owner?.id === myId && !task.assignedBy && !gateFrozen(task));
   const sharedWith = canManage && task.collaborators?.length ? task.collaborators : [];
   // Never offer a button the server will refuse.
   const mayToggle = canToggle && canCompleteTask(task, myId);
