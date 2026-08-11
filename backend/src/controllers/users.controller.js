@@ -140,15 +140,9 @@ export async function exitSummary(req, res, next) {
 /** Permanently delete a deactivated user + their data. */
 export async function deleteUser(req, res, next) {
   try {
-    const heir = req.body?.reassignTasksTo || null;
-    const result = await deleteUserService(req.user, req.params.id, { reassignTasksTo: heir });
-    // Who picked the work up is part of the record: months later it is the only thing that
-    // explains why a task answers to somebody who never created it.
-    await audit({
-      actor: req.user._id, action: 'user.delete', entityType: 'User', entityId: req.params.id,
-      meta: { reassignTasksTo: heir, handedOver: result.handedOver, handedOverTo: result.handedOverTo },
-    });
-    return res.json(ok(result));
+    await deleteUserService(req.user, req.params.id);
+    await audit({ actor: req.user._id, action: 'user.delete', entityType: 'User', entityId: req.params.id });
+    return res.json(ok({ success: true }));
   } catch (err) {
     return sendServiceError(res, err, next);
   }

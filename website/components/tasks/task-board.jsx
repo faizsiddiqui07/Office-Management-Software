@@ -287,10 +287,7 @@ function TaskRow({ task, myId, canToggle, onToggle, onEdit, onDelete, onOpen, as
   // Where the task comes from. For a tagged row that is its OWNER — the person actually
   // doing it. Reading `assignedBy` there named the person who handed the work out, which
   // made a task I'm merely watching read exactly like one assigned to me.
-  // Falls back to whoever the work was handed to when the original assigner's account was
-  // deleted — otherwise this line goes blank and the assignee is left with a task from
-  // nobody, and no idea who to ask about it.
-  const from = assignerView ? null : tagged ? task.owner : task.assignedBy || task.handedOverTo || null;
+  const from = assignerView ? null : tagged ? task.owner : task.assignedBy || null;
   // Only my OWN, non-delegated task can be edited/deleted here. A delegated or
   // shared-with-me task: I can complete it, but not change or remove it. Work I handed
   // out is mine to change, so the assigner's view keeps both.
