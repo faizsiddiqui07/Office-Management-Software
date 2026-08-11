@@ -23,6 +23,34 @@ karne wala. Aur points ka gate fail ho jaata hai, jisse **jisne kaam kiya uske p
 
 ## Owner ka design
 
+> ## ⚠️ REVIEW KE BAAD SUDHAR (11 Aug) — Niyam 1 badal gaya
+>
+> Design review ne is design ka **spirit sahi** maana, par ek asli surakh nikala jo **sirf 3+ level ki
+> chain me** dikhta hai — owner ke apne 2-level example me nahi dikhta tha.
+>
+> **Galti kahan thi:** “chain break karke seedha assign kar do” — yaani `forwardedFrom` ko **clear**
+> karna. Points ka gate upar chal kar (`forwardedFrom` ke sahaare) CEO tak pahunchta hai. Link clear
+> karte hi wo **raasta hi khatam** ho jaata hai.
+>
+> **CEO Aamir → Priyanshi → Rohit → Sneha**, Rohit gaya:
+> Sneha ka task Priyanshi se juda, chain link clear. Ab gate poochta hai “kya Priyanshi owner-tier
+> hai?” — **nahi** — aur upar jaane ka raasta bhi nahi bacha. **Sneha ke +10 us raat mit jaate hain.**
+>
+> **Aur ye aaj se ULTA hai:** aaj Sneha ke points **bache rehte hain**. Ye design unhe maar deta.
+>
+> **Fix (chhota hai):** chain link **clear mat karo — upar wale ZINDA task par re-point kar do**, aur
+> `assignedBy` us task ke owner ka. Yaani jaane wale ko chain se **kaat kar nikalo**, chain **todo mat**.
+> Ye bilkul wahi shakl hai jo `forwardTask` khud likhta hai — jaise Priyanshi ne seedha Sneha ko forward
+> kiya ho. Koi naya niyam nahi banta.
+>
+> **Screen par fark kuch nahi** — Sneha ko phir bhi “Priyanshi se” hi dikhega, jo owner chahte the.
+> Fark sirf andar ka hai, aur wahi points ko bachata hai.
+>
+> Aur agar upar **koi zinda task hi na ho** (owner ke 2-level example me yahi hota hai — Manager ki apni
+> copy uske saath delete ho jaati hai): tab `originalAssignedBy` (= CEO, jo pehle se har forwarded task
+> par likha hota hai) ko `assignedBy` bana do. Gate: CEO owner-tier hai → **haan**. **Owner ka apna
+> example is tarah bilkul theek chalta hai.**
+
 ### Niyam 1 — chain hai to sabse nazdeek zinda link ko
 
 ```
@@ -108,6 +136,24 @@ Agar ye theek nahi hua to **request aane se pehle hi points ud chuke honge.** Ye
 | 4 | Owner-tier me **sirf ek hi insaan** ho to? | Reject ka button hi nahi — seedha uske paas |
 | 5 | Kisi ne kai din tak kuch na kiya to? | Roz yaad-dehani (badge to rahega hi) |
 
+**Owner ne 11 Aug ko ye tay kiya:**
+- **Reject** = “main nahi lunga” — sirf apni list se hatta hai, baakiyon ke paas rehta hai
+- **Aakhri bacha hua reject NAHI kar sakta** — uske liye accept karna majboori. Isse task kabhi bina maalik ke nahi rehta
+- **Ek hi modal me saare task**, har ek ki poori detail aur apna Accept/Reject — alag-alag popup nahi
+
+---
+
+## Review se nikli baaki chaar cheezein (`08e-design-review.md`)
+
+| # | Kya | Kyun zaroori |
+|---|---|---|
+| **B** | **Tag ka arm chain me neeche nahi jaata** — `forwardTask` child par `collaborators` copy karta hi nahi | Agar task ke points sirf isliye the ki parent par koi owner **tagged** tha, to parent ke mitte hi wo tag bhi gaya → gate fail → points delete. Re-point se ye apne aap theek nahi hota |
+| **C** | **Approval kis ka?** Jaane wale ne approval maangi thi; uski copy ke saath wo gate bhi gaya. Aur jo submission beech me atki thi, uska notification kis ko jaaye? | Naya assigner ek aisa approval-gate paa jaata hai jo usne set kiya hi nahi |
+| **D** | **Note kahan rahega** — model me koi field nahi. Aur agar chain me **do log** chale jaayein to? Note me dono ke naam chahiye | Account mit jaata hai, naam nahi bachta |
+| **E** | **`deleteUser` ka order** — parent copy padhne se **pehle hi** delete ho jaati hai | Re-point karne ke liye parent ko **pehle padhna** hoga. *(Yahi wo galti hai jo main pichhli baar kar chuka hoon)* |
+
+Aur ek cheez jo review ne yaad dilayi: jo tasks **pehle ki deletions** se already orphan pade hain (live data me `assignedBy` already null), unhe ye design theek **nahi** karta — unke liye alag se ek baar ki safai chahiye hogi.
+
 ---
 
 ## Ye design pichhle dono se alag kyun hai
@@ -123,8 +169,11 @@ Agar ye theek nahi hua to **request aane se pehle hi points ud chuke honge.** Ye
 ## Sthiti
 
 - [x] Owner ka design likhit
-- [ ] Design par adversarial review *(pehla hissa chal raha hai)*
-- [ ] Khule sawaalon ke jawab
+- [x] Design par adversarial review — **23 objections, 1 refuted** → `08e-design-review.md`
+- [x] Niyam 1 sudhra: **re-point, clear nahi**
+- [x] Reject aur modal par owner ka faisla
+- [ ] Baaki chaar (B–E) par owner ka faisla
+- [ ] Bache hue khule sawaal (1–5)
 - [ ] Poore design par doosri review
 - [ ] Owner ki haan
 - [ ] **Tab code**
