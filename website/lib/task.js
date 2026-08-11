@@ -13,18 +13,6 @@ export const PDF_SCOPES = [
   { value: 'completed', label: 'Completed only' },
 ];
 
-/**
- * Was this task's points-eligibility decision frozen because somebody it depended on was
- * deleted? Mirrors backend/src/lib/pointsGate.js.
- *
- * It also answers "was this delegated?" for a task whose assigner is gone: `assignedBy`
- * reads null there only because the reference had to be cleared, and treating that as a
- * personal task hands a tagged teammate co-ownership of work that was never theirs.
- */
-export function gateFrozen(t) {
-  return !!(t?.pointsGateFrozen || t?.assignerDeleted);
-}
-
 export function todayYMD() {
   try {
     return new Intl.DateTimeFormat('en-CA', { timeZone: COMPANY_TZ }).format(new Date());

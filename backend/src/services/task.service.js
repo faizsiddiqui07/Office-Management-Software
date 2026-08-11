@@ -4,7 +4,6 @@ import { User } from '../models/User.js';
 import { Setting } from '../models/Setting.js';
 import { notify, clearNotificationsFor } from '../models/Notification.js';
 import { roleLabel, isOwnerRole } from '../lib/roles.js';
-import { gateFrozen } from '../lib/pointsGate.js';
 import { can } from '../lib/permissions.js';
 import { companyDayFromYMD, ymdInTz, COMPANY_TZ } from '../lib/time.js';
 import { onAssignedTaskDone, onAssignedTaskUndone, rebuildOverdueForTask } from './bonus.service.js';
@@ -274,13 +273,7 @@ export async function setStatus(actor, id, status) {
   // finishes it closes it for everyone. But on a DELEGATED task, tagging is only for
   // awareness: the assignee does the work, so a collaborator must NOT be able to
   // complete it (bypassing the assignee and the approval gate) or reopen it.
-  // A task whose assigner was DELETED still isn't personal — `assignedBy` is only null
-  // because the reference had to be cleared. Without the second test a tagged teammate
-  // inherited co-ownership of somebody else's delegated work the moment an account was
-  // removed, and could reopen it: that path runs onAssignedTaskUndone, which deletes the
-  // assignee's point entries, and the rebuild that normally re-prices them bails out on
-  // a task with no assigner — so the doer's points were gone for good.
-  const sharedPersonal = !task.assignedBy && !gateFrozen(task);
+  const sharedPersonal = !task.assignedBy;
   if (!isOwner && !(isCollaborator && sharedPersonal)) {
     throw httpError(403, 'FORBIDDEN', 'Only the task owner can update this task');
   }

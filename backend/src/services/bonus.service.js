@@ -7,7 +7,6 @@ import { Attendance } from '../models/Attendance.js';
 import { LeaveRequest } from '../models/LeaveRequest.js';
 import { can } from '../lib/permissions.js';
 import { ownerRoleKeys } from '../lib/roles.js';
-import { gateFrozen, GATE_FIELDS } from '../lib/pointsGate.js';
 import { ymdInTz, companyDayFromYMD, dayOfWeekInTz } from '../lib/time.js';
 import { userWeekendDays } from '../lib/schedule.js';
 import { hadAccessOn, splitByJoining, periodStartFor } from '../lib/joining.js';
@@ -1689,8 +1688,8 @@ export async function pruneOrphanTaskEntries() {
   // the doers' awards AND the late-penalties — was hard-deleted on the next daily pass.
   const tasks = await Task.find({
     _id: { $in: ids },
-    $or: [{ assignedBy: { $ne: null } }, { pointsGateFrozen: true }, { assignerDeleted: true }],
-  }).select(`status assignedBy collaborators forwardedFrom dueYMD createdAt ${GATE_FIELDS}`);
+    $or: [{ assignedBy: { $ne: null } }, { assignerDeleted: true }],
+  }).select('status assignedBy assignerDeleted collaborators forwardedFrom dueYMD createdAt');
   const byId = new Map(tasks.map((t) => [String(t._id), t]));
   const ownerIds = await ownerTierIds();
   const chainMemo = new Map();
@@ -1707,7 +1706,7 @@ export async function pruneOrphanTaskEntries() {
     // decision made at award time stands. (A tagged owner still answers it on its own,
     // and chainEligible would agree; this only covers the case where it cannot.)
     // eslint-disable-next-line no-await-in-loop
-    eligibleById.set(String(t._id), gateFrozen(t) ? true : await chainEligible(t, ownerIds, chainMemo));
+    eligibleById.set(String(t._id), t.assignerDeleted ? true : await chainEligible(t, ownerIds, chainMemo));
   }
   const dead = [];
   for (const e of entries) {

@@ -7,18 +7,11 @@ const taskSchema = new mongoose.Schema(
     status: { type: String, enum: ['PENDING', 'DONE'], default: 'PENDING', index: true },
     owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true }, // who does it
     assignedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null, index: true }, // set when delegated
-    // Somebody this task's POINTS DEPENDED ON has been deleted, so the eligibility
-    // decision made when those points were awarded can no longer be re-derived — and must
-    // not be. Two ways in, same reason both times:
-    //   • the ASSIGNER was deleted, so `assignedBy` had to be cleared to keep the
-    //     reference valid — which also erased the fact that the task was ever delegated;
-    //   • an owner-tier COLLABORATOR was deleted, and their tag was the whole reason the
-    //     task counted for points at all.
-    // Deliberately NEVER set on a personal task: the flag doubles as "this was delegated"
-    // for the co-ownership rule in task.service, and a shared personal task has to keep
-    // its collaborators as co-owners. Always read it through gateFrozen() — an earlier
-    // build shipped it under the narrower name `assignerDeleted`.
-    pointsGateFrozen: { type: Boolean, default: false },
+    // This task WAS delegated, but the person who delegated it has since been deleted, so
+    // `assignedBy` had to be cleared to keep the reference valid. Without this marker the
+    // task is indistinguishable from a personal one, and the rewards housekeeping pass
+    // read it as "the task is gone" and hard-deleted the points the DOER had earned on it.
+    assignerDeleted: { type: Boolean, default: false },
     // Teammates tagged as also working on this task (a shared "project" task). The
     // owner keeps it in their own to-do; each collaborator sees it in "assigned to
     // me". Status is SHARED — whoever completes it, it's done for everyone.
