@@ -35,9 +35,29 @@ export function formatRupees(rupees, currency = 'INR') {
   );
 }
 
+/**
+ * A typed amount in rupees → paise (integers, which is how money is stored).
+ *
+ * This used to be `parseFloat`, which stops at the first character that isn't part of a
+ * number and silently returns what it read so far. People type and paste amounts the way
+ * they are written on a bill — "12,500.50", "1,00,000", sometimes with the symbol still
+ * attached — so a grouping comma truncated the figure: ₹1,00,000 was stored as ₹1.00 and
+ * every screen, export, PDF and audit entry downstream repeated it. Neither guard caught
+ * it either, because 100 paise is a perfectly valid positive integer.
+ *
+ * So: strip what is only decoration, then require what remains to be a plain amount.
+ * Anything else is a typo and returns 0, which the callers already treat as "no amount"
+ * — better to ask again than to guess at half a number.
+ */
 export function rupeesToPaise(str) {
-  const n = parseFloat(str);
-  return Number.isFinite(n) ? Math.round(n * 100) : 0;
+  const cleaned = String(str ?? '')
+    // Grouping separators, ordinary and non-breaking spaces. Indian grouping ("1,00,000")
+    // is irregular, so there is nothing to validate here — the digits are the figure.
+    .replace(/[\s,\u00A0]/g, '')
+    // A currency symbol that came along with a pasted figure.
+    .replace(/^(?:\u20B9|rs\.?|inr)/i, '');
+  if (!/^\d+(?:\.\d+)?$/.test(cleaned)) return 0;
+  return Math.round(Number(cleaned) * 100);
 }
 
 export function paiseToRupees(paise) {

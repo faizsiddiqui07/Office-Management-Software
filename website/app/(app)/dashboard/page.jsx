@@ -377,10 +377,14 @@ export default function DashboardPage() {
               <AttendanceDonut breakdown={analytics.breakdown} rate={analytics.attendanceRate} />
             </GlassCard>
 
-            <GlassCard className="p-5 xl:col-span-2">
-              <p className="mb-2 text-sm font-medium">Spend this month{analytics.expenseMonthLabel ? ` · ${analytics.expenseMonthLabel}` : ''}</p>
-              <ExpenseTrendChart data={analytics.dailyExpenseTrend} />
-            </GlassCard>
+            {/* Absent for anyone without expense access — the server omits it rather than
+                sending an empty series, so there is no card to misread as "nothing spent". */}
+            {analytics.dailyExpenseTrend ? (
+              <GlassCard className="p-5 xl:col-span-2">
+                <p className="mb-2 text-sm font-medium">Spend this month{analytics.expenseMonthLabel ? ` · ${analytics.expenseMonthLabel}` : ''}</p>
+                <ExpenseTrendChart data={analytics.dailyExpenseTrend} />
+              </GlassCard>
+            ) : null}
           </div>
 
           {/* Overtime leaders now lives in the common Leaderboards section above, for

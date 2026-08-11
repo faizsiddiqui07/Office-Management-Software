@@ -315,10 +315,17 @@ export async function buildDashboard(user) {
       // This month's spend DAY BY DAY (the chart plots a line over the dates). A full
       // calendar year grouped by month left the chart all-but-empty — only the live
       // month has data — so it's the current month at daily resolution instead.
-      Expense.aggregate([
-        { $match: { dateYMD: { $gte: month.from, $lte: todayYMD } } },
-        { $group: { _id: '$dateYMD', total: { $sum: '$amount' } } },
-      ]),
+      // Gated on viewExpenses, NOT on the leadership dashboard: this is the expense
+      // register at daily resolution, and the two are deliberately separate toggles. A
+      // role given analytics but explicitly refused the register was still handed the
+      // company's month-to-date spend, day by day, from here — while the sidebar, the
+      // /expenses page and the report's expense section all correctly refused it.
+      can(user, 'viewExpenses')
+        ? Expense.aggregate([
+          { $match: { dateYMD: { $gte: month.from, $lte: todayYMD } } },
+          { $group: { _id: '$dateYMD', total: { $sum: '$amount' } } },
+        ])
+        : Promise.resolve(null),
       // Open DELEGATED work only — personal to-dos are private reminders leadership can
       // neither see nor act on, and they were inflating this KPI.
       Task.countDocuments({ status: 'PENDING', assignedBy: { $ne: null } }),
@@ -332,12 +339,17 @@ export async function buildDashboard(user) {
 
     // Fill every day from the 1st to today so the line is continuous, not a dot per day
     // that happened to have an expense.
-    const spentByDay = new Map(dailySpend.map((d) => [d._id, d.total]));
-    const dailyExpenseTrend = [];
-    for (let t = Date.parse(`${month.from}T00:00:00Z`); ; t += 86400000) {
-      const ymd = new Date(t).toISOString().slice(0, 10);
-      if (ymd > todayYMD) break;
-      dailyExpenseTrend.push({ ymd, total: spentByDay.get(ymd) ?? 0 });
+    // null (not an empty array) when they may not see expenses — an empty trend would
+    // draw a flat zero line, which reads as "the office spent nothing", not "not for you".
+    let dailyExpenseTrend = null;
+    if (dailySpend) {
+      const spentByDay = new Map(dailySpend.map((d) => [d._id, d.total]));
+      dailyExpenseTrend = [];
+      for (let t = Date.parse(`${month.from}T00:00:00Z`); ; t += 86400000) {
+        const ymd = new Date(t).toISOString().slice(0, 10);
+        if (ymd > todayYMD) break;
+        dailyExpenseTrend.push({ ymd, total: spentByDay.get(ymd) ?? 0 });
+      }
     }
 
     out.analytics = {
@@ -372,7 +384,8 @@ export async function buildDashboard(user) {
       overtimeLeaders: out.leaderboards.overtime,
       openTasks,
       dailyExpenseTrend,
-      expenseMonthLabel: month.label, // the UI titles the chart from this
+      // Only alongside the trend, so the card can't render a title over nothing.
+      expenseMonthLabel: dailyExpenseTrend ? month.label : null, // the UI titles the chart from this
       pendingApprovalsCount, // real total (the list below is capped at 6 for preview)
       pendingApprovals: pendingApprovals.map((l) => ({
         id: l.id,
