@@ -88,6 +88,33 @@ Task seedha **us tagged insaan** ke paas. Koi request nahi, koi poochh nahi.
 
 **Isi rule se task kabhi bina maalik ke nahi reh sakta.**
 
+**Aakhri bacha hua candidate** (owner ka faisla: **(a)**): task **seedha uske paas** chala jaayega — button
+dabwaane ki zaroorat nahi, kyunki uske paas vikalp hai hi nahi. Par use **bataya zaroor jaayega** (neeche).
+
+### Kisi ko kaam chupchaap nahi milega — "aapko ye mile hain" wala hissa
+
+> *Owner:* "usko website open hote hi ek modal show ho jisme sare task show ho... ye sare task aapko dia
+> jaa rha hai, manish chale gae hai — atleast usko ye to pta chale ki usko kon kon se task mil rhe hai.
+> baki accept krna ka option na aae, bss information type hoo"
+
+Ye **sirf aakhri candidate** par nahi lagega. **Har us jagah lagega jahan task apne aap kisi ke paas
+jaata hai** — kyunki har baar wahi baat hai: kisi ki list me kaam aa gaya aur use pata hi nahi:
+
+| Kahan | Kis ko bataya jaayega |
+|---|---|
+| Niyam 1 — chain se kaat kar jodna | **Manager A** ko |
+| Niyam 2 — tagged owner ko | **us tagged insaan** ko |
+| Niyam 3 — aakhri bacha candidate | **usi ko** |
+
+**Modal ek hi rahega, do hisson me:**
+
+1. **"Ye kaam ab aapke paas hain"** — sirf jaankari. Har task ki poori detail + *"Manish Saini chale gaye
+   hain"*. **Koi Accept/Reject nahi** — bas *"Theek hai"*
+2. **"In par faisla chahiye"** — jab aap owner-tier me ho aur kai candidates hain. Yahan har task par
+   **Accept / Reject**
+
+Ek hi insaan ke paas dono ek saath aa sakte hain, isliye ek hi modal me do hisse — do alag popup nahi.
+
 ### Request kaisi dikhegi
 
 - **Ek hi modal me saare task** — har task ke liye alag popup **nahi**
@@ -180,7 +207,8 @@ Ye is poore kaam ka sabse pehla test hoga.
 - [x] Pehli design review — 23 objections, 1 refuted → `08e-design-review.md`
 - [x] Niyam 1 sudhra: **re-point, clear nahi**
 - [x] Owner ke saare faisle: reject-rule, ek modal, B1, C1, D2, candidates=abhi wale, ek hi owner ho to seedha, roz reminder
-- [ ] **Ek confusion owner se** — aakhri bache hue candidate ko auto mile ya "sirf Accept" wala button?
+- [x] Aakhri candidate → **seedha uske paas (a)**, par batakar
+- [x] **Har** auto-transfer par "ye kaam aapke paas aa gaye" wala jaankari-modal
 - [ ] Poore (badle hue) design par **aakhri review**
 - [ ] Owner ki haan
 - [ ] **Tab code**
