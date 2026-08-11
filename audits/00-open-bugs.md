@@ -26,6 +26,44 @@
 
 ---
 
+## 🔴 LIVE IN PRODUCTION — deletion ke do bug (11 Aug 2026)
+
+Ye audit 08 ke findings nahi hain — ye T3 fix karte waqt jo review chalayi thi, usme **niklе**. Dono **abhi prod me zinda hain**. Theek karne ki koshish ki gayi thi aur **revert** kar di gayi (neeche wajah).
+
+| # | Bug | Kya hota hai |
+|---|---|---|
+| **B1** | Tagged owner ka account delete karne par doer ke points udte hain | Task ke points sirf isliye the ki koi owner-tier banda usme **tagged** tha. Uska account delete → raat ki job un points ko "ineligible" padh kar **mita deti hai**. Live data me theek isi shakl ke **5 tasks** hain. **Trigger delete hai, deactivate nahi** — deactivated owner bhi gate khula rakhta hai |
+| **B2** | Orphaned delegated task "personal" ban jaata hai | Assigner delete → `assignedBy` null → task shared-personal jaisa. Ab tagged banda use **reopen** kar sakta hai, jisse doer ke points **delete** ho jaate hain aur dobara bante bhi nahi |
+
+**Aaj ka khatra kam hai** kyunki dono ke liye kisi **owner-tier account ko permanently delete** karna padta hai — jo abhi hota nahi. Par jis din ho, chupchaap ho jaayega.
+
+### Fix kyun revert hui
+
+B ka fix likha gaya, 17/17 test pass hue, pre-fix proof bhi liya — phir adversarial review ne **teen aur RED** nikale jo usi fix ke bagal me khule reh gaye the:
+
+1. **Award-path bhi wahi gate poochta hai.** `pruneOrphanTaskEntries` ko nishaan padhna sikhaya gaya, par `onAssignedTaskDone` ko nahi. Nateeja: usi raat ki tick me safai-job points bachati hai aur **paanch line baad** daily re-score unhe mita deta hai
+2. **Freeze forward chain me neeche nahi jaata** — leaf doer ka award ab bhi udta hai
+3. **Apna hi frozen task reopen** karne par doer ke apne points ud jaate hain
+
+Teenon ke fix ab **exact define ho chuke hain** (file + line tak) — `08c-handover-review-2.md` me.
+
+---
+
+## ⏸️ "Delete par kaam kis ko sonpein" (feature D) — do baar banaya, do baar revert
+
+Owner ne ye feature chuna tha. **Do alag design se banaya gaya, dono revert hue.**
+
+| Try | Design | Review me kya nikla |
+|---|---|---|
+| 1 | task ka `assignedBy` naye bande ka kar do | **4 RED** — non-owner ko dene par completion par doer ke points **delete**; owner-tier ko dene par **band mahine me nayi penalty**; forward chain toota; heir ka apna task **khud-assign** ban gaya |
+| 2 | `assignedBy` chhua hi nahi; alag field `handedOverTo` | **5 RED** — jisme ek **maine hi daala tha**: validation se **pehle** hi account ka saara data delete ho jaata tha, aur mera apna e2e test us par **pass** ho gaya kyunki wo account check karta tha, uska data nahi |
+
+**Kyun ruka:** `assignedBy`, points ka gate, forward chains aur approval queue itne aapas me jude hain ki har fix ke bagal me naya chhed khulta raha. Teen round me har baar RED nikla. Dono attempts ka poora record `08b-handover-review.md` (1,526 lines) aur `08c-handover-review-2.md` (1,113 lines) me hai — dobara shuru karne wale ke liye wahi naksha hai.
+
+**Agar dobara banana ho to:** pehle B poora karo (uske 3 bug), phir D — aur invariant test **har us raste par** chalao jo points ko chhoo sakta hai, do-teen chun kar nahi. Yahi cheez teeno round me chhooti.
+
+---
+
 ## 08 — Team / Users / User-detail / Roles
 
 **Fix ho chuke:** T3 ✅ · T5 ✅ · T6 ✅ (10 Aug 2026)
