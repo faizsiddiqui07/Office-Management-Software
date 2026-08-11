@@ -441,7 +441,16 @@ export function DuesAdmin() {
                       >
                         <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">{initials(p.person.name)}</span>
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium">{p.person.name}</p>
+                          <p className="flex items-center gap-1.5 truncate text-sm font-medium">
+                            <span className="truncate">{p.person.name}</span>
+                            {/* Left the office but the ledger hasn't settled — the row stays
+                                until it does, so an unfamiliar name isn't a mystery. */}
+                            {p.hasLeft ? (
+                              <span className="shrink-0 rounded-full bg-foreground/[0.06] px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground ring-1 ring-border/50">
+                                left
+                              </span>
+                            ) : null}
+                          </p>
                           <p className="truncate text-xs text-muted-foreground">{roleName(p.person)}</p>
                         </div>
                         <BalanceChip p={p} />

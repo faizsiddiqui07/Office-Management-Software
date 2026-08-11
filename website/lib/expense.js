@@ -89,9 +89,17 @@ export function monthLabelShort(key) {
   return new Date(Number(y), Number(m) - 1, 1).toLocaleDateString('en-US', { month: 'short' });
 }
 
+/**
+ * Today, as the OFFICE reckons it. Built from the device's clock, this drifted a whole
+ * day whenever that clock wasn't on IST — a laptop left on UTC, somebody travelling, a
+ * phone that switched zone by itself. At 03:00 IST on 1 September a UTC device still
+ * reads 31 August, so an expense dialog opened then defaulted to August, greyed 1
+ * September out of the calendar entirely, and filed a September bill under August.
+ * Task, visitor and calendar all resolve this in company time already; expenses and dues
+ * were the two that didn't.
+ */
 export function todayYMD() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return companyTodayYMD();
 }
 
 /**
@@ -119,15 +127,18 @@ export const EXPENSE_PERIODS = [
 /** The anchor date a preset should be resolved against (months back from today). */
 export function anchorFor(preset) {
   const p = EXPENSE_PERIODS.find((x) => x.value === preset);
-  const now = new Date();
+  // Anchored on the office's today, not the device's: otherwise "This month" could ask
+  // the server for a different month than the dashboard was showing on the same screen.
+  const today = companyTodayYMD();
+  if (!p?.shift) return today;
+  const [y, m] = today.split('-').map(Number);
   // A month-shift preset ("Last month") lands on the 1st of the shifted month.
   // Mutating a full date with setMonth overflowed FORWARD when today's day-of-month
   // was longer than the target month — on 31 Jul, "−1 month" fell back into July, so
-  // "Last month" silently showed the CURRENT month. The Date(y, m, 1) constructor
-  // normalises a negative/overflowing month, and the server only reads the anchor's
-  // year+month for a monthly period, so day-1 is exact.
-  const d = p?.shift ? new Date(now.getFullYear(), now.getMonth() + p.shift, 1) : now;
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  // "Last month" silently showed the CURRENT month. Building from day 1 normalises a
+  // negative/overflowing month, and the server only reads the anchor's year+month for a
+  // monthly period, so day-1 is exact.
+  return new Date(Date.UTC(y, m - 1 + p.shift, 1)).toISOString().slice(0, 10);
 }
 
 /** Minor units (paise) → "₹1.24L" / "₹12,400" — for stat cards, where paise wrap. */

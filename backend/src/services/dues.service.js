@@ -100,12 +100,30 @@ export async function overview() {
     byPerson.get(pid).push(d);
   }
 
-  const users = await User.find({ isActive: true }).select('name employeeId role department').sort({ name: 1 });
+  // Each person's balance, worked out once — it decides who belongs on the list as well
+  // as what their row says.
+  const ledgerOf = new Map();
+  for (const [pid, list] of byPerson) ledgerOf.set(pid, computeLedger(list));
+
+  // Everyone still here, PLUS anyone who has left whose ledger hasn't settled. Listing
+  // only active accounts dropped a leaver's balance out of the roster and out of the
+  // totals the moment they were deactivated — so the money stopped being visible exactly
+  // when it became hardest to collect, and there was no way to record a payment against
+  // it either. The CSV export reads the ledger rather than the roster, so it went on
+  // reporting the same money the screen had quietly written off: two surfaces, one of
+  // them wrong. They drop off this list on their own once the balance reaches zero.
+  const unsettled = [...ledgerOf.entries()]
+    .filter(([, l]) => l.pending > 0 || l.advance > 0)
+    .map(([pid]) => pid);
+  const users = await User.find({ $or: [{ isActive: true }, { _id: { $in: unsettled } }] })
+    .select('name employeeId role department isActive')
+    .sort({ name: 1 });
   const people = users.map((u) => {
     const list = byPerson.get(String(u._id)) || [];
-    const { pending, advance } = computeLedger(list);
+    const { pending, advance } = ledgerOf.get(String(u._id)) || { pending: 0, advance: 0 };
     const last = list.reduce((mx, e) => (!mx || e.date > mx ? e.date : mx), null);
-    return { person: u.toJSON(), pending, advance, lastActivity: last };
+    // Says so on the row, so a name nobody recognises from the floor isn't a mystery.
+    return { person: u.toJSON(), pending, advance, lastActivity: last, hasLeft: u.isActive === false };
   });
 
   return {
