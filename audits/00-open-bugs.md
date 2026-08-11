@@ -26,6 +26,39 @@
 
 ---
 
+## ⛔ OWNER KA FAISLA (11 Aug 2026) — DELETE WALA POORA AREA CHHOD DIYA GAYA
+
+> *Owner ke shabdon me:* "jo user delete hone par task delete kr rha tha wo sab rahne doo, hum nhi chahte
+> hai ki isko theek krne ke chakkar me kuch or kharab kr doo. future me agar delete krna hoga to wo sab
+> manually manage kr lia jaega tb hi"
+
+**Neeche ke saare bug jaan-boojh kar chhode gaye hain. Inhe bina owner ke naye faisle ke haath mat lagana.**
+
+Wajah saaf hai: **teen baar** koshish hui, **teenon baar** naya RED nikla —
+`08b` (4 RED), `08c` (5 RED, jisme ek maine hi daala tha), `08f` (24 objections, 0 refuted).
+Har fix ke bagal me ek naya surakh khulta raha. Chhodna zyada surakshit hai.
+
+**Aaj ka khatra kam hai** kyunki inme se koi bhi bug tab tak nahi chalta jab tak koi account
+**permanently DELETE** na kiya jaaye. **Deactivate karna bilkul surakshit hai.** Owner ne tay kiya hai ki
+delete ki zaroorat padi to wo **manually** sambhala jaayega.
+
+### Agar kabhi dobara uthana ho — asli jad ye hai
+
+Poori chheen-taan ke baad ek hi baat nikli: **`assignedBy` ek hi field do kaam karti hai** —
+*"kaun approve/edit/close kar sakta hai"* (authority) **aur** *"ye task points kamaayega ya nahi"*
+(eligibility). Aap authority badalna chahein, to eligibility apne aap badal jaati hai — kabhi points mit
+jaate hain, kabhi band mahine me jhoothi penalty ban jaati hai.
+
+**Jab tak ye do kaam alag nahi hote, is area me har fix naya bug banata rahega.** Owner ka apna design
+(`08d`) is se sabse zyada bacha — uske Niyam 1 aur 2 **verified neutral** hain — par jahan chain me koi
+nahi bachta wahan wo bhi isi jad se toota.
+
+Neev ka kaam: jawab **ek jagah likho**, aur points system ki **saaton** jagah wahi padhein. Line numbers
+`08f` me hain. Uske saath ek test jo **har** PointEntry chhoone wale function ko chalaye — grep se
+nikaal kar, chun kar nahi. *(Teeno round me yahi chhoota.)*
+
+---
+
 ## 🔴 LIVE IN PRODUCTION — deletion ke do bug (11 Aug 2026)
 
 Ye audit 08 ke findings nahi hain — ye T3 fix karte waqt jo review chalayi thi, usme **niklе**. Dono **abhi prod me zinda hain**. Theek karne ki koshish ki gayi thi aur **revert** kar di gayi (neeche wajah).
