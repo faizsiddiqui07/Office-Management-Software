@@ -1,10 +1,14 @@
-# Design — kisi ke jaane par uska kaam kis ko milega (11 Aug 2026)
+# Design — kisi ke jaane par uska kaam kis ko milega
 
-> **Ye kya hai:** owner ka apna design, likhit shakl me. **Abhi tak koi code nahi likha gaya.**
->
+**Owner ka design · 11 Aug 2026 · abhi tak ek line code nahi likhi gayi**
+
 > Isse pehle do design try ho chuke hain aur **dono revert** hue — `08b-handover-review.md` (4 RED) aur
-> `08c-handover-review-2.md` (5 RED). Isliye is baar niyam ye hai: **pehle design likho, phir design ko
-> hi adversarial review par daalo, phir owner ki haan, tab code.**
+> `08c-handover-review-2.md` (5 RED). Dono baar galti ek hi thi: **design aur build ek saath**, aur pata
+> baad me chala.
+>
+> Isliye is baar kram ye hai: **design likho → design ko hi adversarial review par daalo → sudhaaro →
+> owner ki haan → tab code.** Pehli review ho chuki (`08e-design-review.md`, 23 objections) aur usne
+> Niyam 1 badal diya. Ye document uske baad ka final design hai.
 
 ---
 
@@ -21,159 +25,162 @@ karne wala. Aur points ka gate fail ho jaata hai, jisse **jisne kaam kiya uske p
 
 ---
 
-## Owner ka design
+## Buniyadi soch (yahi sab kuch tay karti hai)
 
-> ## ⚠️ REVIEW KE BAAD SUDHAR (11 Aug) — Niyam 1 badal gaya
->
-> Design review ne is design ka **spirit sahi** maana, par ek asli surakh nikala jo **sirf 3+ level ki
-> chain me** dikhta hai — owner ke apne 2-level example me nahi dikhta tha.
->
-> **Galti kahan thi:** “chain break karke seedha assign kar do” — yaani `forwardedFrom` ko **clear**
-> karna. Points ka gate upar chal kar (`forwardedFrom` ke sahaare) CEO tak pahunchta hai. Link clear
-> karte hi wo **raasta hi khatam** ho jaata hai.
->
-> **CEO Aamir → Priyanshi → Rohit → Sneha**, Rohit gaya:
-> Sneha ka task Priyanshi se juda, chain link clear. Ab gate poochta hai “kya Priyanshi owner-tier
-> hai?” — **nahi** — aur upar jaane ka raasta bhi nahi bacha. **Sneha ke +10 us raat mit jaate hain.**
->
-> **Aur ye aaj se ULTA hai:** aaj Sneha ke points **bache rehte hain**. Ye design unhe maar deta.
->
-> **Fix (chhota hai):** chain link **clear mat karo — upar wale ZINDA task par re-point kar do**, aur
-> `assignedBy` us task ke owner ka. Yaani jaane wale ko chain se **kaat kar nikalo**, chain **todo mat**.
-> Ye bilkul wahi shakl hai jo `forwardTask` khud likhta hai — jaise Priyanshi ne seedha Sneha ko forward
-> kiya ho. Koi naya niyam nahi banta.
->
-> **Screen par fark kuch nahi** — Sneha ko phir bhi “Priyanshi se” hi dikhega, jo owner chahte the.
-> Fark sirf andar ka hai, aur wahi points ko bachata hai.
->
-> Aur agar upar **koi zinda task hi na ho** (owner ke 2-level example me yahi hota hai — Manager ki apni
-> copy uske saath delete ho jaati hai): tab `originalAssignedBy` (= CEO, jo pehle se har forwarded task
-> par likha hota hai) ko `assignedBy` bana do. Gate: CEO owner-tier hai → **haan**. **Owner ka apna
-> example is tarah bilkul theek chalta hai.**
+> **Kaam kisi NAYE insaan ko mat do. Jo rishta pehle se tha, use wapas jodo.**
 
-### Niyam 1 — chain hai to sabse nazdeek zinda link ko
+Pichhle dono design isliye toote ki wo task ko kisi aise ke paas bhej rahe the jo us task ki history me
+tha hi nahi — jisse points ka gate **naya jawab** deta tha (kabhi points mitte, kabhi jhoothi penalty
+banti). Is design me gate ka jawab **wahi rehta hai jo pehle tha**.
+
+---
+
+## Niyam 1 — chain hai to: jaane wale ko chain se **kaat kar nikalo**
 
 ```
 CEO  →  Manager A  →  Manager B  →  Junior
                         ↑ ye gaya
 ```
+
 Junior ka task **Manager A** ke paas jaayega — seedha CEO ke paas nahi.
 
-> *Owner ke shabdon me:* "isme task CEO ko nhi balki manager A ke pas transfer ho jae"
+**Kaise:** chain ka link **todo mat — upar wale ZINDA task par jod do**, aur `assignedBy` us task ke
+owner ka. Beech ki kadi nikaal kar upar-neeche wali kadiyaan jod dena.
 
-**Kyun ye surakshit hai:** A pehle se is task ki chain me tha. Points ka gate pehle bhi *"haan"* kehta tha
-(chain upar chal kar CEO tak jaati thi) aur A se judne ke baad bhi *"haan"* hi kahega. **Jawab badalta hi
-nahi** — isliye na koi point mitega, na koi naya banega. *(Pichhle dono design isliye toote the ki wo gate
-ka jawab **badal** dete the.)*
+> ⚠️ **Pehli review ne yahi sudhara.** Pehle likha tha "chain break karke seedha assign kar do" —
+> yaani link **clear** kar do. Wo hi sab kuch todta hai: points ka gate **usi link ke sahaare** upar chal
+> kar CEO tak pahunchta hai. Link kaat do → raasta khatam → gate "nahi" kehta → **Junior ke points mit
+> jaate hain**. 3-level chain par ye pakka hota hai, aur **aaj se ULTA hai** (aaj wo points bache rehte hain).
+>
+> Screen par fark kuch nahi — Junior ko phir bhi "Manager A se" hi dikhega. Fark sirf andar ka hai.
+> Aur ye bilkul wahi shakl hai jo `forwardTask` khud likhta hai, to koi naya niyam nahi banta.
 
-### Niyam 2 — chain nahi, par CEO & President tagged hai
+**Agar Manager A khud deactivated ho:** aur upar chalo — CEO & President tak.
+> *Owner:* "aur upar chalo (CEO & President tak), last me ye to mil hi jaenge — confirm hai ye"
 
-Task seedha **us tagged insaan** ke paas chala jaayega. Koi request nahi, koi poochh nahi.
+**Agar upar koi ZINDA task hi na bache** (owner ke 2-level example me yahi hota hai — Manager ki apni copy
+uske saath mit jaati hai): task par `originalAssignedBy` pehle se likha hota hai (= CEO). Wahi
+`assignedBy` ban jaayega. Gate: CEO owner-tier hai → **haan**.
 
-### Niyam 3 — chain bhi nahi, tag bhi nahi
+---
 
-**CEO & President role ke har insaan ko request jaayegi.**
+## Niyam 2 — chain nahi, par CEO & President tagged hai
 
-- Wo aapas me baat karke tay karenge kaun kaunsa kaam lega
-- **Accept** — task uske paas chala gaya
-- **Reject** — *"main nahi lunga"*. Sirf **uski** list se hatega, baakiyon ke paas rahega
-- **Aakhri bacha hua insaan reject NAHI kar sakta** — uske liye accept karna **majboori** hai
+Task seedha **us tagged insaan** ke paas. Koi request nahi, koi poochh nahi.
 
-> *Owner ke shabdon me:* "agar kalpana ne reject kr dia to khaan aamir reject na kr sake, unke lea wo task
-> mandatory ho jae accept krna"
+> *Owner:* "ye dono to hamesha rahenge" — tagged owner ka deactivate/delete hona owner ke hisaab se
+> hoga hi nahi. Phir bhi code me ek surakshit fallback rahega (aisa hua to Niyam 3), taaki kaam kabhi
+> kisi **band account** ko na chala jaaye.
 
-**Isi rule ki wajah se task kabhi bhi bina maalik ke nahi reh sakta.** Ye is design ki sabse achhi baat hai.
+---
+
+## Niyam 3 — chain bhi nahi, tag bhi nahi → CEO & President tier ko request
+
+- **Candidates = abhi jo bhi owner-tier me hain** (delete ke waqt ki jamee hui list nahi)
+  > *Owner:* "abhi jo hai"
+- **Accept** — task uske paas
+- **Reject** = *"main nahi lunga"* — sirf **apni** list se hatta hai, baakiyon ke paas rehta hai
+- **Aakhri bacha hua reject NAHI kar sakta**
+  > *Owner:* "agar kalpana ne reject kr dia to khaan aamir reject na kr sake, unke lea wo task mandatory
+  > ho jae accept krna"
+- **Owner-tier me sirf ek hi insaan ho** → reject ka button hi nahi, seedha uske paas
+- **Koi kai din tak kuch na kare** → roz yaad-dehani
+
+**Isi rule se task kabhi bina maalik ke nahi reh sakta.**
 
 ### Request kaisi dikhegi
 
 - **Ek hi modal me saare task** — har task ke liye alag popup **nahi**
-  > *Owner ke shabdon me:* "alag alag task ke lea alag alag modal na open ho, ek hi modal me sare task show
-  > ho or wahi pe usko accept or reject krne ka option ho full detail ke sath"
-- Har task ki **poori detail** — kaam kya hai, kis ka hai, deadline, kitna overdue, kis ke through aaya tha
-- Har task par apna **Accept / Reject**
-- Website kholte hi saamne (jaise birthday aur EOD digest popup aate hain)
-- **Sirf popup par nahi** — Approvals page me bhi, sidebar par ginti ke saath, aur notification. Popup ek
-  baar band ho gaya to kaam gum nahi hona chahiye
-
-### Note
-
-Task ke neeche likha aayega: *"ye kaam pehle **Manish Saini** ke through aaya tha, wo ab nahi hain"*
-
-Iske liye **jaane wale ka naam task par save karna padega** — account to mit jaayega, naam nahi bachega.
+  > *Owner:* "ek hi modal me sare task show ho or wahi pe usko accept or reject krne ka option ho full
+  > detail ke sath"
+- Har task ki poori detail — kaam kya hai, kis ka hai, deadline, kitna overdue, kis ke through aaya tha
+- Website kholte hi saamne (birthday/EOD digest jaise popup ka pattern pehle se hai)
+- **Sirf popup par nahi** — Approvals page me bhi, sidebar par ginti, aur notification
 
 ### "Live" ka matlab
 
-Backend AWS Lambda par hai; usme sach me instant wala connection nahi banta. Par app pehle se **har 20
-second me** refresh karti hai (task board), 60 second me badge. Wahi lagega — **~15-20 second** me doosre
-ke screen se task hat jaayega.
+Lambda par sach me instant connection nahi banta. App pehle se **har 20 second** me refresh karti hai
+(task board) — wahi lagega, to ~15-20 second me doosre ke screen se task hat jaayega.
 
-**Asli suraksha screen se nahi, server se aayegi:** task par ek hi claim chalega (atomic). Do log theek ek
-hi pal me button dabaayein to server **ek ko haan, doosre ko** *"ye task Khaan Aamir le chuke hain"* kahega.
-**Do log ek task kabhi nahi le sakte**, chahe screen kitni bhi purani ho.
+**Asli suraksha server se aayegi:** task par ek hi claim chalega (atomic). Do log theek ek hi pal me
+dabaayein to server ek ko haan, doosre ko *"ye task Khaan Aamir le chuke hain"* kahega. **Do log ek task
+kabhi nahi le sakte**, chahe screen kitni bhi purani ho.
+
+---
+
+## Niyam 4 (B1) — mitne wale ka **owner-tier tag neeche utaaro**
+
+> *Owner:* **B1**
+
+Points ka gate do tarah se "haan" kehta hai — *"owner ne khud diya"* ya *"owner usme tagged hai"*.
+Aur **forward karte waqt tag saath nahi jaata** (maine `forwardTask` me dekha — `collaborators` copy
+hota hi nahi). Neeche wale ko tag ka faayda **chain ke sahaare udhaar** me milta hai.
+
+To jab tag wali copy mitti hai, tag bhi mit jaata hai → gate "nahi" → **points ud jaate hain**.
+
+**Isliye:** mitne wale task par jo owner-tier tag tha, wo **neeche wale task par utar jaayega.**
+
+*Side-effect jo owner ko pata hona chahiye:* wo task ab CEO ke **"tagged" tab me dikhega** (pehle nahi
+dikhta tha). Ye theek hai — wo dekh hi rahe the.
+
+---
+
+## Niyam 5 (C1) — approval ki shart **bani rahegi**
+
+> *Owner:* **C1**
+
+- Jaane wale ne jo approval ki shart lagayi thi, wo **bani rahegi** — ab naya zimmedaar approve karega
+- Aur jo submission **pehle se atki padi hai** (kaam ho chuka, approval ka intezaar tha, aur usi beech
+  wo insaan chala gaya) — uska **notification naye zimmedaar ko jaayega**
+
+Warna Junior ka kiya hua kaam chupchaap latka rahega aur kisi ko pata bhi nahi chalega.
+
+---
+
+## Niyam 6 (D2) — note me **saare naam**, tarikh ke saath
+
+> *Owner:* **D2**
+
+Task ke neeche: *"ye kaam pehle **Manish Saini** (gaye 10 Aug) ke through aaya tha, phir **Priyanshi
+Patel** (gayi 3 Feb) ke through — dono ab nahi hain"*
+
+- Naam **task par save** karna padega (account mit jaata hai, naam nahi bachta) — model me naya field
+- **List**, taaki chain me kai log jaayein to poora raasta bacha rahe
+- Tarikh ke saath
 
 ---
 
 ## Sabse naazuk hissa — beech ka waqt
 
-**Delete hone se lekar kisi ke accept karne tak**, task kisi ka nahi hota. Aur **theek isi halat me** raat ki
-job use *"points ke layak nahi"* padh kar **jisne kaam kiya uske points mita deti hai** — yahi wo bug hai jo
-abhi prod me zinda hai (B1/B2).
+**Delete se lekar kisi ke accept karne tak**, task kisi ka nahi hota. Aur **theek isi halat me** raat ki
+job use *"points ke layak nahi"* padh kar **jisne kaam kiya uske points mita deti hai** — yahi wo bug hai
+jo abhi prod me zinda hai (B1/B2 → `00-open-bugs.md`).
 
 **Niyam:** jab tak faisla nahi hota, **points ki halat jamee rahegi** — na kuch mitega, na naya banega.
 Accept hote hi normal chalu.
 
-Agar ye theek nahi hua to **request aane se pehle hi points ud chuke honge.** Ye sabse pehle test hoga.
+Ye is poore kaam ka sabse pehla test hoga.
 
 ---
 
-## Khule sawaal — owner ke faisle ka intezaar
+## Implementation ke do note (owner ka faisla nahi, meri chetavani)
 
-| # | Sawaal | Mera sujhaav |
-|---|---|---|
-| 1 | Niyam 1 me **Manager A deactivated** ho to? | Aur upar chalo (CEO tak). Koi na mile to Niyam 3 (request) |
-| 2 | Niyam 2 me **tagged insaan hi deactivated/deleted** ho to? | Niyam 3 par gir jaao |
-| 3 | Candidates ki list **kab tay hogi** — delete ke waqt, ya "abhi jo bhi owner-tier hai"? | **Abhi jo hai** — taaki naya CEO aaye to wo bhi madad kar sake |
-| 4 | Owner-tier me **sirf ek hi insaan** ho to? | Reject ka button hi nahi — seedha uske paas |
-| 5 | Kisi ne kai din tak kuch na kiya to? | Roz yaad-dehani (badge to rahega hi) |
-
-**Owner ne 11 Aug ko ye tay kiya:**
-- **Reject** = “main nahi lunga” — sirf apni list se hatta hai, baakiyon ke paas rehta hai
-- **Aakhri bacha hua reject NAHI kar sakta** — uske liye accept karna majboori. Isse task kabhi bina maalik ke nahi rehta
-- **Ek hi modal me saare task**, har ek ki poori detail aur apna Accept/Reject — alag-alag popup nahi
-
----
-
-## Review se nikli baaki chaar cheezein (`08e-design-review.md`)
-
-| # | Kya | Kyun zaroori |
-|---|---|---|
-| **B** | **Tag ka arm chain me neeche nahi jaata** — `forwardTask` child par `collaborators` copy karta hi nahi | Agar task ke points sirf isliye the ki parent par koi owner **tagged** tha, to parent ke mitte hi wo tag bhi gaya → gate fail → points delete. Re-point se ye apne aap theek nahi hota |
-| **C** | **Approval kis ka?** Jaane wale ne approval maangi thi; uski copy ke saath wo gate bhi gaya. Aur jo submission beech me atki thi, uska notification kis ko jaaye? | Naya assigner ek aisa approval-gate paa jaata hai jo usne set kiya hi nahi |
-| **D** | **Note kahan rahega** — model me koi field nahi. Aur agar chain me **do log** chale jaayein to? Note me dono ke naam chahiye | Account mit jaata hai, naam nahi bachta |
-| **E** | **`deleteUser` ka order** — parent copy padhne se **pehle hi** delete ho jaati hai | Re-point karne ke liye parent ko **pehle padhna** hoga. *(Yahi wo galti hai jo main pichhli baar kar chuka hoon)* |
-
-Aur ek cheez jo review ne yaad dilayi: jo tasks **pehle ki deletions** se already orphan pade hain (live data me `assignedBy` already null), unhe ye design theek **nahi** karta — unke liye alag se ek baar ki safai chahiye hogi.
-
----
-
-## Ye design pichhle dono se alag kyun hai
-
-| | Pichhle do design | Ye design |
-|---|---|---|
-| Naya assigner kaun | koi **naya** insaan, jo us task ki history me tha hi nahi | jo **pehle se** us task se juda tha |
-| Points ka gate | jawab **badal** jaata tha (dono direction me galat) | jawab **wahi rehta** hai |
-| Task bina maalik | reh sakta tha | "aakhri wala reject nahi kar sakta" — **kabhi nahi** |
+1. **Pehle padho, phir mitao.** Re-point ke liye upar wali copy padhni hoti hai, par code use **pehle hi
+   mita deta hai**. Ye theek wahi galti hai jo maine pichhli baar ki thi (validation mitaane ke baad
+   rakh di thi, aur mera apna test us par pass ho gaya tha kyunki wo "account bacha hai?" dekh raha tha,
+   "uska data bacha hai?" nahi).
+2. **Purane orphans.** Jo tasks pehle ki do deletions se already anaath pade hain, ye design unhe theek
+   **nahi** karta — unke liye alag se ek baar ki safai chahiye hogi.
 
 ---
 
 ## Sthiti
 
 - [x] Owner ka design likhit
-- [x] Design par adversarial review — **23 objections, 1 refuted** → `08e-design-review.md`
+- [x] Pehli design review — 23 objections, 1 refuted → `08e-design-review.md`
 - [x] Niyam 1 sudhra: **re-point, clear nahi**
-- [x] Reject aur modal par owner ka faisla
-- [ ] Baaki chaar (B–E) par owner ka faisla
-- [ ] Bache hue khule sawaal (1–5)
-- [ ] Poore design par doosri review
+- [x] Owner ke saare faisle: reject-rule, ek modal, B1, C1, D2, candidates=abhi wale, ek hi owner ho to seedha, roz reminder
+- [ ] **Ek confusion owner se** — aakhri bache hue candidate ko auto mile ya "sirf Accept" wala button?
+- [ ] Poore (badle hue) design par **aakhri review**
 - [ ] Owner ki haan
 - [ ] **Tab code**
