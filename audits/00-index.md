@@ -19,8 +19,9 @@
 | 07 | Reports | [07-reports.md](07-reports.md) | ✅ **saatoN RED FIXED** (R1-R7), isolated-DB suite **95/95**, pre-fix regression proof liya | R1-R7 | 56 UNVERIFIED (P1-P10 perf, security, PDF fidelity, UX) + features |
 | 08 | Team / Users / User-detail / Roles | [08-team-users-roles.md](08-team-users-roles.md) | ✅ **T3/T5/T6 FIXED** (45/45 suite + pre-fix proof); T1/T2/T4 owner ne mana kiya | T3, T5, T6 | T7–T19 + 5 LOW → [00-open-bugs.md](00-open-bugs.md) |
 | 09 | Expenses / Dues | [09-expenses-dues.md](09-expenses-dues.md) | 🔴 audited: **5 RED + 9 MEDIUM** (39 confirmed, 0 refuted; dedupe ke baad). Awaiting owner approval | none yet | 1 LOW |
-| 10 | Visitors / Announcements / Calendar / Settings / Rules | — | queued | — | — |
-| 11 | **MASTER consolidation** (cross-page fixes + features phase) | — | end me | — | — |
+| 10 | **Settings + Rules** | [10-settings-rules.md](10-settings-rules.md) | 🔴 audited: **7 RED + 8 MEDIUM** (35 confirmed, 1 refuted). Awaiting owner approval | none yet | — |
+| 11 | Visitors / Announcements / Calendar / Approvals / Activity / Profile | — | queued | — | — |
+| 12 | **MASTER consolidation** (cross-page fixes + features phase) | — | end me | — | — |
 
 ## 🔗 CROSS-PAGE PATTERNS (running list — har naye audit me check karo)
 
@@ -46,6 +47,10 @@ Har pattern ke aage: kahan mila ✔, kahan check karna baaki ⏳.
 19. **NAYA (Reports): ek guard ek jagah, doosri jagah nahi** — custom-range ka 400-din cap `users.controller` me hai, `reports` me nahi (wahi function, wahi khatra). ⏳ Jo bhi guard kisi caller pe lage, uske SAARE callers pe lagao.
 20. **NAYA (Reports): numerator/denominator alag din-set pe** — attendance rate aaj tak ginta hai par working-days kal tak → 0% ya 114%. ⏳ Har ratio/percentage pe dono taraf ka cutoff check karo.
 17. **NAYA (Rewards R2): closed month ka concept hi nahi** — 11 write paths purane mahine badal sakte hain, aur mutation ADHURA hai (sirf tasks+overtime re-price hote hain) → ek mahina do price-lists pe. Reports ki stability isi pe tiki hai.
+
+27. **NAYA (Settings S2/S4/S10): R2 ka fix AADHA tha** — `rateHistory` ne point ki KEEMAT effective-dated kar di, par ₹/point, grace, workStart/workEnd, overtime buffer aur weekendDays abhi bhi LIVE padhe jaate hain, to inme se koi bhi badalne par band mahina dobara likha jaata hai. ⏳ Har us setting ko dekho jise koi bhi hisaab peeche jaakar padhta hai.
+28. **NAYA (Settings S5): rule book aur code ka alag hona** — Rules page overtime ka OFFICE buffer batata hai, scorer har bande ka APNA use karta hai. Jo staff ko likhit me diya jaata hai, wo code se milna chahiye. ⏳ Har {placeholder} token ko uske asli consumer se milaao.
+29. **NAYA (Settings S1): apne hi fix se naya crash** — R2 ka commit `33ee465` ne `rulePoints(..., monthEnd)` add kiya jahan `monthEnd` 9 line neeche declare hota tha; function tab se har call pe ReferenceError deta hai aur dono call sites use `console.error` me nigal jaate hain. ⏳ Jo bhi call `try/catch { console.error }` me lipta ho, use ek baar CHALA kar dekho — wo chup-chaap mara ja sakta hai.
 
 24. **NAYA (Expenses E1): client par money parse karna** — `parseFloat` comma par ruk jaata hai, to `12,500.50` → `₹12.00` store hota hai. Aur SAHI pattern usi repo me maujood hai (`type="number"` employee ke box par) par admin ke do money-box par nahi. ⏳ Har wo jagah dekho jahan user ka type kiya number seedha parse hota hai.
 25. **NAYA (Expenses E4): ek hi cheez do darwaazon se** — Expenses page `viewExpenses` maangta hai, par Dashboard ka spend-chart wahi data bina us permission ke de deta hai. ⏳ Har gated data ke SAARE raaste ginno — page, chart, export, PDF, dashboard.
