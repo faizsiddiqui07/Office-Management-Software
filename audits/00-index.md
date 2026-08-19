@@ -19,7 +19,7 @@
 | 07 | Reports | [07-reports.md](07-reports.md) | ✅ **saatoN RED FIXED** (R1-R7), isolated-DB suite **95/95**, pre-fix regression proof liya | R1-R7 | 56 UNVERIFIED (P1-P10 perf, security, PDF fidelity, UX) + features |
 | 08 | Team / Users / User-detail / Roles | [08-team-users-roles.md](08-team-users-roles.md) | ✅ **T3/T5/T6 FIXED** (45/45 suite + pre-fix proof); T1/T2/T4 owner ne mana kiya | T3, T5, T6 | T7–T19 + 5 LOW → [00-open-bugs.md](00-open-bugs.md) |
 | 09 | Expenses / Dues | [09-expenses-dues.md](09-expenses-dues.md) | 🔴 audited: **5 RED + 9 MEDIUM** (39 confirmed, 0 refuted; dedupe ke baad). Awaiting owner approval | none yet | 1 LOW |
-| 10 | **Settings + Rules** | [10-settings-rules.md](10-settings-rules.md) | 🔴 audited: **7 RED + 8 MEDIUM** (35 confirmed, 1 refuted). Awaiting owner approval | none yet | — |
+| 10 | **Settings + Rules** | [10-settings-rules.md](10-settings-rules.md) | ✅ **S1/S3/S5/S7 FIXED** (12/12 suite + pre-fix proof); S2/S4/S6 + 8 MEDIUM parked | S1,S3,S5,S7 | S2/S4/S6 + 8 MEDIUM |
 | 11 | Visitors / Announcements / Calendar / Approvals / Activity / Profile | — | queued | — | — |
 | 12 | **MASTER consolidation** (cross-page fixes + features phase) | — | end me | — | — |
 

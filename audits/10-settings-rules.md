@@ -4,7 +4,7 @@
 >
 > Bahut overlap tha — **paanch agents ne ek hi cheez pakdi** (do baar), **chaar ne** (teen baar). Dedupe ke baad **7 RED + 8 MEDIUM**.
 >
-> **STATUS: kuch bhi fix NAHI hua.** Har bug owner ko samjha ke, approval ke baad hi ([[explain-bugs-before-fixing]]).
+> **STATUS (11 Aug 2026): S1, S3, S5, S7 FIXED** (`dcbbd1a`, 12/12 isolated-DB suite + pre-fix proof). Baaki (S2/S4/S6 + 8 MEDIUM) parked — owner ka faisla baaki. Push/zip nahi ([[no-auto-push]]).
 
 ## Is audit ka ek hi bada sabak
 
