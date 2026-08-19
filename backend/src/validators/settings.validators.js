@@ -2,6 +2,13 @@ import { z } from 'zod';
 
 const hm = z.string().regex(/^\d{2}:\d{2}$/, 'Expected HH:mm');
 
+/**
+ * An optional number that treats a BLANK field as "not provided", never as 0.
+ * z.coerce.number('') is 0, so clearing a box and saving silently stored 0 —
+ * grace 0 (everyone late), quota 0 (no leave). Blank now means keep the current value.
+ */
+const numOpt = (schema) => z.preprocess((val) => (val === '' || val === null ? undefined : val), schema.optional());
+
 /** A valid IANA time zone (rejects free text like "IST | INDIA" that would crash date formatting). */
 const timeZone = z.string().min(1).refine(
   (tz) => {
@@ -22,11 +29,11 @@ export const updateSettingsSchema = z.object({
   timezone: timeZone.optional(),
   workStart: hm.optional(),
   workEnd: hm.optional(),
-  graceMinutes: z.coerce.number().int().min(0).max(180).optional(),
-  overtimeAfterMinutes: z.coerce.number().int().min(0).max(600).optional(),
-  checkOutCooldownMinutes: z.coerce.number().int().min(0).max(480).optional(),
+  graceMinutes: numOpt(z.coerce.number().int().min(0).max(180)),
+  overtimeAfterMinutes: numOpt(z.coerce.number().int().min(0).max(600)),
+  checkOutCooldownMinutes: numOpt(z.coerce.number().int().min(0).max(480)),
   weekendDays: z.array(z.coerce.number().int().min(0).max(6)).optional(),
-  annualLeaveQuota: z.coerce.number().int().min(0).max(365).optional(),
+  annualLeaveQuota: numOpt(z.coerce.number().int().min(0).max(365)),
   currency: z.string().min(1).max(8).optional(),
   expenseCategories: z.array(z.string().min(1).max(40)).optional(),
   checkinAlerts: z

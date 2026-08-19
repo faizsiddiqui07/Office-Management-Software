@@ -4,6 +4,10 @@ import { Setting } from '../models/Setting.js';
 import { audit } from '../models/AuditLog.js';
 import { isOwnerRole } from '../lib/roles.js';
 import { effectiveSchedule } from '../lib/schedule.js';
+import { LeaveBalance } from '../models/LeaveBalance.js';
+import { quotaForJoiner } from '../services/leave.service.js';
+import { currentLeaveYear } from '../lib/leaveYear.js';
+import { joinedYMD } from '../lib/joining.js';
 import { WFH_YEARLY_CAP } from '../services/leave.service.js';
 import { DEFAULT_RULE_SECTIONS } from '../lib/rulesSeed.js';
 
@@ -90,8 +94,13 @@ async function ruleTokens(user) {
   const sched = effectiveSchedule(user, s);
   const pts = (key) => Math.abs(Number((b.autoRules || []).find((r) => r.key === key)?.points) || 0);
   const grace = sched.graceMinutes ?? 0;
-  // Overtime buffer: when overtime starts, in the viewer's own shift terms.
-  const otBuffer = Math.max(0, s.overtimeAfterMinutes || 0);
+  // Overtime buffer: when overtime starts, in the viewer's own shift terms — the
+  // per-user buffer from effectiveSchedule, NOT the office-wide s.overtimeAfterMinutes.
+  // The scorer already uses each person's own buffer (attendance.service), so reading the
+  // office one here made the rule book state a start time the points system does not use
+  // for anyone on a custom shift — and this same function's own doc comment promises
+  // "timings from the VIEWER's own shift".
+  const otBuffer = Math.max(0, sched.overtimeAfterMinutes || 0);
   const [weH, weM] = String(sched.workEnd || '0:0').split(':').map(Number);
   const otStartMin = (weH * 60 + (weM || 0) + otBuffer) % 1440;
   const otStart = fmt12(`${String(Math.floor(otStartMin / 60)).padStart(2, '0')}:${String(otStartMin % 60).padStart(2, '0')}`);
@@ -104,6 +113,17 @@ async function ruleTokens(user) {
     const dur = bh && bm ? `${bh}h ${bm}m` : bh ? `${bh} hour${bh > 1 ? 's' : ''}` : `${bm} minutes`;
     overtimeAfterNote = `${dur} after your end time — from ${otStart}`;
   }
+  // The rule reads "You get {annualLeaveQuota} paid leaves" — a statement about THIS
+  // person, so it must show THEIR real entitlement, not the company default. A post-go-
+  // live joiner's quota is pro-rata (13.5, not 18), and a stored balance may have been
+  // frozen or manually overridden — the company number matched neither. Read their own
+  // balance if one exists (findOne, never getOrCreate — viewing the rules must not SEED a
+  // balance row, the exact GET side effect the leave module warns against); otherwise the
+  // pro-rata figure they would actually be granted.
+  const year = currentLeaveYear();
+  const bal = await LeaveBalance.findOne({ user: user._id, year }).select('totalQuota').lean();
+  const myQuota = bal ? bal.totalQuota : quotaForJoiner(joinedYMD(user), year, s.annualLeaveQuota);
+
   return {
     workStart: fmt12(sched.workStart),
     workEnd: fmt12(sched.workEnd),
@@ -113,7 +133,7 @@ async function ruleTokens(user) {
     // Reads as part of a sentence — empty when there is no grace, so "after your start
     // time counts as LATE" never says "0 minutes".
     graceNote: grace > 0 ? ` (a ${grace}-minute grace is allowed)` : '',
-    annualLeaveQuota: s.annualLeaveQuota,
+    annualLeaveQuota: myQuota,
     wfhCap: WFH_YEARLY_CAP,
     // Extra days after a task's due date before it counts late (the bonus grace).
     taskGraceDays: b.graceDays ?? 0,

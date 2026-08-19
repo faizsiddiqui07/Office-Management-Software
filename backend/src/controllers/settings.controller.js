@@ -71,7 +71,10 @@ export async function updateSettings(req, res, next) {
     // Changing the shift end or the overtime buffer changes every stored day's overtime, so
     // note whether either moved and re-derive all of it after saving.
     const otBefore = { workEnd: s.workEnd, buffer: s.overtimeAfterMinutes || 0 };
-    Object.assign(s, body);
+    // Only keys the client actually sent — a blank numeric field parses to undefined
+    // (see numOpt in the validator), and Object.assign would copy that undefined straight
+    // onto the doc and wipe the stored value. Skipping undefined keeps it as it was.
+    for (const [k, val] of Object.entries(body)) if (val !== undefined) s[k] = val;
     await s.save();
     Setting.invalidateCache(); // so the recompute below reads the just-saved values
     const otChanged =

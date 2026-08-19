@@ -861,6 +861,13 @@ export async function reconcilePerfectMonth(userId, month) {
   const s = await Setting.getSingleton();
   const b = s.bonus || {};
   const key = `auto_perfect:${userId}:${month}`;
+  // monthEndOf() up front, once: this used to read `monthEnd` nine lines before it was
+  // declared, so the whole function threw ReferenceError on every call and its two
+  // callers (leave approve/cancel) swallowed it into console.error — backdated leave
+  // half-reconciled forever (the absence penalty cleared, the perfect-attendance award
+  // never came back). Same helper and same value the month-end rollup prices with, so a
+  // closed month is priced by that month's own rate block, from one place, not two.
+  const monthEnd = monthEndOf(month);
   const pts = rulePoints(b, 'perfectAttendanceMonth', monthEnd);
   const user = await User.findById(userId).select('role employmentType schedule dateOfJoining');
   // Only roster members (self-track attendance) are ever judged — same as the rollup.
@@ -869,8 +876,7 @@ export async function reconcilePerfectMonth(userId, month) {
     return;
   }
   const from = `${month}-01`;
-  const lastDay = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate();
-  const monthEnd = `${month}-${String(lastDay).padStart(2, '0')}`;
+  const lastDay = Number(monthEnd.slice(8, 10));
   const startedOn = periodStartFor(user, from);
   const holidays = await holidayYMDSet(from, monthEnd);
   const recs = await Attendance.find({ user: userId, date: { $gte: companyDayFromYMD(from), $lte: companyDayFromYMD(monthEnd) } }).select('date status excused');
