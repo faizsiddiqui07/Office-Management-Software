@@ -2,6 +2,7 @@ import { Announcement } from '../models/Announcement.js';
 import { AnnouncementRead } from '../models/AnnouncementRead.js';
 import { User } from '../models/User.js';
 import { notify } from '../models/Notification.js';
+import { can } from '../lib/permissions.js';
 
 function httpError(status, code, message) {
   const e = new Error(message);
@@ -106,7 +107,35 @@ export async function listVisible(user) {
     .sort({ createdAt: -1 })
     .limit(100)
     .populate('createdBy', 'name role');
-  return anns.map((a) => a.toJSON());
+  const out = anns.map((a) => a.toJSON());
+
+  // SP2: for someone who can post, attach a "seen X of Y" roll-up to every card so the
+  // feed shows it at a glance. Computed in TWO batched queries total — replacing the old
+  // N+1 where each card fired its own /reads request (V15). Counted EXACTLY the way
+  // readReceipts does (active users the roles address, minus the author) so the chip and
+  // the who-saw-it popup can never disagree.
+  if (can(user, 'postAnnouncements') && anns.length) {
+    const ids = anns.map((a) => a._id);
+    const [activeUsers, reads] = await Promise.all([
+      User.find({ isActive: true }).select('_id role'),
+      AnnouncementRead.find({ announcement: { $in: ids } }).select('announcement user'),
+    ]);
+    const readersByAnn = new Map();
+    for (const r of reads) {
+      const k = String(r.announcement);
+      if (!readersByAnn.has(k)) readersByAnn.set(k, new Set());
+      readersByAnn.get(k).add(String(r.user));
+    }
+    anns.forEach((a, i) => {
+      const roles = a.audienceRoles || [];
+      const authorId = String(a.createdBy?._id || a.createdBy);
+      const audience = activeUsers.filter((u) => (roles.length === 0 || roles.includes(u.role)) && String(u._id) !== authorId);
+      const readers = readersByAnn.get(String(a._id)) || new Set();
+      const seenCount = audience.reduce((n, u) => n + (readers.has(String(u._id)) ? 1 : 0), 0);
+      out[i].reads = { seenCount, total: audience.length };
+    });
+  }
+  return out;
 }
 
 export async function activeUnseen(user) {

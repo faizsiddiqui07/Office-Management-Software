@@ -11,18 +11,26 @@ import { formatDateTime } from '@/lib/announcement';
  * "Seen by X of Y" on an announcement, for the author — so they know who still needs to
  * see it and can chase them. Only mounted for people who can post announcements (the feed
  * gates it); the endpoint is `postAnnouncements`-only too.
+ *
+ * SP2 / V15: the count comes from `summary` (in the single feed query), so the button no
+ * longer fires a /reads request per card. The full seen/unseen NAME lists are fetched
+ * lazily — only when the popup is actually opened.
  */
-export function AnnouncementReceipts({ announcementId }) {
+export function AnnouncementReceipts({ announcementId, summary }) {
   const [open, setOpen] = React.useState(false);
-  const { data } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ['announcement-reads', announcementId],
     queryFn: () => api.get(`/announcements/${announcementId}/reads`),
+    enabled: open, // only when the reader opens the popup — no feed-wide N+1
   });
 
-  if (!data) return null;
-  const { total, seenCount, seen, unseen } = data;
+  // Prefer the cheap feed summary for the trigger; fall back to the detailed payload.
+  const total = data?.total ?? summary?.total;
+  const seenCount = data?.seenCount ?? summary?.seenCount;
   // Nobody but the author is addressed (e.g. an owner-only post) — no receipts to show.
-  if (total === 0) return null;
+  if (total == null || total === 0) return null;
+  const seen = data?.seen ?? [];
+  const unseen = data?.unseen ?? [];
 
   return (
     <AppDialog
@@ -39,6 +47,10 @@ export function AnnouncementReceipts({ announcementId }) {
       }
     >
       <div className="max-h-[60vh] space-y-4 overflow-y-auto py-1">
+        {isLoading && !data ? (
+          <p className="py-4 text-center text-sm text-muted-foreground">Loading…</p>
+        ) : (
+        <>
         <div>
           <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">Seen · {seen.length}</p>
           {seen.length ? (
@@ -66,6 +78,8 @@ export function AnnouncementReceipts({ announcementId }) {
             <p className="text-sm text-success">Everyone has seen it.</p>
           )}
         </div>
+        </>
+        )}
       </div>
     </AppDialog>
   );

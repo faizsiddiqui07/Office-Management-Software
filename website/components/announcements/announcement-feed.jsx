@@ -62,7 +62,7 @@ export function AnnouncementFeed() {
           <AnnouncementCard
             key={a.id}
             announcement={a}
-            receipts={isLeader ? <AnnouncementReceipts announcementId={a.id} /> : null}
+            receipts={isLeader ? <AnnouncementReceipts announcementId={a.id} summary={a.reads} /> : null}
             actions={
               isLeader ? (
                 <DropdownMenu>
