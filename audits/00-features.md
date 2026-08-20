@@ -155,8 +155,8 @@
 | # | Feature | Kaam | Audit |
 |---|---|---|---|
 | SP1 | **Announcement: department-wise audience + pin + schedule** — abhi sirf role-wise (aur wo bhi V2 se toota); department targeting + ek important post pin karna | 🟡 CHHOTA | 11 |
-| SP2 | **Announcement: "12 of 15 ne dekha" summary** — read-receipts maujood hain, bas ek nazar ka roll-up (N+1 V15 saath me theek ho) | 🟡 CHHOTA | 11 |
-| SP3 | **Visitors: expected-visitor pre-register + visitor pass PDF + "abhi andar hai" checkout reminder** — Security/Admin ke liye | 🔴 BADA | 11 |
+| SP2 | ~~**Announcement: "12 of 15 ne dekha" summary**~~ — ✅ **BAN GAYA** (`dcd1efb`): feed pe har card pe "Seen X of Y" roll-up (poster-only, 2 batched queries = **V15 N+1 fix**); naam-list ab lazy (popup khulne par hi). readReceipts se bilkul match | ✅ | 11 |
+| SP3 | ~~**Visitors: expected-visitor pre-register + visitor pass PDF + "abhi andar hai"**~~ — ✅ **BAN GAYA** (`1163081`): EXPECTED pre-register + one-tap check-in (host alert arrival tak roka) + branded pass PDF + "Still in office"/"Expected" tiles (global count + filter) | ✅ | 11 |
 | SP4 | **Calendar: personal iCal export / "mere leave + holidays" combined view** — har employee apne calendar me sync kare | 🟡 CHHOTA | 11 |
 | SP5 | **Profile: password change + active-sessions + notification preferences** (kaunse event buzz karein) — sessions/push infra maujood hai | 🟡 CHHOTA | 11 |
 | SP6 | **Activity: employee ko apni khud ki activity** dikhe (abhi audit sirf leadership); aur audit-log export | 🟢 ZERO | 11 |
