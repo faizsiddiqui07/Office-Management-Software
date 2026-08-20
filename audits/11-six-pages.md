@@ -4,7 +4,7 @@
 >
 > **Is baar koi RED nahi.** Ye chhe page money/points/settings jitne nazuk nahi — sabse bura ek **privacy leak** (birth year) hai, jo MEDIUM hai. Dedupe ke baad **~15 MEDIUM + 4 LOW**.
 >
-> **STATUS: kuch bhi fix NAHI hua.** Har bug owner ko samjha ke, approval ke baad hi ([[explain-bugs-before-fixing]]).
+> **STATUS (11 Aug 2026): V6 FIXED** (`20ddaed`, 10/10 isolated-DB suite + pre-fix proof). Isne ek chhupa hua **garbage-key bug** bhi khola aur theek kiya — correction par absence/late penalty `reg.user` (populated) ke garbage dedupeKey ki wajah se **kabhi clear hi nahi hoti thi**. Baaki parked — owner ka faisla. Push/zip nahi ([[no-auto-push]]).
 
 Ye programme ka **aakhri bada scan** hai — ye chhe page ab tak ek baar bhi audit nahi hue the (plan me chhoot gaye the).
 
