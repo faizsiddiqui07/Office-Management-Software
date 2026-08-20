@@ -59,7 +59,11 @@ export function TempPasswordContent({ user, temporaryPassword, emailed }) {
       ) : (
         <div className="flex items-start gap-2 rounded-xl bg-amber-500/10 p-3 text-sm text-amber-700 ring-1 ring-amber-500/20 dark:text-amber-300">
           <MailWarning className="mt-0.5 size-4 shrink-0" />
-          <span>Couldn’t email these (email isn’t set up in Settings) — share the details above with the employee yourself.</span>
+          <span>
+            {emailed?.reason === 'error'
+              ? 'Couldn’t send the email (check the email settings in Settings) — share the details above with the employee yourself.'
+              : 'Not emailed (email isn’t set up in Settings) — share the details above with the employee yourself.'}
+          </span>
         </div>
       )}
 

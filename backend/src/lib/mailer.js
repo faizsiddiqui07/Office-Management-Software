@@ -56,6 +56,13 @@ async function getConnection() {
         port: cfg.port,
         secure: cfg.port === 465,
         auth: { user: cfg.user, pass: cfg.pass },
+        // Fail FAST on a stalled SMTP server. This runs inside a Lambda behind API Gateway
+        // (~29s cap) and some callers (account creation) await the send before responding,
+        // so a hung server must degrade to "not delivered" well under that limit rather
+        // than time the whole request out. nodemailer's own defaults (2min connect) don't.
+        connectionTimeout: 8000,
+        greetingTimeout: 8000,
+        socketTimeout: 10000,
       }),
     };
   }
@@ -192,9 +199,11 @@ function welcomeEmailHtml(company, { name, employeeId, tempPassword, roleLabel, 
 export async function sendWelcomeEmail(to, details = {}) {
   const conn = await getConnection();
   if (!conn) {
-    console.log('\n👋 New-user credentials (SMTP not configured — logging instead of emailing):');
-    console.log(`   To: ${to} · ID: ${details.employeeId} · Temp password: ${details.tempPassword}\n`);
-    return { delivered: false };
+    // Deliberately DO NOT log the temporary password — this lands in CloudWatch, a far
+    // wider/longer-lived audience than the one-time UI reveal. The admin still has it in
+    // the create-user response and can share it by hand.
+    console.log(`👋 Welcome email not sent (SMTP not configured) for ${to} (${details.employeeId || '—'}).`);
+    return { delivered: false, reason: 'not_configured' };
   }
   const company = details.companyName || conn.cfg.companyName || 'Office Management';
   const lines = [

@@ -141,8 +141,13 @@ export async function checkInVisitor(id, user, data = {}) {
   v.status = 'ARRIVED';
   // Prefer a client-supplied HH:mm (the reception clock), else stamp company time now.
   if (!v.checkInTime) v.checkInTime = data.checkInTime || formatCompany(new Date(), 'HH:mm');
-  v.dateYMD = today;
-  v.date = companyDayFromYMD(today);
+  // Only a genuine arrival moves the visit onto today's register. Re-checking-in someone
+  // already in office (e.g. a stray call on an ARRIVED row) must NOT relocate their
+  // existing visit to a different day.
+  if (wasExpected) {
+    v.dateYMD = today;
+    v.date = companyDayFromYMD(today);
+  }
   await v.save();
   await v.populate('createdBy', 'name');
   // Only ping on a genuine arrival (they were expected / had no check-in) — never on a
@@ -170,6 +175,9 @@ export async function updateVisitor(id, data) {
     v.dateYMD = data.dateYMD;
     v.date = companyDayFromYMD(data.dateYMD);
   }
+  // Rescheduling a pre-registered visitor: keep scheduledFor in step with the new date,
+  // otherwise the "Expected · <date>" chip (which reads scheduledFor) shows the old day.
+  if (data.scheduledFor !== undefined) v.scheduledFor = data.scheduledFor;
   // A visit can't end before it started. Checked only when this request is actually
   // SETTING one of the times: an entry that already holds a bad pair (or a same-minute
   // in-and-out) must still be editable for its name, company or purpose, and a guard

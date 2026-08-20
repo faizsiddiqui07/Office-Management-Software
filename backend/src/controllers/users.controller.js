@@ -90,7 +90,7 @@ export async function createUser(req, res, next) {
     // not configured) must NEVER fail the account creation — the temp password is still
     // returned below so the admin can share it by hand. `emailed` tells the UI which
     // happened, so it can show "sent to <email>" or prompt to share manually.
-    let emailed = { delivered: false, to: user.email };
+    let emailed = { delivered: false, reason: 'error', to: user.email };
     try {
       const settings = await Setting.getSingleton();
       emailed = await sendWelcomeEmail(user.email, {
@@ -103,7 +103,10 @@ export async function createUser(req, res, next) {
         companyName: settings?.companyName,
       });
     } catch (mailErr) {
+      // SMTP IS configured but the send errored (auth/TLS/network). Distinct from the
+      // not-configured case so the UI can tell the admin the real situation.
       console.error('welcome email failed', mailErr?.message);
+      emailed = { delivered: false, reason: 'error', to: user.email };
     }
 
     // Return the plaintext temp password ONCE — never stored or shown again.

@@ -171,6 +171,21 @@ export function VisitorTable({ canManageCategories = false }) {
     }
   };
 
+  // Tiles show a GLOBAL count; clicking one clears the date/search/category filters so the
+  // narrowed list actually contains those visitors (open + expected sort to the top of the
+  // default view), instead of a count that contradicts an empty filtered page.
+  const toggleTile = (kind) => {
+    const next = statusFilter === kind ? null : kind;
+    setStatusFilter(next);
+    if (next) {
+      setFrom('');
+      setTo('');
+      setSearch('');
+      setDebouncedSearch('');
+      setCategory('ALL');
+    }
+  };
+
   const columns = React.useMemo(
     () => [
       // Sort key includes the check-in time so same-day entries order sensibly.
@@ -328,10 +343,10 @@ export function VisitorTable({ canManageCategories = false }) {
           filters above; clicking one narrows the loaded list to those visitors. */}
       {summary.openVisits > 0 || summary.expected > 0 || statusFilter ? (
         <div className="grid gap-3 sm:grid-cols-2 lg:max-w-lg">
-          <FilterStat active={statusFilter === 'open'} onClick={() => setStatusFilter((f) => (f === 'open' ? null : 'open'))}>
+          <FilterStat active={statusFilter === 'open'} onClick={() => toggleTile('open')}>
             <StatCard label="Still in office" value={summary.openVisits} icon={LogOut} tone={summary.openVisits > 0 ? 'warning' : 'default'} hint={statusFilter === 'open' ? 'Showing these — tap to clear' : 'Checked in, not yet out'} />
           </FilterStat>
-          <FilterStat active={statusFilter === 'expected'} onClick={() => setStatusFilter((f) => (f === 'expected' ? null : 'expected'))}>
+          <FilterStat active={statusFilter === 'expected'} onClick={() => toggleTile('expected')}>
             <StatCard label="Expected" value={summary.expected} icon={Clock} tone={summary.expected > 0 ? 'info' : 'default'} hint={statusFilter === 'expected' ? 'Showing these — tap to clear' : 'Pre-registered, not arrived'} />
           </FilterStat>
         </div>
@@ -386,7 +401,11 @@ export function VisitorTable({ canManageCategories = false }) {
       >
         {selected ? (
           <div className="divide-y divide-border/50 py-1">
-            <DetailRow label="In / Out" value={`${selected.checkInTime || '—'} → ${selected.checkOutTime || 'still in office'}`} />
+            {selected.status === 'EXPECTED' ? (
+              <DetailRow label="Status" value={`Expected${selected.scheduledFor ? ` · ${formatYMD(selected.scheduledFor)}` : ''} — not arrived yet`} />
+            ) : (
+              <DetailRow label="In / Out" value={`${selected.checkInTime || '—'} → ${selected.checkOutTime || 'still in office'}`} />
+            )}
             <DetailRow label="Phone" value={selected.phone} />
             <DetailRow label="From" value={selected.fromPlace} />
             <DetailRow label="Who / Company" value={selected.company} />
