@@ -45,15 +45,15 @@
 
 | # | Feature | Kaam | Audit |
 |---|---|---|---|
-| **E1** | **Punctual-streak progress card** — *"aaj 4 of 6 on-time, 2 aur → +8 points"*. `Setting.bonus.streakRuns[uid]` me **live counter pehle se hai**, aur snapshot Setting already load karta hai → **zero extra query**. Ye page ka pehla **aage dekhne wala** number hoga (baaki sab peeche dekhte hain). Caveat label me: counter **kal tak** ka hai (aaj ka scan raat me hota hai) | 🟢 ZERO | 03, 05, 06 |
+| **E1** | ~~**Punctual-streak progress card**~~ — ✅ **BAN GAYA** (`c0e27de`): My Summary pe forward-looking streak card (progress bar + *"2 more on-time days → +8"*), counter *"counted up to lastStreakScan"* caveat ke saath. `mySnapshot` ab counter surface karta hai (zero extra query) | ✅ | 03, 05, 06 |
 | **E2** | **"Kis cheez ne points kaate"** — negative entries ka grouped one-liner: *"Late arrival −2 ×3 · Overdue task −5 · Absent −10"*. Rewards ka `SOURCE_LABEL` map as-is reuse. **Note:** S2 fix ke saath coordinate — agar `pointRows` payload se hat rahe hain to grouping **server-side** `$group by source` bhejo (wo behtar bhi hai, kyunki 100-row cap se grouping bhi galat ho sakti thi) | 🟡 CHHOTA | 05, 06 |
 | **E3** | **"Leave left" pe pending context** — *"12 of 24 · 3 din approval me (approve hue to 9)"*. `buildSelfReport` **pehle se** pending laata hai, snapshot use girata hai → zero query. Warn-tone bhi `remaining − pending` pe chalna chahiye | 🟢 ZERO | 04, 06 |
 | **E4** | **"My tasks due/overdue" card** dashboard pe — *audit 01 ne ise **sabse bada gap** bola tha* | 🟡 CHHOTA | 01 |
-| E5 | **Points preview task pe** — *"+10 if done by Fri"* / *"−8 ab tak kat chuke"* (detail dialog me ek query) | 🟡 CHHOTA | 02 |
+| E5 | ~~**Points preview task pe**~~ — ✅ **BAN GAYA** (`c0e27de`): task detail dialog me points card. Naya endpoint `GET /tasks/:id/bonus-preview` scorer ka apna eligibility gate + rule table reuse karta hai aur us copy ki asli PointEntry rows jodta hai → ledger se kabhi ulta nahi ho sakta | ✅ | 02 |
 | E6 | **"Due today" filter preset** + urgency signal (abhi na badge na color) | 🟢 ZERO | 02 |
-| E7 | **Forgot-checkout → correction shortcut** (abhi form khud dhoondhna padta hai) | 🟢 ZERO | 03 |
+| E7 | ~~**Forgot-checkout → correction shortcut**~~ — ✅ **BAN GAYA** (`c0e27de`): attendance history me jis beete din check-in hai par check-out nahi, uspe ek-tap *"Fix"* correction form us date se seed karke kholta hai (`RegularizationDialog` ab prefill+trigger leta hai) | ✅ | 03 |
 | E8 | **Apni shift / grace / overtime-buffer** attendance card pe (6 custom-shift users abhi andhere me) | 🟡 CHHOTA | 03 |
-| E9 | **Apne ledger ka fiscal-year picker** — backend `?year=` **pehle se leta hai**; April me pichhle saal ka record (tax/HR) abhi nikal hi nahi sakte | 🟢 ZERO | 04 |
+| E9 | ~~**Apne ledger ka fiscal-year picker**~~ — ✅ **BAN GAYA** (`c0e27de`): Leaves page pe Ledger (PDF) ke bagal me fiscal-year `Select` (`?year=`). Ek se zyada saal hone par hi dikhta hai, tab tak button pehle jaisa | ✅ | 04 |
 | E10 | Apply karte waqt **"us din aur kaun off hai"** anonymized hint — approver ka reject-cycle bachega | 🟡 CHHOTA | 04 |
 | E11 | **WFH remaining** dashboard pe render — *data payload me already hai!* | 🟢 ZERO | 01 |
 | E12 | **Points earned / carried / net** card dashboard pe | 🟢 ZERO | 01 |
@@ -65,7 +65,7 @@
 | # | Feature | Kaam | Audit |
 |---|---|---|---|
 | P1 | **Shift context card** — mere workDays, mera workStart–workEnd, mera buffer. Abhi office-wide values se confuse hote hain | 🟡 CHHOTA | 01, 03 |
-| P2 | My Summary pe **"aapke working days: Mon, Wed, Fri"** — *"8 of 12 days"* ka **12 unexplained** hai; full-timer colleague *"19 of 21"* dekhta hai to lagta hai system ne din kha liye. `req.user` pehle se hai → zero query | 🟡 CHHOTA | 06 |
+| P2 | ~~My Summary pe **"aapke working days: Mon, Wed, Fri"**~~ — ✅ **BAN GAYA** (`c0e27de`): custom-shift bande ko *"Your working days: Mon, Wed, Fri — that's the 'of 12' above"* line dikhti hai (full-timer ko nahi, use zaroorat nahi). `mySnapshot` ab `workDaysLabel`/`hasCustomWorkDays` deta hai | ✅ | 06 |
 
 ## 🆕 Mid-month joiners
 
