@@ -7,10 +7,17 @@ import {
 } from '../validators/visitors.validators.js';
 import * as svc from '../services/visitor.service.js';
 import { Setting } from '../models/Setting.js';
+import { Visitor } from '../models/Visitor.js';
 import { audit } from '../models/AuditLog.js';
 import { toCsv } from '../lib/csv.js';
 import { renderVisitorsPdf } from '../services/visitorPdf.service.js';
+import { renderVisitorPassPdf } from '../services/visitorPassPdf.service.js';
 import { loadCompanyLogo } from '../lib/brand.js';
+
+/** A short human-readable pass number derived from the entry id (no extra field/counter). */
+function passNoFor(v) {
+  return `V-${String(v.id || v._id).slice(-6).toUpperCase()}`;
+}
 
 function handleErr(res, err, next) {
   if (err && err.status) return res.status(err.status).json(fail(err.code || 'ERROR', err.message));
@@ -105,10 +112,46 @@ export async function create(req, res, next) {
   try {
     const body = createVisitorSchema.parse(req.body);
     const visitor = await svc.createVisitor(req.user, body);
-    await audit({ actor: req.user._id, action: 'visitor.create', entityType: 'Visitor', entityId: visitor.id, meta: { category: visitor.category } });
+    await audit({ actor: req.user._id, action: 'visitor.create', entityType: 'Visitor', entityId: visitor.id, meta: { category: visitor.category, status: visitor.status } });
     res.status(201).json(ok({ visitor }));
   } catch (err) {
     handleErr(res, err, next);
+  }
+}
+
+// SP3(a): check in a (pre-registered or walk-in) visitor on arrival — flips to ARRIVED,
+// stamps the time, and fires the host alert that was held back at pre-register time.
+export async function checkIn(req, res, next) {
+  try {
+    const visitor = await svc.checkInVisitor(req.params.id, req.user, req.body || {});
+    await audit({ actor: req.user._id, action: 'visitor.checkin', entityType: 'Visitor', entityId: req.params.id });
+    res.json(ok({ visitor }));
+  } catch (err) {
+    handleErr(res, err, next);
+  }
+}
+
+// SP3(b): a small branded visitor pass PDF for one entry.
+export async function exportPass(req, res, next) {
+  try {
+    const v = await Visitor.findById(req.params.id).lean();
+    if (!v) return res.status(404).json(fail('NOT_FOUND', 'Visitor entry not found'));
+    const s = await Setting.getSingleton();
+    const data = {
+      company: { name: s.companyName, brandColor: s.brandColor },
+      generatedAt: new Date().toISOString().slice(0, 10),
+      passNo: passNoFor(v),
+      visitor: v,
+    };
+    const logos = await Setting.getLogos();
+    const logo = await loadCompanyLogo(logos.logoDark || logos.logoUrl || logos.logoLight);
+    const stream = await renderVisitorPassPdf(data, logo);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="visitor-pass-${passNoFor(v)}.pdf"`);
+    stream.pipe(res);
+    return undefined;
+  } catch (err) {
+    return handleErr(res, err, next);
   }
 }
 

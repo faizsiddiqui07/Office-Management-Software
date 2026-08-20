@@ -29,3 +29,9 @@ export async function downloadVisitors(format, params = {}) {
   // One iOS-safe download path for the whole app — see downloadFile.
   await downloadFile(url, `visitors.${format}`);
 }
+
+/** Download a single visitor's printable pass PDF. */
+export async function downloadVisitorPass(id, name = '') {
+  const safe = (name || 'visitor').replace(/\s+/g, '-').toLowerCase();
+  await downloadFile(`${API_BASE}/api/visitors/${id}/pass.pdf`, `visitor-pass-${safe}.pdf`);
+}

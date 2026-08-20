@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Plus } from 'lucide-react';
 import { api } from '@/lib/api';
+import { cn } from '@/lib/utils';
 import { AppDialog } from '@/components/glass/app-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -55,16 +56,30 @@ export function VisitorDialog({ visitor, open: openProp, onOpenChange }) {
       toMeet: visitor?.toMeet || '',
       toMeetUser: visitor?.toMeetUser || '',
       purpose: visitor?.purpose || '',
-      dateYMD: visitor?.dateYMD || todayYMD(),
+      dateYMD: visitor?.status === 'EXPECTED' ? (visitor?.scheduledFor || visitor?.dateYMD || todayYMD()) : (visitor?.dateYMD || todayYMD()),
       checkInTime: visitor?.checkInTime || nowHM(),
       checkOutTime: visitor?.checkOutTime || '',
+      // Pre-register mode: on for a new expected visitor, or when editing one.
+      expected: visitor?.status === 'EXPECTED',
     });
   }, [open, visitor]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // A pre-registration has no arrival times yet (they're stamped on check-in), and its
+  // date may be in the future.
+  const expectedMode = !!form.expected;
+
   const mut = useMutation({
-    mutationFn: () => (isEdit ? api.put(`/visitors/${visitor.id}`, form) : api.post('/visitors', form)),
+    mutationFn: () => {
+      const { expected, ...rest } = form;
+      // A pre-registration carries no arrival times (stamped on check-in) and records the
+      // chosen date as scheduledFor. A walk-in is a normal ARRIVED entry.
+      const payload = expected
+        ? { ...rest, checkInTime: '', checkOutTime: '', status: 'EXPECTED', scheduledFor: rest.dateYMD }
+        : { ...rest, status: 'ARRIVED' };
+      return isEdit ? api.put(`/visitors/${visitor.id}`, payload) : api.post('/visitors', payload);
+    },
     onSuccess: () => {
-      toast.success(isEdit ? 'Entry updated' : 'Visitor logged');
+      toast.success(isEdit ? 'Entry updated' : expectedMode ? 'Visitor pre-registered' : 'Visitor logged');
       qc.invalidateQueries({ queryKey: ['visitors'] });
       setOpen(false);
     },
@@ -74,7 +89,7 @@ export function VisitorDialog({ visitor, open: openProp, onOpenChange }) {
   const submit = () => {
     if (!form.name?.trim()) return toast.error('Add the visitor’s name');
     if (!form.category) return toast.error('Pick a category');
-    if (form.checkInTime && form.checkOutTime && form.checkOutTime <= form.checkInTime) {
+    if (!expectedMode && form.checkInTime && form.checkOutTime && form.checkOutTime <= form.checkInTime) {
       return toast.error('Check-out time must be after check-in');
     }
     mut.mutate();
@@ -104,6 +119,27 @@ export function VisitorDialog({ visitor, open: openProp, onOpenChange }) {
       }
     >
       <div className="max-h-[70vh] space-y-4 overflow-y-auto py-2">
+        {/* Walk-in vs pre-register. Only offered for a NEW entry — an existing one's nature
+            is fixed (check them in from the list when a pre-registered visitor arrives). */}
+        {!isEdit ? (
+          <div className="flex flex-wrap gap-1.5">
+            {[{ v: false, l: 'Walk-in now' }, { v: true, l: 'Pre-register (expected)' }].map((o) => (
+              <button
+                key={String(o.v)}
+                type="button"
+                onClick={() => setForm((f) => ({ ...f, expected: o.v }))}
+                aria-pressed={expectedMode === o.v}
+                className={cn(
+                  'rounded-full px-3 py-1.5 text-xs font-medium ring-1 transition-colors',
+                  expectedMode === o.v ? 'bg-primary text-primary-foreground ring-primary' : 'bg-background/40 text-muted-foreground ring-border hover:text-foreground',
+                )}
+              >
+                {o.l}
+              </button>
+            ))}
+          </div>
+        ) : null}
+
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label htmlFor="v-name">Visitor name</Label>
@@ -158,25 +194,40 @@ export function VisitorDialog({ visitor, open: openProp, onOpenChange }) {
           </div>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="v-date">Date</Label>
-            <DatePicker id="v-date" value={form.dateYMD || ''} min={APP_LIVE_YMD} max={todayYMD()} onChange={setV('dateYMD')} className="bg-background/50" />
+        {expectedMode ? (
+          // Pre-register: only an expected DATE (may be in the future); no times yet.
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="v-date">Expected date</Label>
+              <DatePicker id="v-date" value={form.dateYMD || ''} min={todayYMD()} onChange={setV('dateYMD')} className="bg-background/50" />
+            </div>
+            <div className="space-y-1.5 sm:col-span-2">
+              <p className="pt-6 text-xs text-muted-foreground">Check-in and check-out times are stamped when the visitor arrives — use “Check in” on the list.</p>
+            </div>
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="v-in">Check-in</Label>
-            <TimePicker id="v-in" value={form.checkInTime || ''} onChange={setV('checkInTime')} disabled={timesLocked} className="bg-background/50 disabled:cursor-not-allowed disabled:opacity-60" />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="v-out">Check-out</Label>
-            <TimePicker id="v-out" value={form.checkOutTime || ''} onChange={setV('checkOutTime')} disabled={timesLocked} className="bg-background/50 disabled:cursor-not-allowed disabled:opacity-60" />
-          </div>
-        </div>
-        {timesLocked ? (
-          <p className="-mt-1.5 text-xs text-muted-foreground">
-            Check-in &amp; check-out times are locked once the visitor has checked out. You can still update every other detail.
-          </p>
-        ) : null}
+        ) : (
+          <>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="v-date">Date</Label>
+                <DatePicker id="v-date" value={form.dateYMD || ''} min={APP_LIVE_YMD} max={todayYMD()} onChange={setV('dateYMD')} className="bg-background/50" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="v-in">Check-in</Label>
+                <TimePicker id="v-in" value={form.checkInTime || ''} onChange={setV('checkInTime')} disabled={timesLocked} className="bg-background/50 disabled:cursor-not-allowed disabled:opacity-60" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="v-out">Check-out</Label>
+                <TimePicker id="v-out" value={form.checkOutTime || ''} onChange={setV('checkOutTime')} disabled={timesLocked} className="bg-background/50 disabled:cursor-not-allowed disabled:opacity-60" />
+              </div>
+            </div>
+            {timesLocked ? (
+              <p className="-mt-1.5 text-xs text-muted-foreground">
+                Check-in &amp; check-out times are locked once the visitor has checked out. You can still update every other detail.
+              </p>
+            ) : null}
+          </>
+        )}
 
         <div className="space-y-1.5">
           <Label htmlFor="v-purpose">Purpose / notes</Label>

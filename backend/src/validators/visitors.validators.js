@@ -17,6 +17,10 @@ export const createVisitorSchema = z.object({
   dateYMD: ymd,
   checkInTime: hm.optional().default(''),
   checkOutTime: hm.optional().default(''),
+  // Pre-register: an EXPECTED entry supplies scheduledFor (and the client sends it as
+  // dateYMD too, so existing date filters/sort keep working until the visitor arrives).
+  status: z.enum(['EXPECTED', 'ARRIVED']).optional(),
+  scheduledFor: ymd.optional(),
 });
 
 export const updateVisitorSchema = createVisitorSchema.partial();

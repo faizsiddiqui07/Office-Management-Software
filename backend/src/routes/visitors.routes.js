@@ -10,6 +10,8 @@ import {
   create,
   update,
   remove,
+  checkIn,
+  exportPass,
   addCategory,
   removeCategory,
 } from '../controllers/visitors.controller.js';
@@ -31,5 +33,7 @@ visitorsRouter.post('/', requirePermission('manageVisitors'), create);
 visitorsRouter.post('/categories', requirePermission('manageSettings'), addCategory);
 visitorsRouter.delete('/categories', requirePermission('manageSettings'), removeCategory);
 
+visitorsRouter.post('/:id/checkin', requirePermission('manageVisitors'), checkIn); // pre-registered visitor arrives
+visitorsRouter.get('/:id/pass.pdf', requirePermission('manageVisitors'), exportPass); // printable visitor pass
 visitorsRouter.put('/:id', requirePermission('manageVisitors'), update);
 visitorsRouter.delete('/:id', requirePermission('manageVisitors'), remove);

@@ -3,7 +3,7 @@ import { User } from '../models/User.js';
 import { Setting } from '../models/Setting.js';
 import { notify } from '../models/Notification.js';
 import { can } from '../lib/permissions.js';
-import { companyDayFromYMD, ymdInTz } from '../lib/time.js';
+import { companyDayFromYMD, ymdInTz, formatCompany } from '../lib/time.js';
 
 function httpError(status, code, message) {
   const e = new Error(message);
@@ -68,6 +68,9 @@ export async function peopleSuggestions() {
  * Fire-and-forget: a hiccup here must never fail logging the visitor.
  */
 async function maybeAlertHost(visitor, creator) {
+  // A pre-registered (EXPECTED) visitor hasn't arrived yet — the host is pinged on
+  // check-in, not when the entry is created.
+  if (visitor.status === 'EXPECTED') return;
   if (visitor.dateYMD !== ymdInTz(new Date()) || visitor.checkOutTime) return;
 
   let host = null;
@@ -96,6 +99,7 @@ async function maybeAlertHost(visitor, creator) {
 
 /* ── Entries ─────────────────────────────────────────────── */
 export async function createVisitor(user, data) {
+  const status = data.status === 'EXPECTED' ? 'EXPECTED' : 'ARRIVED';
   const v = await Visitor.create({
     name: data.name,
     phone: data.phone || '',
@@ -107,13 +111,43 @@ export async function createVisitor(user, data) {
     purpose: data.purpose || '',
     dateYMD: data.dateYMD,
     date: companyDayFromYMD(data.dateYMD),
-    checkInTime: data.checkInTime || '',
-    checkOutTime: data.checkOutTime || '',
+    // A pre-registered visitor has no arrival time yet, whatever the form sent.
+    checkInTime: status === 'EXPECTED' ? '' : (data.checkInTime || ''),
+    checkOutTime: status === 'EXPECTED' ? '' : (data.checkOutTime || ''),
+    status,
+    scheduledFor: status === 'EXPECTED' ? (data.scheduledFor || data.dateYMD) : (data.scheduledFor || ''),
     createdBy: user._id,
   });
   await v.populate('createdBy', 'name');
   // Tell the host their visitor is here (best-effort; never blocks logging the entry).
+  // Skipped for EXPECTED inside maybeAlertHost — the ping waits for check-in.
   await maybeAlertHost(v, user).catch((e) => console.error('visitor host alert failed:', e?.message));
+  return v.toJSON();
+}
+
+/**
+ * Check in a pre-registered (or any) visitor on arrival: flip to ARRIVED, stamp the
+ * arrival time and move the visit date to today, then ping the host — the arrival alert
+ * that was deliberately held back at pre-register time. Idempotent-ish: checking in
+ * someone already in office just refreshes nothing important and never re-alerts if they
+ * were already ARRIVED with a check-in.
+ */
+export async function checkInVisitor(id, user, data = {}) {
+  const v = await Visitor.findById(id);
+  if (!v) throw httpError(404, 'NOT_FOUND', 'Visitor entry not found');
+  if (v.checkOutTime) throw httpError(400, 'ALREADY_OUT', 'This visitor has already checked out');
+  const wasExpected = v.status === 'EXPECTED' || !v.checkInTime;
+  const today = ymdInTz(new Date());
+  v.status = 'ARRIVED';
+  // Prefer a client-supplied HH:mm (the reception clock), else stamp company time now.
+  if (!v.checkInTime) v.checkInTime = data.checkInTime || formatCompany(new Date(), 'HH:mm');
+  v.dateYMD = today;
+  v.date = companyDayFromYMD(today);
+  await v.save();
+  await v.populate('createdBy', 'name');
+  // Only ping on a genuine arrival (they were expected / had no check-in) — never on a
+  // no-op re-check-in of someone already inside.
+  if (wasExpected) await maybeAlertHost(v, user).catch((e) => console.error('visitor host alert failed:', e?.message));
   return v.toJSON();
 }
 
@@ -179,9 +213,14 @@ export async function listVisitors({ from, to, category, search, page = 1, limit
   const sortBy = sortMap[sort] || sortMap.date_desc;
   const skip = (page - 1) * limit;
 
-  const [visitors, total] = await Promise.all([
+  const [visitors, total, openVisits, expected] = await Promise.all([
     Visitor.find(filter).sort(sortBy).skip(skip).limit(limit).populate('createdBy', 'name'),
     Visitor.countDocuments(filter),
+    // "Still in office" — checked in, not checked out, and a real arrival (not a pending
+    // pre-registration). GLOBAL (not scoped to the filter/page) so the tile is a true
+    // right-now figure. Two cheap counts, never a re-scan of every row (see V16).
+    Visitor.countDocuments({ status: { $ne: 'EXPECTED' }, checkInTime: { $ne: '' }, checkOutTime: '' }),
+    Visitor.countDocuments({ status: 'EXPECTED' }),
   ]);
-  return { visitors: visitors.map((v) => v.toJSON()), total, page, limit };
+  return { visitors: visitors.map((v) => v.toJSON()), total, page, limit, summary: { openVisits, expected } };
 }

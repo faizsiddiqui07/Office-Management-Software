@@ -3,9 +3,11 @@
 import * as React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Download, FileText, LogOut, Pencil, Search, Trash2 } from 'lucide-react';
+import { Download, FileText, LogIn, LogOut, Pencil, Search, Ticket, Trash2, Clock } from 'lucide-react';
 import { api } from '@/lib/api';
+import { cn } from '@/lib/utils';
 import { DataTable } from '@/components/glass/data-table';
+import { StatCard } from '@/components/glass/stat-card';
 import { StatusBadge } from '@/components/glass/status-badge';
 import { TableSkeleton } from '@/components/glass/skeletons';
 import { ConfirmDialog } from '@/components/glass/confirm-dialog';
@@ -25,8 +27,17 @@ import {
 } from '@/components/ui/select';
 import { VisitorDialog } from './visitor-dialog';
 import { CategoryManager } from './category-manager';
-import { downloadVisitors } from '@/lib/visitor';
+import { downloadVisitors, downloadVisitorPass } from '@/lib/visitor';
 import { formatYMD } from '@/lib/leave';
+
+/** A stat card that also toggles a filter on the list below. */
+function FilterStat({ active, onClick, children }) {
+  return (
+    <button type="button" onClick={onClick} aria-pressed={active} className={cn('w-full rounded-2xl text-left transition focus:outline-none', active && 'ring-2 ring-primary/60')}>
+      {children}
+    </button>
+  );
+}
 
 /** Current wall-clock "HH:mm" in the company timezone (for one-tap check-out). */
 function nowHM() {
@@ -58,6 +69,8 @@ export function VisitorTable({ canManageCategories = false }) {
   const [deleting, setDeleting] = React.useState(null);
   const [selected, setSelected] = React.useState(null); // row-click detail view
   const [busy, setBusy] = React.useState('');
+  const [statusFilter, setStatusFilter] = React.useState(null); // null | 'open' | 'expected'
+  const [passBusy, setPassBusy] = React.useState('');
 
   // Debounce the search so the table doesn't refetch (and flash) per keystroke.
   React.useEffect(() => {
@@ -85,7 +98,38 @@ export function VisitorTable({ canManageCategories = false }) {
     },
     placeholderData: (prev) => prev, // keep previous rows visible while refetching
   });
-  const visitors = data?.visitors ?? [];
+  const visitors = React.useMemo(() => data?.visitors ?? [], [data]);
+  const summary = data?.summary ?? { openVisits: 0, expected: 0 };
+
+  // A visitor is "in office" = arrived, checked in, not yet out. "Expected" = pre-registered.
+  const isOpen = (v) => v.status !== 'EXPECTED' && !!v.checkInTime && !v.checkOutTime;
+  const isExpected = (v) => v.status === 'EXPECTED';
+  const displayed = React.useMemo(() => {
+    if (statusFilter === 'open') return visitors.filter(isOpen);
+    if (statusFilter === 'expected') return visitors.filter(isExpected);
+    return visitors;
+  }, [visitors, statusFilter]);
+
+  const checkInMut = useMutation({
+    mutationFn: (v) => api.post(`/visitors/${v.id}/checkin`, { checkInTime: nowHM() }),
+    onSuccess: (_res, v) => {
+      toast.success(`${v.name} checked in`);
+      qc.invalidateQueries({ queryKey: ['visitors'] });
+      setSelected(null);
+    },
+    onError: (e) => toast.error(e?.message || 'Could not check in'),
+  });
+
+  const downloadPass = async (v) => {
+    setPassBusy(v.id);
+    try {
+      await downloadVisitorPass(v.id, v.name);
+    } catch (e) {
+      toast.error(e?.message || 'Could not download the pass');
+    } finally {
+      setPassBusy('');
+    }
+  };
 
   const checkoutMut = useMutation({
     // One tap stamps the current time, which only makes sense for someone who is
@@ -134,16 +178,27 @@ export function VisitorTable({ canManageCategories = false }) {
       {
         id: 'time',
         header: 'In / Out',
-        cell: ({ row }) => (
-          <span className="flex items-center gap-1.5 whitespace-nowrap text-sm tabular-nums">
-            {row.original.checkInTime || '—'}
-            {row.original.checkOutTime ? (
-              <span className="text-muted-foreground">→ {row.original.checkOutTime}</span>
-            ) : (
-              <StatusBadge tone="success">In office</StatusBadge>
-            )}
-          </span>
-        ),
+        cell: ({ row }) => {
+          const v = row.original;
+          if (v.status === 'EXPECTED') {
+            return (
+              <span className="flex items-center gap-1.5 whitespace-nowrap text-sm">
+                <StatusBadge tone="warning" dot={false}><Clock className="size-3" /> Expected</StatusBadge>
+                {v.scheduledFor ? <span className="text-xs text-muted-foreground">{formatYMD(v.scheduledFor)}</span> : null}
+              </span>
+            );
+          }
+          return (
+            <span className="flex items-center gap-1.5 whitespace-nowrap text-sm tabular-nums">
+              {v.checkInTime || '—'}
+              {v.checkOutTime ? (
+                <span className="text-muted-foreground">→ {v.checkOutTime}</span>
+              ) : (
+                <StatusBadge tone="success">In office</StatusBadge>
+              )}
+            </span>
+          );
+        },
       },
       {
         id: 'name',
@@ -189,29 +244,44 @@ export function VisitorTable({ canManageCategories = false }) {
       {
         id: 'actions',
         header: '',
-        cell: ({ row }) => (
+        cell: ({ row }) => {
+          const v = row.original;
+          return (
           <div className="flex items-center justify-end gap-1.5">
-            {!row.original.checkOutTime ? (
+            {v.status === 'EXPECTED' ? (
+              <Button
+                variant="outline"
+                className="h-10 sm:h-8"
+                disabled={checkInMut.isPending}
+                onClick={(e) => { e.stopPropagation(); checkInMut.mutate(v); }}
+              >
+                <LogIn className="size-4" /> Check in
+              </Button>
+            ) : !v.checkOutTime ? (
               <Button
                 variant="outline"
                 className="h-10 sm:h-8"
                 disabled={checkoutMut.isPending}
-                onClick={(e) => { e.stopPropagation(); checkoutMut.mutate(row.original); }}
+                onClick={(e) => { e.stopPropagation(); checkoutMut.mutate(v); }}
               >
                 <LogOut className="size-4" /> Check out
               </Button>
             ) : null}
-            <Button variant="ghost" size="icon" className="size-10 sm:size-8" onClick={(e) => { e.stopPropagation(); setEditing(row.original); }} aria-label="Edit">
+            <Button variant="ghost" size="icon" className="size-10 sm:size-8" disabled={passBusy === v.id} onClick={(e) => { e.stopPropagation(); downloadPass(v); }} aria-label="Visitor pass">
+              <Ticket className="size-4" />
+            </Button>
+            <Button variant="ghost" size="icon" className="size-10 sm:size-8" onClick={(e) => { e.stopPropagation(); setEditing(v); }} aria-label="Edit">
               <Pencil className="size-4" />
             </Button>
-            <Button variant="ghost" size="icon" className="size-10 text-destructive sm:size-8" onClick={(e) => { e.stopPropagation(); setDeleting(row.original); }} aria-label="Delete">
+            <Button variant="ghost" size="icon" className="size-10 text-destructive sm:size-8" onClick={(e) => { e.stopPropagation(); setDeleting(v); }} aria-label="Delete">
               <Trash2 className="size-4" />
             </Button>
           </div>
-        ),
+          );
+        },
       },
     ],
-    [checkoutMut],
+    [checkoutMut, checkInMut, passBusy],
   );
 
   return (
@@ -254,19 +324,32 @@ export function VisitorTable({ canManageCategories = false }) {
         </div>
       </div>
 
+      {/* SP3(c): right-now tiles. Counts are GLOBAL (from the server), independent of the
+          filters above; clicking one narrows the loaded list to those visitors. */}
+      {summary.openVisits > 0 || summary.expected > 0 || statusFilter ? (
+        <div className="grid gap-3 sm:grid-cols-2 lg:max-w-lg">
+          <FilterStat active={statusFilter === 'open'} onClick={() => setStatusFilter((f) => (f === 'open' ? null : 'open'))}>
+            <StatCard label="Still in office" value={summary.openVisits} icon={LogOut} tone={summary.openVisits > 0 ? 'warning' : 'default'} hint={statusFilter === 'open' ? 'Showing these — tap to clear' : 'Checked in, not yet out'} />
+          </FilterStat>
+          <FilterStat active={statusFilter === 'expected'} onClick={() => setStatusFilter((f) => (f === 'expected' ? null : 'expected'))}>
+            <StatCard label="Expected" value={summary.expected} icon={Clock} tone={summary.expected > 0 ? 'info' : 'default'} hint={statusFilter === 'expected' ? 'Showing these — tap to clear' : 'Pre-registered, not arrived'} />
+          </FilterStat>
+        </div>
+      ) : null}
+
       {isLoading ? (
         <TableSkeleton rows={6} cols={7} />
       ) : (
         <>
           <DataTable
             columns={columns}
-            data={visitors}
+            data={displayed}
             searchable={false}
             pageSize={15}
-            emptyMessage="No visitor entries yet — log the first one."
+            emptyMessage={statusFilter === 'open' ? 'No one is in the office right now.' : statusFilter === 'expected' ? 'No pre-registered visitors.' : 'No visitor entries yet — log the first one.'}
             onRowClick={setSelected}
           />
-          {(data?.total ?? 0) > visitors.length ? (
+          {!statusFilter && (data?.total ?? 0) > visitors.length ? (
             <p className="px-1 text-xs text-muted-foreground">
               Showing {visitors.length} of {data.total} — narrow the dates or search to see the rest.
             </p>
@@ -281,13 +364,24 @@ export function VisitorTable({ canManageCategories = false }) {
         title={selected?.name}
         description={selected ? `${formatYMD(selected.dateYMD)} · ${selected.category}` : undefined}
         footer={
-          selected && !selected.checkOutTime ? (
-            <Button disabled={checkoutMut.isPending} onClick={() => checkoutMut.mutate(selected)}>
-              <LogOut className="size-4" /> {checkoutMut.isPending ? 'Checking out…' : 'Check out now'}
-            </Button>
-          ) : (
-            <Button variant="outline" onClick={() => setSelected(null)}>Close</Button>
-          )
+          selected ? (
+            <div className="flex w-full flex-wrap items-center justify-between gap-2">
+              <Button variant="outline" disabled={passBusy === selected.id} onClick={() => downloadPass(selected)}>
+                <Ticket className="size-4" /> {passBusy === selected.id ? 'Generating…' : 'Pass (PDF)'}
+              </Button>
+              {selected.status === 'EXPECTED' ? (
+                <Button disabled={checkInMut.isPending} onClick={() => checkInMut.mutate(selected)}>
+                  <LogIn className="size-4" /> {checkInMut.isPending ? 'Checking in…' : 'Check in now'}
+                </Button>
+              ) : !selected.checkOutTime ? (
+                <Button disabled={checkoutMut.isPending} onClick={() => checkoutMut.mutate(selected)}>
+                  <LogOut className="size-4" /> {checkoutMut.isPending ? 'Checking out…' : 'Check out now'}
+                </Button>
+              ) : (
+                <Button variant="outline" onClick={() => setSelected(null)}>Close</Button>
+              )}
+            </div>
+          ) : null
         }
       >
         {selected ? (
