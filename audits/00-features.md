@@ -20,10 +20,10 @@
 | C2 | **Batch approve** tasks — 57 approval-gated tasks, har ek alag click; late approval = employee late | 🟡 CHHOTA | 02 |
 | C3 | **Approval-queue badge** landing pe (teeno queue: leaves / corrections / task reviews — abhi sirf leave) | 🟡 CHHOTA | 01, 02 |
 | C4 | **Bulk mark-absent/present** attendance me (abhi ek-ek karke) | 🟡 CHHOTA | 03 |
-| C5 | **"Never checked out" anomaly tile + filter** — bhoole hue checkouts ek nazar me | 🟢 ZERO | 03 |
+| C5 | ~~**"Never checked out" tile + filter**~~ — ✅ **BAN GAYA** (`378f6db`): attendance Everyone-tab pe naya tile + filter | ✅ | 03 |
 | C6 | **Rewards: cost preview** — rule badalne se kitna kharcha aayega, save karne se pehle | 🔴 BADA | 05 |
 | C7 | **Rewards: config diff** — kya-kya badla (ab audit log me before/after aata hai, UI baaki) | 🟡 CHHOTA | 05 |
-| C8 | **Rewards: recalculate button** — abhi koi manual re-run ka rasta nahi (sirf API) | 🟡 CHHOTA | 05 |
+| C8 | ~~**Rewards: recalculate button**~~ — ✅ **BAN GAYA** (`378f6db`): Bonus settings pe "Recalculate now" (force + idempotent) | ✅ | 05 |
 | C9 | **Approvals inbox me requester balance + coverage warning** (abhi sirf Leaves queue me hai) | 🟡 CHHOTA | 04 |
 | C10 | Right-now roster **naam ke saath** (data ready — overview rows abhi phenki jaati hain) | 🟢 ZERO | 01 |
 | C11 | Overdue-by-person **folder chips** + per-person on-time % insights | 🟢 ZERO | 02 |
