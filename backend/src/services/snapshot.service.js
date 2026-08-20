@@ -5,9 +5,14 @@ import { can } from '../lib/permissions.js';
 import { companyDayFromYMD, ymdInTz } from '../lib/time.js';
 import { joinedYMD } from '../lib/joining.js';
 import { leaveYearOf } from '../lib/leaveYear.js';
+import { userWeekendDays } from '../lib/schedule.js';
 import { buildSelfReport } from './report.service.js';
-import { carryInFor } from './bonus.service.js';
+import { carryInFor, STREAK_LEN } from './bonus.service.js';
 import { balanceJSONReadOnly } from './leave.service.js';
+
+// Day-of-week labels for the "your working days" line, Sun-first (0=Sun … 6=Sat) to
+// match the day-numbers stored on a schedule and in Settings.weekendDays.
+const DOW_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 /**
  * "Where do I stand" — one answer, for a period the person picks.
@@ -121,6 +126,42 @@ export async function mySnapshot(user, { type = 'monthly', dateYMD, range } = {}
   const monthEarned = monthPoints[0]?.points ?? 0;
   const carry = carriedOver || 0; // <= 0
 
+  // ── Which days of the week this person actually works ──
+  // A part-timer whose "Days present" reads "8 of 12" has no way to see WHY the 12 is
+  // smaller than a full-timer's 21. Their own schedule already resolves it (custom
+  // workDays, or the office weekend config), and the Setting is loaded above, so this is
+  // zero extra work. Only worth spelling out when it differs from a plain Mon-Sat office.
+  const weekendSet = new Set(userWeekendDays(user, settings));
+  const workDaysOfWeek = [0, 1, 2, 3, 4, 5, 6].filter((d) => !weekendSet.has(d));
+  const workDaysLabel = workDaysOfWeek.map((d) => DOW_LABELS[d]).join(', ');
+  const hasCustomWorkDays = Array.isArray(user?.schedule?.workDays) && user.schedule.workDays.length > 0;
+
+  // ── E1: punctual-streak progress (forward-looking, zero extra query) ──
+  // The rolling 6-day counter already lives on the Setting we loaded. Surfacing it lets
+  // someone see "4 of 6 on time, 2 more → +8" instead of only ever reading points AFTER
+  // the fact. The counter is written by the nightly scan, so it is current only up to
+  // `lastStreakScan` (yesterday) — the UI must say so, not imply it counts today.
+  let streak = null;
+  if (shows.points && shows.attendance) {
+    const b = settings.bonus || {};
+    const rule = (b.autoRules || []).find((r) => r.key === 'punctualStreak');
+    const perRun = rule ? Math.abs(Number(rule.points) || 0) : 0;
+    if (perRun > 0) {
+      const runs = b.streakRuns || {};
+      // Clamp into [0, target-1]: the counter resets to 0 the moment it hits the target
+      // and pays out, so it is never actually AT the target when read.
+      const raw = Number(runs[String(user._id)]) || 0;
+      const count = Math.max(0, Math.min(STREAK_LEN - 1, raw));
+      streak = {
+        count,
+        target: STREAK_LEN,
+        remaining: STREAK_LEN - count,
+        points: perRun, // what completing the run pays
+        asOfYMD: b.lastStreakScan || null, // counter is current up to this day
+      };
+    }
+  }
+
   return {
     period: { ...report.period, type },
     // The period runs past today (e.g. "this month" mid-month): everything below counts
@@ -131,6 +172,13 @@ export async function mySnapshot(user, { type = 'monthly', dateYMD, range } = {}
     joinedYMD: joined,
     shows,
     currency: settings.currency,
+    // The weekdays this person is measured on — explains the "of N" denominator, and
+    // hasCustomWorkDays flags a part-timer whose week differs from the office default.
+    workDaysOfWeek,
+    workDaysLabel,
+    hasCustomWorkDays,
+    // Forward-looking punctual-streak progress, or null when it doesn't apply to them.
+    streak,
 
     // ── Moves with the period ──
     inPeriod: {

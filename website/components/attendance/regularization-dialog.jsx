@@ -14,7 +14,15 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { todayYMD } from '@/lib/time';
 
-export function RegularizationDialog() {
+/**
+ * Attendance-correction request dialog.
+ *
+ * With no props it's the plain "Request correction" button. A caller can also seed it
+ * from a specific day — e.g. the attendance history offering a one-tap fix for a day
+ * where someone forgot to check out — by passing `prefill` (date / times / reason) and
+ * its own `trigger`.
+ */
+export function RegularizationDialog({ prefill = null, trigger = null } = {}) {
   const qc = useQueryClient();
   const [open, setOpen] = React.useState(false);
   const [date, setDate] = React.useState(todayYMD());
@@ -24,11 +32,14 @@ export function RegularizationDialog() {
 
   React.useEffect(() => {
     if (!open) return;
-    setDate(todayYMD());
-    setCheckIn('');
-    setCheckOut('');
-    setReason('');
-  }, [open]);
+    // Re-seed from the prefill each time it opens, falling back to a blank today form.
+    setDate(prefill?.dateYMD || todayYMD());
+    setCheckIn(prefill?.checkIn || '');
+    setCheckOut(prefill?.checkOut || '');
+    setReason(prefill?.reason || '');
+    // prefill is a plain object rebuilt per render; depend on its fields, not identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, prefill?.dateYMD, prefill?.checkIn, prefill?.checkOut, prefill?.reason]);
 
   const mut = useMutation({
     mutationFn: () =>
@@ -53,9 +64,11 @@ export function RegularizationDialog() {
       open={open}
       onOpenChange={setOpen}
       trigger={
-        <Button variant="outline" size="sm">
-          <Wrench className="size-4" /> Request correction
-        </Button>
+        trigger ?? (
+          <Button variant="outline" size="sm">
+            <Wrench className="size-4" /> Request correction
+          </Button>
+        )
       }
       title="Request attendance correction"
       description="Forgot to check in/out, or wrong time? Ask leadership to fix it."

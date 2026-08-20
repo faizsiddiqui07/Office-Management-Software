@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Check, CheckCircle2, ClipboardList, Clock, Download, Eye, EyeOff, FolderOpen, Forward, ListTodo, Pencil, Search, Send, ThumbsUp, Trash2, Undo2, UserRound, Users, X } from 'lucide-react';
+import { Award, Check, CheckCircle2, ClipboardList, Clock, Download, Eye, EyeOff, FolderOpen, Forward, ListTodo, Pencil, Search, Send, ThumbsUp, Trash2, Undo2, UserRound, Users, X } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -542,11 +542,68 @@ function PersonFolder({ folder, myId, onEdit, onDelete, onOpen, onToggle, onExpa
 }
 
 /** Full task details — opened by tapping any task row. */
+/**
+ * E5: what finishing this task is worth in points — pulled fresh when the sheet opens.
+ * The server owns the answer (eligibility gate + rule values + what's already been
+ * booked), so this only ever renders what it's told; nothing is re-derived here.
+ */
+function TaskBonusPreview({ preview, done }) {
+  if (!preview?.eligible) return null;
+  const { onTimePoints, latePoints, overdueDailyPoints, deductedSoFar, earnedSoFar, deadlineYMD } = preview;
+  const pastDeadline = deadlineYMD && deadlineYMD < todayYMD();
+
+  let tone = 'text-muted-foreground';
+  let body = null;
+  if (done) {
+    const net = earnedSoFar - deductedSoFar;
+    if (net >= 0) {
+      tone = 'text-success';
+      body = <><span className="font-semibold">+{net} points</span> earned for this task</>;
+    } else {
+      tone = 'text-amber-600 dark:text-amber-400';
+      body = <><span className="font-semibold">{net} points</span> — finished late</>;
+    }
+  } else if (pastDeadline) {
+    tone = 'text-amber-600 dark:text-amber-400';
+    body = (
+      <>
+        {deductedSoFar > 0 ? <><span className="font-semibold">−{deductedSoFar} points</span> deducted so far · </> : null}
+        past its deadline — finishing now counts as late
+        {overdueDailyPoints > 0 ? <> · −{overdueDailyPoints}/day until done</> : null}
+      </>
+    );
+  } else {
+    tone = 'text-success';
+    body = (
+      <>
+        <span className="font-semibold">+{onTimePoints} points</span> if finished on time
+        {deadlineYMD ? <> (by {fmtDate(deadlineYMD)})</> : null}
+        {latePoints > 0 ? <span className="text-muted-foreground"> · −{latePoints} if late</span> : null}
+      </>
+    );
+  }
+
+  return (
+    <div className={cn('flex items-start gap-2 rounded-xl bg-foreground/[0.03] p-3 text-sm ring-1 ring-border/50', tone)}>
+      <Award className="mt-0.5 size-4 shrink-0" />
+      <span className="min-w-0">{body}</span>
+    </div>
+  );
+}
+
 function TaskDetailDialog({ view, myId, onClose, onToggle, onEdit, onDelete, onApprove, onReject, onForward }) {
   const task = view?.task;
   const done = task?.status === 'DONE';
   const awaiting = task?.awaitingApproval;
   const overdue = task && !done && !awaiting && isOverdue(task.dueYMD);
+  // Only assigned tasks can ever earn points — a personal to-do never does, so don't ask.
+  const bonusQ = useQuery({
+    queryKey: ['task-bonus', task?.id],
+    queryFn: () => api.get(`/tasks/${task.id}/bonus-preview`),
+    enabled: !!view && !!task?.id && !!task?.assignedBy,
+    staleTime: 60_000,
+  });
+  const preview = bonusQ.data?.preview;
   const iOwn = task && task.owner?.id === myId && !task.assignedBy;
   // Somebody else's task that I was tagged on (never in the assigner's own view, where
   // every row belongs to someone else by definition).
@@ -750,6 +807,8 @@ function TaskDetailDialog({ view, myId, onClose, onToggle, onEdit, onDelete, onA
             ) : null}
             {done && task.approvedBy?.name ? <Row label="Approved by">{task.approvedBy.name}</Row> : null}
           </div>
+
+          <TaskBonusPreview preview={preview} done={done} />
         </div>
       ) : null}
     </AppDialog>

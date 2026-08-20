@@ -1,6 +1,7 @@
 import { ok, fail } from '../lib/apiResponse.js';
 import { createTaskSchema, updateTaskSchema, statusSchema, listTasksQuerySchema, reviewTaskSchema, forwardTaskSchema, seenBulkSchema } from '../validators/tasks.validators.js';
 import * as svc from '../services/task.service.js';
+import { taskBonusPreview } from '../services/bonus.service.js';
 import { Setting } from '../models/Setting.js';
 import { ymdInTz, formatCompany } from '../lib/time.js';
 import { isOwnerRole } from '../lib/roles.js';
@@ -25,6 +26,17 @@ export async function summary(req, res, next) {
 export async function getOne(req, res, next) {
   try {
     res.json(ok({ task: await svc.getTaskDetail(req.user, req.params.id) }));
+  } catch (err) {
+    handleErr(res, err, next);
+  }
+}
+
+// E5: forward-looking points on one task, for the detail dialog. getTaskDetail runs first
+// purely as the access guard (it throws 403/404) — only then is the preview computed.
+export async function bonusPreview(req, res, next) {
+  try {
+    await svc.getTaskDetail(req.user, req.params.id);
+    res.json(ok({ preview: await taskBonusPreview(req.params.id) }));
   } catch (err) {
     handleErr(res, err, next);
   }

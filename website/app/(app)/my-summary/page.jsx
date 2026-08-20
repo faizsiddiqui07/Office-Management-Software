@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  Award, CalendarCheck, CalendarDays, Clock, HandCoins, Home, ListTodo, TriangleAlert, UserRound,
+  Award, CalendarCheck, CalendarDays, Clock, Flame, HandCoins, Home, ListTodo, TriangleAlert, UserRound,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -125,6 +125,40 @@ export default function MyStandingPage() {
               <h2 className="font-semibold tracking-tight">Right now</h2>
               <span className="text-xs text-muted-foreground">these don’t change with the period above</span>
             </div>
+
+            {/* Punctual-streak progress — the one number that looks FORWARD, not back:
+                how close you are to the next on-time-days reward. */}
+            {shows.points && data.streak ? (
+              <div className="rounded-xl bg-card/60 p-3.5 ring-1 ring-border/60">
+                <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+                  <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                    <Flame className="size-3.5 shrink-0 text-amber-500" />
+                    <span>Punctual streak</span>
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    {data.streak.target} on-time days in a row → +{data.streak.points} points
+                  </span>
+                </div>
+                <p className="mt-1 text-2xl font-semibold tabular-nums tracking-tight">
+                  {data.streak.count} <span className="text-base font-normal text-muted-foreground">of {data.streak.target} on time</span>
+                </p>
+                <div className="mt-2 flex gap-1" aria-hidden>
+                  {Array.from({ length: data.streak.target }).map((_, i) => (
+                    <div
+                      key={i}
+                      className={cn('h-1.5 flex-1 rounded-full', i < data.streak.count ? 'bg-amber-500' : 'bg-border')}
+                    />
+                  ))}
+                </div>
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  {data.streak.count === 0
+                    ? `Check in on time ${data.streak.target} days running to earn +${data.streak.points} points`
+                    : `${data.streak.remaining} more on-time day${data.streak.remaining === 1 ? '' : 's'} → +${data.streak.points} points`}
+                  {data.streak.asOfYMD ? ` · counted up to ${formatYMD(data.streak.asOfYMD)}` : ''}
+                </p>
+              </div>
+            ) : null}
+
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {shows.leave && now.leave ? (
                 <Stat
@@ -257,6 +291,15 @@ export default function MyStandingPage() {
                 />
               ) : null}
             </div>
+
+            {/* P2: spell out WHICH weekdays count, so "8 of 12" isn't a mystery next to a
+                full-timer's "19 of 21". Only meaningful for someone whose week isn't the
+                office default — a full-timer already reads their own ratio fine. */}
+            {shows.attendance && att && data.workDaysLabel && data.hasCustomWorkDays ? (
+              <p className="px-1 text-xs text-muted-foreground">
+                Your working days: <span className="font-medium text-foreground">{data.workDaysLabel}</span> — that’s the {'“'}of {att.workingDays}{'”'} above.
+              </p>
+            ) : null}
 
             {!shows.attendance && !shows.leave ? (
               <GlassCard className="p-4">

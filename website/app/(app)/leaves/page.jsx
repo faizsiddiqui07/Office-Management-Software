@@ -8,20 +8,45 @@ import { can } from '@/lib/permissions';
 import { downloadFile } from '@/lib/api';
 import { PageHeader } from '@/components/glass/page-header';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { companyTodayYMD } from '@/lib/expense';
+import { APP_LIVE_YMD } from '@/lib/app-live';
 import { BalanceCards } from '@/components/leaves/balance-cards';
 import { ApplyLeaveDialog } from '@/components/leaves/apply-leave-dialog';
 import { LeaveHistory } from '@/components/leaves/leave-history';
 import { RequestsQueue } from '@/components/leaves/requests-queue';
 import { DeclareWfhDialog } from '@/components/leaves/declare-wfh-dialog';
 
+// Leave years run on the fiscal calendar (Apr 1 – Mar 31); the "year" key is the STARTING
+// calendar year. Mirrors backend/src/lib/leaveYear.js so the picker and the PDF agree.
+function leaveYearOf(ymd) {
+  const y = Number(ymd.slice(0, 4));
+  return Number(ymd.slice(5, 7)) >= 4 ? y : y - 1;
+}
+function fiscalYearLabel(y) {
+  return `${y}–${String(y + 1).slice(2)}`; // e.g. 2026–27
+}
+
 function MyLeaves({ canWFH }) {
   const [busy, setBusy] = React.useState(false);
+  // Every fiscal leave year that can hold data: from go-live up to now, newest first.
+  // Before the first year rolls over there is only one — then the picker stays hidden and
+  // the button behaves exactly as it always did.
+  const years = React.useMemo(() => {
+    const first = leaveYearOf(APP_LIVE_YMD);
+    const current = leaveYearOf(companyTodayYMD());
+    const out = [];
+    for (let y = current; y >= first; y -= 1) out.push(y);
+    return out;
+  }, []);
+  const [year, setYear] = React.useState(years[0]);
+
   const downloadLedger = async () => {
     setBusy(true);
     try {
       const base = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
-      await downloadFile(`${base}/api/leaves/ledger.pdf`, 'my-leave-ledger.pdf');
+      await downloadFile(`${base}/api/leaves/ledger.pdf?year=${year}`, `my-leave-ledger-${year}-${String(year + 1).slice(2)}.pdf`);
       toast.success('Leave ledger downloaded');
     } catch (e) {
       toast.error(e?.message || 'Could not download the ledger');
@@ -35,6 +60,19 @@ function MyLeaves({ canWFH }) {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-semibold tracking-tight">My requests</h2>
         <div className="flex flex-wrap items-center gap-2">
+          {/* Pick which fiscal year's ledger to pull — only shown once more than one exists. */}
+          {years.length > 1 ? (
+            <Select value={String(year)} onValueChange={(v) => setYear(Number(v))}>
+              <SelectTrigger className="w-36 bg-background/50" aria-label="Leave year">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {years.map((y) => (
+                  <SelectItem key={y} value={String(y)}>{fiscalYearLabel(y)} (Apr–Mar)</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : null}
           <Button variant="outline" onClick={downloadLedger} disabled={busy}>
             <Download className="size-4" /> {busy ? 'Generating…' : 'Ledger (PDF)'}
           </Button>

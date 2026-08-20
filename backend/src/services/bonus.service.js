@@ -753,6 +753,64 @@ export async function rebuildOverdueForTask(taskId) {
 }
 
 /**
+ * Forward-looking points on ONE task, for the detail dialog — "what finishing this is
+ * worth, and what it has cost so far". Deliberately AUTHORITATIVE, not a re-derivation:
+ * it runs the same owner-tier / deadline gate the scorer uses and reads the point values
+ * from the same rule table, and the already-earned/deducted figure is SUMMED from the
+ * PointEntry rows actually written for this copy — so the preview can never disagree with
+ * the ledger. Returns { enabled:false } or { eligible:false } when the task is outside
+ * the points system, and the UI shows nothing at all.
+ */
+export async function taskBonusPreview(taskId) {
+  const s = await Setting.getSingleton();
+  const b = s.bonus || {};
+  if (!b.enabled) return { enabled: false };
+  const t = await Task.findById(taskId).select('owner dueYMD status completedAt assignedBy collaborators forwardedFrom createdAt title');
+  if (!t) return { enabled: true, eligible: false };
+  // Personal task (nobody assigned it), or no scorable deadline → out of the system.
+  if (!t.assignedBy || !hasScorableDeadline(t)) return { enabled: true, eligible: false };
+  const ownerIds = await ownerTierIds();
+  if (!(await chainEligible(t, ownerIds))) return { enabled: true, eligible: false };
+
+  // A copy that was handed further down is a FORWARDER (rewarded on the chain finishing),
+  // otherwise it's the DOER holding the work. This picks which rule applies to THIS copy.
+  const isForwarder = !!(await Task.exists({ forwardedFrom: t._id }));
+  const rewardKey = isForwarder ? 'forwardOnTime' : 'assignedTaskOnTime';
+  const lateKey = isForwarder ? 'forwardLate' : 'assignedTaskLate';
+
+  const grace = t.dueYMD ? graceDaysOn(b, t.dueYMD) : 0;
+  const deadlineYMD = t.dueYMD ? addDays(t.dueYMD, grace) : null;
+
+  // What THIS copy has actually earned / cost so far — read from the ledger, never guessed.
+  const [agg] = await PointEntry.aggregate([
+    { $match: { taskRef: t._id } },
+    { $group: {
+      _id: null,
+      neg: { $sum: { $cond: [{ $lt: ['$points', 0] }, '$points', 0] } },
+      pos: { $sum: { $cond: [{ $gt: ['$points', 0] }, '$points', 0] } },
+    } },
+  ]);
+  const deductedSoFar = Math.abs(agg?.neg || 0);
+  const earnedSoFar = agg?.pos || 0;
+
+  return {
+    enabled: true,
+    eligible: true,
+    status: t.status,
+    dueYMD: t.dueYMD || null,
+    graceDays: grace,
+    deadlineYMD, // due + grace: the last day it still counts as on time
+    onTimePoints: Math.abs(rulePoints(b, rewardKey, t.dueYMD)),
+    latePoints: Math.abs(rulePoints(b, lateKey, t.dueYMD)),
+    // The per-day drip only runs on the doer's own copy, never a forwarder's.
+    overdueDailyPoints: isForwarder ? 0 : Math.abs(rulePoints(b, 'assignedTaskOverdueDaily', t.dueYMD)),
+    deductedSoFar,
+    earnedSoFar,
+    isForwarder,
+  };
+}
+
+/**
  * After a check-in: a late arrival is penalised. The punctual-streak reward is NOT
  * decided here — the rolling 6-day count is evaluated once a day is over, in
  * runRollingStreak (called from the daily scan). Deciding it per check-in couldn't work:
@@ -1256,7 +1314,7 @@ async function runMonthRollup(b, forMonth = null) {
 // neither break the run nor count towards the 6. An excused (on-duty) late counts as
 // an on-time day. The award is filed under the 6th day itself, so a run straddling a
 // month boundary simply pays in the month it completes — nothing resets at month end.
-const STREAK_LEN = 6;
+export const STREAK_LEN = 6;
 
 /**
  * Judge every finished day since the last scan (up to YESTERDAY — today is still in
