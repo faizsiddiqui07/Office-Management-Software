@@ -21,7 +21,7 @@
 | 09 | Expenses / Dues | [09-expenses-dues.md](09-expenses-dues.md) | 🔴 audited: **5 RED + 9 MEDIUM** (39 confirmed, 0 refuted; dedupe ke baad). Awaiting owner approval | none yet | 1 LOW |
 | 10 | **Settings + Rules** | [10-settings-rules.md](10-settings-rules.md) | ✅ **S1/S3/S5/S7 FIXED** (12/12 suite + pre-fix proof); S2/S4/S6 + 8 MEDIUM parked | S1,S3,S5,S7 | S2/S4/S6 + 8 MEDIUM |
 | 11 | Visitors / Announcements / Calendar / Approvals / Activity / Profile | [11-six-pages.md](11-six-pages.md) | ✅ **V6 FIXED** (+ garbage-key sibling bug), 10/10 suite; baaki parked | V6 | ~14 MEDIUM + 4 LOW |
-| 12 | **MASTER consolidation** (cross-page fixes + features phase) | — | end me | — | — |
+| 12 | **MASTER consolidation** | [12-master-consolidation.md](12-master-consolidation.md) | ✅ **DONE** — 01–07 parked verified (183 → 0 RED, 18 MED, 138 LOW, 19 already-fixed); root-cause grouped | — | see doc |
 
 ## 🔗 CROSS-PAGE PATTERNS (running list — har naye audit me check karo)
 
