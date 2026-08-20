@@ -105,6 +105,21 @@ export async function backfill(req, res, next) {
   }
 }
 
+/**
+ * Force a full re-score now — the same work the nightly scheduler does, but on demand
+ * and bypassing the once-a-day throttle. Idempotent: it re-syncs points with the task /
+ * attendance tables, it does not double-count. Leadership-only (manageSettings).
+ */
+export async function recalculate(req, res, next) {
+  try {
+    await svc.maybeRunDaily(true);
+    await audit({ actor: req.user._id, action: 'bonus.recalculate', entityType: 'Bonus', entityId: 'manual' });
+    return res.json(ok({ done: true }));
+  } catch (err) {
+    return next(err);
+  }
+}
+
 export async function leaderboard(req, res, next) {
   try {
     const { month, from, to } = req.query || {};

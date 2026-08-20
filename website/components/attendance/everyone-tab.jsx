@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Check, Clock, Download, Home, Pencil, TriangleAlert, UserCheck, UserPlus, Users, UserX } from 'lucide-react';
+import { Check, Clock, Download, Home, LogOut, Pencil, TriangleAlert, UserCheck, UserPlus, Users, UserX } from 'lucide-react';
 import { api, downloadFile } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can, roleName } from '@/lib/permissions';
@@ -233,6 +233,8 @@ export function EveryoneTab() {
       if (statusFilter === 'late') return r.status === 'LATE' && !r.attendance?.excused; // excused = on-duty, not late
       if (statusFilter === 'absent') return r.status === 'ABSENT';
       if (statusFilter === 'wfh') return r.status === 'WFH';
+      // Checked in but never checked out — a forgotten clock-out.
+      if (statusFilter === 'open') return r.attendance?.checkInAt && !r.attendance?.checkOutAt;
       return true;
     });
   }, [rows, statusFilter]);
@@ -252,7 +254,7 @@ export function EveryoneTab() {
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-4 grid-cols-2 sm:grid-cols-6">
+      <div className="grid gap-4 grid-cols-2 sm:grid-cols-4 lg:grid-cols-7">
         <FilterStat onClick={() => setStatusFilter(null)}>
           <StatCard label="Total staff" value={summary?.total ?? '—'} icon={Users} className="h-full" />
         </FilterStat>
@@ -291,6 +293,15 @@ export function EveryoneTab() {
             icon={UserX}
             tone="destructive"
             className={cn('h-full', statusFilter === 'absent' && 'ring-2 ring-primary')}
+          />
+        </FilterStat>
+        <FilterStat onClick={() => toggleFilter('open')}>
+          <StatCard
+            label="Not checked out"
+            value={summary?.openCheckIn ?? 0}
+            icon={LogOut}
+            tone={summary?.openCheckIn ? 'warning' : 'default'}
+            className={cn('h-full', statusFilter === 'open' && 'ring-2 ring-primary')}
           />
         </FilterStat>
         <StatCard

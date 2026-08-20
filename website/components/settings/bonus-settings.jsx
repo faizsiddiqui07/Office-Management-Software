@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Award, Loader2, Plus, Trash2 } from 'lucide-react';
+import { Award, Loader2, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useBonusConfig } from '@/lib/bonus';
 import { GlassPanel } from '@/components/glass/glass-panel';
@@ -48,6 +48,14 @@ export function BonusSettings() {
     mutationFn: () => api.patch('/bonus/config', form),
     onSuccess: () => { toast.success('Bonus settings saved'); qc.invalidateQueries({ queryKey: ['bonus'] }); },
     onError: (e) => toast.error(e?.message || 'Could not save'),
+  });
+
+  // Force a full re-score now — the same work the nightly job does. Idempotent, so it
+  // only ever RE-SYNCS points with the task/attendance tables; it never double-counts.
+  const recalcMut = useMutation({
+    mutationFn: () => api.post('/bonus/recalculate'),
+    onSuccess: () => { toast.success('Points recalculated'); qc.invalidateQueries({ queryKey: ['bonus'] }); },
+    onError: (e) => toast.error(e?.message || 'Could not recalculate'),
   });
 
   if (isLoading || !form) {
@@ -147,7 +155,13 @@ export function BonusSettings() {
         <p className="rounded-lg bg-foreground/[0.03] px-3 py-3 text-sm text-muted-foreground ring-1 ring-border/50">The bonus system is off. Turn it on to set point values — nobody sees points until then.</p>
       )}
 
-      <div className="flex justify-end">
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {/* Manual re-run of the nightly scoring — for when points look out of step and you
+            don't want to wait for tonight. Safe to press any time (it re-syncs, never
+            double-counts). */}
+        <Button variant="outline" onClick={() => recalcMut.mutate()} disabled={recalcMut.isPending || saveMut.isPending} className="h-10" title="Re-run the points calculation now (same as the nightly job)">
+          {recalcMut.isPending ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />} Recalculate now
+        </Button>
         <Button onClick={() => saveMut.mutate()} disabled={saveMut.isPending} className="h-10">{saveMut.isPending ? <Loader2 className="size-4 animate-spin" /> : null} Save bonus settings</Button>
       </div>
     </GlassPanel>

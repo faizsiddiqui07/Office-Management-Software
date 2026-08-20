@@ -1734,7 +1734,7 @@ export async function pruneOrphanTaskEntries() {
 }
 
 /** Runs the daily scans + month rollup at most once a day (no cron needed). */
-export async function maybeRunDaily() {
+export async function maybeRunDaily(force = false) {
   const s = await Setting.getSingleton();
   const b = s.bonus || {};
   if (!b.enabled) return;
@@ -1757,7 +1757,10 @@ export async function maybeRunDaily() {
   try { await clearExcusedLatePenalties(); } catch (e) { console.error('excused-late sweep failed', e?.message); }
   try { await seedRateHistory(); } catch (e) { console.error('rate-history seed failed', e?.message); }
   const today = ymdInTz(new Date());
-  if (b.lastPenaltyRun === today) return;
+  // `force` = a human pressed "Recalculate now" — run the heavy block even if it already
+  // ran today. Everything below is idempotent (awardOnce/deleteMany keyed by dedupeKey,
+  // watermarks that only move forward), so re-running the same day just re-syncs.
+  if (!force && b.lastPenaltyRun === today) return;
   // Where the absence catch-up starts. Kept SEPARATE from the once-a-day throttle and
   // moved forward only after the scan actually succeeds: the throttle has to be written
   // immediately (it is what stops a second instance running the same day), but if it

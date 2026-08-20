@@ -509,6 +509,9 @@ export async function attendanceOverview(ymd) {
     // Working, from home. Kept as its own figure rather than folded into `present` so
     // the roster can show it distinctly; every "who is working today" total adds it.
     wfh: rows.filter((r) => r.status === 'WFH').length,
+    // Checked in but never checked out — a forgotten clock-out. Surfaced so a leader can
+    // spot and fix them in one glance, instead of scanning the whole roster.
+    openCheckIn: rows.filter((r) => r.attendance?.checkInAt && !r.attendance?.checkOutAt).length,
   };
 
   return { date: ymdInTz(day), isWeekend, isHoliday, rows, summary, joinedLater };

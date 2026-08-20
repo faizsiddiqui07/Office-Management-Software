@@ -1,7 +1,7 @@
 import express from 'express';
 import { requireAuth } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/requirePermission.js';
-import { me, guide, getConfig, updateConfig, award, removeEntry, leaderboard, awards, backfill, userSummary } from '../controllers/bonus.controller.js';
+import { me, guide, getConfig, updateConfig, award, removeEntry, leaderboard, awards, backfill, recalculate, userSummary } from '../controllers/bonus.controller.js';
 
 export const bonusRouter = express.Router();
 
@@ -21,5 +21,7 @@ bonusRouter.get('/leaderboard', requirePermission('manageSettings'), leaderboard
 bonusRouter.get('/user/:id', requirePermission('manageSettings'), userSummary);
 // Score a past month on purpose (the automatic scans never reach backwards).
 bonusRouter.post('/backfill', requirePermission('manageSettings'), backfill);
+// Recalculate everything now (manual re-run of the nightly scoring). Idempotent.
+bonusRouter.post('/recalculate', requirePermission('manageSettings'), recalculate);
 // Deleting points is owner-only (CEO & President) — enforced in the service.
 bonusRouter.delete('/entry/:id', requirePermission('manageSettings'), removeEntry);
