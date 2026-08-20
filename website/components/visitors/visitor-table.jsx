@@ -7,7 +7,7 @@ import { Download, FileText, LogIn, LogOut, Pencil, Search, Ticket, Trash2, Cloc
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { DataTable } from '@/components/glass/data-table';
-import { StatCard } from '@/components/glass/stat-card';
+import { StatTile } from '@/components/glass/stat-tile';
 import { StatusBadge } from '@/components/glass/status-badge';
 import { TableSkeleton } from '@/components/glass/skeletons';
 import { ConfirmDialog } from '@/components/glass/confirm-dialog';
@@ -29,15 +29,6 @@ import { VisitorDialog } from './visitor-dialog';
 import { CategoryManager } from './category-manager';
 import { downloadVisitors, downloadVisitorPass } from '@/lib/visitor';
 import { formatYMD } from '@/lib/leave';
-
-/** A stat card that also toggles a filter on the list below. */
-function FilterStat({ active, onClick, children }) {
-  return (
-    <button type="button" onClick={onClick} aria-pressed={active} className={cn('w-full rounded-2xl text-left transition focus:outline-none', active && 'ring-2 ring-primary/60')}>
-      {children}
-    </button>
-  );
-}
 
 /** Current wall-clock "HH:mm" in the company timezone (for one-tap check-out). */
 function nowHM() {
@@ -342,13 +333,25 @@ export function VisitorTable({ canManageCategories = false }) {
       {/* SP3(c): right-now tiles. Counts are GLOBAL (from the server), independent of the
           filters above; clicking one narrows the loaded list to those visitors. */}
       {summary.openVisits > 0 || summary.expected > 0 || statusFilter ? (
-        <div className="grid gap-3 sm:grid-cols-2 lg:max-w-lg">
-          <FilterStat active={statusFilter === 'open'} onClick={() => toggleTile('open')}>
-            <StatCard label="Still in office" value={summary.openVisits} icon={LogOut} tone={summary.openVisits > 0 ? 'warning' : 'default'} hint={statusFilter === 'open' ? 'Showing these — tap to clear' : 'Checked in, not yet out'} />
-          </FilterStat>
-          <FilterStat active={statusFilter === 'expected'} onClick={() => toggleTile('expected')}>
-            <StatCard label="Expected" value={summary.expected} icon={Clock} tone={summary.expected > 0 ? 'info' : 'default'} hint={statusFilter === 'expected' ? 'Showing these — tap to clear' : 'Pre-registered, not arrived'} />
-          </FilterStat>
+        <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:max-w-lg">
+          <StatTile
+            label="Still in office"
+            value={summary.openVisits}
+            icon={LogOut}
+            tone={summary.openVisits > 0 ? 'warning' : 'default'}
+            hint={statusFilter === 'open' ? 'Showing these — tap to clear' : 'Checked in, not yet out'}
+            onClick={() => toggleTile('open')}
+            active={statusFilter === 'open'}
+          />
+          <StatTile
+            label="Expected"
+            value={summary.expected}
+            icon={Clock}
+            tone={summary.expected > 0 ? 'info' : 'default'}
+            hint={statusFilter === 'expected' ? 'Showing these — tap to clear' : 'Pre-registered, not arrived'}
+            onClick={() => toggleTile('expected')}
+            active={statusFilter === 'expected'}
+          />
         </div>
       ) : null}
 
