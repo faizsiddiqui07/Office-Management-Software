@@ -6,7 +6,7 @@ import { notify, clearNotificationsFor } from '../models/Notification.js';
 import { LEADERSHIP } from '../lib/permissions.js';
 import { companyDayFromYMD, companyDayInstantAt, isLateCheckIn, computeWork } from '../lib/time.js';
 import { effectiveSchedule } from '../lib/schedule.js';
-import { onCheckOut, clearAbsencePenalty, reconcileLatePenalty } from './bonus.service.js';
+import { onCheckOut, clearAbsencePenalty, reconcileLatePenalty, reconcilePerfectMonth } from './bonus.service.js';
 import { isOffDayFor } from './attendance.service.js';
 
 function httpError(status, code, message) {
@@ -171,11 +171,25 @@ async function applyToAttendance(reg) {
   // If the day had been auto-marked absent, the correction just made it a worked day —
   // remove that stale absent penalty.
   if (record.checkInAt) {
-    try { await clearAbsencePenalty(reg.user, reg.dateYMD); } catch (e) { console.error('bonus hook (correction clear absence) failed', e?.message); }
+    try { await clearAbsencePenalty(owner._id, reg.dateYMD); } catch (e) { console.error('bonus hook (correction clear absence) failed', e?.message); }
   }
   // Keep the late penalty in step with the corrected day: apply it if it's now LATE (and
   // not excused), remove it if the correction made it on-time or absent.
-  try { await reconcileLatePenalty(reg.user, reg.dateYMD, record.status === 'LATE' && !record.excused); } catch (e) { console.error('bonus hook (correction late reconcile) failed', e?.message); }
+  // owner._id, NOT reg.user: reg.user is populated here (findById.populate), so it
+  // stringifies to "{ _id: ..., name: ... }" — and these hooks build their dedupeKey from
+  // it. Passed the populated object, clearAbsencePenalty and reconcileLatePenalty were
+  // building garbage keys that matched nothing, so an approved correction had never
+  // actually cleared the daily-scan absence penalty or reconciled the late one. owner is
+  // a fresh User doc (findById above) whose _id is a real ObjectId → the right key.
+  try { await reconcileLatePenalty(owner._id, reg.dateYMD, record.status === 'LATE' && !record.excused); } catch (e) { console.error('bonus hook (correction late reconcile) failed', e?.message); }
+  // The perfect-attendance month award is decided ONCE at month-end and never revisited.
+  // A correction to a CLOSED month (turning an absent/late day good) leaves that month
+  // blemish-free, but the award was already denied — so re-run the month's verdict, the
+  // same way an approved/cancelled leave now does. It recomputes from scratch, so it is
+  // safe in both directions, and it self-guards on the current month (that award hasn't
+  // been decided yet — the month-end rollup will read this corrected day).
+  const month = reg.dateYMD.slice(0, 7);
+  try { await reconcilePerfectMonth(owner._id, month); } catch (e) { console.error('bonus hook (correction perfect-month) failed', e?.message); }
 }
 
 export async function decide(approver, id, decision, note) {
