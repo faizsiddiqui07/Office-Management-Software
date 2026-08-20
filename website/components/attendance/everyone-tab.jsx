@@ -14,7 +14,6 @@ import { APP_LIVE_YMD } from '@/lib/app-live';
 import { formatYMD } from '@/lib/leave';
 import { AttendanceStatusBadge, attendanceStatusText } from './attendance-status-badge';
 import { DataTable } from '@/components/glass/data-table';
-import { StatCard } from '@/components/glass/stat-card';
 import { TableSkeleton } from '@/components/glass/skeletons';
 import { QueryError } from '@/components/glass/query-error';
 import { AppDialog } from '@/components/glass/app-dialog';
@@ -110,12 +109,49 @@ async function downloadCsv(path, filename) {
   await downloadFile(`${API_BASE}/api${path}`, filename);
 }
 
-/** A stat card that also acts as a filter toggle for the roster below. */
-function FilterStat({ onClick, children }) {
+// Tone-tinted icon chip per stat kind — kept subtle so a wall of them stays calm.
+const TILE_TONE = {
+  default: 'bg-primary/10 text-primary ring-primary/20',
+  success: 'bg-emerald-500/12 text-emerald-600 ring-emerald-500/25 dark:text-emerald-400',
+  warning: 'bg-amber-500/12 text-amber-600 ring-amber-500/25 dark:text-amber-300',
+  info: 'bg-sky-500/12 text-sky-600 ring-sky-500/25 dark:text-sky-400',
+  destructive: 'bg-red-500/12 text-red-600 ring-red-500/25 dark:text-red-400',
+};
+
+/**
+ * A compact attendance stat. Vertical layout — icon+label on top, the number on its own
+ * full-width line below — so a value like "3h 18m" never gets broken mid-word the way it
+ * did when it had to share a row with the icon. Acts as a filter toggle when `onClick` is
+ * given (the selected one gets a ring); otherwise it's a plain readout.
+ */
+function StatTile({ label, value, icon: Icon, tone = 'default', hint, active, onClick, className }) {
+  const clickable = typeof onClick === 'function';
+  const Comp = clickable ? 'button' : 'div';
   return (
-    <button type="button" onClick={onClick} className="w-full rounded-2xl text-left transition focus:outline-none">
-      {children}
-    </button>
+    <Comp
+      type={clickable ? 'button' : undefined}
+      onClick={onClick}
+      aria-pressed={clickable ? !!active : undefined}
+      className={cn(
+        'group flex h-full w-full flex-col justify-between gap-3 rounded-2xl border border-border/50 bg-card/60 p-3.5 text-left shadow-sm ring-1 ring-transparent transition-colors sm:p-4',
+        clickable && 'hover:border-border hover:bg-card/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50',
+        active && 'border-primary/60 !ring-primary/50',
+        className,
+      )}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <span className="text-xs font-medium leading-tight text-muted-foreground sm:text-[13px]">{label}</span>
+        {Icon ? (
+          <span className={cn('flex size-8 shrink-0 items-center justify-center rounded-lg ring-1 sm:size-9', TILE_TONE[tone] || TILE_TONE.default)}>
+            <Icon className="size-4 sm:size-[18px]" />
+          </span>
+        ) : null}
+      </div>
+      <div className="min-w-0">
+        <p className="text-[26px] font-semibold leading-none tracking-tight tabular-nums sm:text-3xl">{value}</p>
+        {hint ? <p className="mt-1 truncate text-xs text-muted-foreground">{hint}</p> : null}
+      </div>
+    </Comp>
   );
 }
 
@@ -254,62 +290,41 @@ export function EveryoneTab() {
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-4 grid-cols-2 sm:grid-cols-4 lg:grid-cols-7">
-        <FilterStat onClick={() => setStatusFilter(null)}>
-          <StatCard label="Total staff" value={summary?.total ?? '—'} icon={Users} className="h-full" />
-        </FilterStat>
-        <FilterStat onClick={() => toggleFilter('present')}>
-          <StatCard
-            label="Present"
-            value={(summary?.present ?? 0) + (summary?.late ?? 0)}
-            icon={UserCheck}
-            tone="success"
-            hint={summary?.wfh ? `+${summary.wfh} from home` : undefined}
-            className={cn('h-full', statusFilter === 'present' && 'ring-2 ring-primary')}
-          />
-        </FilterStat>
-        <FilterStat onClick={() => toggleFilter('wfh')}>
-          <StatCard
-            label="From home"
-            value={summary?.wfh ?? 0}
-            icon={Home}
-            tone="default"
-            className={cn('h-full', statusFilter === 'wfh' && 'ring-2 ring-primary')}
-          />
-        </FilterStat>
-        <FilterStat onClick={() => toggleFilter('late')}>
-          <StatCard
-            label={summary?.excused ? `Late (${summary.excused} on-duty)` : 'Late'}
-            value={unexcusedLate}
-            icon={TriangleAlert}
-            tone="warning"
-            className={cn('h-full', statusFilter === 'late' && 'ring-2 ring-primary')}
-          />
-        </FilterStat>
-        <FilterStat onClick={() => toggleFilter('absent')}>
-          <StatCard
-            label="Absent"
-            value={summary?.absent ?? 0}
-            icon={UserX}
-            tone="destructive"
-            className={cn('h-full', statusFilter === 'absent' && 'ring-2 ring-primary')}
-          />
-        </FilterStat>
-        <FilterStat onClick={() => toggleFilter('open')}>
-          <StatCard
-            label="Not checked out"
-            value={summary?.openCheckIn ?? 0}
-            icon={LogOut}
-            tone={summary?.openCheckIn ? 'warning' : 'default'}
-            className={cn('h-full', statusFilter === 'open' && 'ring-2 ring-primary')}
-          />
-        </FilterStat>
-        <StatCard
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 sm:gap-3 xl:grid-cols-7">
+        <StatTile label="Total staff" value={summary?.total ?? '—'} icon={Users} onClick={() => setStatusFilter(null)} active={statusFilter === null} />
+        <StatTile
+          label="Present"
+          value={(summary?.present ?? 0) + (summary?.late ?? 0)}
+          icon={UserCheck}
+          tone="success"
+          hint={summary?.wfh ? `+${summary.wfh} from home` : undefined}
+          onClick={() => toggleFilter('present')}
+          active={statusFilter === 'present'}
+        />
+        <StatTile label="From home" value={summary?.wfh ?? 0} icon={Home} onClick={() => toggleFilter('wfh')} active={statusFilter === 'wfh'} />
+        <StatTile
+          label={summary?.excused ? `Late (${summary.excused} on-duty)` : 'Late'}
+          value={unexcusedLate}
+          icon={TriangleAlert}
+          tone="warning"
+          onClick={() => toggleFilter('late')}
+          active={statusFilter === 'late'}
+        />
+        <StatTile label="Absent" value={summary?.absent ?? 0} icon={UserX} tone="destructive" onClick={() => toggleFilter('absent')} active={statusFilter === 'absent'} />
+        <StatTile
+          label="Not checked out"
+          value={summary?.openCheckIn ?? 0}
+          icon={LogOut}
+          tone={summary?.openCheckIn ? 'warning' : 'default'}
+          onClick={() => toggleFilter('open')}
+          active={statusFilter === 'open'}
+        />
+        <StatTile
           label="Total overtime"
           value={totalOvertime ? formatDuration(totalOvertime) : '0m'}
           icon={Clock}
           tone="success"
-          className="col-span-2 h-full sm:col-span-1"
+          className="col-span-2 sm:col-span-1"
         />
       </div>
 
