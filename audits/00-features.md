@@ -96,9 +96,9 @@
 |---|---|---|---|
 | **RP1** | **Quarterly report** — fiscal-quarter math (Q1 = Apr–Jun) backend me **poora bana hua** hai, bas do arrays me se missing hai. Company reports quarterly bolte hain to picker bhi bole | 🟢 ZERO | 07 |
 | **RP2** | **Reports page pe baaki 4 PDF ka index** — leave-ledger, holiday-list, expense-list, attendance-matrix ke endpoints **already live** hain, par unhe dhoondhne ka koi ek jagah nahi | 🟢 ZERO | 07 |
-| **RP3** | **Pichhle period se comparison** — `previousPeriod()` **already likha hua** hai aur Expenses page use karta hai; report me "vs last month" kahin nahi | 🟡 CHHOTA | 07 |
-| **RP4** | **Kisi aur ka personal report** (`?userId=`) — appraisal aur handover ke liye; per-user PDF ka endpoint already hai (Users page se) par Reports page se nahi | 🟡 CHHOTA | 07 |
-| **RP5** | **WFH block self report me** — data poora compute hota hai aur kahin dikhta nahi | 🟢 ZERO | 07 |
+| **RP3** | ~~**Pichhle period se comparison**~~ — ✅ **BAN GAYA** (`a36fdf4`): report ke top pe "vs previous" strip (attendance/present/hours/tasks; company me expenses+points bhi), sahi direction pe hara/laal. Pichhla period **usi builder + usi type se** banta hai (points NET-vs-NET, drift nahi); go-live se pehle straddle suppress | ✅ | 07 |
+| **RP4** | ~~**Kisi aur ka personal report** (`?userId=`)~~ — ✅ **BAN GAYA** (`a36fdf4`): nayi "Someone's report" card (person picker + date range → `/users/:id/report.pdf`), `viewEveryone` pe gated (Admin Manager ko bhi) | ✅ | 07 |
+| **RP5** | ~~**WFH block self report me**~~ — ✅ **BAN GAYA** (`a36fdf4`): self report me WFH section (period days + saal ka allowance + office-declared + requests) aur ek preview mini | ✅ | 07 |
 | **RP6** | **Per-person "days counted" / joining column** — payload me `startedOn` already hai; joiner ka "10 of 10" bina context ke ajeeb lagta hai | 🟢 ZERO | 07 |
 | **RP7** | **Admin Manager / Manager ke liye scoped company report** — abhi dono ko poora 403 milta hai, jabki section-gating ka poora infra maujood hai | 🔴 BADA | 07 |
 
