@@ -1,6 +1,10 @@
 import { ok, fail } from '../lib/apiResponse.js';
 import { can, canAssignRole } from '../lib/permissions.js';
-import { companyDayFromYMD } from '../lib/time.js';
+import { companyDayFromYMD, ymdInTz } from '../lib/time.js';
+import { roleLabel } from '../lib/roles.js';
+import { publicAppUrl } from '../lib/appUrl.js';
+import { sendWelcomeEmail } from '../lib/mailer.js';
+import { Setting } from '../models/Setting.js';
 import { User } from '../models/User.js';
 import { createEmployee, resetUserCredentials, updateUser as updateUserService, deleteUser as deleteUserService, exitSummary as exitSummaryService } from '../services/user.service.js';
 import { getBalanceForUser, setLeaveBalance } from '../services/leave.service.js';
@@ -82,8 +86,28 @@ export async function createUser(req, res, next) {
       meta: { role: user.role, employeeId: user.employeeId },
     });
 
+    // Email the new employee their sign-in details. Best-effort: a mail failure (or SMTP
+    // not configured) must NEVER fail the account creation — the temp password is still
+    // returned below so the admin can share it by hand. `emailed` tells the UI which
+    // happened, so it can show "sent to <email>" or prompt to share manually.
+    let emailed = { delivered: false, to: user.email };
+    try {
+      const settings = await Setting.getSingleton();
+      emailed = await sendWelcomeEmail(user.email, {
+        name: user.name,
+        employeeId: user.employeeId,
+        tempPassword,
+        roleLabel: roleLabel(user.role),
+        joiningLabel: user.dateOfJoining ? ymdInTz(user.dateOfJoining) : '',
+        loginUrl: `${publicAppUrl()}/login`,
+        companyName: settings?.companyName,
+      });
+    } catch (mailErr) {
+      console.error('welcome email failed', mailErr?.message);
+    }
+
     // Return the plaintext temp password ONCE — never stored or shown again.
-    return res.status(201).json(ok({ user: user.toJSON(), temporaryPassword: tempPassword }));
+    return res.status(201).json(ok({ user: user.toJSON(), temporaryPassword: tempPassword, emailed }));
   } catch (err) {
     return sendServiceError(res, err, next);
   }

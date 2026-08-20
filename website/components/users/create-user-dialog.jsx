@@ -108,7 +108,7 @@ export function CreateUserDialog() {
       }
     >
       {result ? (
-        <TempPasswordContent user={result.user} temporaryPassword={result.temporaryPassword} />
+        <TempPasswordContent user={result.user} temporaryPassword={result.temporaryPassword} emailed={result.emailed} />
       ) : (
         <div className="max-h-[70vh] space-y-4 overflow-y-auto py-2">
           <div className="grid gap-4 sm:grid-cols-2">

@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { toast } from 'sonner';
-import { Check, Copy, KeyRound } from 'lucide-react';
+import { Check, Copy, KeyRound, MailCheck, MailWarning } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 function Field({ label, value, className }) {
@@ -14,7 +14,7 @@ function Field({ label, value, className }) {
   );
 }
 
-export function TempPasswordContent({ user, temporaryPassword }) {
+export function TempPasswordContent({ user, temporaryPassword, emailed }) {
   const [copied, setCopied] = React.useState(false);
   const copy = async () => {
     try {
@@ -48,6 +48,21 @@ export function TempPasswordContent({ user, temporaryPassword }) {
           </div>
         </div>
       </div>
+
+      {/* Whether the same details just went out by email. On success the admin needn't
+          copy anything; on failure (or no SMTP) they still have the password above. */}
+      {emailed?.delivered ? (
+        <div className="flex items-start gap-2 rounded-xl bg-success/10 p-3 text-sm text-success ring-1 ring-success/20">
+          <MailCheck className="mt-0.5 size-4 shrink-0" />
+          <span>Emailed to <span className="font-medium">{emailed.to || user.email}</span> — ID, temporary password, role and joining date.</span>
+        </div>
+      ) : (
+        <div className="flex items-start gap-2 rounded-xl bg-amber-500/10 p-3 text-sm text-amber-700 ring-1 ring-amber-500/20 dark:text-amber-300">
+          <MailWarning className="mt-0.5 size-4 shrink-0" />
+          <span>Couldn’t email these (email isn’t set up in Settings) — share the details above with the employee yourself.</span>
+        </div>
+      )}
+
       <p className="text-xs text-muted-foreground">
         Share this securely with the employee. It won&apos;t be shown again — they&apos;ll be asked to change it on first login.
       </p>
