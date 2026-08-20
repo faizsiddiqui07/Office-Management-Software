@@ -137,6 +137,50 @@ function sectionTitle(text, accent) {
   return E(Text, { style: [styles.sectionTitle, { color: accent }] }, text);
 }
 
+/* ── RP3: "vs the previous period" strip ─────────────────────
+ * A compact band of headline numbers, each with how it moved since last time. Green when
+ * the change is the good direction for that metric (more attendance is good, more spend is
+ * not), red when it's the wrong way, muted when flat. Absent entirely when there's no
+ * comparable earlier period (data.comparison is null). */
+function cmpValue(v, fmt) {
+  if (fmt === 'pct') return `${v}%`;
+  if (fmt === 'dur') return dur(v);
+  if (fmt === 'money') return money(v);
+  return String(v);
+}
+function cmpDelta(delta, fmt) {
+  const sign = delta > 0 ? '+' : delta < 0 ? '−' : '±';
+  const mag = Math.abs(delta);
+  const body = fmt === 'pct' ? `${mag}%` : fmt === 'dur' ? dur(mag) : fmt === 'money' ? money(mag) : String(mag);
+  return `${sign}${body}`;
+}
+function cmpColor(delta, goodWhen) {
+  if (!delta) return MUTE;
+  const good = goodWhen === 'down' ? delta < 0 : delta > 0;
+  return good ? '#16a34a' : '#dc2626';
+}
+function comparisonBlock(data) {
+  const c = data.comparison;
+  if (!c || !c.metrics?.length) return null;
+  return E(
+    View,
+    { key: 'cmp', style: { marginTop: 8, marginBottom: 2, backgroundColor: '#f6f7f9', borderRadius: 6, paddingVertical: 8, paddingHorizontal: 10 }, wrap: false },
+    E(Text, { style: { fontSize: 8, color: MUTE, marginBottom: 4 } }, `Compared with ${c.period.label}`),
+    E(
+      View,
+      { style: { flexDirection: 'row', flexWrap: 'wrap' } },
+      ...c.metrics.map((m, i) =>
+        E(
+          View,
+          { key: i, style: { width: '20%', paddingVertical: 2, paddingRight: 6 } },
+          E(Text, { style: styles.statLabel }, m.label),
+          E(Text, { style: { fontSize: 12, fontFamily: 'Helvetica-Bold' } }, cmpValue(m.current, m.fmt)),
+          E(Text, { style: { fontSize: 7.5, fontFamily: 'Helvetica-Bold', color: cmpColor(m.delta, m.goodWhen) } }, `${cmpDelta(m.delta, m.fmt)} vs ${cmpValue(m.previous, m.fmt)}`),
+        )),
+    ),
+  );
+}
+
 /* ── Header / footer ─────────────────────────────────────── */
 function header(data, logo, accent, titleLabel) {
   const left = logo
@@ -440,7 +484,7 @@ function buildCompanyDoc(data, sections, logo) {
   return E(
     Document,
     {},
-    E(Page, { size: 'A4', style: styles.page, wrap: true }, header(data, logo, accent, typeLabel), metaLine(data), ...body, footer(data, typeLabel)),
+    E(Page, { size: 'A4', style: styles.page, wrap: true }, header(data, logo, accent, typeLabel), metaLine(data), comparisonBlock(data), ...body, footer(data, typeLabel)),
   );
 }
 
@@ -600,13 +644,48 @@ function selfDuesSection(d, accent) {
   );
 }
 
+/**
+ * RP5: work-from-home — where it stands for the year and every WFH day in the period.
+ * The number was always computed (it rides in the attendance rate); this gives it its own
+ * block so a hybrid worker's WFH days aren't invisible in their own report. Office-declared
+ * WFH days are worked but don't spend the personal allowance, so they're called out.
+ */
+function selfWfhSection(d, accent) {
+  const w = d.wfh || {};
+  const reqs = w.requests || [];
+  const stats = [
+    stat('WFH this period', w.daysInPeriod ?? 0, 'w1'),
+    stat('Used this year', w.used ?? 0, 'w2'),
+    stat('Remaining', w.remaining ?? 0, 'w3'),
+    stat('Yearly cap', w.cap ?? 0, 'w4'),
+  ];
+  const headers = [
+    { label: 'Date', w: '30%' },
+    { label: 'Status', w: '25%' },
+    { label: 'Reason', w: '45%' },
+  ];
+  const rows = reqs.map((r) => [dmon(r.startYMD), { text: tc(r.status), color: LEAVE_STATUS_COLOR[r.status] }, r.reason || '—']);
+  return E(
+    View,
+    { key: 'wfh' },
+    sectionTitle('Work from home', accent),
+    E(View, { style: styles.statRow }, ...stats),
+    w.officeWideDays
+      ? E(Text, { style: styles.empty }, `Includes ${w.officeWideDays} office-declared WFH day${w.officeWideDays === 1 ? '' : 's'} — worked, but not counted against your yearly allowance.`)
+      : null,
+    reqs.length ? E(Text, { style: styles.subTitle }, 'Your WFH requests touching this period') : null,
+    reqs.length ? table(headers, rows) : E(Text, { style: styles.empty }, 'No work-from-home days in this period.'),
+  );
+}
+
 const SELF_SECTIONS = {
   attendance: selfAttendanceSection,
   tasks: selfTasksSection,
   leaves: selfLeavesSection,
+  wfh: selfWfhSection,
   dues: selfDuesSection,
 };
-const SELF_ORDER = ['attendance', 'tasks', 'leaves', 'dues'];
+const SELF_ORDER = ['attendance', 'tasks', 'leaves', 'wfh', 'dues'];
 
 function buildSelfDoc(data, sections, logo) {
   const accent = data.company.brandColor || DEFAULT_ACCENT;
@@ -621,6 +700,7 @@ function buildSelfDoc(data, sections, logo) {
       header(data, logo, accent, typeLabel),
       metaLine(data),
       selfSubject(data),
+      comparisonBlock(data),
       ...body,
       footer(data, typeLabel),
     ),

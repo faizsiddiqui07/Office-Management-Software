@@ -2,7 +2,7 @@ import { ok, fail } from '../lib/apiResponse.js';
 import { ymdInTz } from '../lib/time.js';
 import { can } from '../lib/permissions.js';
 import { loadCompanyLogo } from '../lib/brand.js';
-import { buildReport, buildSelfReport } from '../services/report.service.js';
+import { buildReport, buildSelfReport, selfComparison, companyComparison } from '../services/report.service.js';
 import { renderReportToStream, renderSelfReportToStream } from '../services/reportPdf.service.js';
 import { audit } from '../models/AuditLog.js';
 
@@ -13,7 +13,7 @@ const TYPES = ['daily', 'weekly', 'monthly', 'yearly', 'custom'];
 // Tasks lead the report — what the office got done, person by person; rewards ride
 // alongside them (only surfaced when the bonus scheme is on — see preview()).
 const COMPANY_SECTIONS = ['tasks', 'rewards', 'attendance', 'leaves', 'expenses', 'roster'];
-const SELF_SECTIONS = ['attendance', 'leaves', 'dues'];
+const SELF_SECTIONS = ['attendance', 'leaves', 'wfh', 'dues'];
 
 // A real calendar date, not just the right SHAPE. '9999-99-99' matches the pattern but
 // parses to Invalid Date, which flowed downstream as a 'NaN-NaN' month and hung the
@@ -101,7 +101,10 @@ export async function preview(req, res, next) {
       return res.status(400).json(fail('RANGE_TOO_WIDE', 'Pick a range of at most about a year.'));
     }
     const access = sectionAccess(req.user);
-    const data = await buildReport(req.params.type, dateOrToday(req.query), range);
+    const anchor = dateOrToday(req.query);
+    const data = await buildReport(req.params.type, anchor, range);
+    // RP3: headline deltas vs the previous period (gated by the same section access).
+    data.comparison = await companyComparison(data, req.params.type, anchor, range, access);
     // Strip sections the user may not see.
     if (!access.expenses) delete data.expenses;
     if (!access.attendance) {
@@ -136,6 +139,11 @@ export async function download(req, res, next) {
 
     const date = dateOrToday(req.query);
     const data = await buildReport(type, date, range);
+    // RP3: the "vs previous" strip is a report HEADER, scoped by what the viewer may SEE
+    // (permissions), not by which detail sections they ticked — so the PDF matches the
+    // on-screen preview, which is computed the same way. (Using the toggled sections here
+    // made the two disagree when a permitted section was unchecked.)
+    data.comparison = await companyComparison(data, type, date, range, access);
     await audit({ actor: req.user._id, action: 'report.download', entityType: 'Report', entityId: type, meta: { scope: 'company', date, sections } });
 
     res.setHeader('Content-Type', 'application/pdf');
@@ -158,7 +166,11 @@ export async function selfPreview(req, res, next) {
     if (range.from && range.to && spanTooWide(range.from, range.to)) {
       return res.status(400).json(fail('RANGE_TOO_WIDE', 'Pick a range of at most about a year.'));
     }
-    const data = await buildSelfReport({ user: req.user, type: typeOrMonthly(req.query), dateYMD: dateOrToday(req.query), range });
+    const type = typeOrMonthly(req.query);
+    const date = dateOrToday(req.query);
+    const data = await buildSelfReport({ user: req.user, type, dateYMD: date, range });
+    // RP3: headline deltas vs the previous period.
+    data.comparison = await selfComparison(data, req.user, type, date, range);
     return res.json(ok(data));
   } catch (err) {
     return next(err);
@@ -176,6 +188,8 @@ export async function selfDownload(req, res, next) {
     }
 
     const data = await buildSelfReport({ user: req.user, type, dateYMD: date, range });
+    // RP3: headline deltas vs the previous period.
+    data.comparison = await selfComparison(data, req.user, type, date, range);
     await audit({ actor: req.user._id, action: 'report.download', entityType: 'Report', entityId: 'me', meta: { scope: 'me', type, date, sections } });
 
     res.setHeader('Content-Type', 'application/pdf');

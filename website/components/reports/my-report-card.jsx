@@ -13,7 +13,7 @@ import { useAuth } from '@/lib/auth';
 import { can } from '@/lib/permissions';
 import { QueryError } from '@/components/glass/query-error';
 import { PeriodPicker } from './period-picker';
-import { OngoingNotice } from './report-preview';
+import { OngoingNotice, ComparisonStrip } from './report-preview';
 import { SELF_REPORT_SECTIONS } from '@/lib/report';
 import { companyTodayYMD, formatMoney } from '@/lib/expense';
 import { formatYMD } from '@/lib/leave';
@@ -122,10 +122,13 @@ export function MyReportCard() {
       ) : data ? (
         <>
           <OngoingNotice data={data} workingDays={data.attendance?.totals?.workingDays} />
+          {/* Gated like the minis below: a non-tracking role (leadership) has only
+              zero-valued attendance deltas to show, which is noise, not information. */}
+          {selfTracks ? <ComparisonStrip comparison={data.comparison} /> : null}
           <p className="text-sm text-muted-foreground">
             Period: <span className="font-medium text-foreground">{data.period.label}</span>
           </p>
-          <div className={cn('grid gap-3', selfTracks ? 'sm:grid-cols-3' : 'sm:grid-cols-1')}>
+          <div className={cn('grid gap-3', selfTracks ? 'sm:grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-1')}>
             {selfTracks && t ? (
               <Mini
                 label="Attendance"
@@ -137,6 +140,14 @@ export function MyReportCard() {
             ) : null}
             {selfTracks && bal ? (
               <Mini label="Leave balance" value={`${bal.remaining} left`} hint={`${bal.used} used of ${bal.total}`} />
+            ) : null}
+            {/* RP5: work-from-home was always in the rate but never shown on its own. */}
+            {selfTracks && data.wfh ? (
+              <Mini
+                label="Work from home"
+                value={`${data.wfh.daysInPeriod ?? 0} this period`}
+                hint={`${data.wfh.remaining} of ${data.wfh.cap} left this year`}
+              />
             ) : null}
             {/* The balance is what is owed TODAY (the whole ledger), not what this period
                 added — labelling it with the period had the card contradicting its own

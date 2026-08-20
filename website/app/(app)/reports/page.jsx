@@ -6,6 +6,7 @@ import { can } from '@/lib/permissions';
 import { PageHeader } from '@/components/glass/page-header';
 import { EmptyState } from '@/components/glass/empty-state';
 import { MyReportCard } from '@/components/reports/my-report-card';
+import { PersonReportCard } from '@/components/reports/person-report-card';
 import { CompanyReportBuilder } from '@/components/reports/company-report-builder';
 
 export default function ReportsPage() {
@@ -16,6 +17,9 @@ export default function ReportsPage() {
   // Company report = leadership who can see everyone's data (CEO & President and
   // Executive Management). Everyone else sees only their own report below.
   const canCompany = !!user && can(user, 'leadershipDashboard') && can(user, 'viewEveryone');
+  // A single person's report needs only view-everyone (the same gate the endpoint uses) —
+  // so an Admin Manager who can't pull the whole company can still pull one person's.
+  const canPerson = !!user && can(user, 'viewEveryone');
 
   return (
     <div className="space-y-8">
@@ -31,6 +35,13 @@ export default function ReportsPage() {
       ) : (
         <>
       <MyReportCard />
+
+      {canPerson ? (
+        <>
+          <div className="border-t border-border/50" />
+          <PersonReportCard />
+        </>
+      ) : null}
 
       {canCompany ? (
         <>

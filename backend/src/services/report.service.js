@@ -803,3 +803,90 @@ export async function buildSelfReport({ user, type, dateYMD, range }) {
     dues,
   };
 }
+
+// ── RP3: "vs the period before" ──────────────────────────────────────────────
+// A report says "18 present, Rs 40,000 spent" — but is that up or down? These build the
+// SAME report for the previous period and lift out a handful of headline numbers, so the
+// comparison uses the exact same logic as the figure it's compared to (no second, subtly
+// different definition of "present" to drift apart). Both are wrapped so a comparison that
+// fails never takes the real report down with it, and both return null when the previous
+// window is entirely before go-live (there is no data there to compare against).
+
+function metric(key, label, cur, prev, fmt, goodWhen) {
+  // A null figure (e.g. a Sunday-only window has no attendance RATE) has no delta.
+  if (cur == null || prev == null) return null;
+  return { key, label, current: cur, previous: prev, delta: cur - prev, fmt, goodWhen };
+}
+
+/**
+ * Headline deltas for a person's own report vs the previous period. `currentData` is the
+ * report already built for the chosen period, so only the previous one is computed here.
+ */
+export async function selfComparison(currentData, user, type, dateYMD, range) {
+  try {
+    const prev = previousPeriod(type, dateYMD, range);
+    // Skip when the previous window reaches back before go-live AT ALL — checking
+    // prev.from, not prev.to: a custom range that STARTS before 1 July is partly empty
+    // even when it ends after it, and comparing against those structurally-blank days
+    // would invent a "surge". A window entirely before go-live is caught by the same test.
+    if (prev.from < APP_LIVE_YMD) return null;
+    const joined = joinedYMD(user);
+    if (joined && joined > prev.to) return null; // they weren't here for the previous period
+    // Rebuild the previous window with its OWN type, anchored on prev.from (which
+    // re-resolves the exact same period). Using 'custom' was wrong for one field: a
+    // monthly report's points are the NET standing (carry-in adjusted), and a custom
+    // rebuild would have compared that against a raw sum — a false decline. Custom stays
+    // custom, and must carry the SHIFTED range, not the original one.
+    const prevRange = type === 'custom' ? { from: prev.from, to: prev.to } : range;
+    const prevData = await buildSelfReport({ user, type, dateYMD: prev.from, range: prevRange });
+    const cur = currentData.attendance?.totals || {};
+    const pv = prevData.attendance?.totals || {};
+    const metrics = [
+      metric('attendanceRate', 'Attendance', cur.attendanceRate, pv.attendanceRate, 'pct', 'up'),
+      metric('present', 'Present', cur.present, pv.present, 'int', 'up'),
+      metric('workedMinutes', 'Hours worked', cur.workedMinutes, pv.workedMinutes, 'dur', 'up'),
+      metric('tasksDone', 'Tasks done', currentData.tasks?.done ?? 0, prevData.tasks?.done ?? 0, 'int', 'up'),
+    ].filter(Boolean);
+    return metrics.length ? { period: prev, metrics } : null;
+  } catch (e) {
+    console.error('selfComparison failed', e?.message);
+    return null;
+  }
+}
+
+/**
+ * Headline deltas for the company report vs the previous period. `access` gates which
+ * metrics are allowed — an Admin Manager without expense access must not see the expense
+ * delta any more than they see the expense section.
+ */
+export async function companyComparison(currentData, type, dateYMD, range, access = {}) {
+  try {
+    const prev = previousPeriod(type, dateYMD, range);
+    if (prev.from < APP_LIVE_YMD) return null; // see selfComparison — prev.from, not prev.to
+    // Same-type rebuild, anchored on prev.from — so a monthly report's points delta
+    // compares NET vs NET (the previous month's own report figure), not NET vs raw sum.
+    const prevRange = type === 'custom' ? { from: prev.from, to: prev.to } : range;
+    const prevData = await buildReport(type, prev.from, prevRange);
+    const curA = currentData.attendance?.totals || {};
+    const pvA = prevData.attendance?.totals || {};
+    const metrics = [];
+    if (access.attendance !== false) {
+      metrics.push(metric('attendanceRate', 'Attendance', curA.attendanceRate, pvA.attendanceRate, 'pct', 'up'));
+      metrics.push(metric('present', 'Present', curA.present, pvA.present, 'int', 'up'));
+    }
+    if (access.tasks !== false) {
+      metrics.push(metric('tasksDone', 'Tasks done', currentData.tasks?.totals?.done ?? 0, prevData.tasks?.totals?.done ?? 0, 'int', 'up'));
+    }
+    if (access.expenses !== false) {
+      metrics.push(metric('expenses', 'Expenses', currentData.expenses?.total ?? 0, prevData.expenses?.total ?? 0, 'money', 'down'));
+    }
+    if (access.rewards !== false && currentData.rewards?.enabled && prevData.rewards?.enabled) {
+      metrics.push(metric('points', 'Points', currentData.rewards.totals.points, prevData.rewards.totals.points, 'int', 'up'));
+    }
+    const clean = metrics.filter(Boolean);
+    return clean.length ? { period: prev, metrics: clean } : null;
+  } catch (e) {
+    console.error('companyComparison failed', e?.message);
+    return null;
+  }
+}

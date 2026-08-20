@@ -20,5 +20,6 @@ export const REPORT_SECTIONS = [
 export const SELF_REPORT_SECTIONS = [
   { value: 'attendance', label: 'Attendance' },
   { value: 'leaves', label: 'Leave' },
+  { value: 'wfh', label: 'WFH' },
   { value: 'dues', label: 'Dues' },
 ];

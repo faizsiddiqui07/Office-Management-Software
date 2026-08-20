@@ -367,6 +367,45 @@ export function JoinedLaterNotice({ data }) {
   );
 }
 
+/* ── RP3: "vs the previous period" ───────────────────────────
+ * A compact strip of headline numbers with how each moved since the period before —
+ * green when it moved the good way for that metric, red when it didn't. Absent when
+ * there's no comparable earlier period (data.comparison is null). Shared by the company
+ * preview and the self-report card. */
+function cmpFormat(v, fmt) {
+  if (fmt === 'pct') return `${v}%`;
+  if (fmt === 'dur') return formatDuration(v);
+  if (fmt === 'money') return formatMoney(v);
+  return String(v);
+}
+function DeltaMini({ m }) {
+  const good = m.delta === 0 ? null : (m.goodWhen === 'down' ? m.delta < 0 : m.delta > 0);
+  const arrow = m.delta > 0 ? '▲' : m.delta < 0 ? '▼' : '±';
+  const tone = good === null ? 'text-muted-foreground' : good ? 'text-success' : 'text-destructive';
+  return (
+    <div className="rounded-lg bg-background/50 p-2.5 ring-1 ring-border/50">
+      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{m.label}</p>
+      <p className="mt-0.5 text-base font-semibold tabular-nums tracking-tight">{cmpFormat(m.current, m.fmt)}</p>
+      <p className={cn('text-[11px] font-medium tabular-nums', tone)}>
+        {arrow} {cmpFormat(Math.abs(m.delta), m.fmt)} <span className="text-muted-foreground">vs {cmpFormat(m.previous, m.fmt)}</span>
+      </p>
+    </div>
+  );
+}
+export function ComparisonStrip({ comparison }) {
+  if (!comparison?.metrics?.length) return null;
+  return (
+    <div className="rounded-xl bg-foreground/[0.03] p-3 ring-1 ring-border/50">
+      <p className="text-xs text-muted-foreground">
+        Compared with <span className="font-medium text-foreground">{comparison.period.label}</span>
+      </p>
+      <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-5">
+        {comparison.metrics.map((m) => <DeltaMini key={m.key} m={m} />)}
+      </div>
+    </div>
+  );
+}
+
 export function ReportPreview({ data, sections }) {
   // Warm the role-label cache so the roster's per-role count chips (bare keys)
   // render edited names, and re-render once labels arrive.
@@ -375,6 +414,7 @@ export function ReportPreview({ data, sections }) {
   return (
     <div className="space-y-4">
       <OngoingNotice data={data} workingDays={data.workingDays} />
+      <ComparisonStrip comparison={data.comparison} />
       <JoinedLaterNotice data={data} />
       {/* Tasks first — what the office actually got done leads the report. */}
       {has('tasks') && data.tasks ? <TasksSection data={data} /> : null}
