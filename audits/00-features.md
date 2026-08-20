@@ -8,7 +8,7 @@
 > 🔴 **BADA** = naya endpoint / naya model / bada UI
 >
 > **Status:** kuch nahi bana hai. Ye sirf backlog hai — consolidated phase me aapke chunne par banega.
-> Sources: [01-dashboard](01-dashboard.md) · [02-todo](02-todo.md) · [03-attendance](03-attendance.md) · [04-leaves](04-leaves.md) · [05-rewards](05-rewards.md) · [06-my-summary](06-my-summary.md) · [07-reports](07-reports.md) · [08-team-users-roles](08-team-users-roles.md)
+> Sources: 01–12 (saare audits). Naye: [09-expenses-dues](09-expenses-dues.md) · [10-settings-rules](10-settings-rules.md) · [11-six-pages](11-six-pages.md) · [12-master](12-master-consolidation.md)
 
 ---
 
@@ -127,6 +127,39 @@
 | U5 | **Bulk import / CSV se users** — abhi ek-ek karke banana padta hai | 🔴 BADA | 08 |
 | U6 | **Temp password: copy confirm + resend** — abhi ek Esc par ekmatra copy chali jaati hai | 🟢 ZERO | 08 |
 | U7 | **Profile change history** per user (kab kya badla, kisne) — joining-date jaisi cheez chupchaap khisak jaaye to pakda jaaye | 🟡 CHHOTA | 08 |
+
+
+---
+
+## 💰 Expenses & Dues (audit 09)
+
+| # | Feature | Kaam | Audit |
+|---|---|---|---|
+| X1 | **Dues: "kaun kitna udhaar" dashboard tile + reminder** — admin ko ek nazar me total pending + top defaulters; ek tap se reminder. `overview()` pehle se totals deta hai | 🟡 CHHOTA | 09 |
+| X2 | **Dues: chhod chuke bande ka statement PDF** — E2 fix ke baad uska ledger khulta hai; final-settlement ke liye ek chhoti PDF (per-user report ka pattern maujood) | 🟡 CHHOTA | 09 |
+| X3 | **Expense: receipt/bill attach** — image/PDF upload (S3 asset infra pehle se hai) + recurring-expense template (rent/salary har mahine) | 🔴 BADA | 09 |
+| X4 | **Expense: "pichhle mahine se delta"** aur category-trend — `previousPeriod()` already hai (C12 se juda) | 🟡 CHHOTA | 09 |
+| X5 | **Dues: partial-payment history** — ek due par kitne kist me kitna aaya, saaf timeline (data ledger me hai) | 🟡 CHHOTA | 09 |
+
+## ⚙️ Settings & Rules (audit 10)
+
+| # | Feature | Kaam | Audit |
+|---|---|---|---|
+| ST1 | **Setting-change impact preview** — save se pehle "ye change N mahine / M logon ke points-attendance ko chhuega". C6/C14 ka hi bada bhai; S2/S4 effective-dating ke saath sabse zyada kaam ka | 🔴 BADA | 10 |
+| ST2 | **Rulebook version history** — "is hafte ye niyam badla" staff ko dikhe; audit log me data hai, UI nahi (A4 jaisa) | 🟡 CHHOTA | 10 |
+| ST3 | **Per-section save** — poora-form PUT ki jagah har section alag save ho (S6 ka feature-roop; ek setting doosri ko purani na kare) | 🟡 CHHOTA | 10 |
+| ST4 | **"Employee ki nazar se Rules dekho"** — CEO ek role chun kar dekhe ki us role ko rulebook kaisa dikhta hai (S3/S5 ke baad zyada kaam ka) | 🟢 ZERO | 10 |
+
+## 📢 Announcements · Visitors · Calendar · Profile (audit 11)
+
+| # | Feature | Kaam | Audit |
+|---|---|---|---|
+| SP1 | **Announcement: department-wise audience + pin + schedule** — abhi sirf role-wise (aur wo bhi V2 se toota); department targeting + ek important post pin karna | 🟡 CHHOTA | 11 |
+| SP2 | **Announcement: "12 of 15 ne dekha" summary** — read-receipts maujood hain, bas ek nazar ka roll-up (N+1 V15 saath me theek ho) | 🟡 CHHOTA | 11 |
+| SP3 | **Visitors: expected-visitor pre-register + visitor pass PDF + "abhi andar hai" checkout reminder** — Security/Admin ke liye | 🔴 BADA | 11 |
+| SP4 | **Calendar: personal iCal export / "mere leave + holidays" combined view** — har employee apne calendar me sync kare | 🟡 CHHOTA | 11 |
+| SP5 | **Profile: password change + active-sessions + notification preferences** (kaunse event buzz karein) — sessions/push infra maujood hai | 🟡 CHHOTA | 11 |
+| SP6 | **Activity: employee ko apni khud ki activity** dikhe (abhi audit sirf leadership); aur audit-log export | 🟢 ZERO | 11 |
 
 ## 🎯 Meri sifarish — agar "sabse zyada fayda, sabse kam kaam" chahiye
 
