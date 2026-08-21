@@ -118,9 +118,12 @@ export default function MyStandingPage() {
           description={`This period ended before you joined on ${formatYMD(data.joinedYMD)}. Pick a later one.`}
         />
       ) : (
-        <>
-          {/* ── Right now: figures that belong to no period ── */}
-          <section className="space-y-2">
+        <div className="flex flex-col gap-5">
+          {/* ── Right now: figures that belong to no period ──
+              On mobile this sits AFTER the period section (order-2), so that changing the
+              period pill visibly updates the very next thing on screen instead of a static
+              block; on desktop the usual order returns. */}
+          <section className="space-y-2 order-2 lg:order-1">
             <div className="flex flex-wrap items-baseline gap-x-2 px-1">
               <h2 className="font-semibold tracking-tight">Right now</h2>
               <span className="text-xs text-muted-foreground">these don’t change with the period above</span>
@@ -224,8 +227,8 @@ export default function MyStandingPage() {
             </div>
           </section>
 
-          {/* ── In the chosen period ── */}
-          <section className="space-y-2">
+          {/* ── In the chosen period ── (first on mobile — it's what the picker drives) */}
+          <section className="space-y-2 order-1 lg:order-2">
             <div className="flex flex-wrap items-baseline gap-x-2 px-1">
               <h2 className="font-semibold tracking-tight">{data.period.label || 'This period'}</h2>
               <span className="text-xs text-muted-foreground">
@@ -309,7 +312,7 @@ export default function MyStandingPage() {
               </GlassCard>
             ) : null}
           </section>
-        </>
+        </div>
       )}
     </div>
   );

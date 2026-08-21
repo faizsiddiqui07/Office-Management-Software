@@ -1,23 +1,29 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { CalendarX, Clock, Home } from 'lucide-react';
+import { CalendarX, Hourglass, Home } from 'lucide-react';
 import { api } from '@/lib/api';
 import { GlassCard } from '@/components/glass/glass-card';
 import { StatCard } from '@/components/glass/stat-card';
-import { formatDuration } from '@/lib/time';
 
 export function BalanceCards() {
   const { data } = useQuery({
     queryKey: ['leaves', 'balance'],
     queryFn: () => api.get('/leaves/balance'),
   });
+  // Same query LeaveHistory already loads on this page (same key) — React Query serves it
+  // from cache, so this adds no request. Overtime has no place on the Leaves page; how many
+  // of your requests are still awaiting a decision does.
+  const { data: mine } = useQuery({
+    queryKey: ['leaves', 'mine'],
+    queryFn: () => api.get('/leaves'),
+  });
+  const pending = (mine?.requests ?? []).filter((r) => r.status === 'PENDING').length;
 
   const bal = data?.balance;
   const total = bal?.totalQuota ?? 18;
   const used = bal?.used ?? 0;
   const remaining = bal?.remaining ?? total;
-  const overtime = bal?.overtimeMinutes ?? 0;
   const wfh = bal?.wfh;
 
   const r = 52;
@@ -53,7 +59,13 @@ export function BalanceCards() {
       </GlassCard>
 
       <StatCard label="Used" value={used} icon={CalendarX} tone="warning" hint={`of ${total} quota`} />
-      <StatCard label="Overtime accrued" value={formatDuration(overtime)} icon={Clock} tone="info" />
+      <StatCard
+        label="Pending"
+        value={pending}
+        icon={Hourglass}
+        tone={pending ? 'warning' : 'default'}
+        hint={pending ? 'awaiting approval' : 'nothing awaiting'}
+      />
       {/* Separate from the leave quota on purpose — WFH deducts nothing from it. */}
       {wfh ? (
         <StatCard
