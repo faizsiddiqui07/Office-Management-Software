@@ -71,7 +71,7 @@ export async function seedDemo({ reset = false } = {}) {
 
   // ── Settings ──────────────────────────────────────────────
   const s = await Setting.getSingleton();
-  s.companyName = 'Nimbus Technologies';
+  s.companyName = 'BrainQbit';
   s.currency = 'INR';
   s.timezone = 'Asia/Kolkata';
   s.weekendDays = [0]; // Sunday off, Mon–Sat working
