@@ -10,4 +10,7 @@
  *  - No operational data (attendance, reports, expenses…) exists before this day,
  *    so date filters in the UI don't offer earlier dates.
  */
-export const APP_LIVE_YMD = '2026-07-01';
+// Env-overridable ONLY for the isolated demo deployment (its Lambda sets APP_LIVE_YMD to
+// an earlier date so months of seeded history are counted). Production sets no such env,
+// so it stays exactly 2026-07-01 — behaviour unchanged.
+export const APP_LIVE_YMD = process.env.APP_LIVE_YMD || '2026-07-01';

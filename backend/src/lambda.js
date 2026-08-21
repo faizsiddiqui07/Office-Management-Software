@@ -26,6 +26,22 @@ export const handler = async (event, context) => {
   context.callbackWaitsForEmptyEventLoop = false;
   await initApp(); // idempotent + cached
 
+  // DEMO ONLY: nightly EventBridge fires {"job":"demo-reset"} to wipe + reseed the demo
+  // DB so each day starts fresh. Double-guarded — it runs ONLY when DEMO_MODE is set AND
+  // the demo-reset job is asked for. Production never sets DEMO_MODE and never sends this
+  // event, so this branch is dead code there. Imported dynamically so the seed module is
+  // never even loaded in prod.
+  if (process.env.DEMO_MODE === 'true' && event?.job === 'demo-reset') {
+    const { seedDemo } = await import('./demo/seedDemo.js');
+    const result = await seedDemo({ reset: true }).catch((e) => ({ error: e?.message || 'error' }));
+    return { statusCode: 200, body: JSON.stringify({ ok: true, demoReset: result }) };
+  }
+  // A bare keep-warm ping ({"job":"warm"}) — nothing to do; initApp above already warmed
+  // the container. Harmless everywhere.
+  if (event?.job === 'warm') {
+    return { statusCode: 200, body: JSON.stringify({ ok: true, warm: true }) };
+  }
+
   // Scheduled tick from EventBridge (Scheduler input {"cron": true}, or a classic rule).
   // Run the time-based jobs and return WITHOUT going through Express — there's no HTTP
   // request to route. These frequent ticks also keep this container warm (init already
