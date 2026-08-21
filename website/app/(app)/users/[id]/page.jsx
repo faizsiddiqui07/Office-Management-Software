@@ -20,7 +20,7 @@ import {
   UserPlus,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { api, downloadFile } from '@/lib/api';
+import { api, downloadFile, API_BASE_URL } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can, roleName } from '@/lib/permissions';
 import { DatePicker } from '@/components/ui/date-picker';
@@ -130,7 +130,7 @@ export default function UserDossierPage() {
     if (!from || !to || to < from) return toast.error('Pick a valid date range first');
     setReportBusy(true);
     try {
-      const base = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+      const base = API_BASE_URL;
       await downloadFile(`${base}/api/users/${id}/report.pdf?from=${from}&to=${to}`, `report-${u?.name || id}-${from}_to_${to}.pdf`);
       toast.success('Report downloaded');
     } catch (e) {
@@ -143,7 +143,7 @@ export default function UserDossierPage() {
   const downloadLedger = async () => {
     setLedgerBusy(true);
     try {
-      const base = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+      const base = API_BASE_URL;
       const yr = leaves?.balance?.year;
       await downloadFile(`${base}/api/leaves/ledger.pdf?userId=${id}${yr ? `&year=${yr}` : ''}`, `leave-ledger-${u?.name || id}.pdf`);
       toast.success('Leave ledger downloaded');

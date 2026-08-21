@@ -17,7 +17,7 @@ import {
   Trash2,
   Users,
 } from 'lucide-react';
-import { api, downloadFile } from '@/lib/api';
+import { api, downloadFile, API_BASE_URL } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { formatMoney } from '@/lib/expense';
 import { cn } from '@/lib/utils';
@@ -33,7 +33,7 @@ import { ConfirmDialog } from '@/components/glass/confirm-dialog';
 import { DuesEntryDialog } from './dues-entry-dialog';
 import { DuesEntryDetailDialog } from './dues-entry-detail-dialog';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+const API_BASE = API_BASE_URL;
 
 /**
  * Ledger rows carry `dateYMD` — the day the entry belongs to — alongside the stored

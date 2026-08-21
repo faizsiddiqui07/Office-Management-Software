@@ -1,7 +1,7 @@
-import { downloadFile } from '@/lib/api';
+import { downloadFile, API_BASE_URL } from '@/lib/api';
 import { COMPANY_TZ } from '@/lib/time';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+const API_BASE = API_BASE_URL;
 
 // Only WHAT to include. The day ranges that used to live here ("Last 7 days" and friends)
 // duplicated the list's own date filter word for word, sitting beside it as a second

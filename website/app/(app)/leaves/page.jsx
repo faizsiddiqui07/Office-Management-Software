@@ -5,7 +5,7 @@ import { CalendarDays, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth';
 import { can } from '@/lib/permissions';
-import { downloadFile } from '@/lib/api';
+import { downloadFile, API_BASE_URL } from '@/lib/api';
 import { PageHeader } from '@/components/glass/page-header';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -45,7 +45,7 @@ function MyLeaves({ canWFH }) {
   const downloadLedger = async () => {
     setBusy(true);
     try {
-      const base = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+      const base = API_BASE_URL;
       await downloadFile(`${base}/api/leaves/ledger.pdf?year=${year}`, `my-leave-ledger-${year}-${String(year + 1).slice(2)}.pdf`);
       toast.success('Leave ledger downloaded');
     } catch (e) {

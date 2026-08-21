@@ -5,7 +5,25 @@
  * - ALWAYS sends `credentials: 'include'` so the httpOnly auth cookie travels.
  * - Unwraps the `{ ok, data }` envelope and THROWS an `ApiError` on failure.
  */
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+/**
+ * Which backend to talk to. Normally NEXT_PUBLIC_API_URL (prod). But the SAME build also
+ * serves the demo site: when the page is opened on a `demo.*` hostname and a demo API URL
+ * is configured, every request (and every download) goes to the demo backend instead — so
+ * the demo and the real office never touch each other's data. On the server (no `window`),
+ * or any non-demo host, it stays exactly the prod URL, so team.* is unchanged.
+ */
+function resolveApiBase() {
+  const prod = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+  const demo = process.env.NEXT_PUBLIC_DEMO_API_URL;
+  if (demo && typeof window !== 'undefined' && window.location.hostname.startsWith('demo.')) {
+    return demo;
+  }
+  return prod;
+}
+
+/** Resolved once per page load — the base URL every API call and download should use. */
+export const API_BASE_URL = resolveApiBase();
+const BASE_URL = API_BASE_URL;
 
 export class ApiError extends Error {
   constructor(status, code, message, details) {

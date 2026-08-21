@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { Download } from 'lucide-react';
 import { toast } from 'sonner';
-import { downloadFile } from '@/lib/api';
+import { downloadFile, API_BASE_URL } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
@@ -33,7 +33,7 @@ export function HolidayListDownload() {
   const download = async () => {
     setBusy(true);
     try {
-      const base = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+      const base = API_BASE_URL;
       const { optional, events } = INCLUDE[inc];
       await downloadFile(
         `${base}/api/holidays/list.pdf?year=${year}&optional=${optional}&events=${events}`,

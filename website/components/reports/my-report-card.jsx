@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Download, FileText } from 'lucide-react';
-import { api, downloadFile } from '@/lib/api';
+import { api, downloadFile, API_BASE_URL } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { GlassPanel } from '@/components/glass/glass-panel';
 import { Button } from '@/components/ui/button';
@@ -18,7 +18,7 @@ import { SELF_REPORT_SECTIONS } from '@/lib/report';
 import { companyTodayYMD, formatMoney } from '@/lib/expense';
 import { formatYMD } from '@/lib/leave';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+const API_BASE = API_BASE_URL;
 
 function Mini({ label, value, hint }) {
   return (

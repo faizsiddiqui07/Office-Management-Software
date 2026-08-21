@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Download, UserSearch } from 'lucide-react';
-import { api, downloadFile } from '@/lib/api';
+import { api, downloadFile, API_BASE_URL } from '@/lib/api';
 import { GlassPanel } from '@/components/glass/glass-panel';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { companyTodayYMD } from '@/lib/expense';
 import { APP_LIVE_YMD } from '@/lib/app-live';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+const API_BASE = API_BASE_URL;
 
 /**
  * RP4: pull ONE person's own report — for an appraisal, or a clean handover when someone

@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Check, Clock, Download, Home, LogOut, Pencil, TriangleAlert, UserCheck, UserPlus, Users, UserX } from 'lucide-react';
-import { api, downloadFile } from '@/lib/api';
+import { api, downloadFile, API_BASE_URL } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can, roleName } from '@/lib/permissions';
 import { effectiveStatus } from '@/lib/attendance';
@@ -102,7 +102,7 @@ function Field({ label, value }) {
   );
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+const API_BASE = API_BASE_URL;
 
 /** Authenticated CSV download (day roster or month payroll matrix). */
 async function downloadCsv(path, filename) {
