@@ -39,11 +39,21 @@ async function ensureSeeded() {
 // page then belongs to the CEO's edits, so later wording fixes can't ride the seed. This
 // applies them by EXACT-matching the old default text — a rule the CEO has since edited (its
 // text differs) is left untouched. Version-gated so it runs once per bump.
-const RULES_TEXT_VERSION = 4;
+const RULES_TEXT_VERSION = 5;
 const RULE_TEXT_UPDATES = [
   {
     from: 'Every assigned task has a due date. Finish the work and submit it on or before that date.',
     to: 'Every assigned task should carry a due date. Finish the work and submit it on or before that date. A task handed out WITHOUT a due date is outside the points system altogether — it earns nothing and costs nothing, because there is no deadline to be on time against.',
+  },
+  // 2026-08-24: the per-day overdue drip now skips non-working days.
+  {
+    from: 'After that, −{overdueDailyPoints} point more is cut EVERY day until the task is done and approved. The longer it sits, the more it costs.',
+    to: 'After that, −{overdueDailyPoints} point more is cut every WORKING day until the task is done and approved — Sundays, weekly-offs and holidays are skipped. The longer it sits, the more it costs.',
+  },
+  // 2026-08-24: month-to-month carry-forward turned OFF — each month stands on its own.
+  {
+    from: 'A NEGATIVE balance follows you: it carries into the next month and keeps carrying until you clear it. A negative month pays ₹0 — pay is never cut, the deficit just waits.',
+    to: 'A NEGATIVE month stays in that month — it does NOT carry into the next month. Every month starts fresh from zero. A negative month simply pays ₹0 — pay is never cut.',
   },
   {
     from: 'A fully punctual week — Monday to Saturday, no unexcused late and no unexplained absence — earns +{streakPoints} points. Sundays, holidays, approved leave and WFH never break the week.',

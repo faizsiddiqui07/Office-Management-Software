@@ -32,7 +32,7 @@ function httpError(status, code, message) {
 export const AUTO_RULES = [
   { key: 'assignedTaskOnTime', label: 'Assigned task done on time', hint: 'Only tasks someone assigns — not self-made', sign: 'reward' },
   { key: 'assignedTaskLate', label: 'Assigned task done or left late', hint: 'Cut the moment the due date passes unfinished — done late or not done at all', sign: 'penalty' },
-  { key: 'assignedTaskOverdueDaily', label: 'Each extra day an assigned task stays overdue', hint: 'Per day after the first late mark, until done — approval-gated tasks until approved (tasks due from 1 Aug 2026)', sign: 'penalty' },
+  { key: 'assignedTaskOverdueDaily', label: 'Each extra day an assigned task stays overdue', hint: 'Per WORKING day after the first late mark, until done — Sundays/off-days & holidays skipped; approval-gated tasks count until approved (tasks due from 1 Aug 2026)', sign: 'penalty' },
   { key: 'forwardOnTime', label: 'Forwarded a task, done on time', hint: 'For whoever passed the work down — when the chain finishes on time', sign: 'reward' },
   { key: 'forwardLate', label: 'Forwarded a task, done late', hint: 'For whoever passed the work down — when the chain finishes late', sign: 'penalty' },
   { key: 'punctualStreak', label: 'Punctual streak', hint: '6 on-time days in a row — Sunday/holiday/leave/WFH neither break nor count; a late or unexplained absence resets the count', sign: 'reward' },
@@ -59,50 +59,24 @@ function prevMonth(ymOrToday) {
   const [y, m] = ym.split('-').map(Number);
   return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`;
 }
-function nextMonthYM(ym) {
-  const [y, m] = String(ym).slice(0, 7).split('-').map(Number);
-  return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
-}
-
-/**
- * A real 'YYYY-MM' or nothing. Every month that reaches the ledger comes off a query
- * string, and the month-by-month walks below compare it as a STRING — so a value like
- * 'zz' or '9999-99' sits above every real month and the walk never reaches it. (It can't
- * even overshoot: nextMonthYM('9999-12') gives '10000-01', whose slice(0,7) is '10000-0',
- * which maps back to itself — a fixed point the loop can never leave.) Rejecting the
- * input here is the guard; MAX_MONTH_WALK below is the belt-and-braces.
- */
+/** A real 'YYYY-MM' or nothing — used to validate a month that comes off a query string. */
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
 export function isValidMonth(ym) {
   return MONTH_RE.test(String(ym || ''));
 }
-/** Hard ceiling on any month-by-month walk (go-live + 100 years) — a loop can never hang. */
-const MAX_MONTH_WALK = 1200;
 
 /**
- * The deficit a person carries INTO `targetMonth` — always ≤ 0.
+ * Month-to-month carry-forward is OFF (owner's decision, 2026-08-24).
  *
- * Only a NEGATIVE month total carries forward, and it keeps compounding until it's cleared:
- * a positive month resets (you don't hoard a surplus into the next month), a negative one
- * follows you. Computed live from the ledger by walking every month from go-live up to the
- * month before the target — so it's always in step with the real entries and needs no
- * stored carry-over rows (which would double-count in a range view). For each month:
- * net = that month's earned points + whatever was carried in; carry-out = min(0, net).
+ * Earlier a NEGATIVE month total followed a person into the next month (a positive one just
+ * reset). The office decided each month should stand on its OWN instead: a bad month stays
+ * recorded in that month and never drags the next one down. Kept as a function returning 0
+ * so every caller (mySummary, the dashboard snapshot) keeps working with no carry — the old
+ * month-by-month walk was removed with the rule. The ledger itself is untouched; only the
+ * live "what carries in" figure is now always zero.
  */
-export async function carryInFor(userId, targetMonth) {
-  const goLive = APP_LIVE_YMD.slice(0, 7);
-  if (!isValidMonth(targetMonth) || targetMonth <= goLive) return 0;
-  const rows = await PointEntry.aggregate([
-    { $match: { user: toId(userId), month: { $gte: goLive, $lt: targetMonth } } },
-    { $group: { _id: '$month', earned: { $sum: '$points' } } },
-  ]);
-  const byMonth = new Map(rows.map((r) => [r._id, r.earned]));
-  let carry = 0;
-  let steps = 0;
-  for (let ym = goLive; ym < targetMonth && steps < MAX_MONTH_WALK; ym = nextMonthYM(ym), steps += 1) {
-    carry = Math.min(0, (byMonth.get(ym) || 0) + carry);
-  }
-  return carry;
+export async function carryInFor() {
+  return 0;
 }
 
 /**
@@ -314,10 +288,10 @@ export async function mySummary(user, params = {}) {
     { $group: { _id: null, points: { $sum: '$points' } } },
   ]);
   const earned = agg?.points || 0; // what was actually earned/lost within this period
-  // A single month carries in the previous month's deficit (compounding, negatives only);
-  // a range is shown as its raw earnings — carry-over is a month-to-month notion and would
-  // double-count across a span. `points` is the NET the header + leaderboard read.
-  const carriedOver = isRange ? 0 : await carryInFor(user._id, month);
+  // Carry-forward is OFF (2026-08-24): each month stands on its own, so the net IS the
+  // period's own points. `carriedOver` is kept in the shape (always 0) for the UI, which
+  // only shows a carry line when it is negative.
+  const carriedOver = 0;
   const points = earned + carriedOver;
   // Newest FIRST by the day it was earned — a month scored after the fact was written
   // all at once, so sorting on createdAt would list it in an arbitrary order.
@@ -422,31 +396,15 @@ export async function leaderboard(params = {}) {
       { $sort: { points: -1 } },
     ]);
   } else {
-    // Single month: rank by NET standing (earned this month + any carried-in deficit), so
-    // the board agrees with the header badge and each person's own Rewards page.
-    // A junk month falls back to today's rather than walking off the end of the calendar.
+    // Single month: rank by that month's OWN points. Carry-forward is OFF (2026-08-24) —
+    // each month stands on its own, so the standing is simply the sum of the month's entries
+    // (matching the range branch above). A junk month falls back to today's.
     const targetMonth = isValidMonth(p.month) ? p.month : currentMonth();
-    const goLive = APP_LIVE_YMD.slice(0, 7);
-    const agg = await PointEntry.aggregate([
-      { $match: { month: { $gte: goLive, $lte: targetMonth } } },
-      { $group: { _id: { user: '$user', month: '$month' }, earned: { $sum: '$points' } } },
+    rows = await PointEntry.aggregate([
+      { $match: { month: targetMonth } },
+      { $group: { _id: '$user', points: { $sum: '$points' } } },
+      { $sort: { points: -1 } },
     ]);
-    const byUser = new Map();
-    for (const r of agg) {
-      const uid = String(r._id.user);
-      if (!byUser.has(uid)) byUser.set(uid, new Map());
-      byUser.get(uid).set(r._id.month, r.earned);
-    }
-    rows = [];
-    for (const [uid, months] of byUser) {
-      let carry = 0;
-      let steps = 0;
-      for (let ym = goLive; ym < targetMonth && steps < MAX_MONTH_WALK; ym = nextMonthYM(ym), steps += 1) carry = Math.min(0, (months.get(ym) || 0) + carry);
-      const net = (months.get(targetMonth) || 0) + carry;
-      // Skip anyone who nets zero and did nothing this month — no point listing a flat 0.
-      if (net !== 0 || months.has(targetMonth)) rows.push({ _id: uid, points: net });
-    }
-    rows.sort((a, b) => b.points - a.points);
   }
   const users = await User.find({ _id: { $in: rows.map((r) => r._id) } }).select('name role employeeId');
   const byId = new Map(users.map((u) => [String(u._id), u]));
@@ -746,7 +704,17 @@ export async function rebuildOverdueForTask(taskId) {
   const dripPts = rulePoints(b, 'assignedTaskOverdueDaily');
   if (!dripPts || t.dueYMD < DRIP_FLOOR_YMD) return;
   const last = done ? prevDay(done) : today; // a finished task stops the day it was done
-  for (let d = addDays(duePlus, 2); d <= last; d = addDays(d, 1)) {
+  const first = addDays(duePlus, 2);
+  // The per-day drip counts only WORKING days (owner's rule, 2026-08-24): the owner's own
+  // weekly off-days (usually Sunday) and any company holiday are skipped, so a task never
+  // racks up a penalty on a day the office is closed. The one-time overdue mark above is
+  // unaffected — only this escalating drip respects the calendar.
+  const owner = await User.findById(t.owner).select('role employmentType schedule dateOfJoining');
+  const off = owner ? userWeekendDays(owner, s) : [];
+  const holidays = await holidayYMDSet(first, last);
+  for (let d = first; d <= last; d = addDays(d, 1)) {
+    const dow = dayOfWeekInTz(companyDayFromYMD(d));
+    if (off.includes(dow) || holidays.has(d)) continue; // non-working day → no drip
     // eslint-disable-next-line no-await-in-loop
     await awardOnce(`auto_overdue:${t._id}:${d}`, { user: t.owner, month: d.slice(0, 7), points: -Math.abs(rulePoints(b, 'assignedTaskOverdueDaily', d)), reason: `Still overdue: ${t.title}`, source: 'auto_task', taskRef: t._id, earnedYMD: d });
   }
@@ -1084,6 +1052,13 @@ async function scanOverdueTasks(b) {
   const dripPts = rulePoints(b, 'assignedTaskOverdueDaily');
   if (!pts && !dripPts) return;
   const today = ymdInTz(new Date());
+  // The per-day drip is held back on a NON-WORKING day (owner's rule, 2026-08-24): a company
+  // holiday, or the task owner's own weekly off-day (usually Sunday). Only the drip respects
+  // this — the one-time overdue mark still applies whatever day it lands on. This scan only
+  // ever writes "today", so today's day-of-week + holiday status decide it once here.
+  const s = await Setting.getSingleton();
+  const dowToday = dayOfWeekInTz(companyDayFromYMD(today));
+  const isHolidayToday = (await holidayYMDSet(today, today)).has(today);
   // Work that was passed further down is now somebody else's to deliver (the copy left
   // behind stays PENDING until the bottom finishes); the leaderboard excludes these and
   // the penalties have to agree with it. Submitted-for-approval tasks are NOT skipped
@@ -1093,6 +1068,9 @@ async function scanOverdueTasks(b) {
   const forwardedParentIds = await Task.distinct('forwardedFrom', { forwardedFrom: { $ne: null } });
   const tasks = await Task.find({ assignedBy: { $ne: null }, status: 'PENDING', dueYMD: { $nin: ['', null] }, _id: { $nin: forwardedParentIds } }).select('owner dueYMD title assignedBy collaborators forwardedFrom');
   const ownerIds = tasks.length ? await ownerTierIds() : new Set();
+  // Owners' schedules, one query, so the drip can read each task owner's weekly off-days.
+  const ownerDocs = tasks.length ? await User.find({ _id: { $in: [...new Set(tasks.map((t) => String(t.owner)))] } }).select('role employmentType schedule dateOfJoining') : [];
+  const ownerById = new Map(ownerDocs.map((u) => [String(u._id), u]));
   const chainMemo = new Map();
   for (const t of tasks) {
     const duePlus = addDays(t.dueYMD, graceDaysOn(b, t.dueYMD));
@@ -1125,7 +1103,9 @@ async function scanOverdueTasks(b) {
     // STAY — they were the price of those days — while the main entry flips to the
     // result. Drips apply only to tasks DUE on/after the August floor (the drip rule's
     // start); the -5 mark above has no floor.
-    if (dripPts && t.dueYMD >= DRIP_FLOOR_YMD && today > addDays(duePlus, 1)) {
+    const ownerDoc = ownerById.get(String(t.owner));
+    const isWorkingToday = !isHolidayToday && !(ownerDoc ? userWeekendDays(ownerDoc, s) : []).includes(dowToday);
+    if (dripPts && isWorkingToday && t.dueYMD >= DRIP_FLOOR_YMD && today > addDays(duePlus, 1)) {
       // eslint-disable-next-line no-await-in-loop
       await awardOnce(`auto_overdue:${t._id}:${today}`, { user: t.owner, month: today.slice(0, 7), points: -Math.abs(rulePoints(b, 'assignedTaskOverdueDaily', today)), reason: `Still overdue: ${t.title}`, source: 'auto_task', taskRef: t._id, earnedYMD: today });
     }
@@ -1177,6 +1157,29 @@ async function backfillOverdueRuleV2() {
   await scanOverdueTasks(b);
   s.bonus.overdueRuleV2 = true;
   await s.save();
+  Setting.invalidateCache();
+}
+
+/**
+ * One-time (owner's rule, 2026-08-24): the per-day overdue drip must skip Sundays/off-days
+ * and holidays. Every drip written before this rule covered EVERY calendar day, so this
+ * rebuilds each task that has drip rows with the now-skip-aware rebuildOverdueForTask —
+ * which deletes the drips that fell on a non-working day and re-writes the working-day ones.
+ * Flag-gated; rebuildOverdueForTask is idempotent, so a re-run (or a run cut short by the
+ * Lambda timeout) is safe and simply finishes on the next tick.
+ */
+async function migrateOverdueSkipOffDays(b) {
+  const s = await Setting.getSingleton();
+  if (s.bonus?.overdueSkipOffDaysV1 || !b.enabled) return;
+  const taskIds = await PointEntry.distinct('taskRef', { dedupeKey: { $regex: /^auto_overdue:/ } });
+  for (const id of taskIds) {
+    if (!id) continue;
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await rebuildOverdueForTask(id);
+    } catch (e) { console.error('overdue skip-offday rebuild failed', String(id), e?.message); }
+  }
+  await Setting.updateOne({ key: 'global' }, { $set: { 'bonus.overdueSkipOffDaysV1': true } });
   Setting.invalidateCache();
 }
 
@@ -1811,6 +1814,7 @@ export async function maybeRunDaily(force = false) {
   // rebuild inline, so a rule switched on today applies on this very tick instead of
   // waiting a day behind the throttle (the exact gap that left them unapplied on deploy).
   try { await backfillOverdueRuleV2(); } catch (e) { console.error('overdue rule-v2 backfill failed', e?.message); }
+  try { await migrateOverdueSkipOffDays(b); } catch (e) { console.error('overdue skip-offday migration failed', e?.message); }
   try { await rebuildStreakV2(b); } catch (e) { console.error('streak v2 rebuild failed', e?.message); }
   try { await clearExcusedLatePenalties(); } catch (e) { console.error('excused-late sweep failed', e?.message); }
   try { await seedRateHistory(); } catch (e) { console.error('rate-history seed failed', e?.message); }

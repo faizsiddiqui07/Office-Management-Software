@@ -470,8 +470,8 @@ export async function buildReport(type, dateYMD, range) {
 
   // ── Rewards / bonus points, person by person ──────────────
   // The same figures the Rewards page + leaderboard show for this period: a full month is
-  // the NET standing (that month's points + any carried-in deficit); any other window is
-  // the raw points earned on days inside it. Omitted entirely when the scheme is off.
+  // that month's own standing (each month stands on its own — no carry-over, 2026-08-24);
+  // any other window is the raw points earned on days inside it. Omitted when the scheme is off.
   const rp = await periodPoints({ type, from, to });
   let rewards = null;
   if (rp.enabled) {
@@ -484,7 +484,7 @@ export async function buildReport(type, dateYMD, range) {
           role: u.role,
           roleLabel: roleLabel(u.role),
           points,
-          // Payout is for a positive standing only; a deficit carries, it never pays a negative wage.
+          // Payout is for a positive standing only; a negative month pays ₹0, never a negative wage.
           rupees: rp.rupeesPerPoint && points > 0 ? Math.round(points * rp.rupeesPerPoint) : 0,
         };
       })
@@ -493,7 +493,7 @@ export async function buildReport(type, dateYMD, range) {
     rewards = {
       enabled: true,
       rupeesPerPoint: rp.rupeesPerPoint,
-      monthlyNet: type === 'monthly', // true = month NET (carry-in), else raw earned in-window
+      monthlyNet: type === 'monthly', // true = the month's own standing, else raw earned in-window
       // The price list this period was actually scored on. Rule values are effective-dated,
       // so a later change can't re-price these figures — printing the rates alongside them
       // is what makes an old report checkable instead of just asserted. More than one row
@@ -833,10 +833,10 @@ export async function selfComparison(currentData, user, type, dateYMD, range) {
     const joined = joinedYMD(user);
     if (joined && joined > prev.to) return null; // they weren't here for the previous period
     // Rebuild the previous window with its OWN type, anchored on prev.from (which
-    // re-resolves the exact same period). Using 'custom' was wrong for one field: a
-    // monthly report's points are the NET standing (carry-in adjusted), and a custom
-    // rebuild would have compared that against a raw sum — a false decline. Custom stays
-    // custom, and must carry the SHIFTED range, not the original one.
+    // re-resolves the exact same period). Using 'custom' was wrong for one field: a monthly
+    // report sums a month's points by the month they were filed under (via the leaderboard),
+    // while a custom rebuild sums by earnedYMD inside the window — mixing the two could show
+    // a false decline. Custom stays custom, and must carry the SHIFTED range, not the original.
     const prevRange = type === 'custom' ? { from: prev.from, to: prev.to } : range;
     const prevData = await buildSelfReport({ user, type, dateYMD: prev.from, range: prevRange });
     const cur = currentData.attendance?.totals || {};

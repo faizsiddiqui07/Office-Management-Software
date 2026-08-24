@@ -205,11 +205,10 @@ export default function MyStandingPage() {
                 tone={now.tasksOverdue ? 'warn' : 'default'}
               />
               {shows.points ? (
-                /* The NET standing — this month's points plus any deficit carried in — which
-                   is what the header badge, the Rewards page and the leaderboard all show.
-                   It used to show raw earnings, so someone carrying a deficit read one number
-                   here and a smaller one everywhere else. When a deficit exists the hint
-                   spells the sum out, otherwise the drop would look unexplained. */
+                /* This month's standing — the same figure the header badge, the Rewards page
+                   and the leaderboard show. Each month stands on its own (no carry-over,
+                   2026-08-24), so the server now always sends 0 carried over; the hint shows
+                   the rupee worth or "resets each month". The carried-over branch is inert. */
                 <Stat
                   icon={Award}
                   label="Points this month"

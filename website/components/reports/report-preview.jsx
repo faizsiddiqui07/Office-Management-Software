@@ -130,7 +130,7 @@ function RewardsSection({ data }) {
       <DataTable columns={columns} data={r.perEmployee} searchPlaceholder="Search employees…" pageSize={8} emptyMessage="No points in this period." />
       <p className="text-xs text-muted-foreground">
         {r.monthlyNet
-          ? 'Monthly net standing — this month’s points plus any deficit carried in, exactly like the Rewards leaderboard. Payout applies to a positive standing only.'
+          ? 'Monthly standing — this month’s own points, exactly like the Rewards leaderboard. Each month stands on its own (no month-to-month carry-over). Payout applies to a positive standing only.'
           : 'Points earned on days inside this period (raw, no month-to-month carry-over). Payout applies to a positive total only.'}
       </p>
       <RatesDisclosure rates={r.rates} />

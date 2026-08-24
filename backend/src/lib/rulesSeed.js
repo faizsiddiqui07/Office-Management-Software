@@ -20,7 +20,7 @@ export const DEFAULT_RULE_SECTIONS = [
       { text: 'Tasks that need approval count as DONE on the day they are APPROVED, not the day you submit — so submit early enough for your senior to review.' },
       { text: 'Assigned task done on time: +{onTimePoints} points.' },
       { text: 'Assigned task NOT done by the due date: −{latePoints} points are cut the very next day.' },
-      { text: 'After that, −{overdueDailyPoints} point more is cut EVERY day until the task is done and approved. The longer it sits, the more it costs.' },
+      { text: 'After that, −{overdueDailyPoints} point more is cut every WORKING day until the task is done and approved — Sundays, weekly-offs and holidays are skipped. The longer it sits, the more it costs.' },
       { text: 'Finishing an assigned task late gives −{latePoints} instead of the on-time reward.' },
       { text: 'Forwarding: you can pass an assigned task down to a junior. If the work finishes on time, the forwarder earns +{forwardOnTimePoints} points; if it finishes late, the forwarder loses {forwardLatePoints} points. Nobody is paid until the task is approved at the top of the chain.' },
       { text: 'You can tag colleagues on a task to keep them informed — tagged people only stay in the loop; the task is not their responsibility.' },
@@ -82,7 +82,7 @@ export const DEFAULT_RULE_SECTIONS = [
     rules: [
       { text: 'Leadership sets what every action is worth in Settings. All point values on this page are LIVE — when leadership changes a value, this page updates by itself.' },
       { text: 'Points reset every month. A POSITIVE balance is paid out and does not roll over to the next month.' },
-      { text: 'A NEGATIVE balance follows you: it carries into the next month and keeps carrying until you clear it. A negative month pays ₹0 — pay is never cut, the deficit just waits.' },
+      { text: 'A NEGATIVE month stays in that month — it does NOT carry into the next month. Every month starts fresh from zero. A negative month simply pays ₹0 — pay is never cut.' },
       { text: 'Each point is worth ₹{rupeesPerPoint} right now. The per-point rate can change from month to month — the current rate always shows here and on the Rewards page.' },
       { text: 'See the Rewards page for your live balance, the full price list and your point-by-point breakdown.' },
     ],
