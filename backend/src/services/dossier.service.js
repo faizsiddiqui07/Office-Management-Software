@@ -9,6 +9,7 @@ import { can } from '../lib/permissions.js';
 import { userWeekendDays, workWindowClosed } from '../lib/schedule.js';
 import { computeWorkingDays } from './workingDays.service.js';
 import { holidayYMDSet } from './holiday.service.js';
+import { isBirthdayYMD, birthdayYMDSet } from '../lib/birthday.js';
 import { periodStartFor, joinedYMD } from '../lib/joining.js';
 import { leaveYearOf } from '../lib/leaveYear.js';
 import { getOrCreateBalance, overtimeMinutesForYear } from './leave.service.js';
@@ -98,6 +99,9 @@ export async function getUserDossier(userId, { from, to }) {
   let workingDates = [];
   if (tracksAttendance && countFrom <= cappedTo) {
     const holidays = await holidayYMDSet(countFrom, cappedTo);
+    // Their own birthday is a day off for them alone, so it is neither a working day nor
+    // an absence — folded in here because computeWorkingDays counts off this one set.
+    for (const d of birthdayYMDSet(user, countFrom, cappedTo)) holidays.add(d);
     ({ workingDates } = computeWorkingDays({
       fromYMD: countFrom,
       toYMD: cappedTo,
@@ -147,11 +151,13 @@ export async function getUserDossier(userId, { from, to }) {
         // the daily roster), not a red "absent".
         const status = holidays.has(ymd)
           ? 'HOLIDAY'
-          : weekend.includes(dow)
-            ? 'WEEKEND'
-            : workWindowClosed(user, ymd, settings, now)
-              ? 'ABSENT'
-              : 'UPCOMING';
+          : isBirthdayYMD(user, ymd)
+            ? 'BIRTHDAY' // their own day off — never a red "absent"
+            : weekend.includes(dow)
+              ? 'WEEKEND'
+              : workWindowClosed(user, ymd, settings, now)
+                ? 'ABSENT'
+                : 'UPCOMING';
         days.push({ id: `d-${ymd}`, dateYMD: ymd, checkInAt: null, checkOutAt: null, workedMinutes: 0, overtimeMinutes: 0, status, excused: false, lateReason: null, halfDayLeave: false });
       }
       cur = new Date(cur.getTime() + 86400000);

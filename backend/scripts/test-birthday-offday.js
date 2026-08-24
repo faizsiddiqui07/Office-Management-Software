@@ -24,6 +24,7 @@ import { reconcileAbsence, runRollingStreak, maybeRunDaily } from '../src/servic
 import { buildSelfReport } from '../src/services/report.service.js';
 import { applyLeave } from '../src/services/leave.service.js';
 import { attendanceOverview, attendanceMatrix } from '../src/services/attendance.service.js';
+import { getUserDossier } from '../src/services/dossier.service.js';
 
 let fail = 0;
 const ok = (n, c, x) => {
@@ -128,6 +129,15 @@ async function main() {
   ok('poore mahine me sirf 1 "B" cell', bCells === 1, `B cells=${bCells}`);
   const ctrlRowMx = mx.rows.find((r) => String(r.user.id) === String(other._id));
   ok('CONTROL: usi din uska cell "A" hai', ctrlRowMx?.cells[mx.days.indexOf(BDAY)] === 'A', `cell=${ctrlRowMx?.cells[mx.days.indexOf(BDAY)]}`);
+
+  // 5b. The admin per-user dossier (profile page)
+  console.log('\n5b. Admin ke dossier (profile) me?');
+  const dos = await getUserDossier(String(bday._id), { from: '2026-08-10', to: '2026-08-13' });
+  const dRow = (dos.attendance?.days || []).find((d) => d.dateYMD === BDAY);
+  ok('dossier me status BIRTHDAY (ABSENT nahi)', dRow?.status === 'BIRTHDAY', `status=${dRow?.status}`);
+  const dCtrl = (dos.attendance?.days || []).find((d) => d.dateYMD === NORMAL);
+  ok('CONTROL: normal din ON_LEAVE/ABSENT jaisa hi', dCtrl?.status !== 'BIRTHDAY', `status=${dCtrl?.status}`);
+  ok('dossier ke working-days me birthday nahi gina', dos.attendance?.workingDays === 3, `workingDays=${dos.attendance?.workingDays} (10,12,13 = 3; 11 birthday chhoda)`);
 
   // 6. Coming in on your birthday
   console.log('\n6. Birthday pe office aa gaya to?');
