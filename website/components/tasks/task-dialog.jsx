@@ -11,6 +11,7 @@ import { AppDialog } from '@/components/glass/app-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { DatePicker } from '@/components/ui/date-picker';
+import { useDueDateBlocker } from '@/lib/holidays';
 import { APP_LIVE_YMD } from '@/lib/app-live';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -46,6 +47,8 @@ export function TaskDialog({ task, open: openProp, onOpenChange, batchCount = 0 
   const [assignees, setAssignees] = React.useState([]); // who a delegated task is assigned to
   const [requiresApproval, setRequiresApproval] = React.useState(false);
   const [applyToAll, setApplyToAll] = React.useState(true); // batch content edit: push to every copy
+  // Sundays + holidays can't be a deadline (the overdue penalty skips those days anyway).
+  const dayBlock = useDueDateBlocker();
 
   React.useEffect(() => {
     if (!open) return;
@@ -218,6 +221,7 @@ export function TaskDialog({ task, open: openProp, onOpenChange, batchCount = 0 
             value={dueYMD}
             min={task ? APP_LIVE_YMD : new Date().toISOString().slice(0, 10)}
             onChange={setDueYMD}
+            dayBlock={dayBlock}
             clearable
             className="bg-background/50"
           />

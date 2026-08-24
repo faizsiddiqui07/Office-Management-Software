@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { Popover } from '@base-ui/react/popover';
-import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { AlertTriangle, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { buildMonthGrid, todayYMDLocal } from '@/lib/calendar';
 import { APP_LIVE_YMD } from '@/lib/app-live';
@@ -44,12 +44,18 @@ export function DatePicker({
   placeholder = 'Pick a date',
   clearable = false,
   disabled = false,
+  // Optional guard: (ymd) => reason string when that day must NOT be pickable (e.g. a
+  // Sunday or a holiday for a task deadline), or null. Blocked days render greyed and,
+  // when tapped, name the reason instead of selecting — see the note panel below.
+  dayBlock,
   id,
   className,
   align = 'start',
   ...rest // aria-label and friends, straight onto the trigger button
 }) {
   const [open, setOpen] = React.useState(false);
+  // The reason shown when someone taps a blocked day ({ ymd, reason }), or null.
+  const [blockedNote, setBlockedNote] = React.useState(null);
   // 'days' → the calendar; 'months' → pick a month in the shown year; 'years' → a page
   // of years. Each step back up is one tap on the caption.
   const [mode, setMode] = React.useState('days');
@@ -62,6 +68,7 @@ export function DatePicker({
     if (open) {
       setView({ y: Number(anchor.slice(0, 4)), m: Number(anchor.slice(5, 7)) - 1 });
       setMode('days');
+      setBlockedNote(null);
     }
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -90,12 +97,14 @@ export function DatePicker({
   const canPrev = mode === 'years' ? pageStart > yearFrom : viewKey - step >= minKey;
   const canNext = mode === 'years' ? pageStart + YEARS_PER_PAGE <= yearTo : viewKey + step <= maxKey;
   const stepBy = (dir) => {
+    setBlockedNote(null);
     if (mode === 'years') setView((v) => ({ ...v, y: Math.min(Math.max(v.y + dir * YEARS_PER_PAGE, yearFrom), yearTo) }));
     else go(dir * step);
   };
 
   const cells = buildMonthGrid(view.y, view.m);
   const pick = (ymd) => {
+    setBlockedNote(null);
     onChange(ymd);
     setOpen(false);
   };
@@ -140,7 +149,7 @@ export function DatePicker({
               {/* The caption is the control: days → months → years, one tap each. */}
               <button
                 type="button"
-                onClick={() => setMode(mode === 'days' ? 'months' : mode === 'months' ? 'years' : 'days')}
+                onClick={() => { setBlockedNote(null); setMode(mode === 'days' ? 'months' : mode === 'months' ? 'years' : 'days'); }}
                 className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-sm font-semibold transition-colors hover:bg-foreground/5"
               >
                 <span className="tabular-nums">
@@ -168,6 +177,12 @@ export function DatePicker({
                 ))}
                 {cells.map((c) => {
                   const off = (min && c.ymd < min) || (max && c.ymd > max);
+                  // A day the caller marks un-pickable (Sunday / holiday for a deadline). Not
+                  // the same as out-of-range: it stays tappable so a tap can NAME the reason.
+                  // Must apply to SPILLOVER cells too (a Sunday/holiday from the previous/next
+                  // month shown at a grid edge) — those are real, selectable dates, so gating
+                  // this on c.inMonth would let them slip past the block.
+                  const blockReason = !off && dayBlock ? dayBlock(c.ymd) : null;
                   const sel = c.ymd === value;
                   const isToday = c.ymd === today;
                   return (
@@ -175,21 +190,30 @@ export function DatePicker({
                       key={c.ymd}
                       type="button"
                       disabled={off}
-                      onClick={() => pick(c.ymd)}
-                      aria-label={c.ymd}
+                      onClick={() => {
+                        if (blockReason) { setBlockedNote({ ymd: c.ymd, reason: blockReason }); return; }
+                        pick(c.ymd);
+                      }}
+                      title={blockReason || undefined}
+                      aria-label={blockReason ? `${c.ymd} — ${blockReason}` : c.ymd}
                       className={cn(
-                        'mx-auto flex size-9 items-center justify-center rounded-lg text-sm tabular-nums transition-colors',
+                        'relative mx-auto flex size-9 items-center justify-center rounded-lg text-sm tabular-nums transition-colors',
                         sel
                           ? 'bg-primary font-semibold text-primary-foreground'
                           : off
                             ? 'cursor-not-allowed text-muted-foreground/30'
-                            : c.inMonth
-                              ? 'hover:bg-foreground/8'
-                              : 'text-muted-foreground/50 hover:bg-foreground/5',
+                            : blockReason
+                              ? 'cursor-not-allowed text-muted-foreground/40 hover:bg-warning/10'
+                              : c.inMonth
+                                ? 'hover:bg-foreground/8'
+                                : 'text-muted-foreground/50 hover:bg-foreground/5',
                         isToday && !sel && 'ring-1 ring-inset ring-primary/50',
                       )}
                     >
                       {c.date.getDate()}
+                      {blockReason && !sel ? (
+                        <span className="absolute bottom-1 left-1/2 size-1 -translate-x-1/2 rounded-full bg-warning/70" />
+                      ) : null}
                     </button>
                   );
                 })}
@@ -251,11 +275,28 @@ export function DatePicker({
               </div>
             ) : null}
 
+            {blockedNote ? (
+              <div className="mt-2 flex items-start gap-2 rounded-lg bg-warning/[0.08] px-2.5 py-2 text-xs ring-1 ring-warning/30">
+                <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-warning" />
+                <span className="text-muted-foreground">
+                  <span className="font-medium text-foreground">{formatPickedDate(blockedNote.ymd)}</span>
+                  {' — '}{blockedNote.reason}. A due date can’t be set on this day.
+                </span>
+              </div>
+            ) : null}
+
             <div className="mt-2 flex items-center justify-between border-t border-border/50 pt-2">
               <div className="flex items-center gap-1">
                 <button
                   type="button"
-                  onClick={() => todayAllowed && pick(today)}
+                  onClick={() => {
+                    if (!todayAllowed) return;
+                    // The Today shortcut must respect the same block as the grid, or it
+                    // could set a deadline on a Sunday/holiday the calendar refuses.
+                    const r = dayBlock ? dayBlock(today) : null;
+                    if (r) { setBlockedNote({ ymd: today, reason: r }); return; }
+                    pick(today);
+                  }}
                   disabled={!todayAllowed}
                   className="rounded-md px-2 py-1 text-xs font-semibold text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-40"
                 >
