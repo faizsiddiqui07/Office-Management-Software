@@ -6,7 +6,7 @@ import { notify, clearNotificationsFor } from '../models/Notification.js';
 import { roleLabel, isOwnerRole } from '../lib/roles.js';
 import { can } from '../lib/permissions.js';
 import { companyDayFromYMD, ymdInTz, COMPANY_TZ } from '../lib/time.js';
-import { onAssignedTaskDone, onAssignedTaskUndone, rebuildOverdueForTask } from './bonus.service.js';
+import { onAssignedTaskDone, onAssignedTaskUndone, rebuildOverdueForTask, ASSIGNER_FLOOR_YMD } from './bonus.service.js';
 
 function httpError(status, code, message) {
   const e = new Error(message);
@@ -648,6 +648,27 @@ export async function updateTask(actor, id, data) {
   const contentFields = ['title', 'notes', 'dueYMD'];
   const patch = {};
   for (const f of contentFields) if (data[f] !== undefined) patch[f] = data[f];
+
+  // ── The deadline is final once the work is handed out (owner's rule, 2026-08-24) ──
+  // Moving a due date re-prices the whole task: pushing it forward wipes the overdue
+  // penalty the assignee has already earned, and clearing it takes the task out of the
+  // points system entirely. So the date set at assign time stands — in EITHER direction,
+  // since making it stricter after the fact is just as unfair as relaxing it.
+  //
+  // The owner tier (CEO & President) is exempt, so they can still move the deadline on work
+  // THEY handed out. Note the gate above already limits editing a delegated task to the
+  // person who assigned it, so this exemption reaches their own assignments only — which is
+  // exactly the rule as stated. Resolved by ROLE, never by name, so a role change carries
+  // the exemption with it.
+  //
+  // Only for work assigned on/after the floor — a task handed out before this rule existed
+  // stays editable, exactly like the no-due-date rule's grandfathering.
+  if (patch.dueYMD !== undefined && patch.dueYMD !== task.dueYMD && task.assignedBy && !isOwnerRole(actor.role)) {
+    const assignedOn = task.createdAt ? ymdInTz(task.createdAt) : '';
+    if (assignedOn && assignedOn >= ASSIGNER_FLOOR_YMD) {
+      throw httpError(403, 'DUE_DATE_LOCKED', 'The deadline is fixed once the work is assigned — it can’t be moved afterwards');
+    }
+  }
 
   // ── Assigner editing a delegated task: may re-assign it, toggle approval, and edit
   //    the content of one copy or every copy of a multi-assign batch. ──────────────

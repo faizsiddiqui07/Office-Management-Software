@@ -23,6 +23,8 @@ export const DEFAULT_RULE_SECTIONS = [
       { text: 'After that, −{overdueDailyPoints} point more is cut every WORKING day until the task is done and approved — Sundays, weekly-offs and holidays are skipped. The longer it sits, the more it costs.' },
       { text: 'Finishing an assigned task late gives −{latePoints} instead of the on-time reward.' },
       { text: 'Forwarding: you can pass an assigned task down to a junior. If the work finishes on time, the forwarder earns +{forwardOnTimePoints} points; if it finishes late, the forwarder loses {forwardLatePoints} points. Nobody is paid until the task is approved at the top of the chain.' },
+      { text: 'Hand work to a junior and tag a CEO or President on it: when that task is completed you earn +{assignTaskDonePoints} points — whether it finished on time or late. Handing work out is never penalised. The CEO & President earn this on work they assign too. Applies to work assigned from 1 August 2026.' },
+      { text: 'Once you have assigned a task, its due date is FINAL — you cannot move it, earlier or later. Only the CEO & President can change a due date. Applies to work assigned from 1 August 2026.' },
       { text: 'You can tag colleagues on a task to keep them informed — tagged people only stay in the loop; the task is not their responsibility.' },
     ],
   },

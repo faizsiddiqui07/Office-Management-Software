@@ -39,7 +39,7 @@ async function ensureSeeded() {
 // page then belongs to the CEO's edits, so later wording fixes can't ride the seed. This
 // applies them by EXACT-matching the old default text — a rule the CEO has since edited (its
 // text differs) is left untouched. Version-gated so it runs once per bump.
-const RULES_TEXT_VERSION = 5;
+const RULES_TEXT_VERSION = 6;
 const RULE_TEXT_UPDATES = [
   {
     from: 'Every assigned task has a due date. Finish the work and submit it on or before that date.',
@@ -68,6 +68,23 @@ const RULE_TEXT_UPDATES = [
     to: 'Seniors can assign tasks to their team. Only ASSIGNED tasks earn or cut points — and only if the CEO & President can see the task: they assigned it themselves, or at least one of them is TAGGED on it. If a senior assigns work to a junior WITHOUT tagging a CEO/President, that task earns no points either. Personal to-dos never affect points.',
   },
 ];
+// Rules that did NOT exist when the page was first seeded. The seed runs once, so a brand
+// new rule can't ride it — it has to be appended to the section it belongs to. Matched by
+// section TITLE and skipped when a rule with the same text is already present, so this adds
+// nothing on a freshly-seeded database (where rulesSeed already carries it) and nothing on
+// a second run. Same version gate as the text updates above. A section the CEO has renamed
+// or removed is simply skipped rather than re-created — the page is theirs.
+const RULE_ADDITIONS = [
+  {
+    section: 'To-Do & Tasks',
+    text: 'Hand work to a junior and tag a CEO or President on it: when that task is completed you earn +{assignTaskDonePoints} points — whether it finished on time or late. Handing work out is never penalised. The CEO & President earn this on work they assign too. Applies to work assigned from 1 August 2026.',
+  },
+  {
+    section: 'To-Do & Tasks',
+    text: 'Once you have assigned a task, its due date is FINAL — you cannot move it, earlier or later. Only the CEO & President can change a due date. Applies to work assigned from 1 August 2026.',
+  },
+];
+
 async function migrateRuleText() {
   const s = await Setting.getSingleton();
   if ((s.rulesTextVersion || 0) >= RULES_TEXT_VERSION) return;
@@ -78,6 +95,14 @@ async function migrateRuleText() {
       { $set: { 'rules.$[e].text': u.to } },
       { arrayFilters: [{ 'e.text': u.from }] },
     );
+  }
+  for (const a of RULE_ADDITIONS) {
+    // eslint-disable-next-line no-await-in-loop
+    const sec = await RuleSection.findOne({ title: a.section });
+    if (!sec || (sec.rules || []).some((r) => r.text === a.text)) continue;
+    sec.rules.push({ text: a.text });
+    // eslint-disable-next-line no-await-in-loop
+    await sec.save();
   }
   await Setting.updateOne({ key: 'global' }, { $set: { rulesTextVersion: RULES_TEXT_VERSION } });
   Setting.invalidateCache();
@@ -153,6 +178,7 @@ async function ruleTokens(user) {
     overdueDailyPoints: pts('assignedTaskOverdueDaily'),
     forwardOnTimePoints: pts('forwardOnTime'),
     forwardLatePoints: pts('forwardLate'),
+    assignTaskDonePoints: pts('assignTaskDone'),
     streakPoints: pts('punctualStreak'),
     lateArrivalPoints: pts('lateArrival'),
     overtimeHourPoints: pts('overtimeHour'),

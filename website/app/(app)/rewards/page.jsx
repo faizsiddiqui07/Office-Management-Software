@@ -44,6 +44,7 @@ const Pts = ({ n }) => <span className={n < 0 ? 'font-medium text-destructive' :
 const SOURCE_LABEL = {
   auto_task: 'Assigned task',
   auto_forward: 'Forwarded a task',
+  auto_assign: 'Work you assigned',
   auto_streak: 'Punctual streak',
   auto_late: 'Late arrival',
   auto_ot: 'Overtime',
@@ -96,7 +97,7 @@ function TaskFacts({ task }) {
 
 /** One point entry, expanded: what it was, what it's worth, and — if it's a task — the task. */
 function EntryDetailDialog({ entry, onOpenChange }) {
-  const isTask = (entry?.source === 'auto_task' || entry?.source === 'auto_forward') && !!entry?.taskRef;
+  const isTask = ['auto_task', 'auto_forward', 'auto_assign'].includes(entry?.source) && !!entry?.taskRef;
   const q = useTaskDetail(isTask ? entry.taskRef : null);
   return (
     <Dialog open={!!entry} onOpenChange={onOpenChange}>

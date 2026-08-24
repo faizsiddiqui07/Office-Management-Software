@@ -35,6 +35,7 @@ export const AUTO_RULES = [
   { key: 'assignedTaskOverdueDaily', label: 'Each extra day an assigned task stays overdue', hint: 'Per WORKING day after the first late mark, until done — Sundays/off-days & holidays skipped; approval-gated tasks count until approved (tasks due from 1 Aug 2026)', sign: 'penalty' },
   { key: 'forwardOnTime', label: 'Forwarded a task, done on time', hint: 'For whoever passed the work down — when the chain finishes on time', sign: 'reward' },
   { key: 'forwardLate', label: 'Forwarded a task, done late', hint: 'For whoever passed the work down — when the chain finishes late', sign: 'penalty' },
+  { key: 'assignTaskDone', label: 'Work you assigned gets done', hint: 'For whoever handed the work out — paid when the task is completed, on time OR late; handing work out is never penalised (work assigned from 1 Aug 2026)', sign: 'reward' },
   { key: 'punctualStreak', label: 'Punctual streak', hint: '6 on-time days in a row — Sunday/holiday/leave/WFH neither break nor count; a late or unexplained absence resets the count', sign: 'reward' },
   { key: 'lateArrival', label: 'Each late arrival', hint: 'Every day they check in late', sign: 'penalty' },
   { key: 'overtimeHour', label: 'Each hour of overtime', hint: 'Per full hour worked past the shift', sign: 'reward' },
@@ -509,6 +510,13 @@ function hasScorableDeadline(task) {
   return !created || created < NO_DUE_FLOOR_YMD;
 }
 
+// ── Assigner reward (owner's rule, 2026-08-24) ────────────────────────────────
+// Handing work out is worth points once that work lands. The rule starts on this date and
+// is judged on the day the work was ASSIGNED (the task's createdAt), so anything handed
+// out before it existed is grandfathered — nobody is paid for a decision they made under
+// the old rules. The same floor governs the due-date lock in task.service.
+export const ASSIGNER_FLOOR_YMD = '2026-08-01';
+
 /** Does THIS copy pass the gate on its own (owner-tier assigner, or one of them tagged)? */
 function taskEligible(task, ownerIds) {
   // Roles not loaded (a cold path) must never read as "wipe everything".
@@ -588,14 +596,14 @@ export async function onAssignedTaskDone(task) {
   // it un-pays.
   const ownerIds = await ownerTierIds();
   if (!copies.some((c) => taskEligible(c, ownerIds))) {
-    await PointEntry.deleteMany({ taskRef: { $in: copies.map((c) => c._id) }, source: { $in: ['auto_task', 'auto_forward'] } });
+    await PointEntry.deleteMany({ taskRef: { $in: copies.map((c) => c._id) }, source: { $in: ['auto_task', 'auto_forward', 'auto_assign'] } });
     return;
   }
   // No deadline, no score. Judged on the ROOT (forwarded copies inherit its due date),
   // so a whole chain handed out without a due date is out together. Same shape as the
   // owner-tier gate: anything written before stays consistent by being removed here.
   if (!hasScorableDeadline(task)) {
-    await PointEntry.deleteMany({ taskRef: { $in: copies.map((c) => c._id) }, source: { $in: ['auto_task', 'auto_forward'] } });
+    await PointEntry.deleteMany({ taskRef: { $in: copies.map((c) => c._id) }, source: { $in: ['auto_task', 'auto_forward', 'auto_assign'] } });
     return;
   }
 
@@ -650,10 +658,80 @@ export async function onAssignedTaskDone(task) {
       earnedYMD: filedYMD,
     }, { replace: true }); // replace: the finished result supersedes any overdue penalty
   }
+
+  // And the person who HANDED THE WORK OUT — see awardAssigner.
+  await awardAssigner(b, task, copies, filedYMD);
+}
+
+/**
+ * Pay whoever ASSIGNED the work, once it is finished (owner's rule, 2026-08-24).
+ *
+ * Delegating well is work of its own, so the assigner earns `assignTaskDone` the moment
+ * the task lands — filed under the SAME day as the doer's own award, so both sit in the
+ * same month and read as one event. Deliberately paid whether the work came in on time or
+ * LATE: the assigner is never punished for somebody else's delay, which is why there is no
+ * penalty counterpart to this rule.
+ *
+ * Who it is NOT for: a FORWARDER, who passes on work that was handed to them. They hold a
+ * copy of their own and are already paid by forwardOnTime / forwardLate — so anyone who
+ * owns a copy in this chain is skipped here rather than paid twice.
+ *
+ * Only the ROOT is passed in, so a forward chain pays its original assigner exactly once.
+ * Work handed out before ASSIGNER_FLOOR_YMD is grandfathered. Write-or-delete, so a
+ * re-score keeps history honest in both directions.
+ *
+ * MULTI-ASSIGN pays ONCE (owner's rule, 2026-08-24): one job handed to several people at
+ * the same time is a single act of delegation, however many copies it became. The batch's
+ * award is anchored to whichever copy was COMPLETED FIRST; every other copy clears its own
+ * key, so scoring the copies in any order converges on exactly one entry. (Un-doing the
+ * anchor copy drops the award until the daily re-score re-reads a still-finished sibling —
+ * the same self-healing the rest of the task scoring relies on.)
+ */
+async function awardAssigner(b, root, copies, filedYMD) {
+  const key = `auto_assign:${root._id}`;
+  // NOTE: every query that feeds onAssignedTaskDone MUST select `assignBatch`. Without it
+  // this check reads as "not a batch" and each copy pays the assigner separately — a silent
+  // double-pay that only shows up on the re-score paths, not the live hook.
+  if (root.assignBatch) {
+    const [firstDone] = await Task.find({ assignBatch: root.assignBatch, assignedBy: root.assignedBy, status: 'DONE' })
+      .select('_id').sort({ completedAt: 1, _id: 1 }).limit(1);
+    // Somebody else's copy got there first — this one pays nothing, and gives up any award
+    // an earlier pass left on it.
+    if (firstDone && String(firstDone._id) !== String(root._id)) {
+      await PointEntry.deleteMany({ dedupeKey: key });
+      return;
+    }
+  }
+  // Priced on the day the award is FILED under, so it agrees with the doer's own entry —
+  // but never earlier than the day the rule came into force. A task finished late is filed
+  // back on the day its deadline passed, which for the first tasks under this rule can be
+  // before it existed; looking the price up there would find a list with no such rule and
+  // pay nothing.
+  const priceOn = filedYMD < ASSIGNER_FLOOR_YMD ? ASSIGNER_FLOOR_YMD : filedYMD;
+  const pts = rulePoints(b, 'assignTaskDone', priceOn);
+  const assignedOn = root.createdAt ? ymdInTz(root.createdAt) : '';
+  // A missing createdAt reads as NOT payable: unlike a penalty gate, inventing a reward
+  // off an unknown date is the dangerous direction.
+  const grandfathered = !assignedOn || assignedOn < ASSIGNER_FLOOR_YMD;
+  const paidAsHolder = copies.some((c) => String(c.owner) === String(root.assignedBy));
+  const finished = !root.status || root.status === 'DONE';
+  if (!pts || grandfathered || paidAsHolder || !finished) {
+    await PointEntry.deleteMany({ dedupeKey: key });
+    return;
+  }
+  await awardOnce(key, {
+    user: root.assignedBy,
+    month: filedYMD.slice(0, 7),
+    points: Math.abs(pts), // always a credit — never a penalty
+    reason: `Work you assigned was completed: ${root.title}`,
+    source: 'auto_assign',
+    taskRef: root._id,
+    earnedYMD: filedYMD,
+  }, { replace: true });
 }
 
 export async function onAssignedTaskUndone(taskId) {
-  await PointEntry.deleteMany({ taskRef: taskId, source: { $in: ['auto_task', 'auto_forward'] } });
+  await PointEntry.deleteMany({ taskRef: taskId, source: { $in: ['auto_task', 'auto_forward', 'auto_assign'] } });
   // Wiping alone would forgive every day the task HAS sat overdue. Rebuild the overdue
   // history against the deadline as it stands now — see rebuildOverdueForTask.
   try { await rebuildOverdueForTask(taskId); } catch (e) { console.error('overdue rebuild failed', e?.message); }
@@ -750,8 +828,11 @@ export async function taskBonusPreview(taskId) {
   const deadlineYMD = t.dueYMD ? addDays(t.dueYMD, grace) : null;
 
   // What THIS copy has actually earned / cost so far — read from the ledger, never guessed.
+  // The assigner's own reward hangs off the same taskRef but belongs to a different person,
+  // so it is excluded: otherwise the holder's "earned so far" would include points paid to
+  // whoever handed them the work.
   const [agg] = await PointEntry.aggregate([
-    { $match: { taskRef: t._id } },
+    { $match: { taskRef: t._id, source: { $ne: 'auto_assign' } } },
     { $group: {
       _id: null,
       neg: { $sum: { $cond: [{ $lt: ['$points', 0] }, '$points', 0] } },
@@ -1492,7 +1573,7 @@ export async function backfillMonth(month) {
     // with the per-task forward-chain lookup that unbounded scan blew past the 30s timeout.
     const monthStart = companyDayFromYMD(from);
     const monthEndExclusive = companyDayFromYMD(`${nextMonth(month)}-01`);
-    const tasks = await Task.find({ status: 'DONE', assignedBy: { $ne: null }, forwardedFrom: null, completedAt: { $gte: monthStart, $lt: monthEndExclusive } }).select('owner dueYMD title completedAt submittedAt requiresApproval assignedBy forwardedFrom collaborators createdAt');
+    const tasks = await Task.find({ status: 'DONE', assignedBy: { $ne: null }, forwardedFrom: null, completedAt: { $gte: monthStart, $lt: monthEndExclusive } }).select('owner dueYMD title completedAt submittedAt requiresApproval assignedBy forwardedFrom collaborators createdAt assignBatch');
     for (const t of tasks) {
       const doneYMD = ymdInTz(t.completedAt); // the completion/approval day decides the month
       if (doneYMD < from || doneYMD > to) continue;
@@ -1560,7 +1641,8 @@ async function repairEarnedDates() {
     .limit(2000);
   if (!rows.length) return;
 
-  const taskIds = rows.filter((r) => r.source === 'auto_task' && r.taskRef).map((r) => r.taskRef);
+  const TASK_SOURCED = new Set(['auto_task', 'auto_forward', 'auto_assign']);
+  const taskIds = rows.filter((r) => TASK_SOURCED.has(r.source) && r.taskRef).map((r) => r.taskRef);
   const tasks = taskIds.length ? await Task.find({ _id: { $in: taskIds } }).select('completedAt submittedAt requiresApproval') : [];
   const taskById = new Map(tasks.map((t) => [String(t._id), t]));
 
@@ -1574,7 +1656,7 @@ async function repairEarnedDates() {
       // a late/absent/drip day. (The old weekly-streak keys ended in a MONDAY and needed
       // +5; those rows were wiped by the streak V2 rebuild.)
       [, ymd] = day;
-    } else if (r.source === 'auto_task' && taskById.has(String(r.taskRef))) {
+    } else if (TASK_SOURCED.has(r.source) && taskById.has(String(r.taskRef))) {
       const t = taskById.get(String(r.taskRef));
       if (t.completedAt) ymd = ymdInTz(t.completedAt); // the completion/approval day
 
@@ -1675,6 +1757,101 @@ async function seedOverdueDripRule() {
 }
 
 /**
+ * Seed the assigner reward (assignTaskDone, 3 pts) once, so it works out of the box with
+ * the value leadership asked for — editable/removable in Settings like any other rule, and
+ * the flag stops it re-appearing after they take it off.
+ */
+const ASSIGNER_REWARD_POINTS = 3; // the value leadership asked for; editable in Settings after
+
+async function seedAssignerRewardRule() {
+  const s = await Setting.getSingleton();
+  if (s.bonus?.assignerRewardSeeded) return;
+  const b = s.bonus || {};
+  const rules = [...(b.autoRules || [])];
+  if (!rules.some((r) => r.key === 'assignTaskDone')) rules.push({ key: 'assignTaskDone', points: ASSIGNER_REWARD_POINTS });
+  s.bonus.autoRules = rules;
+
+  // Adding it to `autoRules` alone is NOT enough, and getting this wrong makes the whole
+  // reward silently unpayable.
+  //
+  // Prices are EFFECTIVE-DATED: every award is priced from the `rateHistory` snapshot in
+  // force on the day it is filed under, and the live `autoRules` list is consulted ONLY
+  // when there is no history at all (see ratesOn). Every real database HAS history — one
+  // entry is seeded at go-live and another is appended on each Settings save — so a rule
+  // that exists only in `autoRules` prices at ZERO on every date, and awardAssigner would
+  // delete instead of pay. Every earlier rule escaped this by being seeded BEFORE the
+  // history feature existed, so they sit inside the go-live snapshot; this is the first
+  // rule seeded after it, and it has to put itself in.
+  //
+  // It is written in at the rule's OWN start date, carrying the prices already in force on
+  // that day, so no other rule is re-priced by the insertion — and into every later
+  // snapshot, all of which are dated after the rule came into force. Snapshots that predate
+  // the rule are left alone: work handed out back then is grandfathered anyway.
+  const hist = [...(b.rateHistory || [])]
+    .map((h) => ({
+      effectiveFrom: h.effectiveFrom,
+      graceDays: h.graceDays,
+      rules: (h.rules || []).map((r) => ({ key: r.key, points: r.points })),
+      changedBy: h.changedBy || null,
+      changedAt: h.changedAt || null,
+    }));
+  if (hist.length) {
+    if (!hist.some((h) => h.effectiveFrom === ASSIGNER_FLOOR_YMD)) {
+      const inForce = ratesOn(b, ASSIGNER_FLOOR_YMD);
+      hist.push({
+        effectiveFrom: ASSIGNER_FLOOR_YMD,
+        graceDays: inForce.graceDays,
+        rules: inForce.rules.map((r) => ({ key: r.key, points: r.points })),
+        changedBy: null,
+        changedAt: new Date(),
+      });
+    }
+    for (const h of hist) {
+      if (h.effectiveFrom < ASSIGNER_FLOOR_YMD) continue; // the rule did not exist yet
+      if (h.rules.some((r) => r.key === 'assignTaskDone')) continue;
+      h.rules.push({ key: 'assignTaskDone', points: ASSIGNER_REWARD_POINTS });
+    }
+    hist.sort((x, y) => (x.effectiveFrom < y.effectiveFrom ? -1 : 1));
+    s.bonus.rateHistory = hist;
+    s.markModified('bonus.rateHistory');
+  }
+  s.bonus.assignerRewardSeeded = true;
+  await s.save();
+  Setting.invalidateCache();
+}
+
+/**
+ * One-time: apply the assigner reward to work that was ALREADY finished under it.
+ *
+ * The rule starts at ASSIGNER_FLOOR_YMD, which is in the past by the time it ships, so
+ * every task handed out on/after that day and already completed is owed its award. Re-runs
+ * onAssignedTaskDone on those roots — the same path the live hook uses, so the reward is
+ * priced and filed identically, and awardOnce's dedupe key makes a second pass a no-op.
+ * Flag-gated; a run cut short by the Lambda timeout simply finishes on a later tick, and
+ * the daily re-sync (rescoreAllDoneAssigned) covers recent tasks anyway.
+ */
+async function backfillAssignerRewards() {
+  const s = await Setting.getSingleton();
+  if (s.bonus?.assignerRewardV1 || !s.bonus?.enabled) return;
+  const tasks = await Task.find({
+    status: 'DONE',
+    assignedBy: { $ne: null },
+    forwardedFrom: null,
+    createdAt: { $gte: companyDayFromYMD(ASSIGNER_FLOOR_YMD) },
+  })
+    .select('owner completedBy dueYMD title completedAt submittedAt requiresApproval assignedBy status forwardedFrom collaborators createdAt assignBatch')
+    .limit(5000);
+  for (const t of tasks) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await onAssignedTaskDone(t);
+    } catch (e) { console.error('assigner-reward backfill failed', String(t._id), e?.message); }
+  }
+  await Setting.updateOne({ key: 'global' }, { $set: { 'bonus.assignerRewardV1': true } });
+  Setting.invalidateCache();
+}
+
+/**
  * Re-score every finished assigned task from the task table as it stands right now, so a
  * task's points always reflect its CURRENT due date, completion day and status — even if
  * those were changed directly in the database, outside the app's own hooks. Re-runs
@@ -1691,7 +1868,7 @@ async function rescoreAllDoneAssigned() {
   // timeout (and dragging the whole app down). App-driven edits still re-score instantly.
   const cutoff = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000);
   const tasks = await Task.find({ status: 'DONE', assignedBy: { $ne: null }, completedAt: { $gte: cutoff }, forwardedFrom: null })
-    .select('owner completedBy dueYMD title completedAt submittedAt requiresApproval assignedBy status forwardedFrom collaborators createdAt')
+    .select('owner completedBy dueYMD title completedAt submittedAt requiresApproval assignedBy status forwardedFrom collaborators createdAt assignBatch')
     .limit(5000);
   for (const t of tasks) {
     try {
@@ -1720,7 +1897,7 @@ async function rescoreAssignedTasks(b) {
   const forwardedParentIds = await Task.distinct('forwardedFrom', { forwardedFrom: { $ne: null } });
   if (forwardedParentIds.length) {
     const roots = await Task.find({ _id: { $in: forwardedParentIds }, forwardedFrom: null, status: 'DONE', assignedBy: { $ne: null }, completedAt: { $ne: null } })
-      .select('owner completedBy dueYMD title completedAt submittedAt requiresApproval assignedBy status forwardedFrom collaborators createdAt')
+      .select('owner completedBy dueYMD title completedAt submittedAt requiresApproval assignedBy status forwardedFrom collaborators createdAt assignBatch')
       .limit(5000);
     for (const t of roots) {
       try {
@@ -1742,7 +1919,7 @@ async function rescoreAssignedTasks(b) {
  * on every rewards load.
  */
 export async function pruneOrphanTaskEntries() {
-  const TASK_SOURCES = ['auto_task', 'auto_forward'];
+  const TASK_SOURCES = ['auto_task', 'auto_forward', 'auto_assign'];
   const entries = await PointEntry.find({ source: { $in: TASK_SOURCES }, taskRef: { $ne: null } })
     .select('taskRef points')
     .limit(20000);
@@ -1808,6 +1985,10 @@ export async function maybeRunDaily(force = false) {
   try { await catchUpHistory(b); } catch (e) { console.error('history catch-up failed', e?.message); }
   try { await seedForwardRules(); } catch (e) { console.error('forward-rule seed failed', e?.message); }
   try { await seedOverdueDripRule(); } catch (e) { console.error('overdue-drip seed failed', e?.message); }
+  // Assigner reward: seed the rule, then pay the already-finished work it covers. Order
+  // matters — the backfill re-reads settings, so the rule must exist before it runs.
+  try { await seedAssignerRewardRule(); } catch (e) { console.error('assigner-reward seed failed', e?.message); }
+  try { await backfillAssignerRewards(); } catch (e) { console.error('assigner-reward backfill failed', e?.message); }
   try { await rescoreAssignedTasks(b); } catch (e) { console.error('task re-score failed', e?.message); }
   // One-time recalcs for the owner's new rules (2026-08-08) — flag-gated, so a no-op once
   // done. ABOVE the daily throttle on purpose: each writes its own -5 marks / streak

@@ -134,6 +134,17 @@ const settingSchema = new mongoose.Schema(
       // One-time flag: late penalties cleared off excused / half-day records that an
       // older backfill pass had resurrected (see clearExcusedLatePenalties).
       excusedLateSwept: { type: Boolean, default: false },
+      // One-time flag: the per-day overdue drip rebuilt so it skips Sundays/off-days and
+      // holidays (owner's rule, 2026-08-24) — see migrateOverdueSkipOffDays.
+      overdueSkipOffDaysV1: { type: Boolean, default: false },
+      // Set once the assigner reward (assignTaskDone) has been seeded into autoRules AND
+      // into the effective-dated price list, so leadership can remove it for good.
+      assignerRewardSeeded: { type: Boolean, default: false },
+      // One-time flag: the assigner reward paid out on work already finished under it
+      // (see backfillAssignerRewards). MUST be declared here — an undeclared flag is
+      // silently dropped by mongoose strict mode, and the "one-time" pass would then
+      // re-run on every scheduler tick.
+      assignerRewardV1: { type: Boolean, default: false },
       // YMD — the last day the rolling punctual-streak scan judged; it walks forward
       // from here, so each day is classified exactly once.
       lastStreakScan: { type: String, default: '' },
