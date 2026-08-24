@@ -20,6 +20,10 @@ export function attendanceStatusLabel(status) {
   if (status === 'WFH') return 'Work from home';
   // Not in yet, but their office day isn't over — shown as a neutral dash, not "Absent".
   if (status === 'AWAITED') return '—';
+  // Their own birthday: a day off for them alone. Named (with the cake) so a blank day on
+  // the sheet reads as "it was their birthday", never as an unexplained absence — and so
+  // it is distinguishable from a company holiday, which shares its tone.
+  if (status === 'BIRTHDAY') return 'Birthday 🎂';
   return (status || '').replace('_', ' ');
 }
 

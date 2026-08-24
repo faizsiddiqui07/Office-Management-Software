@@ -25,6 +25,7 @@ const STATUS_COLOR = {
   ON_LEAVE: '#2563eb',
   WFH: '#0891b2', // worked, from home — distinct from leave's blue and present's green
   HOLIDAY: '#7c3aed',
+  BIRTHDAY: '#db2777', // their own day off — never absent, never a penalty
   WEEKEND: '#9ca3af',
   UPCOMING: '#9ca3af',
 };

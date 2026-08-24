@@ -12,6 +12,7 @@ import { userWeekendDays } from '../lib/schedule.js';
 import { hadAccessOn, splitByJoining, periodStartFor } from '../lib/joining.js';
 import { APP_LIVE_YMD } from '../lib/appLive.js';
 import { holidayYMDSet } from './holiday.service.js';
+import { isBirthdayYMD } from '../lib/birthday.js';
 
 const toId = (v) => (typeof v === 'string' ? new mongoose.Types.ObjectId(v) : v);
 const rand = () => Math.random().toString(36).slice(2, 10);
@@ -787,12 +788,14 @@ export async function rebuildOverdueForTask(taskId) {
   // weekly off-days (usually Sunday) and any company holiday are skipped, so a task never
   // racks up a penalty on a day the office is closed. The one-time overdue mark above is
   // unaffected — only this escalating drip respects the calendar.
-  const owner = await User.findById(t.owner).select('role employmentType schedule dateOfJoining');
+  const owner = await User.findById(t.owner).select('role employmentType schedule dateOfJoining dateOfBirth');
   const off = owner ? userWeekendDays(owner, s) : [];
   const holidays = await holidayYMDSet(first, last);
   for (let d = first; d <= last; d = addDays(d, 1)) {
     const dow = dayOfWeekInTz(companyDayFromYMD(d));
-    if (off.includes(dow) || holidays.has(d)) continue; // non-working day → no drip
+    // Non-working day for THIS person → no drip. Their own birthday counts, the same way
+    // their weekly off-day does: the office rule is that the day costs them nothing.
+    if (off.includes(dow) || holidays.has(d) || isBirthdayYMD(owner, d)) continue;
     // eslint-disable-next-line no-await-in-loop
     await awardOnce(`auto_overdue:${t._id}:${d}`, { user: t.owner, month: d.slice(0, 7), points: -Math.abs(rulePoints(b, 'assignedTaskOverdueDaily', d)), reason: `Still overdue: ${t.title}`, source: 'auto_task', taskRef: t._id, earnedYMD: d });
   }
@@ -976,7 +979,7 @@ export async function reconcilePerfectMonth(userId, month) {
   // closed month is priced by that month's own rate block, from one place, not two.
   const monthEnd = monthEndOf(month);
   const pts = rulePoints(b, 'perfectAttendanceMonth', monthEnd);
-  const user = await User.findById(userId).select('role employmentType schedule dateOfJoining');
+  const user = await User.findById(userId).select('role employmentType schedule dateOfJoining dateOfBirth');
   // Only roster members (self-track attendance) are ever judged — same as the rollup.
   if (!b.enabled || !pts || !user || !can({ role: user.role }, 'markAttendance')) {
     await PointEntry.deleteMany({ dedupeKey: key });
@@ -996,7 +999,7 @@ export async function reconcilePerfectMonth(userId, month) {
     const ymd = `${month}-${String(d).padStart(2, '0')}`;
     if (ymd < startedOn) continue; // before they joined
     const dow = dayOfWeekInTz(companyDayFromYMD(ymd));
-    if (offDays.includes(dow) || holidays.has(ymd)) continue;
+    if (offDays.includes(dow) || holidays.has(ymd) || isBirthdayYMD(user, ymd)) continue;
     workingDays += 1;
     const rec = byDay.get(ymd);
     if (!rec) absent += 1;
@@ -1028,13 +1031,14 @@ export async function reconcileAbsence(userId, dateYMD) {
     await PointEntry.deleteMany({ dedupeKey: key });
     return;
   }
-  const user = await User.findById(userId).select('role employmentType schedule dateOfJoining');
+  const user = await User.findById(userId).select('role employmentType schedule dateOfJoining dateOfBirth');
   const holidays = await holidayYMDSet(dateYMD, dateYMD);
   const dow = dayOfWeekInTz(companyDayFromYMD(dateYMD));
   const rec = await Attendance.findOne({ user: userId, date: companyDayFromYMD(dateYMD) }).select('_id');
   const onLeave = await LeaveRequest.findOne({ user: userId, status: 'APPROVED', type: { $ne: 'WFH' }, startYMD: { $lte: dateYMD }, endYMD: { $gte: dateYMD } }).select('_id');
   const isAbsent = user && can({ role: user.role }, 'markAttendance') && hadAccessOn(user, dateYMD)
-    && !holidays.has(dateYMD) && !userWeekendDays(user, s).includes(dow) && !rec && !onLeave;
+    && !holidays.has(dateYMD) && !isBirthdayYMD(user, dateYMD)
+    && !userWeekendDays(user, s).includes(dow) && !rec && !onLeave;
   if (isAbsent) {
     await awardOnce(key, { user: userId, month: dateYMD.slice(0, 7), points: -Math.abs(pts), reason: `Absent · ${dateYMD}`, source: 'auto_absent', earnedYMD: dateYMD });
   } else {
@@ -1150,7 +1154,7 @@ async function scanOverdueTasks(b) {
   const tasks = await Task.find({ assignedBy: { $ne: null }, status: 'PENDING', dueYMD: { $nin: ['', null] }, _id: { $nin: forwardedParentIds } }).select('owner dueYMD title assignedBy collaborators forwardedFrom');
   const ownerIds = tasks.length ? await ownerTierIds() : new Set();
   // Owners' schedules, one query, so the drip can read each task owner's weekly off-days.
-  const ownerDocs = tasks.length ? await User.find({ _id: { $in: [...new Set(tasks.map((t) => String(t.owner)))] } }).select('role employmentType schedule dateOfJoining') : [];
+  const ownerDocs = tasks.length ? await User.find({ _id: { $in: [...new Set(tasks.map((t) => String(t.owner)))] } }).select('role employmentType schedule dateOfJoining dateOfBirth') : [];
   const ownerById = new Map(ownerDocs.map((u) => [String(u._id), u]));
   const chainMemo = new Map();
   for (const t of tasks) {
@@ -1185,7 +1189,9 @@ async function scanOverdueTasks(b) {
     // result. Drips apply only to tasks DUE on/after the August floor (the drip rule's
     // start); the -5 mark above has no floor.
     const ownerDoc = ownerById.get(String(t.owner));
-    const isWorkingToday = !isHolidayToday && !(ownerDoc ? userWeekendDays(ownerDoc, s) : []).includes(dowToday);
+    const isWorkingToday = !isHolidayToday
+      && !(ownerDoc ? userWeekendDays(ownerDoc, s) : []).includes(dowToday)
+      && !isBirthdayYMD(ownerDoc, today); // their birthday costs them nothing
     if (dripPts && isWorkingToday && t.dueYMD >= DRIP_FLOOR_YMD && today > addDays(duePlus, 1)) {
       // eslint-disable-next-line no-await-in-loop
       await awardOnce(`auto_overdue:${t._id}:${today}`, { user: t.owner, month: today.slice(0, 7), points: -Math.abs(rulePoints(b, 'assignedTaskOverdueDaily', today)), reason: `Still overdue: ${t.title}`, source: 'auto_task', taskRef: t._id, earnedYMD: today });
@@ -1265,6 +1271,47 @@ async function migrateOverdueSkipOffDays(b) {
 }
 
 /**
+ * One-time (owner's rule, 2026-08-24): a person's own birthday is a day off for them, so
+ * it can never have cost them anything. Every scan now skips it, but the absence scan is
+ * insert-only — a penalty already written on somebody's birthday would sit there forever —
+ * so this clears them, then puts right the two things that penalty could have spoiled:
+ * the punctual streak (watermark cleared so the rolling scan re-walks and re-judges those
+ * days) and the perfect-attendance award for each affected month.
+ *
+ * Flag-gated. Also runs cheaply when there is nothing to clear, which is the normal case.
+ */
+async function migrateBirthdayOffDay() {
+  const s = await Setting.getSingleton();
+  if (s.bonus?.birthdayOffDayV1 || !s.bonus?.enabled) return;
+  const users = await User.find({ dateOfBirth: { $gt: '' } }).select('dateOfBirth');
+  const months = new Set();
+  for (const u of users) {
+    const mmdd = (u.dateOfBirth || '').slice(5, 10);
+    if (mmdd.length < 5) continue;
+    // eslint-disable-next-line no-await-in-loop
+    const rows = await PointEntry.find({ user: u._id, source: 'auto_absent' }).select('earnedYMD');
+    const bad = rows.filter((r) => (r.earnedYMD || '').slice(5, 10) === mmdd);
+    if (!bad.length) continue;
+    // eslint-disable-next-line no-await-in-loop
+    await PointEntry.deleteMany({ _id: { $in: bad.map((r) => r._id) } });
+    for (const r of bad) months.add(`${u._id}|${(r.earnedYMD || '').slice(0, 7)}`);
+  }
+  if (months.size) {
+    // A month that was only spoiled by a birthday "absence" may now be perfect.
+    for (const k of months) {
+      const [uid, month] = k.split('|');
+      // eslint-disable-next-line no-await-in-loop
+      await reconcilePerfectMonth(uid, month).catch(() => {});
+    }
+    // Re-judge every streak day: a birthday no longer breaks a run.
+    await Setting.updateOne({ key: 'global' }, { $set: { 'bonus.lastStreakScan': '' } });
+    Setting.invalidateCache();
+  }
+  await Setting.updateOne({ key: 'global' }, { $set: { 'bonus.birthdayOffDayV1': true } });
+  Setting.invalidateCache();
+}
+
+/**
  * Absence penalties for every day not scored yet — not just yesterday.
  *
  * This runs off whatever request happens to be the day's first, so on a public holiday,
@@ -1300,7 +1347,7 @@ async function scanAbsences(b, since, until = null) {
 
   const s = await Setting.getSingleton();
   const holidays = await holidayYMDSet(days[0], days[days.length - 1]);
-  const users = (await User.find({ isActive: true }).select('name role employmentType schedule dateOfJoining')).filter((u) => can({ role: u.role }, 'markAttendance'));
+  const users = (await User.find({ isActive: true }).select('name role employmentType schedule dateOfJoining dateOfBirth')).filter((u) => can({ role: u.role }, 'markAttendance'));
   // One query for the whole window instead of one per day.
   const attended = await Attendance.find({ date: { $gte: companyDayFromYMD(days[0]), $lte: companyDayFromYMD(days[days.length - 1]) } }).select('user date');
   const presentByDay = new Map();
@@ -1320,6 +1367,7 @@ async function scanAbsences(b, since, until = null) {
     for (const u of users) {
       if (!hadAccessOn(u, ymd)) continue; // they hadn't joined — not an absence
       if (userWeekendDays(u, s).includes(dow)) continue;
+      if (isBirthdayYMD(u, ymd)) continue; // their own birthday is a day off for them alone
       if (present.has(String(u._id)) || onLeave.has(String(u._id))) continue;
       // eslint-disable-next-line no-await-in-loop
       await awardOnce(`auto_absent:${u._id}:${ymd}`, { user: u._id, month, points: -Math.abs(rulePoints(b, 'absentDay', ymd)), reason: `Absent · ${ymd}`, source: 'auto_absent', earnedYMD: ymd });
@@ -1346,7 +1394,7 @@ async function runMonthRollup(b, forMonth = null) {
   const monthEnd = `${target}-${String(lastDay).padStart(2, '0')}`;
   const s = await Setting.getSingleton();
   const holidays = await holidayYMDSet(from, monthEnd);
-  const roster = (await User.find({ isActive: true }).select('name role employmentType schedule dateOfJoining')).filter((u) => can({ role: u.role }, 'markAttendance'));
+  const roster = (await User.find({ isActive: true }).select('name role employmentType schedule dateOfJoining dateOfBirth')).filter((u) => can({ role: u.role }, 'markAttendance'));
   // Someone who joined after this month never worked it; someone who joined during it
   // is judged only on their own days, so a mid-month joiner isn't denied a perfect
   // month for days before they had access.
@@ -1375,7 +1423,7 @@ async function runMonthRollup(b, forMonth = null) {
         const ymd = `${target}-${String(d).padStart(2, '0')}`;
         if (ymd < startedOn) continue; // before they joined
         const dow = dayOfWeekInTz(companyDayFromYMD(ymd));
-        if (offDays.includes(dow) || holidays.has(ymd)) continue;
+        if (offDays.includes(dow) || holidays.has(ymd) || isBirthdayYMD(u, ymd)) continue;
         workingDays += 1;
         const rec = byDay.get(ymd);
         if (!rec) absent += 1;
@@ -1420,7 +1468,7 @@ export async function runRollingStreak(b) {
   const runs = { ...(s.bonus?.streakRuns || {}) };
 
   const holidays = await holidayYMDSet(start, yesterday);
-  const roster = (await User.find({ isActive: true }).select('name role employmentType schedule dateOfJoining')).filter((u) => can({ role: u.role }, 'markAttendance'));
+  const roster = (await User.find({ isActive: true }).select('name role employmentType schedule dateOfJoining dateOfBirth')).filter((u) => can({ role: u.role }, 'markAttendance'));
   const { included: users } = splitByJoining(roster, start, yesterday);
   const recs = await Attendance.find({ date: { $gte: companyDayFromYMD(start), $lte: companyDayFromYMD(yesterday) } }).select('user date status excused');
   const recByUserDay = new Map(recs.map((r) => [`${r.user}|${ymdInTz(r.date)}`, r]));
@@ -1434,7 +1482,9 @@ export async function runRollingStreak(b) {
     for (let d = start; d <= yesterday; d = addDays(d, 1)) {
       if (d < startedOn) continue; // before they had access (joiner / go-live)
       const dow = dayOfWeekInTz(companyDayFromYMD(d));
-      if (off.includes(dow) || holidays.has(d)) continue; // Sunday / off-day / holiday → neutral
+      // Sunday / off-day / company holiday / their own birthday → neutral: neither breaks
+      // the run nor counts towards it, exactly like any other day they weren't due in.
+      if (off.includes(dow) || holidays.has(d) || isBirthdayYMD(u, d)) continue;
       const rec = recByUserDay.get(`${uid}|${d}`);
       const onLeave = leaves.some((l) => String(l.user) === uid && l.startYMD <= d && l.endYMD >= d);
       if (rec && (rec.status === 'WFH' || rec.status === 'ON_LEAVE')) continue; // neutral
@@ -1996,6 +2046,7 @@ export async function maybeRunDaily(force = false) {
   // waiting a day behind the throttle (the exact gap that left them unapplied on deploy).
   try { await backfillOverdueRuleV2(); } catch (e) { console.error('overdue rule-v2 backfill failed', e?.message); }
   try { await migrateOverdueSkipOffDays(b); } catch (e) { console.error('overdue skip-offday migration failed', e?.message); }
+  try { await migrateBirthdayOffDay(); } catch (e) { console.error('birthday off-day migration failed', e?.message); }
   try { await rebuildStreakV2(b); } catch (e) { console.error('streak v2 rebuild failed', e?.message); }
   try { await clearExcusedLatePenalties(); } catch (e) { console.error('excused-late sweep failed', e?.message); }
   try { await seedRateHistory(); } catch (e) { console.error('rate-history seed failed', e?.message); }
@@ -2011,10 +2062,20 @@ export async function maybeRunDaily(force = false) {
   // days done and they would never be looked at again — the exact hole this catch-up
   // was added to close.
   const scanFrom = b.lastAbsenceScan || b.lastPenaltyRun || '';
-  s.bonus.lastPenaltyRun = today; // throttle FIRST, so an overlapping tick can't double-run the heavy jobs below
   const rolled = await runMonthRollup(b).catch((e) => { console.error('month rollup failed', e?.message); return b.lastMonthRollup; });
-  if (rolled) s.bonus.lastMonthRollup = rolled;
-  await s.save();
+  // Write the two watermarks with a TARGETED $set — never `s.save()` on this document.
+  //
+  // `s` was loaded at the top of this function, before the one-time migrations above ran.
+  // A flag those migrations latch is a field this document does not have yet on the first
+  // tick after a deploy, so mongoose materialises it at its schema default in memory —
+  // and saving the document writes that whole stale `bonus` subtree back, un-setting the
+  // flag that had just been written. The "one-time" pass then ran a second time on the
+  // next tick. Setting only the two paths that actually changed leaves every other field,
+  // and every freshly-latched flag, exactly as the migrations left it.
+  const watermarks = { 'bonus.lastPenaltyRun': today }; // throttle FIRST, so an overlapping tick can't double-run the heavy jobs below
+  if (rolled) watermarks['bonus.lastMonthRollup'] = rolled;
+  await Setting.updateOne({ key: 'global' }, { $set: watermarks });
+  Setting.invalidateCache();
   // ── Once a day from here down. These do collection scans / heavier queries, so they must
   //    NOT run on every few-minute tick (that recurring load is what slowed the whole app). ──
   try { await repairEarnedDates(); } catch (e) { console.error('earned-date repair failed', e?.message); }

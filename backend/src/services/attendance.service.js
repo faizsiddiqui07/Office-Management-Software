@@ -4,6 +4,7 @@ import { User } from '../models/User.js';
 import { canViewEveryone, can } from '../lib/permissions.js';
 import { haversineMeters } from '../lib/geo.js';
 import { holidayYMDSet } from './holiday.service.js';
+import { isBirthdayYMD } from '../lib/birthday.js';
 import {
   companyTzMidnight,
   companyDayFromYMD,
@@ -315,6 +316,9 @@ export async function getTodayPayload(user) {
     record: record ? record.toJSON() : null,
     serverNow: now.toISOString(),
     isHoliday,
+    // Their own birthday: a day off for them alone. Checking in is welcome and is never
+    // late; not coming in is never an absence and costs no points.
+    isBirthday: isBirthdayYMD(user, dateYMD),
     // Today is a work-from-home day — the card shows "no check-in needed" instead of the
     // button. Sent explicitly so the client doesn't have to re-derive the rule.
     isWFH: record?.status === 'WFH',
@@ -385,7 +389,8 @@ export async function listAttendance(viewer, { userId, all, from, to, page = 1, 
 /**
  * Month payroll matrix: every attendance-tracking employee × every day of the
  * month, with per-employee totals. Cell codes: P present, L late (unexcused —
- * excused counts as P), A absent, OL on leave, H weekend/holiday, '' future.
+ * excused counts as P), A absent, OL on leave, H weekend/holiday, B their own
+ * birthday (a day off for them alone — never absent), '' future.
  */
 export async function attendanceMatrix(monthKey) {
   const [y, m] = monthKey.split('-').map(Number);
@@ -397,7 +402,7 @@ export async function attendanceMatrix(monthKey) {
   const holidays = await holidayYMDSet(from, to);
   const now = new Date();
 
-  const allUsers = await User.find({ isActive: true }).select('name employeeId role employmentType schedule dateOfJoining').sort({ name: 1 });
+  const allUsers = await User.find({ isActive: true }).select('name employeeId role employmentType schedule dateOfJoining dateOfBirth').sort({ name: 1 });
   const roster = allUsers.filter((u) => can({ role: u.role }, 'markAttendance'));
   // Anyone who joined after this month has no business on its sheet at all; those who
   // joined during it keep their row, but only from the day they arrived (below).
@@ -420,7 +425,8 @@ export async function attendanceMatrix(monthKey) {
       // A dash keeps the row aligned with the others without inventing an absence.
       if (ymd < startedOn) return '–';
       const rec = byUserDay.get(`${u._id}|${ymd}`);
-      const isOff = offDays.includes(dowOf.get(ymd)) || holidays.has(ymd);
+      const isBday = isBirthdayYMD(u, ymd); // their own day off — never an absence
+      const isOff = offDays.includes(dowOf.get(ymd)) || holidays.has(ymd) || isBday;
       if (rec?.checkInAt) {
         t.workedMinutes += rec.workedMinutes || 0;
         t.overtimeMinutes += rec.overtimeMinutes || 0;
@@ -442,6 +448,7 @@ export async function attendanceMatrix(monthKey) {
         t.wfh += 1;
         return 'W';
       }
+      if (isBday) return 'B'; // shown distinctly so the sheet explains the empty day
       if (isOff) return 'H';
       // Future days, and today before the person's office day is over, aren't
       // absent yet — leave the cell blank until the window closes.
@@ -468,7 +475,7 @@ export async function attendanceOverview(ymd) {
   const isHoliday = (await holidayYMDSet(dateYMD, dateYMD)).has(dateYMD);
 
   const [allUsers, records] = await Promise.all([
-    User.find({ isActive: true }).select('name email role employeeId department employmentType schedule dateOfJoining').sort({ name: 1 }),
+    User.find({ isActive: true }).select('name email role employeeId department employmentType schedule dateOfJoining dateOfBirth').sort({ name: 1 }),
     Attendance.find({ date: day }),
   ]);
 
@@ -492,7 +499,9 @@ export async function attendanceOverview(ymd) {
       const off = isHoliday || userWeekendDays(u, settings).includes(dow);
       // A no-show is only "absent" once their office day is over — until then
       // they may still arrive, so they're "AWAITED" (shown as "—").
-      if (off) status = 'HOLIDAY';
+      // Their own birthday is a day off for them alone: shown as BIRTHDAY, never absent.
+      if (isBirthdayYMD(u, dateYMD)) status = 'BIRTHDAY';
+      else if (off) status = 'HOLIDAY';
       else status = workWindowClosed(u, dateYMD, settings, now) ? 'ABSENT' : 'AWAITED';
     }
     return { user: u.toJSON(), attendance: rec ? rec.toJSON() : null, status };

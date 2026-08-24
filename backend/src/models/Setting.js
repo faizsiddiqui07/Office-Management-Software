@@ -145,6 +145,9 @@ const settingSchema = new mongoose.Schema(
       // silently dropped by mongoose strict mode, and the "one-time" pass would then
       // re-run on every scheduler tick.
       assignerRewardV1: { type: Boolean, default: false },
+      // One-time flag: absence penalties cleared off people's own birthdays, and the
+      // streak / perfect-month awards those penalties had spoiled put right.
+      birthdayOffDayV1: { type: Boolean, default: false },
       // YMD — the last day the rolling punctual-streak scan judged; it walks forward
       // from here, so each day is classified exactly once.
       lastStreakScan: { type: String, default: '' },

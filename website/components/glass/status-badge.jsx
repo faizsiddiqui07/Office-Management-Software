@@ -45,6 +45,9 @@ export const STATUS_TONES = {
   REJECTED: 'destructive',
   ON_LEAVE: 'info',
   HOLIDAY: 'info',
+  // A birthday is time off like a holiday, so it shares the tone; its label carries the
+  // cake, which is what tells the two apart at a glance.
+  BIRTHDAY: 'info',
   // Worked, from home. Its own tone — it must not read as time off (ON_LEAVE/HOLIDAY
   // are both 'info'), and without a key here it would fall back to a grey "nothing
   // happened" badge.

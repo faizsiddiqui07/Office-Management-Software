@@ -12,6 +12,7 @@ import { can } from '../lib/permissions.js';
 import { workWindowClosed, userWeekendDays } from '../lib/schedule.js';
 import { leaveYearOf } from '../lib/leaveYear.js';
 import { holidayYMDSet } from './holiday.service.js';
+import { isBirthdayYMD, birthdayYMDSet } from '../lib/birthday.js';
 import { expenseSummary } from './expense.service.js';
 import { ledgerFor } from './dues.service.js';
 import { wfhUsage } from './leave.service.js';
@@ -156,7 +157,7 @@ export async function buildReport(type, dateYMD, range) {
   const [activeUsers, records, takenLeaves, pendingLeaves, balances, expList, expSummary] = await Promise.all([
     // schedule + employmentType so a part-timer's own working days are used, not the
     // office weekend (which marked their off-days absent).
-    User.find({ isActive: true }).select('name employeeId role department dateOfJoining schedule employmentType').sort({ name: 1 }),
+    User.find({ isActive: true }).select('name employeeId role department dateOfJoining schedule employmentType dateOfBirth').sort({ name: 1 }),
     // Fetch up to the report's end OR today, whichever is earlier. A current/ongoing
     // period reaches to today so a person whose own office day has already ended is
     // counted for it (each employee's numerator is capped to their last-finished day
@@ -214,14 +215,18 @@ export async function buildReport(type, dateYMD, range) {
     // denominator — a daily report opened this morning read "0% / 0 working days" beside 25
     // people present, and a monthly one read 114%.
     const uCountTo = to < todayYMD ? to : todayYMD;
-    const ownWorkingDays = startedOn > uCountTo ? 0 : countWorkingDays(startedOn, uCountTo, uWeekend, holidaySet);
-    const finishedWorkingDays = startedOn > uElapsedTo ? 0 : countWorkingDays(startedOn, uElapsedTo, uWeekend, holidaySet);
+    // Their own non-working days: the company holidays PLUS their own birthday, which is
+    // a day off for them alone and so must leave their denominator as well.
+    const uOff = new Set(holidaySet);
+    for (const d of birthdayYMDSet(u, from, to)) uOff.add(d);
+    const ownWorkingDays = startedOn > uCountTo ? 0 : countWorkingDays(startedOn, uCountTo, uWeekend, uOff);
+    const finishedWorkingDays = startedOn > uElapsedTo ? 0 : countWorkingDays(startedOn, uElapsedTo, uWeekend, uOff);
     // Is this day one of THIS person's working days at all? Coming in on a Sunday, on a
     // holiday, or before they joined is real and is shown — but it must never enter a
     // figure whose denominator excludes those days. Without this test every off-day
     // attendance cancelled one real absence (and could push the rate past 100%).
     const isOwnWorkingDay = (d) => d >= startedOn
-      && !holidaySet.has(d)
+      && !uOff.has(d)
       && !uWeekend.includes(new Date(`${d}T00:00:00Z`).getUTCDay());
 
     let present = 0;
@@ -547,6 +552,7 @@ const STATUS_LABEL = {
   ON_LEAVE: 'On leave',
   WFH: 'Work from home',
   HOLIDAY: 'Holiday',
+  BIRTHDAY: 'Birthday',
   WEEKEND: 'Weekend',
   BEFORE_JOINING: 'Not employed yet',
   UPCOMING: '—',
@@ -633,6 +639,12 @@ export async function buildSelfReport({ user, type, dateYMD, range }) {
       overtimeMinutes = rec.overtimeMinutes || 0;
     } else if (holidaySet.has(ymd)) {
       status = 'HOLIDAY';
+    } else if (isBirthdayYMD(user, ymd)) {
+      // Their own birthday: a day off for them alone. It reads as BIRTHDAY rather than
+      // ABSENT so the sheet says WHY they weren't in and that it cost them nothing. (If
+      // they DID come in, the `rec` branches above already won and it shows as normal
+      // attendance.)
+      status = 'BIRTHDAY';
     } else if (ymd < joinedOn || ymd < APP_LIVE_YMD) {
       // Days before this person had access aren't theirs to answer for — and neither
       // are days before the office ran on this system at all. The fiscal year opens on
@@ -654,7 +666,7 @@ export async function buildSelfReport({ user, type, dateYMD, range }) {
     // happened on it? Derived here rather than from `status`, because a Sunday they came in
     // on carries status PRESENT and would otherwise be counted as a working day.
     const isWorkingDay = ymd >= joinedOn && ymd >= APP_LIVE_YMD && !holidaySet.has(ymd)
-      && !weekendDays.includes(dow) && ymd <= todayYMD;
+      && !isBirthdayYMD(user, ymd) && !weekendDays.includes(dow) && ymd <= todayYMD;
     days.push({ ymd, weekday, status, statusLabel, halfDayLeave, isWorkingDay, checkIn, checkOut, workedHours, workedMinutes, overtimeMinutes });
     cur = new Date(cur.getTime() + 86400000);
   }

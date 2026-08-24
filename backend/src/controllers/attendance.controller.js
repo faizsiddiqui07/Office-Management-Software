@@ -188,7 +188,7 @@ export async function matrixCsv(req, res, next) {
     ]);
     // Legend row at the bottom so the sheet is self-explanatory.
     body.push([]);
-    body.push(['Legend:', 'P present · L late · A absent · OL on leave · W work from home · H weekend/holiday · – not employed yet']);
+    body.push(['Legend:', 'P present · L late · A absent · OL on leave · W work from home · H weekend/holiday · B birthday (their own day off) · – not employed yet']);
     // This file gets read away from the app, so it has to carry its own caveats:
     // who was left out, and who only counts from part-way through the month.
     const midMonth = rows.filter((r) => r.startedOn && r.startedOn > `${month}-01`);

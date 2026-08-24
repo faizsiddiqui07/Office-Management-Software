@@ -14,6 +14,7 @@ import { leaveYearOf, currentLeaveYear } from '../lib/leaveYear.js';
 import { APP_LIVE_YMD } from '../lib/appLive.js';
 import { computeWorkingDays } from './workingDays.service.js';
 import { holidayYMDSet } from './holiday.service.js';
+import { birthdayYMDSet } from '../lib/birthday.js';
 import { reconcileLatePenalty, clearAbsencePenalty, reconcileNoLeaveMonth, reconcilePerfectMonth, reconcileAbsence } from './bonus.service.js';
 import { userWeekendDays } from '../lib/schedule.js';
 import { runTransaction } from '../lib/transaction.js';
@@ -381,6 +382,10 @@ export async function applyLeave(user, { type, startYMD, endYMD, halfDay, halfDa
 
   const settings = await Setting.getSingleton();
   const holidays = await holidayYMDSet(startYMD, endYMD);
+  // A person's own birthday is a day off for them alone (owner's rule, 2026-08-24), so it
+  // must not be charged to their leave quota. Folding it into the holiday set is enough —
+  // every leave figure below counts working days off that one set.
+  for (const d of birthdayYMDSet(user, startYMD, endYMD)) holidays.add(d);
 
   const year = leaveYearOf(startYMD);
   let workingDays;
@@ -496,6 +501,10 @@ export async function updateLeave(user, id, { type, startYMD, endYMD, halfDay, h
 
   const settings = await Setting.getSingleton();
   const holidays = await holidayYMDSet(startYMD, endYMD);
+  // A person's own birthday is a day off for them alone (owner's rule, 2026-08-24), so it
+  // must not be charged to their leave quota. Folding it into the holiday set is enough —
+  // every leave figure below counts working days off that one set.
+  for (const d of birthdayYMDSet(user, startYMD, endYMD)) holidays.add(d);
   let workingDays;
   if (isWFH(type)) {
     // Same shape rules as applying. The allowance is NOT re-checked here: editing a
@@ -570,6 +579,10 @@ export async function recordLeaveForUser(actor, userId, { type, startYMD, endYMD
 
   const settings = await Setting.getSingleton();
   const holidays = await holidayYMDSet(startYMD, endYMD);
+  // A person's own birthday is a day off for them alone (owner's rule, 2026-08-24), so it
+  // must not be charged to their leave quota. Folding it into the holiday set is enough —
+  // every leave figure below counts working days off that one set.
+  for (const d of birthdayYMDSet(target, startYMD, endYMD)) holidays.add(d);
   const { count: workingDays } = computeWorkingDays({
     fromYMD: startYMD,
     toYMD: endYMD,
@@ -836,7 +849,11 @@ export async function decideLeave(approver, id, decision, note, { replaceAttenda
   const settings = await Setting.getSingleton();
   const holidays = await holidayYMDSet(request.startYMD, request.endYMD);
   // The leave owner's own working days (a part-timer's off-days aren't "on leave").
-  const owner = await User.findById(request.user).select('employmentType schedule');
+  const owner = await User.findById(request.user).select('employmentType schedule dateOfBirth');
+  // A person's own birthday is a day off for them alone (owner's rule, 2026-08-24), so it
+  // must not be charged to their leave quota. Folding it into the holiday set is enough —
+  // every leave figure below counts working days off that one set.
+  for (const d of birthdayYMDSet(owner, request.startYMD, request.endYMD)) holidays.add(d);
   const ownerWeekends = userWeekendDays(owner, settings);
   const result = await runTransaction(async (session) => {
     const fresh = await LeaveRequest.findById(id).session(session);
