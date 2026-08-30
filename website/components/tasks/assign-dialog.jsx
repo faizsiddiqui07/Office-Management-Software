@@ -11,7 +11,6 @@ import { AppDialog } from '@/components/glass/app-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { DatePicker } from '@/components/ui/date-picker';
-import { useDueDateBlocker } from '@/lib/holidays';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
@@ -26,8 +25,6 @@ export function AssignDialog() {
   const [notes, setNotes] = React.useState('');
   const [dueYMD, setDueYMD] = React.useState('');
   const [requiresApproval, setRequiresApproval] = React.useState(false);
-  // Sundays + holidays can't be a deadline (the overdue penalty skips those days anyway).
-  const dayBlock = useDueDateBlocker();
 
   const { data } = useQuery({ queryKey: ['tasks', 'assignable'], queryFn: () => api.get('/tasks/assignable'), enabled: open });
   const users = data?.users ?? [];
@@ -164,7 +161,7 @@ export function AssignDialog() {
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="a-due">Due date (optional)</Label>
-          <DatePicker id="a-due" value={dueYMD} min={new Date().toISOString().slice(0, 10)} onChange={setDueYMD} dayBlock={dayBlock} clearable className="bg-background/50" />
+          <DatePicker id="a-due" value={dueYMD} min={new Date().toISOString().slice(0, 10)} onChange={setDueYMD} clearable className="bg-background/50" />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="a-notes">Notes (optional)</Label>

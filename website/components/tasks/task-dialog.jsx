@@ -11,7 +11,6 @@ import { AppDialog } from '@/components/glass/app-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { DatePicker } from '@/components/ui/date-picker';
-import { useDueDateBlocker } from '@/lib/holidays';
 import { companyYMD } from '@/lib/time';
 import { APP_LIVE_YMD } from '@/lib/app-live';
 import { Label } from '@/components/ui/label';
@@ -48,9 +47,6 @@ export function TaskDialog({ task, open: openProp, onOpenChange, batchCount = 0 
   const [assignees, setAssignees] = React.useState([]); // who a delegated task is assigned to
   const [requiresApproval, setRequiresApproval] = React.useState(false);
   const [applyToAll, setApplyToAll] = React.useState(true); // batch content edit: push to every copy
-  // Sundays + holidays can't be a deadline (the overdue penalty skips those days anyway).
-  const dayBlock = useDueDateBlocker();
-
   // Once work has been handed out its deadline is final — moving it would re-price the
   // points, so only the CEO & President may change it. The SERVER is the real gate (it
   // rejects the patch); this just stops someone typing a date the save would refuse.
@@ -226,13 +222,13 @@ export function TaskDialog({ task, open: openProp, onOpenChange, batchCount = 0 
           {/* Creating: can't set a deadline in the past. EDITING: any date back to
               go-live is allowed — correcting a wrong due date (even to an earlier day)
               is exactly what re-prices the task's points. Once the work is ASSIGNED the
-              date is frozen for everyone but the owner tier (see dueLocked). */}
+              date is frozen for everyone but the owner tier (see dueLocked). Any calendar
+              day may be a deadline — Sundays and holidays included (owner's call). */}
           <DatePicker
             id="t-due"
             value={dueYMD}
             min={task ? APP_LIVE_YMD : new Date().toISOString().slice(0, 10)}
             onChange={setDueYMD}
-            dayBlock={dayBlock}
             disabled={dueLocked}
             clearable
             className="bg-background/50"
