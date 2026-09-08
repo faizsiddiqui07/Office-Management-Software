@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Task } from '../models/Task.js';
 import { User } from '../models/User.js';
 import { Setting } from '../models/Setting.js';
-import { notify, clearNotificationsFor } from '../models/Notification.js';
+import { Notification, notify, clearNotificationsFor } from '../models/Notification.js';
 import { roleLabel, isOwnerRole } from '../lib/roles.js';
 import { can } from '../lib/permissions.js';
 import { companyDayFromYMD, ymdInTz, COMPANY_TZ } from '../lib/time.js';
@@ -263,6 +263,46 @@ export async function getTaskDetail(actor, id) {
   return populated(task);
 }
 
+/**
+ * One job handed to several people is several copies, and each person ticks their own.
+ * That is deliberate — but it used to happen in silence. A teammate would finish, the
+ * work looked handled, and the copy still sitting open kept collecting its daily
+ * overdue penalty for someone who believed it had been dealt with. So whenever any
+ * copy in a batch closes, tell whoever is still holding an open one.
+ *
+ * Best-effort, and deliberately once-per-copy: "done" is a toggle, and a bell that
+ * refills every time somebody taps it twice is noise, not a reminder.
+ */
+async function nudgeBatchSiblings(task, doerName) {
+  if (!task.assignBatch) return;
+  const open = await Task.find({
+    assignBatch: task.assignBatch,
+    assignedBy: task.assignedBy,
+    _id: { $ne: task._id },
+    status: 'PENDING',
+  }).select('_id owner title status requiresApproval submittedAt');
+  for (const sib of open) {
+    // Submitted and waiting on the assigner is not "still to do" — that person has
+    // finished their part, and nudging them would be blaming them for someone else's queue.
+    if (sib.awaitingApproval) continue;
+    const already = await Notification.exists({
+      user: sib.owner, entityType: 'Task', entityId: sib._id, type: 'TASK_BATCH_PENDING',
+    });
+    if (already) continue;
+    await notify({
+      user: sib.owner,
+      type: 'TASK_BATCH_PENDING',
+      title: `${doerName} finished — yours is still open`,
+      message: task.title,
+      // Their OWN copy, never the one that just closed: the link has to land on the
+      // thing they can actually tick.
+      link: todoLink(sib._id),
+      entityType: 'Task',
+      entityId: sib._id,
+    });
+  }
+}
+
 export async function setStatus(actor, id, status) {
   const task = await Task.findById(id);
   if (!task) throw httpError(404, 'NOT_FOUND', 'Task not found');
@@ -358,6 +398,9 @@ export async function setStatus(actor, id, status) {
     for (const uid of involved) {
       await notify({ user: uid, type: 'TASK_DONE', title: `${actor.name} completed a shared task`, message: task.title, link: todoLink(task._id) });
     }
+    // This copy is closed — its own "yours is still open" has nothing left to point at.
+    await clearNotificationsFor('Task', task._id, { types: ['TASK_BATCH_PENDING'] });
+    try { await nudgeBatchSiblings(task, actor.name); } catch (e) { console.error('batch nudge failed', e?.message); }
   }
 
   // Bonus points: award/penalise the assignee (best-effort — a points hiccup must never
@@ -413,6 +456,13 @@ export async function reviewTask(actor, id, approve, reason) {
     task.rejectionReason = '';
     await task.save();
     await notify({ user: task.owner, type: 'TASK_DONE', title: `${actor.name} approved your task`, message: task.title, link: todoLink(task._id) });
+    await clearNotificationsFor('Task', task._id, { types: ['TASK_BATCH_PENDING'] });
+    // `actor` is the assigner who approved it, not the person who did the work — name
+    // the owner, or the others would be told their boss had finished their task.
+    try {
+      const owner = await User.findById(task.owner).select('name').lean();
+      await nudgeBatchSiblings(task, owner?.name || 'A teammate');
+    } catch (e) { console.error('batch nudge failed', e?.message); }
     try { await onAssignedTaskDone(task); } catch (e) { console.error('bonus hook (approve) failed', e?.message); }
     // An approval can be the last link needed to settle the copy above it.
     try { await settleParent(task); } catch (e) { console.error('forward settle failed', e?.message); }

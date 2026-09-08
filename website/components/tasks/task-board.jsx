@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Award, Check, CheckCircle2, ClipboardList, Clock, Download, Eye, EyeOff, FolderOpen, Forward, ListTodo, Pencil, Search, Send, ThumbsUp, Trash2, Undo2, UserRound, Users, X } from 'lucide-react';
+import { AlertTriangle, Award, Check, CheckCircle2, ClipboardList, Clock, Download, Eye, EyeOff, FolderOpen, Forward, ListTodo, Pencil, Search, Send, ThumbsUp, Trash2, Undo2, UserRound, Users, X } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -177,13 +177,36 @@ function byDueDate(a, b) {
   return new Date(b.createdAt) - new Date(a.createdAt);
 }
 
+/**
+ * How a multi-assign batch is going, seen from MY copy.
+ *
+ * One job handed to several people becomes one copy each, and each person ticks their own.
+ * `siblings` is everyone ELSE, so the batch is siblings.length + 1.
+ */
+function batchState(task, myId) {
+  const sibs = task?.siblings || [];
+  if (!sibs.length) return null;
+  const done = sibs.filter((s) => s.status === 'DONE').length + (task.status === 'DONE' ? 1 : 0);
+  // "Still open" means MINE specifically: not finished, not sitting with the assigner for
+  // approval (that work IS done), and actually my copy rather than one I'm watching.
+  const mineOpen = task.status !== 'DONE' && !task.awaitingApproval
+    && !!myId && String(task.owner?.id) === String(myId);
+  return { total: sibs.length + 1, done, othersDone: sibs.filter((s) => s.status === 'DONE').length, mineOpen };
+}
+
 /** Teammates' progress on a multi-assign task — each person does their OWN copy, so
- *  everyone can see who's finished and who hasn't. */
-function SiblingProgress({ siblings }) {
+ *  everyone can see who's finished and who hasn't. Leads with the count, because the
+ *  names alone never made it obvious that somebody's copy was still outstanding. */
+function SiblingProgress({ siblings, selfDone }) {
   if (!siblings?.length) return null;
+  const done = siblings.filter((s) => s.status === 'DONE').length + (selfDone ? 1 : 0);
+  const total = siblings.length + 1;
   return (
     <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-0.5">
-      <span className="text-muted-foreground">Team:</span>
+      <span className={cn('font-medium', done === total ? 'text-success' : 'text-muted-foreground')}>
+        {done} of {total} done
+      </span>
+      <span className="text-muted-foreground">·</span>
       {siblings.map((s) => (
         <span key={s.id} className={cn('inline-flex items-center gap-0.5', s.status === 'DONE' ? 'text-success' : 'text-muted-foreground')}>
           {s.status === 'DONE' ? <Check className="size-3" /> : <Clock className="size-3" />}
@@ -353,7 +376,15 @@ function TaskRow({ task, myId, canToggle, onToggle, onEdit, onDelete, onOpen, as
           {task.dueYMD ? <span className={cn(overdue && 'font-medium text-destructive')}>Due {fmtDate(task.dueYMD)}</span> : null}
           {task.requiresApproval && !done && !awaiting ? <span className="inline-flex items-center gap-1 text-primary"><ThumbsUp className="size-3" /> Needs approval</span> : null}
           {done && task.completedAt ? <span className="text-success">Done {fmtDate(task.completedAt)}{task.completedBy && task.completedBy.id !== myId ? ` · by ${task.completedBy.name}` : ''}</span> : null}
-          {task.siblings?.length ? <SiblingProgress siblings={task.siblings} /> : null}
+          {task.siblings?.length ? <SiblingProgress siblings={task.siblings} selfDone={done} /> : null}
+          {/* Somebody else on this job has finished and MINE has not. Without this the
+              row looked identical to a task nobody had touched, so the penalty kept
+              running on a copy its owner believed was already dealt with. */}
+          {(() => { const b = batchState(task, myId); return b?.mineOpen && b.othersDone > 0 ? (
+            <span className="inline-flex items-center gap-1 font-medium text-amber-600 dark:text-amber-300">
+              <Clock className="size-3" /> Yours is still open
+            </span>
+          ) : null; })()}
           <ForwardTrail task={task} myId={myId} />
           <SeenState task={task} myId={myId} />
           <ApprovalState task={task} />
@@ -448,7 +479,12 @@ function DatedTaskList({ tasks, myId, dateKey, ascending = false, onEdit, onDele
                   <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
                     {t.dueYMD ? <span className={cn(overdue && 'font-medium text-destructive')}>Due {fmtDate(t.dueYMD)}</span> : null}
                     {done && t.completedAt ? <span className="text-success">Done {fmtDate(t.completedAt)}{t.completedBy?.name ? ` · by ${t.completedBy.name}` : ''}</span> : null}
-                    {t.siblings?.length ? <SiblingProgress siblings={t.siblings} /> : null}
+                    {t.siblings?.length ? <SiblingProgress siblings={t.siblings} selfDone={done} /> : null}
+                    {(() => { const b = batchState(t, myId); return b?.mineOpen && b.othersDone > 0 ? (
+                      <span className="inline-flex items-center gap-1 font-medium text-amber-600 dark:text-amber-300">
+                        <Clock className="size-3" /> Yours is still open
+                      </span>
+                    ) : null; })()}
                     {/* The hand-off trail belongs here too. It only rendered in the flat
                         row, so a task that had come down a chain lost its origin the
                         moment it landed inside a person's folder. */}
@@ -547,26 +583,31 @@ function PersonFolder({ folder, myId, onEdit, onDelete, onOpen, onToggle, onExpa
  * The server owns the answer (eligibility gate + rule values + what's already been
  * booked), so this only ever renders what it's told; nothing is re-derived here.
  */
-function TaskBonusPreview({ preview, done }) {
+function TaskBonusPreview({ preview, done, forName }) {
   if (!preview?.eligible) return null;
   const { onTimePoints, latePoints, overdueDailyPoints, deductedSoFar, earnedSoFar, deadlineYMD } = preview;
   const pastDeadline = deadlineYMD && deadlineYMD < todayYMD();
 
   let tone = 'text-muted-foreground';
   let body = null;
+  // `forName` is set when the reader is NOT the person holding this task — the assigner
+  // looking at somebody's copy. The figures are that person's, so they are named. Without
+  // this the same sentence read as "you lost 5 points" to whoever opened the task.
+  const who = forName ? <span className="font-medium">{forName}: </span> : null;
   if (done) {
     const net = earnedSoFar - deductedSoFar;
     if (net >= 0) {
       tone = 'text-success';
-      body = <><span className="font-semibold">+{net} points</span> earned for this task</>;
+      body = <>{who}<span className="font-semibold">+{net} points</span> earned for this task</>;
     } else {
       tone = 'text-amber-600 dark:text-amber-400';
-      body = <><span className="font-semibold">{net} points</span> — finished late</>;
+      body = <>{who}<span className="font-semibold">{net} points</span> — finished late</>;
     }
   } else if (pastDeadline) {
     tone = 'text-amber-600 dark:text-amber-400';
     body = (
       <>
+        {who}
         {deductedSoFar > 0 ? <><span className="font-semibold">−{deductedSoFar} points</span> deducted so far · </> : null}
         past its deadline — finishing now counts as late
         {overdueDailyPoints > 0 ? <> · −{overdueDailyPoints}/day until done</> : null}
@@ -576,6 +617,7 @@ function TaskBonusPreview({ preview, done }) {
     tone = 'text-success';
     body = (
       <>
+        {who}
         <span className="font-semibold">+{onTimePoints} points</span> if finished on time
         {deadlineYMD ? <> (by {fmtDate(deadlineYMD)})</> : null}
         {latePoints > 0 ? <span className="text-muted-foreground"> · −{latePoints} if late</span> : null}
@@ -600,7 +642,9 @@ function TaskDetailDialog({ view, myId, onClose, onToggle, onEdit, onDelete, onA
   const bonusQ = useQuery({
     queryKey: ['task-bonus', task?.id],
     queryFn: () => api.get(`/tasks/${task.id}/bonus-preview`),
-    enabled: !!view && !!task?.id && !!task?.assignedBy,
+    // Not asked for at all when the reader is only tagged — they are shown nothing, so
+    // there is nothing to fetch.
+    enabled: !!view && !!task?.id && !!task?.assignedBy && !(!view?.assignerView && onlyTagged(task, myId)),
     staleTime: 60_000,
   });
   const preview = bonusQ.data?.preview;
@@ -684,12 +728,38 @@ function TaskDetailDialog({ view, myId, onClose, onToggle, onEdit, onDelete, onA
             {awaiting ? <StatusBadge tone="warning" dot={false}><Clock className="size-3" /> Awaiting approval</StatusBadge> : null}
             {task.requiresApproval && !done && !awaiting ? <StatusBadge tone="primary" dot={false}><ThumbsUp className="size-3" /> Needs approval</StatusBadge> : null}
             {overdue ? <StatusBadge tone="destructive">Overdue</StatusBadge> : null}
-            {view?.batchCount > 1 ? (
-              <StatusBadge tone="primary" dot={false}>
-                <Users className="size-3" /> Assigned to {view.batchCount} people
-              </StatusBadge>
-            ) : null}
+            {(() => {
+              const n = view?.batchCount > 1 ? view.batchCount : (task.siblings?.length ? task.siblings.length + 1 : 0);
+              return n > 1 ? (
+                <StatusBadge tone="primary" dot={false}>
+                  <Users className="size-3" /> Assigned to {n} people
+                </StatusBadge>
+              ) : null;
+            })()}
           </div>
+
+          {/* One job given to several people is several copies, and each person ticks
+              their own. That is deliberate — but it used to be silent: a teammate would
+              finish, the task looked handled, and the copy still sitting open kept
+              collecting its daily penalty for someone who thought it was closed. So say
+              it plainly, on the copy that is still open, to the person it belongs to. */}
+          {(() => {
+            if (tagged) return null;
+            const b = batchState(task, myId);
+            if (!b?.mineOpen || !b.othersDone) return null;
+            const finished = (task.siblings || []).filter((x) => x.status === 'DONE').map((x) => x.owner?.name?.split(' ')[0]).filter(Boolean);
+            const who = finished.length === 1 ? `${finished[0]} has` : `${finished.slice(0, -1).join(', ')} and ${finished.slice(-1)} have`;
+            return (
+              <div className="flex items-start gap-2 rounded-xl bg-warning/10 p-3 text-sm text-amber-600 ring-1 ring-warning/25 dark:text-amber-300">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+                <span>
+                  <span className="font-semibold">{who} finished — yours is still open.</span>{' '}
+                  Everyone on this task completes their own copy, so this one stays pending
+                  {task.dueYMD ? ' and keeps counting against you' : ''} until you mark it done.
+                </span>
+              </div>
+            );
+          })()}
 
           {task.rejectionReason && !awaiting && !done ? (
             <div className="flex items-start gap-2 rounded-xl bg-destructive/10 p-3 text-sm text-destructive ring-1 ring-destructive/20">
@@ -782,7 +852,7 @@ function TaskDetailDialog({ view, myId, onClose, onToggle, onEdit, onDelete, onA
             ) : null}
             {task.siblings?.length ? (
               <Row label="Team">
-                <SiblingProgress siblings={task.siblings} />
+                <SiblingProgress siblings={task.siblings} selfDone={done} />
               </Row>
             ) : null}
             {task.assignedBy ? (
@@ -808,7 +878,17 @@ function TaskDetailDialog({ view, myId, onClose, onToggle, onEdit, onDelete, onA
             {done && task.approvedBy?.name ? <Row label="Approved by">{task.approvedBy.name}</Row> : null}
           </div>
 
-          <TaskBonusPreview preview={preview} done={done} />
+          {/* Points belong to whoever HOLDS the task. Somebody merely tagged on it has no
+              stake, so they are shown nothing (the figures used to read as if they were
+              theirs); the assigner still sees them, named, because chasing the work is
+              their job. */}
+          {tagged ? null : (
+            <TaskBonusPreview
+              preview={preview}
+              done={done}
+              forName={task?.owner?.id && String(task.owner.id) !== String(myId) ? task.owner?.name?.split(' ')[0] : null}
+            />
+          )}
         </div>
       ) : null}
     </AppDialog>
@@ -848,6 +928,10 @@ export function TaskBoard() {
   const [forwarding, setForwarding] = React.useState(null); // task being passed further down
   // Stat-card drill-down: a flat, ungrouped list. null = the normal grouped view.
   const [flat, setFlat] = React.useState(null); // null | 'pending' | 'all'
+  // "Assigned by me" normally groups the work into a folder per person, which is the right
+  // shape for chasing one individual — but useless for "what have I handed out in total?".
+  // This flips that tab to one flat list of everything, newest deadline first.
+  const [assignedFlat, setAssignedFlat] = React.useState(false);
 
   const isAssigned = tab === 'assigned';
   // Work somebody else owns and tagged me on — its own tab, its own server scope, and
@@ -880,6 +964,8 @@ export function TaskBoard() {
 
   // Reset the search box when switching tabs (task-text vs person name).
   React.useEffect(() => setSearch(''), [tab]);
+  // Folders are the default shape every time the tab is opened.
+  React.useEffect(() => { if (tab !== 'assigned') setAssignedFlat(false); }, [tab]);
 
   // Leaving "Custom range" drops the dates with it — otherwise they sit in the query key
   // invisibly and a later return to Custom silently re-applies a range nobody re-picked.
@@ -1303,6 +1389,13 @@ export function TaskBoard() {
     return rows.sort((a, b) => (a.status === 'DONE') - (b.status === 'DONE') || byDueDate(a, b));
   }, [isMine, flat, search, tasks]);
 
+  // Everything I have handed out, in one list — open work first, then finished, each by
+  // deadline. Stands down while there's a search, which already flattens the same space.
+  const assignedAll = React.useMemo(() => {
+    if (!isAssigned || !assignedFlat || search.trim()) return null;
+    return [...tasks].sort((a, b) => (a.status === 'DONE') - (b.status === 'DONE') || byDueDate(a, b));
+  }, [isAssigned, assignedFlat, search, tasks]);
+
   return (
     <div className="space-y-6">
       {/* Four across is too tight on a phone, so it's 2×2 there and a single row from sm up. */}
@@ -1315,15 +1408,10 @@ export function TaskBoard() {
         <StatMini label="Tagged" value={tg.total} icon={Users} onClick={() => { setFlat(null); setTab('tagged'); scrollToList(); }} hint="Tasks you’re tagged on — someone else does them" />
       </div>
 
-      {/* On a phone these two ARE the page — so they ride just under the header instead of
-          scrolling away. top-[4.25rem] tucks them a few px behind the header card's bottom
-          edge so no seam of scrolling content shows through (the same trick the expenses
-          filter bar uses), and z-20 keeps them under the header's z-30 but above the page.
-          `sticky`, never `fixed`: every (app) page is wrapped in a framer-motion opacity
-          animation whose will-change becomes a containing block mid-navigation, which would
-          displace a fixed child. From sm up every sticky/background class is reset, so the
-          desktop row is pixel-identical to what it was. */}
-      <div className="sticky top-[4.25rem] z-20 -mx-4 flex gap-2 border-b border-border/60 bg-card/80 px-4 py-2.5 backdrop-blur-xl sm:static sm:mx-0 sm:flex-wrap sm:border-0 sm:bg-transparent sm:px-0 sm:py-0 sm:backdrop-blur-none">
+      {/* Phone and tablet get these two under the header on every page (QuickTaskActions),
+          so they are hidden here to avoid showing them twice. That bar is lg:hidden, so
+          from a laptop up this row is the only place they live — same as it always was. */}
+      <div className="hidden flex-wrap gap-2 lg:flex">
         <TaskDialog />
         {canAssign ? <AssignDialog /> : null}
       </div>
@@ -1386,7 +1474,7 @@ export function TaskBoard() {
       {/* Wrapper carries the scroll target + a scroll-margin so a stat-card jump stops just
           below the sticky topbar instead of under it. (Tabs itself doesn't forward a ref.)
           On a phone the action bar above is sticky too, so the offset has to clear both. */}
-      <div ref={listRef} className="scroll-mt-32 sm:scroll-mt-24">
+      <div ref={listRef} className="scroll-mt-24">
       <Tabs value={tab} onValueChange={(v) => { setTab(v); setFlat(null); }}>
         <TabsList>
           <TabsTrigger value="mine">My tasks</TabsTrigger>
@@ -1499,7 +1587,50 @@ export function TaskBoard() {
                 ) : (
                   <EmptyState icon={Users} title="No matching work" description="Nothing you assigned matches that — try a different word." />
                 )
+              ) : assignedAll ? (
+                <div className="space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="flex items-center gap-2 text-sm font-semibold">
+                      <ClipboardList className="size-4 text-primary" /> All assigned tasks
+                      <span className="font-normal text-muted-foreground">({assignedAll.length})</span>
+                    </h3>
+                    <Button variant="outline" size="sm" onClick={() => setAssignedFlat(false)}>
+                      <Users className="size-4" /> Group by person
+                    </Button>
+                  </div>
+                  {assignedAll.length ? (
+                    <div className="space-y-2">
+                      {assignedAll.map((t) => (
+                        <TaskRow
+                          key={t.id}
+                          task={t}
+                          myId={user?.id}
+                          assignerView
+                          canToggle={false}
+                          onToggle={() => {}}
+                          onEdit={(x) => setEditing(x)}
+                          onDelete={(x) => setDeleting(x)}
+                          onOpen={(x) => openTask({ task: x, canToggle: false, allowEdit: true, allowDelete: true, assignerView: true, batchCount: batchCountOf(x) })}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <EmptyState icon={Users} title="You haven’t assigned any work" description="Use “Assign work” to give a task to someone below you." />
+                  )}
+                </div>
               ) : folders.length ? (
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="flex items-center gap-2 text-sm font-semibold">
+                      <Users className="size-4 text-primary" /> By person
+                      <span className="font-normal text-muted-foreground">({folders.length})</span>
+                    </h3>
+                    {/* Folders answer "how is one person doing"; this answers "what have I
+                        handed out altogether", without opening every folder in turn. */}
+                    <Button variant="outline" size="sm" onClick={() => setAssignedFlat(true)}>
+                      <ClipboardList className="size-4" /> All assigned tasks
+                    </Button>
+                  </div>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   {folders.map((f) => (
                     <PersonFolder
@@ -1513,6 +1644,7 @@ export function TaskBoard() {
                       onOpen={(x) => openTask({ task: x, canToggle: false, allowEdit: true, allowDelete: true, assignerView: true, batchCount: batchCountOf(x) })}
                     />
                   ))}
+                </div>
                 </div>
               ) : !awaitingList.length ? (
                 <EmptyState icon={Users} title="You haven’t assigned any work" description="Use “Assign work” to give a task to someone below you." />
