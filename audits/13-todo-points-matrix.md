@@ -215,6 +215,11 @@ ka farak. Yaani ek had ke baad **kaam poora karne ka koi faayda hi nahi bachta**
 
 ### F2 · Approval me deri manager ki, penalty employee ki
 
+> **Update (8 Sep 2026):** ab **tag kiya hua koi bhi banda approve kar sakta hai**, isliye
+> ek aadmi ke chhutti par hone se kaam atakta nahi. Isse deri **kam** hogi, par niyam ab
+> bhi wahi hai — jab tak approve nahi hota, penalty employee par hi chalti hai. Neeche
+> wala faisla ab bhi khula hai.
+
 Employee ne waqt par submit kar diya, manager ne 5 din approve nahi kiya → employee ke
 **−8**. Abhi ka niyam ye hai ki approval-wala task tab tak "adhoora" hai jab tak approve
 na ho (ye aapne khud 8 Aug ko tay kiya tha) — par nateeja ye hai ki intezaar karne wale
