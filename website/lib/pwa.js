@@ -2,7 +2,10 @@
 
 import { api } from './api';
 
+// The install offer, captured either by the inline script in app/layout.jsx (which runs
+// before React and therefore never misses it) or by PwaRegister as a fallback.
 let deferredPrompt = null;
+const earlyEvent = () => (typeof window !== 'undefined' ? window.__omInstallEvent || null : null);
 
 /** Register the service worker (idempotent). */
 export function registerServiceWorker() {
@@ -13,15 +16,25 @@ export function registerServiceWorker() {
 /** Capture the browser's install prompt so we can trigger it from a button. */
 export function captureInstallPrompt(e) {
   deferredPrompt = e;
+  if (typeof window !== 'undefined') window.__omInstallEvent = e;
 }
+/**
+ * Can the browser install the app on THIS device right now?
+ *
+ * `beforeinstallprompt` is only fired when the app is NOT already installed here, so a
+ * captured event is proof of "installable, and definitely not installed" — which is why
+ * the card trusts it above everything else.
+ */
 export function canInstall() {
-  return !!deferredPrompt;
+  return !!(deferredPrompt || earlyEvent());
 }
 export async function promptInstall() {
-  if (!deferredPrompt) return false;
-  deferredPrompt.prompt();
-  const { outcome } = await deferredPrompt.userChoice;
+  const e = deferredPrompt || earlyEvent();
+  if (!e) return false;
+  e.prompt();
+  const { outcome } = await e.userChoice;
   deferredPrompt = null;
+  if (typeof window !== 'undefined') window.__omInstallEvent = null;
   return outcome === 'accepted';
 }
 

@@ -147,7 +147,7 @@ export function TaskDialog({ task, open: openProp, onOpenChange, batchCount = 0 
       onOpenChange={setOpen}
       trigger={
         isEdit ? undefined : (
-          <Button className="w-full sm:w-auto">
+          <Button className="flex-1 sm:w-auto sm:flex-none">
             <Plus /> Add task
           </Button>
         )

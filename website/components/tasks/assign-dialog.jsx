@@ -94,7 +94,7 @@ export function AssignDialog() {
       trigger={
         // Solid yellow, same weight as the plain "Add task" button, so "hand work to
         // someone" reads as a distinct, deliberate action rather than a secondary one.
-        <Button className="w-full bg-warning text-warning-foreground hover:bg-warning/90 sm:w-auto">
+        <Button className="flex-1 bg-warning text-warning-foreground hover:bg-warning/90 sm:w-auto sm:flex-none">
           <UserRoundPlus className="size-4" /> Assign work
         </Button>
       }

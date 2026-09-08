@@ -58,6 +58,20 @@ export default function RootLayout({ children }) {
             __html: "try{if(localStorage.getItem('om_lite_ui')==='1'){document.documentElement.dataset.lite='true'}}catch(e){}",
           }}
         />
+        {/* Catch the browser's install offer the instant it arrives.
+            Chrome fires `beforeinstallprompt` within a moment of load, long before the
+            authenticated shell mounts — the old listener lived in there, waiting on the
+            /auth/me round-trip, so on a fresh device the event was simply missed. The app
+            then believed it could not be installed, hid its own Install button, and sent
+            people to the browser menu instead. Stashing it on `window` here means the
+            React card can pick it up whenever it mounts, however late.
+            IMPORTANT: this event only fires when the app is NOT already installed on THIS
+            device, which makes it the most reliable per-device signal we have. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: "try{window.__omInstallEvent=null;window.__omInstalled=false;addEventListener('beforeinstallprompt',function(e){e.preventDefault();window.__omInstallEvent=e;window.__omInstalled=false;dispatchEvent(new Event('pwa-installable'))});addEventListener('appinstalled',function(){window.__omInstallEvent=null;window.__omInstalled=true;dispatchEvent(new Event('pwa-installed'))})}catch(e){}",
+          }}
+        />
         <ThemeProvider>
           <QueryProvider>
             <AuthProvider>

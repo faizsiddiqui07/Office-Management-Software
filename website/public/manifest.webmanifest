@@ -1,7 +1,8 @@
 {
   "name": "Architectus Bureau",
+  "id": "/dashboard",
   "short_name": "Architectus",
-  "description": "Attendance, leaves, dues, expenses and more \u2014 your office in one place.",
+  "description": "Attendance, leaves, dues, expenses and more — your office in one place.",
   "start_url": "/dashboard",
   "scope": "/",
   "display": "standalone",

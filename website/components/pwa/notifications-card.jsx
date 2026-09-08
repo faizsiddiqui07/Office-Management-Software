@@ -18,11 +18,18 @@ export function NotificationsCard() {
     setPerm(notificationPermission());
     setInstallable(canInstall());
 
-    // Already installed? (running in standalone / added to home screen)
-    const standalone =
-      (typeof window !== 'undefined' && window.matchMedia?.('(display-mode: standalone)').matches) ||
-      (typeof navigator !== 'undefined' && navigator.standalone === true);
-    setInstalled(!!standalone);
+    // "Am I running INSIDE the installed app?" — which is NOT the same question as
+    // "is this app installed on this device?". Using the first to answer the second is
+    // what made a plain browser tab on a fresh machine claim it was already installed.
+    // It is now only ever a hint, and `installable` below overrules it.
+    const mq = typeof window !== 'undefined' ? window.matchMedia?.('(display-mode: standalone)') : null;
+    const readStandalone = () =>
+      !!(mq?.matches || (typeof navigator !== 'undefined' && navigator.standalone === true));
+    setInstalled(readStandalone());
+    // Re-read when the window changes mode (opened from the installed app, or back out to
+    // a tab). It used to be checked once on mount and never again.
+    const onMode = () => setInstalled(readStandalone());
+    mq?.addEventListener?.('change', onMode);
 
     // iOS Safari never fires beforeinstallprompt — install is manual there.
     const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
@@ -35,9 +42,12 @@ export function NotificationsCard() {
     };
     window.addEventListener('pwa-installable', onInstallable);
     window.addEventListener('appinstalled', onInstalled);
+    window.addEventListener('pwa-installed', onInstalled);
     return () => {
+      mq?.removeEventListener?.('change', onMode);
       window.removeEventListener('pwa-installable', onInstallable);
       window.removeEventListener('appinstalled', onInstalled);
+      window.removeEventListener('pwa-installed', onInstalled);
     };
   }, []);
 
@@ -65,13 +75,19 @@ export function NotificationsCard() {
     }
   };
 
-  const installHint = installed
+  // The browser only offers an install when the app is NOT already on this device, so a
+  // live offer settles it — whatever the display-mode said. Without this the card could
+  // show a green "Installed" badge and hide the button on a machine where it was never
+  // installed, which is exactly what happened on a second/third device.
+  const reallyInstalled = installed && !installable;
+
+  const installHint = reallyInstalled
     ? 'Installed on this device.'
     : installable
       ? 'Add the app to your home screen for quick, full-screen access.'
       : isIOS
         ? 'On iPhone/iPad: tap the Share icon, then “Add to Home Screen”.'
-        : 'In your browser menu, choose “Install app” or “Add to Home Screen”.';
+        : 'Not installed on this device. In your browser menu (⋮), choose “Install app” — or look for the install icon in the address bar.';
 
   return (
     <GlassPanel className="space-y-4 p-6">
@@ -109,7 +125,7 @@ export function NotificationsCard() {
           <p className="text-sm font-medium">Install app</p>
           <p className="text-xs text-muted-foreground">{installHint}</p>
         </div>
-        {installed ? (
+        {reallyInstalled ? (
           <span className="inline-flex items-center gap-1.5 rounded-lg bg-success/10 px-3 py-1.5 text-xs font-medium text-success ring-1 ring-success/20">
             <Check className="size-4" /> Installed
           </span>

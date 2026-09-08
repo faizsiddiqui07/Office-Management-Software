@@ -1315,7 +1315,15 @@ export function TaskBoard() {
         <StatMini label="Tagged" value={tg.total} icon={Users} onClick={() => { setFlat(null); setTab('tagged'); scrollToList(); }} hint="Tasks you’re tagged on — someone else does them" />
       </div>
 
-      <div className="flex flex-wrap gap-2">
+      {/* On a phone these two ARE the page — so they ride just under the header instead of
+          scrolling away. top-[4.25rem] tucks them a few px behind the header card's bottom
+          edge so no seam of scrolling content shows through (the same trick the expenses
+          filter bar uses), and z-20 keeps them under the header's z-30 but above the page.
+          `sticky`, never `fixed`: every (app) page is wrapped in a framer-motion opacity
+          animation whose will-change becomes a containing block mid-navigation, which would
+          displace a fixed child. From sm up every sticky/background class is reset, so the
+          desktop row is pixel-identical to what it was. */}
+      <div className="sticky top-[4.25rem] z-20 -mx-4 flex gap-2 border-b border-border/60 bg-card/80 px-4 py-2.5 backdrop-blur-xl sm:static sm:mx-0 sm:flex-wrap sm:border-0 sm:bg-transparent sm:px-0 sm:py-0 sm:backdrop-blur-none">
         <TaskDialog />
         {canAssign ? <AssignDialog /> : null}
       </div>
@@ -1376,8 +1384,9 @@ export function TaskBoard() {
       </div>
 
       {/* Wrapper carries the scroll target + a scroll-margin so a stat-card jump stops just
-          below the sticky topbar instead of under it. (Tabs itself doesn't forward a ref.) */}
-      <div ref={listRef} className="scroll-mt-24">
+          below the sticky topbar instead of under it. (Tabs itself doesn't forward a ref.)
+          On a phone the action bar above is sticky too, so the offset has to clear both. */}
+      <div ref={listRef} className="scroll-mt-32 sm:scroll-mt-24">
       <Tabs value={tab} onValueChange={(v) => { setTab(v); setFlat(null); }}>
         <TabsList>
           <TabsTrigger value="mine">My tasks</TabsTrigger>
