@@ -8,7 +8,7 @@
 > 🔴 **RED** = galat data / paisa / security · ⚠️ **MEDIUM** = galat dikhta hai ya do jagah alag · 🔵 **LOW** = polish
 > **VERIFIED** = adversarial verifier ne confirm kiya · **PARKED** = mila hai par verify nahi hua
 >
-> Sources: [01](01-dashboard.md) · [02](02-todo.md) · [03](03-attendance.md) · [04](04-leaves.md) · [05](05-rewards.md) · [06](06-my-summary.md) · [07](07-reports.md) · [08](08-team-users-roles.md)
+> Sources: [01](01-dashboard.md) · [02](02-todo.md) · [03](03-attendance.md) · [04](04-leaves.md) · [05](05-rewards.md) · [06](06-my-summary.md) · [07](07-reports.md) · [08](08-team-users-roles.md) · [13](13-todo-points-matrix.md)
 
 ---
 
@@ -149,6 +149,30 @@ Owner ne ye feature chuna tha. **Do alag design se banaya gaya, dono revert hue.
 
 **Fix ho chuke:** RED fix ✅ (3 owner ne revert karwaye)
 **Bacha hua:** T1–T10 perf, 5 security, UX — **unverified**. Ek khula sawaal: eligibility UI.
+
+### 13 — To-Do points matrix (8 Sep 2026) → [13-todo-points-matrix.md](13-todo-points-matrix.md)
+
+Poora permutation audit asli code par chala kar. **Engine sahi nikla** — tagged bande ke
+points 12/12 combos me theek 0, assigner ko hamesha theek ek +3, chhutti/itwaar par prod
+me 113 me se 0 galat drip, mahine ka hisaab bilkul niyam ke mutabik.
+
+**Fix ho chuke (8 Sep):** tagged bande ko doosre ke points ka preview dikhna band; adhoora
+multi-assign ab chupchaap nahi chalta (row par ginti, khuli copy par nishaan, pending walon
+ko notification) — 24/24 test. Ek defect audit ke dauraan hi naye code me pakda aur theek
+kiya gaya (forward ki hui copy ko galat taana).
+
+| # | Bug / faisla | Kya hai | Asli asar aaj |
+|---|---|---|---|
+| **F1** | ⚠️ Roz ki penalty ki koi seema nahi | −1 roz, bina ruke, hamesha | Banquet hall model akela **−29**; Mariya −39, Priyanshi −30, Anjali −25. 34 din purana kaam nipta ne se sirf 2 point ka farak |
+| **F2** | ⚠️ Approval me deri manager ki, penalty employee ki | waqt par submit, 5 din approve nahi → employee **−8** | niyam owner ne 8 Aug ko khud tay kiya tha — dobara dekhna hai |
+| **F3** | ⚠️ Tag hatane se penalty maaf | late complete task se CEO ka tag hatate hi uska −5 mit jaata hai | due-date lock ka doosra darwaza; koi bhi assigner khol sakta hai |
+| **F4** | 🔵 Assigner ka +3 pehle bande par hi mil jaata hai | 5 me se 1 ne kiya → +3 mil gaya | niyam "ek kaam = ek +3" se theek, par faisla owner ka |
+| **F5** | 🔵 Task delete par uske points ledger me bache rehte hain | `pruneOrphanTaskEntries` chalne tak | mite hue task ke points dhone padte hain |
+| **F6** | ℹ️ 243 tasks ka `assignBatch` khaali string (`''`) | schema default; code truthiness se guard karta hai | **koi nuksan nahi** — par analytics query inhe ek jhoothe 243-copy batch me jod deti hai |
+
+**Prod ki haalat:** 28 asli multi-assign batch, 4 adhoore. Penalty sach me sirf **Naimish
+Saini** bhar rahe hain (−10, do batch me). Ankur Saini dono me kar chuke hain; Manish Saini
+ki copy abhi overdue hui hi nahi.
 
 ## 01 — Dashboard
 

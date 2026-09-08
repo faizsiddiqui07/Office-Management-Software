@@ -22,6 +22,7 @@
 | 10 | **Settings + Rules** | [10-settings-rules.md](10-settings-rules.md) | ✅ **S1/S3/S5/S7 FIXED** (12/12 suite + pre-fix proof); S2/S4/S6 + 8 MEDIUM parked | S1,S3,S5,S7 | S2/S4/S6 + 8 MEDIUM |
 | 11 | Visitors / Announcements / Calendar / Approvals / Activity / Profile | [11-six-pages.md](11-six-pages.md) | ✅ **V6 FIXED** (+ garbage-key sibling bug), 10/10 suite; baaki parked | V6 | ~14 MEDIUM + 4 LOW |
 | 12 | **MASTER consolidation** | [12-master-consolidation.md](12-master-consolidation.md) | ✅ **DONE** — 01–07 parked verified (183 → 0 RED, 18 MED, 138 LOW, 19 already-fixed); root-cause grouped | — | see doc |
+| 13 | **To-Do — points permutation matrix** | [13-todo-points-matrix.md](13-todo-points-matrix.md) | ✅ **DONE** (8 Sep 2026) — owner ke 2 sawaal ka jawab: TAGGED bande ke points 12/12 combos me theek **0**; multi-assign me har copy alag. 2 cheezein fix ki gayin (preview kiska hai, adhoora batch ab chupchaap nahi), 1 naya defect audit me hi pakda gaya. **F1–F6 owner ke faisle ke intezaar me** | preview-owner, batch visibility | F1 drip ki seema, F2 approval-deri, F3 untag amnesty, F4 assigner +3 timing, F5 orphan entries, F6 khaali assignBatch |
 
 ## 🔗 CROSS-PAGE PATTERNS (running list — har naye audit me check karo)
 
@@ -73,6 +74,9 @@ Har pattern ke aage: kahan mila ✔, kahan check karna baaki ⏳.
 ## ❓ OWNER KE OPEN DECISIONS (abhi tak)
 
 1. **Eligibility UI** (To-Do): untagged task pe warning dikhaye, ya owner ko auto-tag kare, ya dono? — **undecided, parked**
+2. **Roz ki penalty ki seema** (audit 13, F1): ek bhoola hua task bina rukey −1 roz kaatta rehta hai — abhi "Banquet hall model" akela −29 par hai, Mariya Khan ka drip total −39. Seema lagayen (−10/−15), ya sirf pehle 7–14 din, ya jaisa hai waisa? — **undecided**
+3. **Approval me deri kiski galti** (audit 13, F2): employee ne waqt par submit kiya, manager ne 5 din approve nahi kiya → employee ke −8. Submit hote hi penalty roken? — **undecided**
+4. **Tag hatane wali chhoot** (audit 13, F3): late complete ho chuke task se CEO ka tag hatate hi uska −5 poora mit jaata hai — due-date lock jo darwaza band karta hai, ye uska doosra darwaza hai. Tag hatana owner-tier tak seemit karen? — **undecided**
 2. Consolidated phase ka order jab saare audits ho jayen: pehle security, phir perf, phir UX/features — ya owner priority dega.
 
 ## ✅ OWNER KE LIYE HUE FAISLE (dobara mat poochho)
