@@ -87,7 +87,7 @@ export function NotificationsCard() {
       ? 'Add the app to your home screen for quick, full-screen access.'
       : isIOS
         ? 'On iPhone/iPad: tap the Share icon, then “Add to Home Screen”.'
-        : 'Not installed on this device. In your browser menu (⋮), choose “Install app” — or look for the install icon in the address bar.';
+        : 'Not installed on this device. Use your browser menu (⋮) → “Install app”, or the install icon in the address bar. If the menu says it is already installed, the browser is still holding an old copy — open chrome://apps, remove “Architectus Bureau”, then reload this page.';
 
   return (
     <GlassPanel className="space-y-4 p-6">

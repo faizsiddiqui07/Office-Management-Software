@@ -69,7 +69,7 @@ export default function RootLayout({ children }) {
             device, which makes it the most reliable per-device signal we have. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: "try{window.__omInstallEvent=null;window.__omInstalled=false;addEventListener('beforeinstallprompt',function(e){e.preventDefault();window.__omInstallEvent=e;window.__omInstalled=false;dispatchEvent(new Event('pwa-installable'))});addEventListener('appinstalled',function(){window.__omInstallEvent=null;window.__omInstalled=true;dispatchEvent(new Event('pwa-installed'))})}catch(e){}",
+            __html: "try{if('serviceWorker' in navigator){addEventListener('load',function(){navigator.serviceWorker.register('/sw.js').catch(function(){})})}}catch(e){};try{window.__omInstallEvent=null;window.__omInstalled=false;addEventListener('beforeinstallprompt',function(e){e.preventDefault();window.__omInstallEvent=e;window.__omInstalled=false;dispatchEvent(new Event('pwa-installable'))});addEventListener('appinstalled',function(){window.__omInstallEvent=null;window.__omInstalled=true;dispatchEvent(new Event('pwa-installed'))})}catch(e){}",
           }}
         />
         <ThemeProvider>
