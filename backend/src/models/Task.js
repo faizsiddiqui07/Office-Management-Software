@@ -23,12 +23,14 @@ const taskSchema = new mongoose.Schema(
     // their teammates' progress. Empty for personal / single-assign tasks.
     assignBatch: { type: String, default: '', index: true },
     // Approval gate (optional, set by the assigner): when true, the assignee marking
-    // "done" SUBMITS for review instead of closing it — the assigner must approve
-    // before it counts as done and moves to history.
+    // "done" SUBMITS for review instead of closing it. The assigner — or anyone TAGGED
+    // on the task (owner's rule, 8 Sep 2026) — must approve before it counts as done and
+    // moves to history. Who exactly, and who is excluded for having done the work
+    // themselves, is decided in one place: lib/taskApprovers.js.
     requiresApproval: { type: Boolean, default: false },
     submittedAt: { type: Date, default: null }, // when the assignee submitted for approval (also the on-time reference for bonus)
-    approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }, // assigner who approved it
-    rejectionReason: { type: String, default: '' }, // why the assigner last sent it back
+    approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }, // whoever signed it off — the assigner, or a tagged colleague
+    rejectionReason: { type: String, default: '' }, // why it was last sent back
     dueYMD: { type: String, default: '' }, // optional deadline (YYYY-MM-DD)
     // Forwarding: a manager passes work down but stays on the hook for it. The copy
     // they were given stays in their list and only closes once this child does —
@@ -46,7 +48,7 @@ const taskSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-// "Waiting for the assigner's approval": submitted, not yet approved/rejected.
+// "Waiting to be signed off": submitted, not yet approved/rejected.
 taskSchema.virtual('awaitingApproval').get(function awaiting() {
   return !!this.requiresApproval && this.status === 'PENDING' && !!this.submittedAt;
 });

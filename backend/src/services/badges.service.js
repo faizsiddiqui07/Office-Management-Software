@@ -3,6 +3,7 @@ import { LeaveRequest } from '../models/LeaveRequest.js';
 import { Regularization } from '../models/Regularization.js';
 import { Announcement } from '../models/Announcement.js';
 import { can } from '../lib/permissions.js';
+import { reviewableByFilter, sieveReviewable } from '../lib/taskApprovers.js';
 
 /** Newest of a set of dates, ignoring nulls. */
 function newest(...dates) {
@@ -42,8 +43,19 @@ export async function getBadges(user) {
   ] = await Promise.all([
     // A task someone delegated to me that I haven't finished.
     latest(Task, { owner: mine, assignedBy: { $ne: null }, status: 'PENDING', ...notPassedOn }, 'createdAt'),
-    // Work I assigned that's now submitted and waiting for my approval.
-    latest(Task, { assignedBy: mine, requiresApproval: true, status: 'PENDING', submittedAt: { $ne: null } }, 'submittedAt'),
+    // Work waiting on MY sign-off: what I handed out, plus anything I was tagged on
+    // (owner's rule, 8 Sep 2026). Not `latest()`, because the rule has a part no single
+    // query can express — work I did myself further down a forward chain isn't mine to
+    // sign off, and a dot pointing at a button that refuses me is worse than no dot.
+    // Newest first, so the first row that survives the sieve is the answer.
+    (async () => {
+      const rows = await Task.find({ ...reviewableByFilter(mine), status: 'PENDING' })
+        .select('owner assignedBy collaborators completedBy requiresApproval submittedAt status')
+        .sort({ submittedAt: -1 })
+        .limit(200);
+      const mineToSign = await sieveReviewable(rows, mine);
+      return mineToSign.length ? mineToSign[0].submittedAt : null;
+    })(),
 
     can(user, 'approveLeave')
       ? latest(LeaveRequest, { status: 'PENDING', user: { $ne: mine } }, 'createdAt')

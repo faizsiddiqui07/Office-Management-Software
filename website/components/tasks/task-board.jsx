@@ -377,9 +377,16 @@ function TaskRow({ task, myId, canToggle, onToggle, onEdit, onDelete, onOpen, as
             </span>
           ) : null}
           {task.dueYMD ? <span className={cn(overdue && 'font-medium text-destructive')}>Due {fmtDate(task.dueYMD)}</span> : null}
-          {task.requiresApproval && !done && !awaiting ? <span className="inline-flex items-center gap-1 text-primary"><ThumbsUp className="size-3" /> Needs approval</span> : null}
+          {task.requiresApproval && !done && !awaiting && !task.canReview ? <span className="inline-flex items-center gap-1 text-primary"><ThumbsUp className="size-3" /> Needs approval</span> : null}
           {done && task.completedAt ? <span className="text-success">Done {fmtDate(task.completedAt)}{task.completedBy && task.completedBy.id !== myId ? ` · by ${task.completedBy.name}` : ''}</span> : null}
           {task.siblings?.length ? <SiblingProgress siblings={task.siblings} selfDone={done} /> : null}
+          {/* Waiting on ME, not on somebody else — the plain "Needs approval" above says
+              only that the task has an approval gate. */}
+          {task.canReview ? (
+            <span className="inline-flex items-center gap-1 font-medium text-primary">
+              <ThumbsUp className="size-3" /> Needs your approval
+            </span>
+          ) : null}
           {/* Somebody else on this job has finished and MINE has not. Without this the
               row looked identical to a task nobody had touched, so the penalty kept
               running on a copy its owner believed was already dealt with. */}
@@ -483,6 +490,11 @@ function DatedTaskList({ tasks, myId, dateKey, ascending = false, onEdit, onDele
                     {t.dueYMD ? <span className={cn(overdue && 'font-medium text-destructive')}>Due {fmtDate(t.dueYMD)}</span> : null}
                     {done && t.completedAt ? <span className="text-success">Done {fmtDate(t.completedAt)}{t.completedBy?.name ? ` · by ${t.completedBy.name}` : ''}</span> : null}
                     {t.siblings?.length ? <SiblingProgress siblings={t.siblings} selfDone={done} /> : null}
+                    {t.canReview ? (
+                      <span className="inline-flex items-center gap-1 font-medium text-primary">
+                        <ThumbsUp className="size-3" /> Needs your approval
+                      </span>
+                    ) : null}
                     {(() => { const b = batchState(t, myId); return b?.mineOpen && b.othersDone > 0 ? (
                       <span className="inline-flex items-center gap-1 font-medium text-amber-600 dark:text-amber-300">
                         <Clock className="size-3" /> Yours is still open
@@ -657,8 +669,12 @@ function TaskDetailDialog({ view, myId, onClose, onToggle, onEdit, onDelete, onA
   const tagged = !!task && !view?.assignerView && onlyTagged(task, myId);
   // Who else is on it. Worth showing to a tagged colleague too — they are one of them.
   const sharedWith = (iOwn || tagged) && task?.collaborators?.length ? task.collaborators : [];
-  // The assigner reviewing a submitted task can approve or reject it here.
-  const canReview = !!view?.assignerView && awaiting;
+  // Who may approve or reject a submitted task. The server decides — it used to be
+  // inferred from "am I on the Assigned-by-me tab", which stopped being true once a
+  // tagged colleague could sign work off too (a tagged person is never on that tab).
+  // Reading the server's own answer also means the button can never appear where the
+  // review would be refused, or hide from somebody who is allowed.
+  const canReview = !!task?.canReview;
 
   const Row = ({ label, children }) => (
     <div className="flex items-start justify-between gap-4 py-2">
@@ -763,6 +779,24 @@ function TaskDetailDialog({ view, myId, onClose, onToggle, onEdit, onDelete, onA
               </div>
             );
           })()}
+
+          {/* Waiting on THIS person. A tagged colleague reaches the task from "Shared with
+              me", where nothing else says the work is stuck on them — and the note about
+              where the credit goes is there because signing somebody else's work off
+              looks, at first glance, like taking their reward. */}
+          {canReview ? (
+            <div className="flex items-start gap-2 rounded-xl bg-primary/[0.07] p-3 text-sm ring-1 ring-primary/20">
+              <ThumbsUp className="mt-0.5 size-4 shrink-0 text-primary" />
+              <span>
+                <span className="font-semibold">Waiting for your sign-off.</span>{' '}
+                {task.completedBy?.name || task.owner?.name || 'The assignee'} submitted it
+                {task.submittedAt ? ` on ${fmtDate(task.submittedAt)}` : ''}.
+                {task.assignedBy?.name && String(task.assignedBy.id) !== String(myId)
+                  ? ` Signing it off earns you nothing — any credit for handing the work out stays with ${task.assignedBy.name.split(' ')[0]}.`
+                  : ''}
+              </span>
+            </div>
+          ) : null}
 
           {task.rejectionReason && !awaiting && !done ? (
             <div className="flex items-start gap-2 rounded-xl bg-destructive/10 p-3 text-sm text-destructive ring-1 ring-destructive/20">

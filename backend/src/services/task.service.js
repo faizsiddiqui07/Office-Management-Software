@@ -4,6 +4,7 @@ import { User } from '../models/User.js';
 import { Setting } from '../models/Setting.js';
 import { Notification, notify, clearNotificationsFor } from '../models/Notification.js';
 import { roleLabel, isOwnerRole } from '../lib/roles.js';
+import { approverIdsFor, canReviewTask, chainOwnersOf, chainOwnersByRoot } from '../lib/taskApprovers.js';
 import { can } from '../lib/permissions.js';
 import { companyDayFromYMD, ymdInTz, COMPANY_TZ } from '../lib/time.js';
 import { onAssignedTaskDone, onAssignedTaskUndone, rebuildOverdueForTask, ASSIGNER_FLOOR_YMD } from './bonus.service.js';
@@ -34,6 +35,32 @@ const todoLink = (id, assigned = false) =>
  * whose list no longer contains the task, and the detail dialog would never open.
  */
 const taggedLink = (id) => (id ? `/todo?tab=tagged&task=${id}` : '/todo?tab=tagged');
+
+/** The "please approve this" bell, to the assigner AND every tagged colleague. */
+async function notifyApprovers(task, title) {
+  // The chain sweep matters here: an assignee can forward the work to the very colleague
+  // who was tagged to approve it, and telling that person to "approve this" would send
+  // them to a button that refuses them.
+  const chain = await chainOwnersOf(task._id);
+  for (const uid of approverIdsFor(task, chain)) {
+    const mine = String(uid) === String(task.assignedBy);
+    // eslint-disable-next-line no-await-in-loop
+    await notify({
+      user: uid,
+      // Its own type (not TASK_ASSIGNED, which also means "new task"/"tagged you") so
+      // withdrawing/deciding can clear THIS without touching the assignment notice.
+      type: 'TASK_APPROVAL',
+      title,
+      message: task.title,
+      // Each person's own tab: the assigner's copy lives under "Assigned by me", a tagged
+      // colleague's under "Shared with me". The wrong tab opens a list the task isn't in
+      // and the dialog never appears.
+      link: mine ? todoLink(task._id, true) : taggedLink(task._id),
+      entityType: 'Task',
+      entityId: task._id,
+    });
+  }
+}
 
 /**
  * The end-of-day round-up: who finished what TODAY, person by person.
@@ -364,17 +391,7 @@ export async function setStatus(actor, id, status) {
     task.submittedAt = new Date();
     task.rejectionReason = '';
     await task.save();
-    await notify({
-      user: task.assignedBy,
-      // Its own type (not TASK_ASSIGNED, which also means "new task"/"tagged you") so
-      // withdrawing/deciding can clear THIS without touching the assignment notice.
-      type: 'TASK_APPROVAL',
-      title: `${actor.name} submitted work for approval`,
-      message: task.title,
-      link: todoLink(task._id, true),
-      entityType: 'Task',
-      entityId: task._id,
-    });
+    await notifyApprovers(task, `${actor.name} submitted work for approval`);
     return populated(task);
   }
 
@@ -433,10 +450,28 @@ export async function setStatus(actor, id, status) {
  * reject → back to the assignee's to-do with the reason.
  */
 export async function reviewTask(actor, id, approve, reason) {
+  // NEVER load this with a projection. The scoring hook below reads `assignBatch` off this
+  // very document to pay the assigner once per delegation rather than once per copy — a
+  // .select() that drops it turns one +3 into one +3 PER PERSON the work went to.
   const task = await Task.findById(id);
   if (!task) throw httpError(404, 'NOT_FOUND', 'Task not found');
   const isAssigner = task.assignedBy && String(task.assignedBy) === String(actor._id);
-  if (!isAssigner) throw httpError(403, 'FORBIDDEN', 'Only the person who assigned this task can review it');
+  // Tagged colleagues can sign off too (owner's rule, 8 Sep 2026): the point of tagging
+  // someone senior is that the work doesn't sit waiting when the assigner is away. The
+  // whole rule — including who is excluded for having done the work themselves — lives
+  // in lib/taskApprovers.js, so this guard, the bell and the Approve button cannot drift.
+  const chain = await chainOwnersOf(task._id);
+  const mayReview = approverIdsFor(task, chain).includes(String(actor._id));
+  if (!mayReview) {
+    // Separate the two refusals, because they mean very different things to the person
+    // reading them: "this isn't yours to sign" versus "you can't sign your own work".
+    const didIt = String(task.owner) === String(actor._id)
+      || (task.completedBy && String(task.completedBy) === String(actor._id))
+      || chain.has(String(actor._id));
+    throw didIt
+      ? httpError(403, 'FORBIDDEN', 'You did this work — somebody else has to sign it off')
+      : httpError(403, 'FORBIDDEN', 'Only the person who assigned this task, or someone tagged on it, can review it');
+  }
   if (!task.awaitingApproval) throw httpError(400, 'NOT_AWAITING', 'This task isn’t waiting for approval');
   // Approving a copy that was forwarded onward would settle (and pay) the whole chain
   // while the person below is still working — the same overpayment the DONE guard in
@@ -482,6 +517,23 @@ export async function reviewTask(actor, id, approve, reason) {
       title: `${actor.name} sent your task back`,
       message: task.rejectionReason ? `${task.title} — ${task.rejectionReason}` : task.title,
       link: todoLink(task._id),
+    });
+  }
+
+  // Somebody else signed off work THIS person handed out. Their own +3 lands (or their
+  // instruction gets overruled) without them touching it, and deciding it clears their
+  // "approve this" bell too — so without this they would simply never find out.
+  if (!isAssigner && task.assignedBy) {
+    await notify({
+      user: task.assignedBy,
+      type: approve ? 'TASK_DONE' : 'TASK_ASSIGNED',
+      title: approve
+        ? `${actor.name} approved work you assigned`
+        : `${actor.name} sent back work you assigned`,
+      message: !approve && task.rejectionReason ? `${task.title} — ${task.rejectionReason}` : task.title,
+      link: todoLink(task._id, true),
+      entityType: 'Task',
+      entityId: task._id,
     });
   }
   return populated(task);
@@ -635,15 +687,7 @@ async function settleParent(childTask, depth = 0) {
       // to the person who merely forwarded it.
       parent.completedBy = doer;
       await parent.save();
-      await notify({
-        user: parent.assignedBy,
-        type: 'TASK_APPROVAL',
-        title: 'Forwarded work is ready for your approval',
-        message: parent.title,
-        link: todoLink(parent._id, true),
-        entityType: 'Task',
-        entityId: parent._id,
-      });
+      await notifyApprovers(parent, 'Forwarded work is ready for your approval');
     }
     return;
   }
@@ -1161,6 +1205,26 @@ export async function listTasks(actor, { scope = 'mine', status, search, period,
       }
     }
   }
+
+  // Who may sign a submitted task off, decided on the SERVER for this viewer.
+  //
+  // The To-Do page used to infer it — "I'm on the Assigned-by-me tab, so I can approve" —
+  // which stopped being true the moment tagged colleagues gained sign-off rights. Sending
+  // the answer means the button and the guard in reviewTask can never disagree, so nobody
+  // is shown an Approve that 403s and nobody with the right is left without a button.
+  // Answered by the SAME predicate the guard uses (lib/taskApprovers.js): the assigner
+  // plus anyone tagged, minus whoever did the work — their own copy, the credited doer,
+  // or a copy they hold anywhere further down a forward chain.
+  const meId = String(actor._id);
+  const awaitingRows = out.filter((t) => t.awaitingApproval);
+  if (awaitingRows.length) {
+    // One sweep for the whole page. The earlier version read `forwardedTo`, which only
+    // carries a row's IMMEDIATE children and is only built for un-forwarded rows — so a
+    // colleague two hand-offs down still saw an Approve button that refused them.
+    const chains = await chainOwnersByRoot(awaitingRows.map((t) => t.id));
+    for (const t of awaitingRows) t.canReview = canReviewTask(t, meId, chains.get(String(t.id)) || new Set());
+  }
+  for (const t of out) t.canReview = !!t.canReview;
 
   // The full hand-off chain for a forwarded task: who started it, everyone it passed
   // through, and where it sits now — e.g. Khaan Aamir → Priyanshi Patel → You. The row

@@ -2,6 +2,7 @@ import { LeaveRequest } from '../models/LeaveRequest.js';
 import { Regularization } from '../models/Regularization.js';
 import { Task } from '../models/Task.js';
 import { can } from '../lib/permissions.js';
+import { reviewableByFilter, sieveReviewable } from '../lib/taskApprovers.js';
 import { ymdInTz, companyDayFromYMD } from '../lib/time.js';
 
 /**
@@ -15,8 +16,9 @@ import { ymdInTz, companyDayFromYMD } from '../lib/time.js';
  *
  * The three sections are scoped differently, and deliberately so:
  *  - leave and corrections are PERMISSIONS, held by whoever leadership granted them to;
- *  - tasks are OWNERSHIP — a task comes to whoever handed it out and asked to see it
- *    finished, which can be anybody, permission or not.
+ *  - tasks are REACH — a task comes to whoever handed it out and asked to see it
+ *    finished, and to anyone TAGGED on it (owner's rule, 8 Sep 2026), which can be
+ *    anybody, permission or not. Never to whoever actually did the work.
  * So an employee who delegates one task with approval switched on gets a Tasks
  * section and nothing else, which is exactly right.
  */
@@ -38,16 +40,16 @@ export function canUseApprovals(user) {
 }
 
 /**
- * Which sections this person can see. Leave and corrections follow the permission;
- * work follows OWNERSHIP — you only ever see approvals on work you handed out
- * yourself, so two people with identical permissions still never see each other's.
+ * Which sections this person can see. Leave and corrections follow the permission; work
+ * follows REACH — you see approvals on work you handed out, and on work you were tagged
+ * on, so two people with identical permissions still never see each other's untagged work.
  */
 export function sectionsFor(user) {
   const allowed = canUseApprovals(user);
   return {
     leaves: can(user, 'approveLeave'),
     regularizations: can(user, 'approveRegularization'),
-    // Only inside this module, and only ever your own — see pendingFor's assignedBy filter.
+    // Only inside this module, and only what you can reach — see reviewableBy above.
     tasks: allowed,
   };
 }
@@ -71,15 +73,16 @@ export async function pendingFor(user) {
           .limit(200)
           .populate('user', 'name employeeId role')
       : [],
-    // Only tasks THIS person handed out and asked to approve. `submittedAt` set with
-    // no decision yet is exactly what the awaitingApproval virtual means; querying the
-    // fields directly keeps it a database filter rather than a scan.
+    // Work this person can sign off: what they handed out, plus anything they were
+    // TAGGED on (owner's rule, 8 Sep 2026). `submittedAt` set with no decision yet is
+    // exactly what the awaitingApproval virtual means; querying the fields directly
+    // keeps it a database filter rather than a scan.
     //
-    // assignedBy is what keeps two people with identical permissions from ever seeing
-    // each other's work — three CEOs share every leave in the queue, and share none of
-    // their tasks.
+    // Reach is what keeps two people with identical permissions from seeing each other's
+    // work — three CEOs share every leave in the queue, and share only the tasks they
+    // were actually named on.
     sections.tasks
-      ? Task.find({ assignedBy: user._id, requiresApproval: true, submittedAt: { $ne: null }, status: { $ne: 'DONE' } })
+      ? Task.find({ ...reviewableByFilter(user._id), status: { $ne: 'DONE' } })
           .select('title notes dueYMD owner submittedAt completedBy assignBatch')
           .sort({ submittedAt: 1 })
           .limit(200)
@@ -87,6 +90,12 @@ export async function pendingFor(user) {
           .populate('completedBy', 'name')
       : [],
   ]);
+
+  // The query above narrows as far as one Mongo filter can; a chain of hand-offs cannot
+  // be expressed there, so the rows are sieved through the real rule. Without this the
+  // inbox lists work its own guard would refuse — an Approve button that 403s, and a
+  // counter that never clears.
+  const reviewableTasks = await sieveReviewable(tasks, user._id);
 
   const todayYMD = ymdInTz(new Date());
   return {
@@ -97,12 +106,12 @@ export async function pendingFor(user) {
     today: todayYMD,
     leaves: leaves.map((l) => l.toJSON()),
     regularizations: regularizations.map((r) => r.toJSON()),
-    tasks: tasks.map((t) => t.toJSON()),
+    tasks: reviewableTasks.map((t) => t.toJSON()),
     counts: {
       leaves: leaves.length,
       regularizations: regularizations.length,
-      tasks: tasks.length,
-      total: leaves.length + regularizations.length + tasks.length,
+      tasks: reviewableTasks.length,
+      total: leaves.length + regularizations.length + reviewableTasks.length,
     },
   };
 }
@@ -117,9 +126,11 @@ export async function pendingFor(user) {
  * Filtering history to your own decisions made the two halves disagree: three leaves
  * were approved and the page showed two, because a colleague approved the third.
  *
- * Tasks are the exception and stay yours alone. A task approval belongs to whoever
- * handed the work out; listing everybody's would put other people's work on your
- * screen, which is a different thing from a shared approval queue.
+ * Tasks are the exception and stay within reach. A task approval belongs to whoever
+ * handed the work out and to anyone tagged on it; listing everybody's would put other
+ * people's work on your screen, which is a different thing from a shared approval queue.
+ * A task counts as decided once ANYONE has decided it — scoping that to "I approved it"
+ * would erase the assigner's own record whenever a tagged colleague signed it off.
  *
  * `kind` narrows it to one type, because the page shows one type at a time.
  */
@@ -159,10 +170,17 @@ export async function historyFor(user, { fromYMD, toYMD, kind } = {}) {
     // outcomes are found by "I approved it" or "I left a reason".
     sections.tasks && want('tasks')
       ? Task.find({
-          assignedBy: user._id,
           requiresApproval: true,
           updatedAt: { $gte: since, $lte: until },
-          $or: [{ approvedBy: user._id }, { rejectionReason: { $nin: ['', null] } }],
+          // Reachable by this person...
+          $and: [
+            { $or: [{ assignedBy: user._id }, { collaborators: user._id, owner: { $ne: user._id } }] },
+            // ...and actually decided — by ANYONE who could. Scoping this to "I approved
+            // it" used to be the same thing, because only the assigner ever could; now a
+            // tagged colleague can, and that would erase the assigner's own record of
+            // work they handed out being signed off.
+            { $or: [{ approvedBy: { $ne: null } }, { rejectionReason: { $nin: ['', null] } }] },
+          ],
         })
           .select('title owner status approvedBy rejectionReason completedAt updatedAt')
           .sort({ updatedAt: -1 })
@@ -189,8 +207,12 @@ export async function pendingCount(user) {
     sections.leaves ? LeaveRequest.countDocuments({ status: 'PENDING' }) : 0,
     sections.regularizations ? Regularization.countDocuments({ status: 'PENDING' }) : 0,
     sections.tasks
-      ? Task.countDocuments({ assignedBy: user._id, requiresApproval: true, submittedAt: { $ne: null }, status: { $ne: 'DONE' } })
-      : 0,
+      ? Task.find({ ...reviewableByFilter(user._id), status: { $ne: 'DONE' } })
+          .select('owner assignedBy collaborators completedBy requiresApproval submittedAt status')
+          .limit(500)
+      : [],
   ]);
-  return { leaves, regularizations, tasks, total: leaves + regularizations + tasks };
+  // Same sieve as pendingFor, so the badge and the list can never disagree.
+  const taskCount = sections.tasks ? (await sieveReviewable(tasks, user._id)).length : 0;
+  return { leaves, regularizations, tasks: taskCount, total: leaves + regularizations + taskCount };
 }

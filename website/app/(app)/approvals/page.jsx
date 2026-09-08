@@ -166,7 +166,7 @@ export default function ApprovalsPage() {
         <EmptyState
           icon={Inbox}
           title="This page isn’t for your role"
-          description="Approvals here are for leave and attendance corrections. Work you handed out is approved on the To-Do page, next to the task itself."
+          description="Approvals here are for leave and attendance corrections. Work you handed out — or were tagged on — is approved on the To-Do page, next to the task itself."
         />
       ) : !visibleTabs.length ? (
         <EmptyState icon={CheckCheck} title="Nothing comes to you" description="No approvals are routed to you." />
@@ -209,7 +209,7 @@ export default function ApprovalsPage() {
               title={`No ${current?.label.toLowerCase()} waiting`}
               description={
                 tab === 'tasks'
-                  ? 'Work comes here when someone finishes a task you handed out with “require my approval” switched on. None of yours is waiting.'
+                  ? 'Work comes here when someone finishes a task you handed out — or were tagged on — with “require my approval” switched on. None of yours is waiting.'
                   : counts.total > 0
                     ? 'Nothing of this kind needs you. Check the other tabs — they have something.'
                     : 'Nothing is waiting on you right now.'

@@ -169,7 +169,9 @@ export function AssignDialog() {
         </div>
 
         {/* Tag anyone in the office to keep them in the loop — it shows under "Shared with
-            me" for them, and the assignee is the one who does it. Leadership included. */}
+            me" for them, and the assignee is still the one who does it. Leadership
+            included. A tagged colleague can also sign the work off when it comes back for
+            approval, which is the point of tagging someone senior. */}
         <div className="space-y-1.5">
           <Label className="flex items-center gap-1.5">
             <Users className="size-3.5" /> Tag people (optional)
@@ -203,7 +205,7 @@ export function AssignDialog() {
           })()}
           {collaborators.length ? (
             <p className="text-xs text-muted-foreground">
-              {collaborators.length} tagged — it shows under “Shared with me” for them, but they don’t have to do it.
+              {collaborators.length} tagged — it shows under “Shared with me” for them. They don’t have to do it, but they can approve it or send it back.
             </p>
           ) : null}
         </div>
@@ -229,7 +231,9 @@ export function AssignDialog() {
           <div className="min-w-0">
             <Label className="flex items-center gap-1.5"><ThumbsUp className="size-3.5" /> Require my approval</Label>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              {requiresApproval ? 'They submit it, and it’s done only after you approve.' : 'Off — their “done” closes it immediately.'}
+              {requiresApproval
+                ? `They submit it, and it’s done only after ${collaborators.length ? 'you or anyone you tagged approve' : 'you approve'} it.`
+                : 'Off — their “done” closes it immediately.'}
             </p>
           </div>
           <Switch checked={requiresApproval} onCheckedChange={setRequiresApproval} />
