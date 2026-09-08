@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { AppSidebar } from './app-sidebar';
 import { Topbar } from './topbar';
+import { QuickTaskActions } from './quick-task-actions';
 import { ForcePasswordChange } from '@/components/auth/force-password-change';
 import { LoadingState } from '@/components/glass/skeletons';
 import { AnnouncementPopup } from '@/components/announcements/announcement-popup';
@@ -54,7 +55,9 @@ export function AppShell({ children }) {
       <AppSidebar user={user} />
       <div className="lg:pl-64">
         <Topbar user={user} />
-        <main className="mx-auto w-full max-w-7xl px-4 pb-12 pt-6 sm:px-6 lg:px-8">
+        {/* Add task / Assign work, on every page — see the component. */}
+        <QuickTaskActions />
+        <main className="mx-auto w-full max-w-7xl px-4 pb-12 pt-4 sm:px-6 lg:px-8">
           {children}
         </main>
       </div>
