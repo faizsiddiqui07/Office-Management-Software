@@ -187,9 +187,12 @@ function batchState(task, myId) {
   const sibs = task?.siblings || [];
   if (!sibs.length) return null;
   const done = sibs.filter((s) => s.status === 'DONE').length + (task.status === 'DONE' ? 1 : 0);
-  // "Still open" means MINE specifically: not finished, not sitting with the assigner for
-  // approval (that work IS done), and actually my copy rather than one I'm watching.
+  // "Still open" means MINE specifically, and still MINE TO DO: not finished, not sitting
+  // with the assigner for approval (that work IS done), not passed further down (a
+  // forwarded copy costs its holder nothing — it closes when the person below finishes),
+  // and actually my copy rather than one I'm only watching.
   const mineOpen = task.status !== 'DONE' && !task.awaitingApproval
+    && !task.forwardedTo?.length
     && !!myId && String(task.owner?.id) === String(myId);
   return { total: sibs.length + 1, done, othersDone: sibs.filter((s) => s.status === 'DONE').length, mineOpen };
 }

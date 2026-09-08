@@ -281,10 +281,16 @@ async function nudgeBatchSiblings(task, doerName) {
     _id: { $ne: task._id },
     status: 'PENDING',
   }).select('_id owner title status requiresApproval submittedAt');
+  // A copy that was passed further down is no longer its holder's to deliver — it costs
+  // them nothing and closes when the person below finishes, so nudging them would be
+  // chasing the wrong desk.
+  const passedOn = new Set((await Task.find({ forwardedFrom: { $in: open.map((t) => t._id) } }).select('forwardedFrom').lean())
+    .map((k) => String(k.forwardedFrom)));
   for (const sib of open) {
     // Submitted and waiting on the assigner is not "still to do" — that person has
     // finished their part, and nudging them would be blaming them for someone else's queue.
     if (sib.awaitingApproval) continue;
+    if (passedOn.has(String(sib._id))) continue;
     const already = await Notification.exists({
       user: sib.owner, entityType: 'Task', entityId: sib._id, type: 'TASK_BATCH_PENDING',
     });

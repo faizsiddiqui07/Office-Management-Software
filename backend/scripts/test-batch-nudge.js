@@ -149,6 +149,20 @@ async function main() {
   await setStatus(A, mine._id, 'DONE');
   check('doosre assigner ki copy ko bell nahi gaya', (await nudges(B._id, other._id)).length === 0);
 
+  // ═══ TEST 9 — jisne apni copy aage forward kar di, use "tumhari baaki hai" mat bolo ═══
+  // Forward ki hui copy uske haath ki nahi rahi: uspe koi penalty nahi chalti aur wo
+  // apne aap band hoti hai jab neeche wala khatam karta hai. Use taana dena galat desk
+  // par ungli uthana hai.
+  console.log('\nTEST 9 — Chirag ne apni copy aage de di: use "tumhari baaki hai" mat bolo');
+  {
+    const [a9, b9, c9] = await makeBatch(mgr, [A, B, C]);
+    const Dp = await User.create({ name: 'Deepak Roy', email: 'dp@t.co', passwordHash: 'x', role: 'EMPLOYEE', employeeId: 'T-DP', isActive: true });
+    await Task.create({ title: 'Shared job', owner: Dp._id, assignedBy: C._id, forwardedFrom: c9._id, status: 'PENDING', dueYMD: '2026-08-20' });
+    await setStatus(A, a9._id, 'DONE');
+    check('Manish (jiski copy sach me khuli hai) ko bell mila', (await nudges(B._id, b9._id)).length === 1, `got ${(await nudges(B._id, b9._id)).length}`);
+    check('Chirag (jo aage de chuka) ko bell NAHI', (await nudges(C._id, c9._id)).length === 0, `got ${(await nudges(C._id, c9._id)).length}`);
+  }
+
   console.log(`\n${failures ? `❌ ${failures} FAIL` : '✅ SAB PASS'}\n`);
   await mongoose.connection.dropDatabase();
   await disconnectDB();
