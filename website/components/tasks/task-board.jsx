@@ -1632,7 +1632,7 @@ export function TaskBoard() {
                       <span className="font-normal text-muted-foreground">({assignedAll.length})</span>
                     </h3>
                     <Button variant="outline" size="sm" onClick={() => setAssignedFlat(false)}>
-                      <Users className="size-4" /> Group by person
+                      <Users className="size-4" /> Individual
                     </Button>
                   </div>
                   {assignedAll.length ? (
