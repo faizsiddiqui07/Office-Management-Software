@@ -135,7 +135,9 @@ export async function overview() {
 }
 
 export async function createDue(admin, { person, amount, item, source, dateYMD, note }) {
-  const target = await User.findById(person).select('_id');
+  // `name` as well as the id: the activity log reads better with a person than an
+  // ObjectId, and this lookup is happening anyway.
+  const target = await User.findById(person).select('name');
   if (!target) throw httpError(404, 'NOT_FOUND', 'User not found');
 
   const entry = await LedgerEntry.create({
@@ -161,12 +163,12 @@ export async function createDue(admin, { person, amount, item, source, dateYMD, 
     link: '/dues',
   });
 
-  return { entry: entry.toJSON(), pending: state.pending, advance: state.advance };
+  return { entry: entry.toJSON(), pending: state.pending, advance: state.advance, personName: target.name };
 }
 
 /** Generic money received — advance / extra cash (covers oldest dues, rest = advance). */
 export async function createPayment(admin, { person, amount, dateYMD, note }) {
-  const target = await User.findById(person).select('_id');
+  const target = await User.findById(person).select('name');
   if (!target) throw httpError(404, 'NOT_FOUND', 'User not found');
 
   const entry = await LedgerEntry.create({
@@ -188,7 +190,7 @@ export async function createPayment(admin, { person, amount, dateYMD, note }) {
     link: '/dues',
   });
 
-  return { entry: entry.toJSON(), pending: state.pending, advance: state.advance };
+  return { entry: entry.toJSON(), pending: state.pending, advance: state.advance, personName: target.name };
 }
 
 /** Settle a SINGLE due item — records the remaining cash against just that due. */

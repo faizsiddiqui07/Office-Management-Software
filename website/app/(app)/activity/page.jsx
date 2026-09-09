@@ -6,6 +6,7 @@ import { Activity, ChevronLeft, ChevronRight, ShieldAlert } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can, prettyRole } from '@/lib/permissions';
+import { detailOf, humanize } from '@/lib/activity-detail';
 import { DatePicker } from '@/components/ui/date-picker';
 import { APP_LIVE_YMD } from '@/lib/app-live';
 import { useRoleOptions } from '@/lib/use-roles';
@@ -27,43 +28,6 @@ function fmtWhen(iso) {
   const date = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
   const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
   return `${date}, ${time}`;
-}
-
-function humanize(a) {
-  return a.replace(/\./g, ' · ').replace(/_/g, ' ');
-}
-
-// Anything whose NAME suggests a credential is never printed, whatever it holds. The
-// log is read by leadership and some entries carry a whole request body.
-const SECRET_KEY = /pass|token|secret|hash|key|otp/i;
-
-/**
- * One short line saying what the entry was actually about.
- *
- * "task · update" on its own answers nothing — the question people bring here is which
- * task, and what changed about it. The known shapes are spelled out; anything else falls
- * back to its first couple of simple values, so a new action added later still says
- * something rather than showing a blank.
- */
-function detailOf(l) {
-  const m = l.meta || {};
-  const bits = [];
-  if (m.title) bits.push(m.title);
-  if (Array.isArray(m.fields) && m.fields.length) bits.push(`changed ${m.fields.join(', ')}`);
-  if (m.status) bits.push(String(m.status).toLowerCase().replace(/_/g, ' '));
-  if (m.owner) bits.push(`for ${m.owner}`);
-  if (m.cascaded) bits.push(`${m.cascaded} forwarded ${m.cascaded === 1 ? 'copy' : 'copies'} too`);
-  if (m.reason) bits.push(`“${m.reason}”`);
-  if (typeof m.to === 'string' && m.to) bits.push(`to ${m.to}`);
-  if (m.email) bits.push(m.email);
-  if (!bits.length) {
-    for (const [k, v] of Object.entries(m)) {
-      if (bits.length >= 2) break;
-      if (v == null || typeof v === 'object' || SECRET_KEY.test(k)) continue;
-      bits.push(`${k}: ${typeof v === 'boolean' ? (v ? 'yes' : 'no') : v}`);
-    }
-  }
-  return bits.join(' · ');
 }
 
 export default function ActivityPage() {

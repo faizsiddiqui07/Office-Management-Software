@@ -62,7 +62,7 @@ export async function addDue(req, res, next) {
   try {
     const body = addDueSchema.parse(req.body);
     const result = await svc.createDue(req.user, body);
-    await audit({ actor: req.user._id, action: 'dues.add', entityType: 'LedgerEntry', entityId: result.entry.id, meta: { person: body.person, amount: body.amount } });
+    await audit({ actor: req.user._id, action: 'dues.add', entityType: 'LedgerEntry', entityId: result.entry.id, meta: { person: result.personName, personId: body.person, amount: body.amount } });
     res.status(201).json(ok(result));
   } catch (err) {
     handleErr(res, err, next);
@@ -73,7 +73,7 @@ export async function addPayment(req, res, next) {
   try {
     const body = addPaymentSchema.parse(req.body);
     const result = await svc.createPayment(req.user, body);
-    await audit({ actor: req.user._id, action: 'dues.payment', entityType: 'LedgerEntry', entityId: result.entry.id, meta: { person: body.person, amount: body.amount } });
+    await audit({ actor: req.user._id, action: 'dues.payment', entityType: 'LedgerEntry', entityId: result.entry.id, meta: { person: result.personName, personId: body.person, amount: body.amount } });
     res.status(201).json(ok(result));
   } catch (err) {
     handleErr(res, err, next);
