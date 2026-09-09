@@ -151,6 +151,8 @@ export async function testSmtp(req, res, next) {
     if (!result.delivered) {
       return res.status(400).json(fail('SMTP_NOT_CONFIGURED', 'Email is not configured yet — save your SMTP settings first.'));
     }
+    // Rare, and it sends real mail from the company address — worth a line saying who.
+    await audit({ actor: req.user._id, action: 'settings.smtp_test', entityType: 'Setting', entityId: 'global', meta: { to } });
     res.json(ok({ delivered: true, to }));
   } catch (err) {
     // Surface the real SMTP/auth error so the admin can fix the credentials.

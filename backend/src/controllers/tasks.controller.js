@@ -109,6 +109,16 @@ export async function setStatus(req, res, next) {
   try {
     const { status } = statusSchema.parse(req.body);
     const task = await svc.setStatus(req.user, req.params.id, status);
+    // Record what HAPPENED, not what was asked for: "done" on an approval-gated task is
+    // a submission, and the log saying DONE there would be a lie you could not unpick
+    // later.
+    await audit({
+      actor: req.user._id,
+      action: 'task.status',
+      entityType: 'Task',
+      entityId: req.params.id,
+      meta: { status: task?.awaitingApproval ? 'SUBMITTED' : task?.status, title: task?.title },
+    });
     res.json(ok({ task }));
   } catch (err) {
     handleErr(res, err, next);
@@ -149,6 +159,22 @@ export async function review(req, res, next) {
   try {
     const { approve, reason } = reviewTaskSchema.parse(req.body);
     const task = await svc.reviewTask(req.user, req.params.id, approve, reason);
+    // Worth its own two actions rather than one with a flag — "who approved what" is the
+    // question this log gets asked, and it should be filterable. `byAssigner` says whether
+    // the person who handed the work out signed it off themselves or a tagged colleague
+    // did, which is the whole point of the tagged-approval rule.
+    await audit({
+      actor: req.user._id,
+      action: approve ? 'task.approve' : 'task.reject',
+      entityType: 'Task',
+      entityId: req.params.id,
+      meta: {
+        title: task?.title,
+        owner: task?.owner?.name,
+        byAssigner: String(task?.assignedBy?.id || '') === String(req.user._id),
+        ...(approve ? {} : { reason: reason || '' }),
+      },
+    });
     res.json(ok({ task }));
   } catch (err) {
     handleErr(res, err, next);
@@ -159,6 +185,15 @@ export async function update(req, res, next) {
   try {
     const body = updateTaskSchema.parse(req.body);
     const task = await svc.updateTask(req.user, req.params.id, body);
+    // The FIELDS, not their values: "the due date was moved" is the question anybody
+    // comes to this log with, and dumping whole note bodies into it would bury that.
+    await audit({
+      actor: req.user._id,
+      action: 'task.update',
+      entityType: 'Task',
+      entityId: req.params.id,
+      meta: { fields: Object.keys(body), title: task?.title },
+    });
     res.json(ok({ task }));
   } catch (err) {
     handleErr(res, err, next);
@@ -167,7 +202,17 @@ export async function update(req, res, next) {
 
 export async function remove(req, res, next) {
   try {
-    await svc.deleteTask(req.user, req.params.id);
+    const removed = await svc.deleteTask(req.user, req.params.id);
+    // The title has to be IN the log: once the task is gone the entityId points at
+    // nothing, and "task · delete" with a dead id answers no question at all. `cascaded`
+    // is how many forwarded copies went with it.
+    await audit({
+      actor: req.user._id,
+      action: 'task.delete',
+      entityType: 'Task',
+      entityId: req.params.id,
+      meta: { title: removed?.title, owner: removed?.owner, ...(removed?.cascaded ? { cascaded: removed.cascaded } : {}) },
+    });
     res.json(ok({ success: true }));
   } catch (err) {
     handleErr(res, err, next);

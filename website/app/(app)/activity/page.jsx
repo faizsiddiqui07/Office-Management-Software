@@ -33,6 +33,39 @@ function humanize(a) {
   return a.replace(/\./g, ' · ').replace(/_/g, ' ');
 }
 
+// Anything whose NAME suggests a credential is never printed, whatever it holds. The
+// log is read by leadership and some entries carry a whole request body.
+const SECRET_KEY = /pass|token|secret|hash|key|otp/i;
+
+/**
+ * One short line saying what the entry was actually about.
+ *
+ * "task · update" on its own answers nothing — the question people bring here is which
+ * task, and what changed about it. The known shapes are spelled out; anything else falls
+ * back to its first couple of simple values, so a new action added later still says
+ * something rather than showing a blank.
+ */
+function detailOf(l) {
+  const m = l.meta || {};
+  const bits = [];
+  if (m.title) bits.push(m.title);
+  if (Array.isArray(m.fields) && m.fields.length) bits.push(`changed ${m.fields.join(', ')}`);
+  if (m.status) bits.push(String(m.status).toLowerCase().replace(/_/g, ' '));
+  if (m.owner) bits.push(`for ${m.owner}`);
+  if (m.cascaded) bits.push(`${m.cascaded} forwarded ${m.cascaded === 1 ? 'copy' : 'copies'} too`);
+  if (m.reason) bits.push(`“${m.reason}”`);
+  if (typeof m.to === 'string' && m.to) bits.push(`to ${m.to}`);
+  if (m.email) bits.push(m.email);
+  if (!bits.length) {
+    for (const [k, v] of Object.entries(m)) {
+      if (bits.length >= 2) break;
+      if (v == null || typeof v === 'object' || SECRET_KEY.test(k)) continue;
+      bits.push(`${k}: ${typeof v === 'boolean' ? (v ? 'yes' : 'no') : v}`);
+    }
+  }
+  return bits.join(' · ');
+}
+
 export default function ActivityPage() {
   const { user } = useAuth();
   const allowed = !!user && can(user, 'viewAudit');
@@ -118,13 +151,20 @@ export default function ActivityPage() {
                 <span>When</span><span>Who</span><span>Action</span><span>Entity</span>
               </div>
               {logs.map((l) => (
-                <div key={l.id} className="grid grid-cols-[1fr_1.2fr_1.4fr_0.8fr] items-center gap-3 px-5 py-3 text-sm">
+                <div key={l.id} className="grid grid-cols-[1fr_1.2fr_1.4fr_0.8fr] items-start gap-3 px-5 py-3 text-sm">
                   <span className="tabular-nums text-muted-foreground">{fmtWhen(l.createdAt)}</span>
                   <span className="min-w-0">
                     <span className="truncate font-medium">{l.actor}</span>
                     {l.actorRole ? <span className="ml-1.5 text-xs text-muted-foreground">{prettyRole(l.actorRole)}</span> : null}
                   </span>
-                  <span className="truncate">{humanize(l.action)}</span>
+                  <span className="min-w-0">
+                    <span className="block truncate">{humanize(l.action)}</span>
+                    {detailOf(l) ? (
+                      <span className="mt-0.5 block truncate text-xs text-muted-foreground" title={detailOf(l)}>
+                        {detailOf(l)}
+                      </span>
+                    ) : null}
+                  </span>
                   <span>{l.entityType ? <StatusBadge tone="neutral" dot={false}>{l.entityType}</StatusBadge> : <span className="text-muted-foreground">—</span>}</span>
                 </div>
               ))}

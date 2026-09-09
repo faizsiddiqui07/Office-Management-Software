@@ -1006,7 +1006,10 @@ export async function deleteTask(actor, id) {
     }
   }
 
-  return { success: true, cascaded: descendants.length };
+  // Named for the activity log, which is read AFTER the row is gone — an id that
+  // resolves to nothing tells whoever is looking back precisely nothing.
+  const ownerDoc = await User.findById(task.owner).select('name').lean();
+  return { success: true, cascaded: descendants.length, title: task.title, owner: ownerDoc?.name || '' };
 }
 
 /**
