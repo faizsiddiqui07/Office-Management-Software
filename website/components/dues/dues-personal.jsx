@@ -13,6 +13,7 @@ import { GlassPanel } from '@/components/glass/glass-panel';
 import { EmptyState } from '@/components/glass/empty-state';
 import { LoadingState } from '@/components/glass/skeletons';
 import { DuesEntryDetailDialog } from './dues-entry-detail-dialog';
+import { groupByMonth, MonthHeading, SortSelect, useMonthFolds } from './dues-month-group';
 
 /**
  * Uses the entry's plain `dateYMD` rather than its stored instant, which is IST
@@ -355,6 +356,11 @@ function EntryRow({ e, onOpen }) {
 export function DuesPersonal() {
   const { data, isLoading, isError, error } = useQuery({ queryKey: ['dues', 'me'], queryFn: () => api.get('/dues/me') });
   const [viewing, setViewing] = React.useState(null); // ledger line opened from History
+  const [sort, setSort] = React.useState('newest');
+  // A lunch ledger is a long run of small, near-identical rows; split by month it turns
+  // into something you can actually read, and each month says what it cost.
+  const months = React.useMemo(() => groupByMonth(data?.entries ?? [], sort), [data?.entries, sort]);
+  const folds = useMonthFolds(months);
 
   return (
     <div className="space-y-8">
@@ -376,11 +382,36 @@ export function DuesPersonal() {
           <UpiPay pending={data.pending} upi={data.upi} />
 
           <section className="space-y-3">
-            <h2 className="px-1 text-lg font-semibold tracking-tight">History</h2>
+            <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+              <h2 className="text-lg font-semibold tracking-tight">History</h2>
+              {data.entries.length ? (
+                <div className="flex items-center gap-2">
+                  {months.length > 1 ? (
+                    <button
+                      type="button"
+                      onClick={() => folds.setAll(!folds.allOpen)}
+                      className="text-xs font-medium text-primary hover:underline"
+                    >
+                      {folds.allOpen ? 'Collapse all' : 'Expand all'}
+                    </button>
+                  ) : null}
+                  <SortSelect value={sort} onChange={setSort} />
+                </div>
+              ) : null}
+            </div>
             {data.entries.length ? (
-              <GlassCard className="divide-y divide-border/50 p-2">
-                {data.entries.map((e) => (
-                  <EntryRow key={e.id} e={e} onOpen={setViewing} />
+              <GlassCard className="space-y-1 p-2">
+                {months.map((m) => (
+                  <div key={m.key}>
+                    <MonthHeading month={m} open={folds.isOpen(m.key)} onToggle={() => folds.toggle(m.key)} />
+                    {folds.isOpen(m.key) ? (
+                      <div className="divide-y divide-border/50">
+                        {m.entries.map((e) => (
+                          <EntryRow key={e.id} e={e} onOpen={setViewing} />
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
                 ))}
               </GlassCard>
             ) : (

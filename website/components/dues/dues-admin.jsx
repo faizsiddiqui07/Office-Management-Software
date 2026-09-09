@@ -32,8 +32,17 @@ import { Input } from '@/components/ui/input';
 import { ConfirmDialog } from '@/components/glass/confirm-dialog';
 import { DuesEntryDialog } from './dues-entry-dialog';
 import { DuesEntryDetailDialog } from './dues-entry-detail-dialog';
+import { groupByMonth, MonthHeading, SortSelect, useMonthFolds } from './dues-month-group';
 
 const API_BASE = API_BASE_URL;
+
+/** Roster order. Owed-first by default: it is the list an admin manager works down. */
+const ROSTER_SORTS = [
+  { key: 'owed', label: 'Owes most' },
+  { key: 'name', label: 'Name (A–Z)' },
+  { key: 'advance', label: 'Advance held' },
+  { key: 'recent', label: 'Recent activity' },
+];
 
 /**
  * Ledger rows carry `dateYMD` — the day the entry belongs to — alongside the stored
@@ -62,6 +71,88 @@ function BalanceChip({ p }) {
   return <span className="shrink-0 rounded-full bg-muted/50 px-2.5 py-1 text-xs font-medium text-muted-foreground ring-1 ring-border">Settled</span>;
 }
 
+/**
+ * One ledger line in the admin's person panel. Pulled out of the list so the
+ * history can be grouped by month without burying seventy lines of row markup two
+ * levels deeper.
+ */
+function AdminEntryRow({ e, onOpen, onSettle, settling, onDelete }) {
+  const isDue = e.kind === 'DUE';
+  const paid = isDue && e.status === 'PAID';
+  const partial = isDue && e.status === 'PARTIAL';
+  return (
+    /* Not a <button>: the row already holds Settle and Remove buttons and
+       nesting them would be invalid. role + key handling gives it the same
+       behaviour for keyboard and screen-reader users. */
+    <div
+      key={e.id}
+      role="button"
+      tabIndex={0}
+      onClick={() => onOpen(e.id)}
+      onKeyDown={(ev) => {
+        if (ev.key === 'Enter' || ev.key === ' ') {
+          ev.preventDefault();
+          onOpen(e.id);
+        }
+      }}
+      className="group -mx-2 flex cursor-pointer items-start gap-3 rounded-xl px-2 py-2.5 transition-colors hover:bg-foreground/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+    >
+      <span
+        className={cn(
+          'mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg ring-1',
+          !isDue || paid ? 'bg-success/12 text-success ring-success/20' : 'bg-warning/12 text-amber-600 ring-warning/25 dark:text-amber-300',
+        )}
+      >
+        {!isDue ? <ArrowUpRight className="size-4" /> : paid ? <CheckCircle2 className="size-4" /> : <ArrowDownLeft className="size-4" />}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium">
+          {isDue ? e.item || 'Item' : e.note || 'Payment / advance'}
+          {isDue && e.source ? <span className="font-normal text-muted-foreground"> · {e.source}</span> : null}
+        </p>
+        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="text-xs text-muted-foreground">{fmtDate(e)}</span>
+          {isDue ? (
+            paid ? (
+              <span className="text-xs font-medium text-success">Paid</span>
+            ) : partial ? (
+              <span className="text-xs font-medium text-amber-600 dark:text-amber-300">Partial · {formatMoney(e.remaining)} left</span>
+            ) : (
+              <span className="text-xs font-medium text-amber-600 dark:text-amber-300">Pending</span>
+            )
+          ) : (
+            <span className="text-xs text-muted-foreground">Advance / credit</span>
+          )}
+          {isDue && e.remaining > 0 ? (
+            <button
+              type="button"
+              onClick={(ev) => { ev.stopPropagation(); onSettle(e.id); }}
+              disabled={settling}
+              className="text-xs font-semibold text-primary hover:underline disabled:opacity-50"
+            >
+              Settle {formatMoney(e.remaining)}
+            </button>
+          ) : null}
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-0.5">
+        <span className={cn('text-sm font-semibold tabular-nums', !isDue ? 'text-success' : paid ? 'text-muted-foreground line-through' : 'text-amber-600 dark:text-amber-300')}>
+          {isDue ? '−' : '+'}
+          {formatMoney(e.amount)}
+        </span>
+        <button
+          type="button"
+          onClick={(ev) => { ev.stopPropagation(); onDelete(e); }}
+          aria-label="Remove entry"
+          className="rounded-md p-1.5 text-muted-foreground opacity-100 transition-opacity hover:text-destructive focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+        >
+          <Trash2 className="size-4" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function PersonDetail({ personId, onAddDue, onAddPay, onEdit }) {
   const qc = useQueryClient();
   const [confirmSettle, setConfirmSettle] = React.useState(false);
@@ -73,6 +164,12 @@ function PersonDetail({ personId, onAddDue, onAddPay, onEdit }) {
     queryFn: () => api.get(`/dues/person/${personId}`),
     enabled: !!personId,
   });
+
+  // Month sections + order. Declared here, above the early returns below, because hooks
+  // cannot be called conditionally — `data` is simply empty until the ledger arrives.
+  const [sort, setSort] = React.useState('newest');
+  const months = React.useMemo(() => groupByMonth(data?.entries ?? [], sort), [data?.entries, sort]);
+  const folds = useMonthFolds(months);
 
   const settle = useMutation({
     mutationFn: () => api.post('/dues/settle', { person: personId }),
@@ -158,85 +255,44 @@ function PersonDetail({ personId, onAddDue, onAddPay, onEdit }) {
       </div>
 
       <div className="mt-5 space-y-1">
-        <p className="px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">History</p>
-        {entries.length ? (
-          <div className="divide-y divide-border/50">
-            {entries.map((e) => {
-              const isDue = e.kind === 'DUE';
-              const paid = isDue && e.status === 'PAID';
-              const partial = isDue && e.status === 'PARTIAL';
-              return (
-                /* Not a <button>: the row already holds Settle and Remove buttons and
-                   nesting them would be invalid. role + key handling gives it the same
-                   behaviour for keyboard and screen-reader users. */
-                <div
-                  key={e.id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => setViewingId(e.id)}
-                  onKeyDown={(ev) => {
-                    if (ev.key === 'Enter' || ev.key === ' ') {
-                      ev.preventDefault();
-                      setViewingId(e.id);
-                    }
-                  }}
-                  className="group -mx-2 flex cursor-pointer items-start gap-3 rounded-xl px-2 py-2.5 transition-colors hover:bg-foreground/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+        <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">History</p>
+          {entries.length ? (
+            <div className="flex items-center gap-2">
+              {months.length > 1 ? (
+                <button
+                  type="button"
+                  onClick={() => folds.setAll(!folds.allOpen)}
+                  className="text-xs font-medium text-primary hover:underline"
                 >
-                  <span
-                    className={cn(
-                      'mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg ring-1',
-                      !isDue || paid ? 'bg-success/12 text-success ring-success/20' : 'bg-warning/12 text-amber-600 ring-warning/25 dark:text-amber-300',
-                    )}
-                  >
-                    {!isDue ? <ArrowUpRight className="size-4" /> : paid ? <CheckCircle2 className="size-4" /> : <ArrowDownLeft className="size-4" />}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">
-                      {isDue ? e.item || 'Item' : e.note || 'Payment / advance'}
-                      {isDue && e.source ? <span className="font-normal text-muted-foreground"> · {e.source}</span> : null}
-                    </p>
-                    <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
-                      <span className="text-xs text-muted-foreground">{fmtDate(e)}</span>
-                      {isDue ? (
-                        paid ? (
-                          <span className="text-xs font-medium text-success">Paid</span>
-                        ) : partial ? (
-                          <span className="text-xs font-medium text-amber-600 dark:text-amber-300">Partial · {formatMoney(e.remaining)} left</span>
-                        ) : (
-                          <span className="text-xs font-medium text-amber-600 dark:text-amber-300">Pending</span>
-                        )
-                      ) : (
-                        <span className="text-xs text-muted-foreground">Advance / credit</span>
-                      )}
-                      {isDue && e.remaining > 0 ? (
-                        <button
-                          type="button"
-                          onClick={(ev) => { ev.stopPropagation(); settleEntry.mutate(e.id); }}
-                          disabled={settleEntry.isPending}
-                          className="text-xs font-semibold text-primary hover:underline disabled:opacity-50"
-                        >
-                          Settle {formatMoney(e.remaining)}
-                        </button>
-                      ) : null}
-                    </div>
+                  {folds.allOpen ? 'Collapse all' : 'Expand all'}
+                </button>
+              ) : null}
+              <SortSelect value={sort} onChange={setSort} />
+            </div>
+          ) : null}
+        </div>
+        {entries.length ? (
+          <div className="space-y-1">
+            {months.map((m) => (
+              <div key={m.key}>
+                <MonthHeading month={m} open={folds.isOpen(m.key)} onToggle={() => folds.toggle(m.key)} />
+                {folds.isOpen(m.key) ? (
+                  <div className="divide-y divide-border/50">
+                    {m.entries.map((e) => (
+                      <AdminEntryRow
+                        key={e.id}
+                        e={e}
+                        onOpen={setViewingId}
+                        onSettle={(id) => settleEntry.mutate(id)}
+                        settling={settleEntry.isPending}
+                        onDelete={setPendingDelete}
+                      />
+                    ))}
                   </div>
-                  <div className="flex shrink-0 items-center gap-0.5">
-                    <span className={cn('text-sm font-semibold tabular-nums', !isDue ? 'text-success' : paid ? 'text-muted-foreground line-through' : 'text-amber-600 dark:text-amber-300')}>
-                      {isDue ? '−' : '+'}
-                      {formatMoney(e.amount)}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={(ev) => { ev.stopPropagation(); setPendingDelete(e); }}
-                      aria-label="Remove entry"
-                      className="rounded-md p-1.5 text-muted-foreground opacity-100 transition-opacity hover:text-destructive focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
-                    >
-                      <Trash2 className="size-4" />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+                ) : null}
+              </div>
+            ))}
           </div>
         ) : (
           <p className="py-8 text-center text-sm text-muted-foreground">No entries yet for {person.name}.</p>
@@ -342,6 +398,7 @@ export function DuesAdmin() {
   const { user } = useAuth();
   const { data, isLoading, isError, error } = useQuery({ queryKey: ['dues', 'overview'], queryFn: () => api.get('/dues/overview') });
   const [q, setQ] = React.useState('');
+  const [rosterSort, setRosterSort] = React.useState('owed');
   const [selectedId, setSelectedId] = React.useState(null);
   const [dueOpen, setDueOpen] = React.useState(false);
   const [payOpen, setPayOpen] = React.useState(false);
@@ -353,7 +410,21 @@ export function DuesAdmin() {
 
   // Everyone except the admin themselves — you can't owe yourself.
   const people = (data?.people ?? []).filter((p) => p.person.id !== user?.id);
-  const filtered = people.filter((p) => p.person.name.toLowerCase().includes(q.trim().toLowerCase()));
+  // Who to chase first is a different question from who to look up, so the roster sorts
+  // as well as searching. Owed-first is the working order for an admin manager; the
+  // others are for finding one name, or for spotting a ledger nobody has touched.
+  const filtered = React.useMemo(() => {
+    const rows = people.filter((p) => p.person.name.toLowerCase().includes(q.trim().toLowerCase()));
+    const byName = (a, b) => a.person.name.localeCompare(b.person.name);
+    const cmp = {
+      name: byName,
+      owed: (a, b) => b.pending - a.pending || byName(a, b),
+      advance: (a, b) => b.advance - a.advance || byName(a, b),
+      // No activity at all sorts last rather than first — an empty date is not "oldest".
+      recent: (a, b) => String(b.lastActivity || '').localeCompare(String(a.lastActivity || '')) || byName(a, b),
+    }[rosterSort] || byName;
+    return [...rows].sort(cmp);
+  }, [people, q, rosterSort]);
 
   const openDue = (personId = null) => {
     setDuePreset(personId);
@@ -420,9 +491,12 @@ export function DuesAdmin() {
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
             <div className="space-y-3">
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search people…" className="bg-background/50 pl-9" />
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative min-w-0 flex-1">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search people…" className="bg-background/50 pl-9" />
+                </div>
+                <SortSelect value={rosterSort} onChange={setRosterSort} options={ROSTER_SORTS} className="w-[9.5rem]" />
               </div>
               {people.length === 0 ? (
                 <EmptyState icon={Users} title="No people yet" description="Add team members in Users — they’ll show up here to track dues." />
