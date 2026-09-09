@@ -78,6 +78,9 @@ function BalanceChip({ p }) {
  */
 function AdminEntryRow({ e, onOpen, onSettle, settling, onDelete }) {
   const isDue = e.kind === 'DUE';
+  // The receipt for a payment already made — there is nothing here to edit or remove,
+  // and offering either would look like it changed the balance when it cannot.
+  const isSettle = e.kind === 'SETTLEMENT';
   const paid = isDue && e.status === 'PAID';
   const partial = isDue && e.status === 'PARTIAL';
   return (
