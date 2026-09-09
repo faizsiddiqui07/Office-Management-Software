@@ -1,8 +1,10 @@
 'use client';
 
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { ClipboardList, ListTodo } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
+import { cn } from '@/lib/utils';
 
 /**
  * "My tasks" and "Assigned tasks", parked under the header on EVERY page.
@@ -34,19 +36,25 @@ import { useAuth } from '@/lib/auth';
  * appears, so from a laptop up the navigation is already on screen and this bar would only
  * eat vertical space.
  *
- * Deliberately colourless. The bar sits directly under the header and is on every single
- * page — a filled button there would pull the eye away from whatever page you actually
- * opened. It reads as part of the glass surface it rides on, and the page's own primary
- * action keeps the only strong colour on screen.
+ * Coloured everywhere EXCEPT the To-Do page — they keep the same two colours the
+ * Add task / Assign work buttons wear, so the pairing stays familiar. On /todo itself
+ * they go plain glass: the page's own Add task and Assign work are right there in the
+ * same colours, and two coloured pairs stacked on one screen would compete for the eye
+ * and read as four equally important actions when only two of them create anything.
  */
 
-const linkClass =
-  'inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-xl border border-border/60 '
-  + 'bg-foreground/[0.04] px-3 text-sm font-medium transition-colors hover:bg-foreground/[0.08] '
-  + 'active:translate-y-px';
+const baseClass =
+  'inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-xl border '
+  + 'border-transparent px-3 text-sm font-medium transition-colors active:translate-y-px';
+
+// Plain glass, for the To-Do page.
+const glassClass = 'border-border/60 bg-foreground/[0.04] hover:bg-foreground/[0.08]';
 
 export function QuickTaskActions() {
   const { user } = useAuth();
+  // On the To-Do page these two are shortcuts to content already on screen, so they step
+  // back and let that page's own coloured actions lead.
+  const onTodo = usePathname() === '/todo';
   // Same per-person delegation setting the To-Do page gates its "Assigned by me" tab on —
   // someone who cannot delegate has no such tab, so the shortcut would land them nowhere.
   const ta = user?.taskAssign || {};
@@ -55,11 +63,17 @@ export function QuickTaskActions() {
   return (
     <div className="sticky top-[4.25rem] z-20 px-4 pt-2 sm:px-6 lg:hidden">
       <div className="glass glass-highlight flex items-center gap-2 rounded-2xl px-2.5 py-2">
-        <Link href="/todo?tab=mine&jump=1" className={linkClass}>
+        <Link
+          href="/todo?tab=mine&jump=1"
+          className={cn(baseClass, onTodo ? glassClass : 'bg-primary text-primary-foreground hover:bg-primary/80')}
+        >
           <ListTodo className="size-4" /> My tasks
         </Link>
         {canAssign ? (
-          <Link href="/todo?tab=assigned&view=all&jump=1" className={linkClass}>
+          <Link
+            href="/todo?tab=assigned&view=all&jump=1"
+            className={cn(baseClass, onTodo ? glassClass : 'bg-warning text-warning-foreground hover:bg-warning/90')}
+          >
             <ClipboardList className="size-4" /> Assigned tasks
           </Link>
         ) : null}
