@@ -110,7 +110,9 @@ function AdminEntryRow({ e, onOpen, onSettle, settling, onDelete }) {
       </span>
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium">
-          {isDue ? e.item || 'Item' : e.note || (isSettle ? 'Settled' : 'Payment / advance')}
+          {/* See the note in dues-personal: a settlement's title must not be the item's
+              name, or the amount reads as that item's price. */}
+          {isDue ? e.item || 'Item' : isSettle ? 'Settled in cash' : e.note || 'Payment / advance'}
           {isDue && e.source ? <span className="font-normal text-muted-foreground"> · {e.source}</span> : null}
         </p>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -124,7 +126,7 @@ function AdminEntryRow({ e, onOpen, onSettle, settling, onDelete }) {
               <span className="text-xs font-medium text-amber-600 dark:text-amber-300">Pending</span>
             )
           ) : (
-            <span className="text-xs text-muted-foreground">{isSettle ? 'Settled in cash' : 'Advance / credit'}</span>
+            <span className="text-xs text-muted-foreground">{isSettle ? e.note || 'settled' : 'Advance / credit'}</span>
           )}
           {isDue && e.remaining > 0 ? (
             <button

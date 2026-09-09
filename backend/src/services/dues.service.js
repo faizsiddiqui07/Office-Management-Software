@@ -221,7 +221,10 @@ export async function settleDue(admin, dueId) {
     settles: due._id,
     dateYMD: ymdInTz(new Date()),
     date: companyDayFromYMD(ymdInTz(new Date())),
-    note: due.item ? `Settled: ${due.item}` : 'Settled one item',
+    // "towards X", never "X" — a settlement usually clears what was LEFT on an item,
+    // not its price. Printed as a title next to ₹24 the item's name read as though the
+    // item had cost ₹24, when Roti + Dahi was ₹53 with ₹24 still outstanding.
+    note: due.item ? `towards ${due.item}` : 'towards one item',
   });
 
   const state = await stateFor(due.person);
@@ -244,11 +247,13 @@ export async function settle(admin, person) {
 
   const dues = await LedgerEntry.find({ person, kind: 'DUE' });
   let cleared = 0;
+  const clearedItems = [];
   for (const d of dues) {
     const rem = remainingById.get(String(d._id)) ?? 0;
     if (rem > 0) {
       d.paid = (d.paid || 0) + rem;
       cleared += rem;
+      clearedItems.push(d.item || 'an item');
       await d.save();
     }
   }
@@ -263,7 +268,7 @@ export async function settle(admin, person) {
       amount: cleared,
       dateYMD: ymdInTz(new Date()),
       date: companyDayFromYMD(ymdInTz(new Date())),
-      note: 'Settled everything outstanding',
+      note: clearedItems.length === 1 ? `towards ${clearedItems[0]}` : `towards ${clearedItems.length} items`,
     });
   }
 

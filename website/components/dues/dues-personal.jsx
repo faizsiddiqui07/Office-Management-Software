@@ -330,7 +330,10 @@ function EntryRow({ e, onOpen }) {
       </span>
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium">
-          {isDue ? e.item || 'Item' : e.note || (isSettle ? 'Settled' : 'Payment / advance')}
+          {/* A settlement's title is never the item's name. It usually clears what was
+              LEFT on that item, so "Roti + Dahi" beside ₹24 read as a ₹24 plate when the
+              plate was ₹53. The item moves to the line below, as context. */}
+          {isDue ? e.item || 'Item' : isSettle ? 'Settled in cash' : e.note || 'Payment / advance'}
           {isDue && e.source ? <span className="font-normal text-muted-foreground"> · {e.source}</span> : null}
         </p>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
@@ -344,7 +347,7 @@ function EntryRow({ e, onOpen }) {
               <span className="font-medium text-amber-600 dark:text-amber-300">Pending</span>
             )
           ) : (
-            <span>{isSettle ? 'Settled in cash' : 'Advance / credit'}</span>
+            <span>{isSettle ? e.note || 'settled' : 'Advance / credit'}</span>
           )}
         </div>
       </div>
