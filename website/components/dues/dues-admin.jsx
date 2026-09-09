@@ -107,7 +107,7 @@ function AdminEntryRow({ e, onOpen, onSettle, settling, onDelete }) {
       </span>
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium">
-          {isDue ? e.item || 'Item' : e.note || 'Payment / advance'}
+          {isDue ? e.item || 'Item' : e.note || (isSettle ? 'Settled' : 'Payment / advance')}
           {isDue && e.source ? <span className="font-normal text-muted-foreground"> · {e.source}</span> : null}
         </p>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -121,7 +121,7 @@ function AdminEntryRow({ e, onOpen, onSettle, settling, onDelete }) {
               <span className="text-xs font-medium text-amber-600 dark:text-amber-300">Pending</span>
             )
           ) : (
-            <span className="text-xs text-muted-foreground">Advance / credit</span>
+            <span className="text-xs text-muted-foreground">{isSettle ? 'Settled in cash' : 'Advance / credit'}</span>
           )}
           {isDue && e.remaining > 0 ? (
             <button
@@ -140,14 +140,16 @@ function AdminEntryRow({ e, onOpen, onSettle, settling, onDelete }) {
           {isDue ? '−' : '+'}
           {formatMoney(e.amount)}
         </span>
-        <button
-          type="button"
-          onClick={(ev) => { ev.stopPropagation(); onDelete(e); }}
-          aria-label="Remove entry"
-          className="rounded-md p-1.5 text-muted-foreground opacity-100 transition-opacity hover:text-destructive focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
-        >
-          <Trash2 className="size-4" />
-        </button>
+        {isSettle ? null : (
+          <button
+            type="button"
+            onClick={(ev) => { ev.stopPropagation(); onDelete(e); }}
+            aria-label="Remove entry"
+            className="rounded-md p-1.5 text-muted-foreground opacity-100 transition-opacity hover:text-destructive focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+          >
+            <Trash2 className="size-4" />
+          </button>
+        )}
       </div>
     </div>
   );
@@ -311,12 +313,22 @@ function PersonDetail({ personId, onAddDue, onAddPay, onEdit }) {
                   <CheckCheck className="size-4" /> Settle {formatMoney(viewing.remaining)}
                 </Button>
               ) : null}
-              <Button variant="outline" onClick={() => { onEdit(viewing); setViewingId(null); }}>
-                <Pencil className="size-4" /> Edit
-              </Button>
-              <Button variant="outline" onClick={() => setPendingDelete(viewing)}>
-                <Trash2 className="size-4" /> Remove
-              </Button>
+              {/* A settlement is the receipt for a payment already made. Editing or
+                  removing it would rewrite what the history claims while the money it
+                  records — the `paid` on the due itself — stayed put; the server refuses
+                  both, so the buttons should not be here to press. */}
+              {viewing.kind === 'SETTLEMENT' ? (
+                <p className="text-xs text-muted-foreground">A settlement record can’t be edited or removed.</p>
+              ) : (
+                <>
+                  <Button variant="outline" onClick={() => { onEdit(viewing); setViewingId(null); }}>
+                    <Pencil className="size-4" /> Edit
+                  </Button>
+                  <Button variant="outline" onClick={() => setPendingDelete(viewing)}>
+                    <Trash2 className="size-4" /> Remove
+                  </Button>
+                </>
+              )}
             </>
           ) : null
         }

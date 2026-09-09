@@ -43,6 +43,13 @@ export function MonthHeading({ month, open, onToggle, top = 'top-0' }) {
           <span className="text-amber-600 dark:text-amber-300">−{formatMoney(month.added)}</span>
         ) : null}
         {month.received ? <span className="text-success">+{formatMoney(month.received)}</span> : null}
+        {/* Settled cash is money in too, but it is already spent on the items it cleared —
+            so it is shown apart from credit rather than added to it. */}
+        {month.settled ? (
+          <span className="text-success/80" title="Items paid off directly">
+            ✓{formatMoney(month.settled)}
+          </span>
+        ) : null}
       </span>
     </button>
   );

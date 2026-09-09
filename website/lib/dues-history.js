@@ -24,7 +24,11 @@ const monthLabel = (key) => {
  * @returns [{ key, label, entries, added, received, dueCount }] — months in the chosen
  * order, and the entries inside each month in that same order.
  *
- * `added` and `received` are what happened THAT month: dues raised, and money taken in.
+ * `added`, `received` and `settled` are what happened THAT month: dues raised, cash
+ * handed over as credit, and items paid off directly. `settled` is counted separately
+ * from `received` on purpose — both are real money in, but only `received` joins the
+ * pool that future dues draw from; a settlement is already spent on the item it cleared.
+ * Adding them together would overstate the credit available.
  * Deliberately NOT a per-month "pending" — a payment settles the OLDEST unpaid dues
  * first, wherever they sit, so money received in September can clear a July lunch. A
  * per-month balance would look authoritative and be arithmetic nobody could reproduce;
@@ -54,7 +58,10 @@ export function groupByMonth(entries = [], sort = 'newest') {
       label: monthLabel(key),
       entries: rows,
       added: rows.filter((e) => e.kind === 'DUE').reduce((s, e) => s + (e.amount || 0), 0),
-      received: rows.filter((e) => e.kind !== 'DUE').reduce((s, e) => s + (e.amount || 0), 0),
+      // Equality, not "not a DUE" — that older test swept settlements in with credit and
+      // was the reason a month could read as more paid-in than it was.
+      received: rows.filter((e) => e.kind === 'PAYMENT').reduce((s, e) => s + (e.amount || 0), 0),
+      settled: rows.filter((e) => e.kind === 'SETTLEMENT').reduce((s, e) => s + (e.amount || 0), 0),
       dueCount: rows.filter((e) => e.kind === 'DUE').length,
     };
   });

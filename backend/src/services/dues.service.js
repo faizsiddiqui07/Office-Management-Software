@@ -3,7 +3,7 @@ import { LedgerEntry } from '../models/LedgerEntry.js';
 import { User } from '../models/User.js';
 import { Setting } from '../models/Setting.js';
 import { notify } from '../models/Notification.js';
-import { companyDayFromYMD } from '../lib/time.js';
+import { companyDayFromYMD, ymdInTz } from '../lib/time.js';
 
 function httpError(status, code, message) {
   const e = new Error(message);
@@ -40,6 +40,11 @@ function computeLedger(rawEntries) {
   const dues = sorted
     .filter((e) => e.kind === 'DUE')
     .map((d) => ({ id: String(d._id), remaining: Math.max(0, d.amount - (d.paid || 0)) }));
+  // ONLY 'PAYMENT'. A SETTLEMENT row is a receipt for money already recorded on a due's
+  // own `paid` field — adding it to the pool would count the same cash twice and hand
+  // everybody an advance they never gave. Written as an explicit equality, never as
+  // "anything that isn't a DUE", so a fourth kind added later cannot silently join the
+  // pool by default.
   let pool = sorted.filter((e) => e.kind === 'PAYMENT').reduce((s, c) => s + c.amount, 0);
 
   for (const d of dues) {
@@ -206,6 +211,19 @@ export async function settleDue(admin, dueId) {
   due.paid = (due.paid || 0) + rem;
   await due.save();
 
+  // The receipt. Without it this cash lands nowhere a person can see: the balance moves
+  // and no row explains why.
+  await LedgerEntry.create({
+    person: due.person,
+    createdBy: admin._id,
+    kind: 'SETTLEMENT',
+    amount: rem,
+    settles: due._id,
+    dateYMD: ymdInTz(new Date()),
+    date: companyDayFromYMD(ymdInTz(new Date())),
+    note: due.item ? `Settled: ${due.item}` : 'Settled one item',
+  });
+
   const state = await stateFor(due.person);
   await notify({
     user: due.person,
@@ -225,12 +243,28 @@ export async function settle(admin, person) {
   if (pending <= 0) return { settled: false, message: 'Nothing pending to settle' };
 
   const dues = await LedgerEntry.find({ person, kind: 'DUE' });
+  let cleared = 0;
   for (const d of dues) {
     const rem = remainingById.get(String(d._id)) ?? 0;
     if (rem > 0) {
       d.paid = (d.paid || 0) + rem;
+      cleared += rem;
       await d.save();
     }
+  }
+
+  // One receipt for the whole hand-over, because that is what happened — one payment
+  // clearing several items, not several separate payments.
+  if (cleared > 0) {
+    await LedgerEntry.create({
+      person,
+      createdBy: admin._id,
+      kind: 'SETTLEMENT',
+      amount: cleared,
+      dateYMD: ymdInTz(new Date()),
+      date: companyDayFromYMD(ymdInTz(new Date())),
+      note: 'Settled everything outstanding',
+    });
   }
 
   const state = await stateFor(person);
@@ -257,6 +291,12 @@ export async function updateEntry(admin, id, patch = {}) {
   assertId(id);
   const entry = await LedgerEntry.findById(id);
   if (!entry) throw httpError(404, 'NOT_FOUND', 'Entry not found');
+  // A settlement is a receipt for something that already happened, not a figure somebody
+  // typed. Editing it would change what the history CLAIMS was paid while the money it
+  // records — the `paid` on the due itself — stayed exactly where it was.
+  if (entry.kind === 'SETTLEMENT') {
+    throw httpError(400, 'SETTLEMENT_LOCKED', 'A settlement record can’t be edited — it is the receipt for a payment already made');
+  }
 
   if (patch.amount !== undefined) entry.amount = patch.amount;
   if (patch.dateYMD !== undefined) {
@@ -301,6 +341,14 @@ export async function setUpi({ upiId, upiName }) {
 
 export async function deleteEntry(id) {
   assertId(id);
+  const found = await LedgerEntry.findById(id).select('kind person');
+  if (!found) throw httpError(404, 'NOT_FOUND', 'Entry not found');
+  // Removing a settlement would delete the RECORD of a payment while leaving the payment
+  // itself in place (it lives on the due's `paid`). The balance would not move, and the
+  // person deleting it would reasonably assume it had — the worst kind of no-op.
+  if (found.kind === 'SETTLEMENT') {
+    throw httpError(400, 'SETTLEMENT_LOCKED', 'A settlement record can’t be removed — it is the receipt for a payment already made');
+  }
   const entry = await LedgerEntry.findByIdAndDelete(id);
   if (!entry) throw httpError(404, 'NOT_FOUND', 'Entry not found');
   return { person: entry.person, ...(await stateFor(entry.person)) };
@@ -345,7 +393,7 @@ export async function exportRows() {
 
   const header = ['Date', 'Person', 'Employee ID', 'Type', 'Item', 'Source', 'Amount', 'Status', 'Note'];
   const rows = docs.map((e) => {
-    let status = 'Credit';
+    let status = e.kind === 'SETTLEMENT' ? 'Settled' : 'Credit';
     if (e.kind === 'DUE') {
       const rem = remaining.get(String(e._id)) ?? Math.max(0, e.amount - (e.paid || 0));
       status = rem === 0 ? 'Paid' : rem < e.amount ? 'Partial' : 'Pending';
@@ -354,7 +402,7 @@ export async function exportRows() {
       e.dateYMD,
       e.person?.name ?? '',
       e.person?.employeeId ?? '',
-      e.kind === 'DUE' ? 'Due' : 'Payment',
+      e.kind === 'DUE' ? 'Due' : e.kind === 'SETTLEMENT' ? 'Settlement' : 'Payment',
       e.item || '',
       e.source || '',
       (e.amount / 100).toFixed(2),

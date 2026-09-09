@@ -309,6 +309,9 @@ function UpiPay({ pending, upi }) {
 
 function EntryRow({ e, onOpen }) {
   const isDue = e.kind === 'DUE';
+  // A settlement is money in, like a payment — but it is already spent on the item it
+  // cleared, so it must not read as spare credit.
+  const isSettle = e.kind === 'SETTLEMENT';
   const paid = isDue && e.status === 'PAID';
   const partial = isDue && e.status === 'PARTIAL';
   return (
@@ -327,7 +330,7 @@ function EntryRow({ e, onOpen }) {
       </span>
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium">
-          {isDue ? e.item || 'Item' : e.note || 'Payment / advance'}
+          {isDue ? e.item || 'Item' : e.note || (isSettle ? 'Settled' : 'Payment / advance')}
           {isDue && e.source ? <span className="font-normal text-muted-foreground"> · {e.source}</span> : null}
         </p>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
@@ -341,7 +344,7 @@ function EntryRow({ e, onOpen }) {
               <span className="font-medium text-amber-600 dark:text-amber-300">Pending</span>
             )
           ) : (
-            <span>Advance / credit</span>
+            <span>{isSettle ? 'Settled in cash' : 'Advance / credit'}</span>
           )}
         </div>
       </div>
