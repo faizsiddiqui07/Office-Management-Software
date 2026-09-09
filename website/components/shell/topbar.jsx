@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Brand } from './brand';
 import { UserMenu } from './user-menu';
@@ -15,13 +16,18 @@ export function Topbar({ user }) {
       <div className="glass glass-highlight flex h-14 items-center justify-between gap-3 rounded-2xl px-3 sm:px-4">
         <div className="flex min-w-0 items-center gap-2 lg:hidden">
           <MobileSidebar user={user} />
-          {/* < 500px: small square mark · 500px–lg: full wordmark logo */}
-          <span className="flex shrink-0 min-[500px]:hidden">
-            <Brand compact />
-          </span>
-          <span className="hidden min-w-0 min-[500px]:flex">
-            <Brand />
-          </span>
+          {/* Tapping the logo goes home, the way it does in the desktop sidebar — the
+              only place this was missing was here, so on a phone the logo looked
+              tappable and did nothing.
+              < 500px: small square mark · 500px–lg: full wordmark logo */}
+          <Link href="/dashboard" aria-label="Go to dashboard" className="flex min-w-0 items-center">
+            <span className="flex shrink-0 min-[500px]:hidden">
+              <Brand compact />
+            </span>
+            <span className="hidden min-w-0 min-[500px]:flex">
+              <Brand />
+            </span>
+          </Link>
         </div>
         <div className="hidden flex-1 lg:flex lg:items-center">
           <TopbarClock />
