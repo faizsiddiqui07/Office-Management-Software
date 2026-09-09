@@ -944,6 +944,10 @@ export function TaskBoard() {
   const router = useRouter();
   const requestedTab = params.get('tab');
   const focusTaskId = params.get('task'); // a notification asking to open one exact task
+  // Sent by the "My tasks" / "Assigned tasks" shortcuts under the header — see the
+  // effect that consumes them further down.
+  const requestedView = params.get('view'); // 'all' → open Assigned by me as one flat list
+  const requestedJump = params.get('jump'); // '1'   → scroll down to the list on arrival
   const [tab, setTab] = React.useState(() =>
     ['mine', 'history', 'tagged', 'assigned'].includes(requestedTab) ? requestedTab : 'mine',
   );
@@ -983,8 +987,16 @@ export function TaskBoard() {
   const scrollToList = React.useCallback(() => {
     // Wait for React to commit the tab switch so the target is in its final position,
     // then smooth-scroll. rAF runs after the DOM update, before paint.
+    //
+    // TWO frames, not one, because this is also reached by arriving from another page
+    // (the "My tasks" / "Assigned tasks" shortcuts under the header). The router puts a
+    // fresh route at the top of the page as part of that navigation; scrolling in the
+    // very first frame can be undone by it, and the jump silently does nothing. The
+    // second frame lands clear of it, and costs a stat-card tap ~16ms nobody can see.
     requestAnimationFrame(() => {
-      listRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      requestAnimationFrame(() => {
+        listRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
     });
   }, []);
 
@@ -1327,6 +1339,29 @@ export function TaskBoard() {
     if (view?.task) reportSeen([view.task]);
   };
 
+  // Arriving from the "My tasks" / "Assigned tasks" shortcuts under the header. Those are
+  // plain links, so they can be tapped from any page, and they carry their intent in the
+  // URL: which tab, whether the assigned list should open flat, and whether to scroll down
+  // to it (on a phone the list starts below the fold, so switching tabs would otherwise
+  // happen off screen and look like nothing happened).
+  //
+  // Applied and then STRIPPED, exactly as ?task= is below. The stripping is not tidiness:
+  // it is what makes a second tap work. Left in place, the URL would already equal the
+  // link's href and the router would treat the next tap as a no-op — so the button would
+  // work once and then appear broken.
+  React.useEffect(() => {
+    if (!requestedJump && requestedView !== 'all') return;
+    if (['mine', 'history', 'tagged', 'assigned'].includes(requestedTab)) setTab(requestedTab);
+    // Safe against the effect above that clears this when the tab isn't 'assigned': both
+    // updates land in one batch, so that effect re-runs with the tab already switched.
+    if (requestedView === 'all') setAssignedFlat(true);
+    if (requestedJump) scrollToList();
+    const sp = new URLSearchParams(Array.from(params.entries()));
+    sp.delete('view');
+    sp.delete('jump');
+    router.replace(`/todo${sp.toString() ? `?${sp}` : ''}`, { scroll: false });
+  }, [requestedTab, requestedView, requestedJump]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Deep link from a notification: /todo?task=<id> opens that exact task's dialog, the
   // same one a click on its row would. The link already carries the right tab, so the
   // task is in this tab's loaded list. Once opened, strip ?task= from the URL so closing
@@ -1445,10 +1480,10 @@ export function TaskBoard() {
         <StatMini label="Tagged" value={tg.total} icon={Users} onClick={() => { setFlat(null); setTab('tagged'); scrollToList(); }} hint="Tasks you’re tagged on — someone else does them" />
       </div>
 
-      {/* Phone and tablet get these two under the header on every page (QuickTaskActions),
-          so they are hidden here to avoid showing them twice. That bar is lg:hidden, so
-          from a laptop up this row is the only place they live — same as it always was. */}
-      <div className="hidden flex-wrap gap-2 lg:flex">
+      {/* Creating work lives here, on the page it belongs to, at every screen size. The
+          bar under the header (QuickTaskActions) only navigates INTO this page — it no
+          longer duplicates these two, so there is nothing to hide from. */}
+      <div className="flex flex-wrap gap-2">
         <TaskDialog />
         {canAssign ? <AssignDialog /> : null}
       </div>

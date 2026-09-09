@@ -55,7 +55,7 @@ export function AppShell({ children }) {
       <AppSidebar user={user} />
       <div className="lg:pl-64">
         <Topbar user={user} />
-        {/* Add task / Assign work, on every page — see the component. */}
+        {/* My tasks / Assigned tasks shortcuts, on every page — see the component. */}
         <QuickTaskActions />
         <main className="mx-auto w-full max-w-7xl px-4 pb-12 pt-4 sm:px-6 lg:px-8">
           {children}
