@@ -83,7 +83,7 @@ export function AnnouncementPopup() {
                   {p.label}
                 </StatusBadge>
                 <span className="text-xs text-muted-foreground">
-                  {current.createdBy?.name ?? 'Leadership'} · {formatDateTime(current.createdAt)}
+                  {current.createdBy?.name ?? 'Leadership'} · {formatDateTime(current.announcedAt || current.createdAt)}
                 </span>
               </div>
               <DialogTitle className="mt-1 text-lg">{current.title}</DialogTitle>

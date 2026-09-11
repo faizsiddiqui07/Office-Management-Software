@@ -1,6 +1,6 @@
 import { maybeRunDaily } from './bonus.service.js';
 import { maybeAnnounceBirthdays } from './holiday.service.js';
-import { publishDueAnnouncements } from './announcement.service.js';
+import { publishDueAnnouncements, announceRecurring } from './announcement.service.js';
 import { maybeRunDayCloseDigest } from './dayDigest.service.js';
 import { runSetupTasks } from '../app.js';
 
@@ -18,7 +18,7 @@ import { runSetupTasks } from '../app.js';
  * must never error out.
  */
 export async function runScheduledJobs() {
-  const jobs = { setup: 'ok', bonus: 'ok', birthdays: 'ok', announcements: 'ok', dayDigest: 'ok' };
+  const jobs = { setup: 'ok', bonus: 'ok', birthdays: 'ok', announcements: 'ok', recurring: 'ok', dayDigest: 'ok' };
   const settled = await Promise.allSettled([
     // Seed/migration/repair maintenance (system roles, role migrations, admin-lockout
     // failsafe, default holidays). Moved here OFF the request path: running these inside
@@ -28,9 +28,12 @@ export async function runScheduledJobs() {
     maybeRunDaily(),
     maybeAnnounceBirthdays(),
     publishDueAnnouncements(),
+    // Repeating announcements going out again today. Cheap when nothing is due, and the
+    // every-few-minutes cadence is what lets "at 09:00" land within minutes of 09:00.
+    announceRecurring(),
     maybeRunDayCloseDigest(),
   ]);
-  const keys = ['setup', 'bonus', 'birthdays', 'announcements', 'dayDigest'];
+  const keys = ['setup', 'bonus', 'birthdays', 'announcements', 'recurring', 'dayDigest'];
   settled.forEach((r, i) => {
     if (r.status === 'rejected') {
       jobs[keys[i]] = r.reason?.message || 'error';

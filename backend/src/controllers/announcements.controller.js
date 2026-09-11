@@ -2,6 +2,7 @@ import { ok, fail } from '../lib/apiResponse.js';
 import { createAnnouncementSchema, updateAnnouncementSchema } from '../validators/announcements.validators.js';
 import * as svc from '../services/announcement.service.js';
 import { audit } from '../models/AuditLog.js';
+import { describeRule } from '../lib/recurrence.js';
 
 function handleErr(res, err, next) {
   if (err && err.status) return res.status(err.status).json(fail(err.code || 'ERROR', err.message));
@@ -33,7 +34,7 @@ export async function create(req, res, next) {
       action: 'announcement.create',
       entityType: 'Announcement',
       entityId: announcement.id,
-      meta: { priority: announcement.priority },
+      meta: { title: announcement.title, priority: announcement.priority, ...(describeRule(announcement.recurrence) ? { repeats: describeRule(announcement.recurrence) } : {}) },
     });
     res.status(201).json(ok({ announcement }));
   } catch (err) {
@@ -63,7 +64,13 @@ export async function update(req, res, next) {
   try {
     const body = updateAnnouncementSchema.parse(req.body);
     const announcement = await svc.updateAnnouncement(req.params.id, body);
-    await audit({ actor: req.user._id, action: 'announcement.update', entityType: 'Announcement', entityId: req.params.id });
+    await audit({
+      actor: req.user._id,
+      action: 'announcement.update',
+      entityType: 'Announcement',
+      entityId: req.params.id,
+      meta: { title: announcement.title, fields: Object.keys(body), ...(body.recurrence ? { repeats: describeRule(announcement.recurrence) || 'stopped' } : {}) },
+    });
     res.json(ok({ announcement }));
   } catch (err) {
     handleErr(res, err, next);
