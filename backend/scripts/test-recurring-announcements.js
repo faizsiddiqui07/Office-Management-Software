@@ -160,7 +160,7 @@ async function main() {
     check('Monday: 2 bell', (await bells(T)) === 2);
     await svc.updateAnnouncement(a.id, { recurrence: { type: 'WEEKLY', weekday: 6, time: '09:00' } }, at('2026-09-12', '10:00'));
     const d = await Announcement.findById(a.id);
-    check('anchor = jis din gaya tha (7 Sep)', d.lastRecurredYMD === '2026-09-07', d.lastRecurredYMD);
+    check('anchor = KAL (11 Sep), post ke din (7 Sep) par nahi', d.lastRecurredYMD === '2026-09-11', d.lastRecurredYMD);
     await tick(at('2026-09-12', '10:01'));
     check('usi Saturday (edit ke baad) announce hua', (await bells(T)) === 4, `got ${await bells(T)}`);
     await tick(at('2026-09-12', '12:00'));
@@ -290,7 +290,7 @@ async function main() {
     check('ab bhi dikh raha hai (gayab nahi hua)', (await svc.listVisible(u2, at('2026-09-10', '10:01'))).some((x) => x.title === T));
     check('publishAt ab bhi null', d.publishAt === null);
     check('notifiedAt bhar gaya (scanner ise dekh sake)', !!d.notifiedAt);
-    check('anchor = createdAt ka din', d.lastRecurredYMD === '2026-09-01', d.lastRecurredYMD);
+    check('anchor = KAL (9 Sep), createdAt (1 Sep) par nahi', d.lastRecurredYMD === '2026-09-09', d.lastRecurredYMD);
     await tick(at('2026-09-12', '09:05'));
     check('agle Saturday gaya', (await bells(T)) === 2, `got ${await bells(T)}`);
     check('One ka purana "padha" mit gaya', !(await AnnouncementRead.exists({ announcement: r.insertedId, user: u1._id })));
@@ -381,6 +381,46 @@ async function main() {
     check('pehli baar: New announcement', (await Notification.countDocuments({ title: `New announcement: ${T}` })) === 2);
     await tick(at('2026-09-19', '09:05'));
     check('dobara: Announcement (New nahi)', (await repeatBells(T)) === 2, `got ${await repeatBells(T)}`);
+  }
+
+  // ═══ TEST 19 — PROD ME HUA THA: Saturday ko Friday ka rule lagaya → kal ka Friday NAHI bhejna ═══
+  console.log('\nTEST 19 — 12 Sep (Sat) 13:06 ko purane post par "Every Friday 19:00" lagaya');
+  {
+    await Notification.deleteMany({});
+    const T = 'Buildifie day';
+    await svc.createAnnouncement(boss, { title: T }, at('2026-09-03', '22:32')); // 3 Sep ko gaya tha
+    check('3 Sep: 2 bell', (await bells(T)) === 2);
+    await svc.updateAnnouncement(
+      (await Announcement.findOne({ title: T })).id,
+      { recurrence: { type: 'WEEKLY', weekday: 5, time: '19:00' } },
+      at('2026-09-12', '13:06'),
+    );
+    const d = await Announcement.findById((await Announcement.findOne({ title: T })).id);
+    check('anchor 11 Sep (kal) — 3 Sep par nahi', d.lastRecurredYMD === '2026-09-11', d.lastRecurredYMD);
+    await tick(at('2026-09-12', '13:08')); // agla tick — yahi pe 14 logon ko chala gaya tha
+    check('13:08 tick: KUCH NAHI GAYA (kal ka Friday rule se pehle ka tha)', (await bells(T)) === 2, `got ${await bells(T)}`);
+    await tick(at('2026-09-12', '19:05')); // Saturday 19:05 — Friday ka rule, Saturday ko nahi
+    check('Sat 19:05: kuch nahi', (await bells(T)) === 2);
+    await tick(at('2026-09-18', '18:55')); // agla Friday, time se pehle
+    check('Fri 18 Sep 18:55: abhi nahi', (await bells(T)) === 2);
+    await tick(at('2026-09-18', '19:02'));
+    check('Fri 18 Sep 19:02: ab gaya — pehla sahi repeat', (await bells(T)) === 4, `got ${await bells(T)}`);
+    check('occurrences me sirf 18 Sep (11 Sep nahi)', JSON.stringify((await Announcement.findOne({ title: T })).occurrences) === '["2026-09-18"]',
+      JSON.stringify((await Announcement.findOne({ title: T })).occurrences));
+  }
+
+  // ═══ TEST 20 — rule BADALNA bhi kal se peeche na jaye ═══
+  console.log('\nTEST 20 — Sat ko rule Mon → Fri kiya: kal ka Friday phir bhi nahi');
+  {
+    await Notification.deleteMany({});
+    const T = 'Switch to Friday';
+    const a = await svc.createAnnouncement(boss, { title: T, recurrence: { type: 'WEEKLY', weekday: 1, time: '09:00' } }, at('2026-09-07', '10:00')); // Mon, turant
+    check('Mon 7 Sep: gaya', (await bells(T)) === 2);
+    await svc.updateAnnouncement(a.id, { recurrence: { type: 'WEEKLY', weekday: 5, time: '09:00' } }, at('2026-09-12', '13:00'));
+    await tick(at('2026-09-12', '13:02'));
+    check('Sat tick: kal (Fri 11) ka catch-up NAHI', (await bells(T)) === 2, `got ${await bells(T)}`);
+    await tick(at('2026-09-18', '09:02'));
+    check('agle Fri: gaya', (await bells(T)) === 4);
   }
 
   console.log(`\n${failures ? `❌ ${failures} FAIL` : '✅ SAB PASS'}\n`);

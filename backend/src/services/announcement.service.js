@@ -4,7 +4,7 @@ import { User } from '../models/User.js';
 import { notify } from '../models/Notification.js';
 import { can } from '../lib/permissions.js';
 import { ymdInTz, companyDayFromYMD, companyDayInstantAt } from '../lib/time.js';
-import { matchesYMD, nextOccurrenceYMD, lastOccurrenceOnOrBefore, normalizeRule } from '../lib/recurrence.js';
+import { matchesYMD, nextOccurrenceYMD, lastOccurrenceOnOrBefore, normalizeRule, prevDay } from '../lib/recurrence.js';
 
 /** The instant 'HH:mm' falls on a given company day — through the zone-aware helper, so
  *  it stays right even if COMPANY_TZ is ever pointed at a zone with DST. */
@@ -319,17 +319,23 @@ export async function updateAnnouncement(id, data, now = new Date()) {
         announceNow = true;
       }
     } else if (out) {
+      // Already out. The stamp must sit no earlier than YESTERDAY, whether the rule is
+      // being added or changed: the scanner catches up one missed day, and a day before
+      // the rule existed is not a missed day. This was learned the hard way — a Friday
+      // rule added on a Saturday afternoon anchored on the post's original outing,
+      // "yesterday" matched, and fourteen people were told about Friday on Saturday.
+      // Today still fires if it matches and its time has passed (the same-day case
+      // somebody adding "every Saturday" on a Saturday expects); a day that already went
+      // out under an old rule cannot go out again under the new one, since the max keeps
+      // that stamp.
+      const yesterday = prevDay(today);
+      ann.lastRecurredYMD = (ann.lastRecurredYMD || '') > yesterday ? ann.lastRecurredYMD : yesterday;
       if (!was) {
-        // Already out. Anchor on the day it last went out, so any matching day after
-        // that fires — today included — while that day cannot fire a second time.
-        ann.lastRecurredYMD = ymdInTz(ann.announcedAt || ann.notifiedAt || ann.createdAt);
         // Rows from before notifiedAt existed have none; the scanner keys on it, so a
         // repeat added to one of those would never fire. Stamp what is already true.
         if (!ann.notifiedAt) ann.notifiedAt = ann.announcedAt || ann.createdAt;
         if (!ann.announcedAt) ann.announcedAt = ann.notifiedAt;
       }
-      // Rule changed on a post that is out: the stamp is kept, so a day that already
-      // went out under the old rule cannot go out again under the new one.
     } else {
       // Not out yet, so the schedule follows the rule — whether the rule is being added
       // or changed. Keeping the old first day here was the bug: "every Saturday" edited
