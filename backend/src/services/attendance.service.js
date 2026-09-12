@@ -13,38 +13,10 @@ import {
   ymdInTz,
   isLateCheckIn,
   computeWork,
-  lateMinutesBeyondGrace,
 } from '../lib/time.js';
 import { effectiveSchedule, userWeekendDays, workWindowClosed } from '../lib/schedule.js';
 import { splitByJoining, periodStartFor, joinedYMD } from '../lib/joining.js';
 import { onCheckIn, onCheckOut, recomputeUserMonthOvertime, reconcileLatePenalty, clearAbsencePenalty } from './bonus.service.js';
-
-/**
- * Late arrivals start their overtime later (owner's rule, 12 Sep 2026).
- *
- * Two people leaving at 7:30 used to earn the same overtime whether one arrived at 10:05
- * and the other at 10:35. Now the minutes somebody is late BEYOND their grace push their
- * overtime threshold back by exactly that much — in at 10:20 against a 10:16 grace and
- * overtime starts 4 minutes later than it otherwise would. Everyone is measured against
- * their OWN shift, grace and buffer (effectiveSchedule), so an 11-to-7 person is judged
- * against 11, not 10.
- *
- * Only from this day on. Overtime is re-derived from attendance whenever a day is edited
- * or the office-wide recompute runs, so without a floor the rule would quietly rewrite
- * every earlier month's points the next time anyone touched a record.
- */
-export const OT_LATE_SHIFT_FLOOR_YMD = '2026-09-11';
-
-/**
- * Minutes a day's late arrival pushes its overtime threshold back. 0 when the rule does
- * not apply: nothing checked in, not a late day, a late the leadership excused (on-duty
- * means on time everywhere else, so here too), or a day before the rule began.
- */
-export function otLateShift(record, day, sched) {
-  if (!record?.checkInAt || record.status !== 'LATE' || record.excused) return 0;
-  if (ymdInTz(day) < OT_LATE_SHIFT_FLOOR_YMD) return 0;
-  return lateMinutesBeyondGrace(record.checkInAt, day, sched.workStart, sched.graceMinutes);
-}
 
 function httpError(status, code, message) {
   const e = new Error(message);
@@ -202,7 +174,7 @@ export async function setAttendanceRecord(userId, dateYMD, checkIn, checkOut) {
   record.checkOutAt = checkOut ? companyDayInstantAt(day, checkOut) : null;
 
   if (record.checkInAt && record.checkOutAt) {
-    const { workedMinutes, overtimeMinutes } = computeWork(record.checkInAt, record.checkOutAt, day, sched.workEnd, sched.overtimeAfterMinutes, otLateShift(record, day, sched));
+    const { workedMinutes, overtimeMinutes } = computeWork(record.checkInAt, record.checkOutAt, day, sched.workEnd, sched.overtimeAfterMinutes);
     record.workedMinutes = workedMinutes;
     record.overtimeMinutes = overtimeMinutes;
   } else {
@@ -234,19 +206,10 @@ export async function excuseLate(approver, attendanceId, excused) {
   record.excused = excused !== false;
   record.excusedBy = record.excused ? approver._id : null;
   record.excusedAt = record.excused ? new Date() : null;
-  // On-duty (excused) means it no longer counts as late anywhere else — so the overtime
-  // clock moves back to where it would have been, and the day's points follow.
-  if (record.checkInAt && record.checkOutAt) {
-    const settings = await Setting.getSingleton();
-    const owner = await User.findById(record.user).select('schedule employmentType');
-    const sched = effectiveSchedule(owner || {}, settings);
-    const { overtimeMinutes } = computeWork(record.checkInAt, record.checkOutAt, record.date, sched.workEnd, sched.overtimeAfterMinutes, otLateShift(record, record.date, sched));
-    record.overtimeMinutes = overtimeMinutes;
-  }
   await record.save();
-  // ...and take the late-arrival minus back too (or put it back if it's being un-excused).
+  // On-duty (excused) means it no longer counts as late anywhere else — so take the
+  // late-arrival minus back too (and put it back if it's being un-excused).
   try { await reconcileLatePenalty(record.user, ymdInTz(record.date), record.status === 'LATE' && !record.excused); } catch (e) { console.error('bonus hook (excuse) failed', e?.message); }
-  try { await recomputeUserMonthOvertime(record.user, ymdInTz(record.date).slice(0, 7)); } catch (e) { console.error('bonus hook (excuse overtime) failed', e?.message); }
   return record;
 }
 
@@ -283,7 +246,7 @@ export async function checkOut(user, meta, coords) {
 
   const geoMeta = verifyGeofence(settings.gpsAttendance, coords);
   const sched = effectiveSchedule(user, settings); // part-time overtime counts past its own end
-  const { workedMinutes, overtimeMinutes } = computeWork(record.checkInAt, now, day, sched.workEnd, sched.overtimeAfterMinutes, otLateShift(record, day, sched));
+  const { workedMinutes, overtimeMinutes } = computeWork(record.checkInAt, now, day, sched.workEnd, sched.overtimeAfterMinutes);
 
   record.checkOutAt = now;
   record.checkOutMeta = { ...meta, ...geoMeta };
@@ -318,16 +281,13 @@ export async function recomputeAllOvertime({ userId = null } = {}) {
   const byUser = new Map(users.map((u) => [String(u._id), u]));
   const recFilter = { checkInAt: { $ne: null }, checkOutAt: { $ne: null } };
   if (userId) recFilter.user = userId;
-  // `status` and `excused` MUST be in this projection: otLateShift reads both, and a
-  // projection that drops them makes every day read as not-late and silently strips the
-  // late shift from the whole history on the next recompute.
-  const recs = await Attendance.find(recFilter).select('user date checkInAt checkOutAt overtimeMinutes status excused');
+  const recs = await Attendance.find(recFilter).select('user date checkInAt checkOutAt overtimeMinutes');
   const ops = [];
   const months = new Set(); // `${userId}|YYYY-MM`
   for (const r of recs) {
     // Each person's OWN shift end + their OWN overtime buffer (or the office default).
     const sched = effectiveSchedule(byUser.get(String(r.user)) || {}, settings);
-    const { overtimeMinutes } = computeWork(r.checkInAt, r.checkOutAt, r.date, sched.workEnd, sched.overtimeAfterMinutes, otLateShift(r, r.date, sched));
+    const { overtimeMinutes } = computeWork(r.checkInAt, r.checkOutAt, r.date, sched.workEnd, sched.overtimeAfterMinutes);
     if (overtimeMinutes !== (r.overtimeMinutes || 0)) {
       ops.push({ updateOne: { filter: { _id: r._id }, update: { $set: { overtimeMinutes } } } });
       months.add(`${r.user}|${ymdInTz(r.date).slice(0, 7)}`);
@@ -375,11 +335,6 @@ export async function getTodayPayload(user) {
       // How many minutes past the shift end overtime starts (office setting, or this
       // person's own override) — so the live ticker matches what check-out will score.
       overtimeAfterMinutes: sched.overtimeAfterMinutes ?? 0,
-      // ...plus today's late shift for THIS person (0 unless they checked in past their
-      // grace). Without it the card would count overtime from 7:00 while check-out
-      // scored it from 7:19 — the exact "card promises minutes it won't pay" mismatch
-      // the buffer field above exists to prevent.
-      overtimeLateShiftMinutes: record ? otLateShift(record, day, sched) : 0,
       // THIS person's non-working weekdays (0=Sun…6=Sat) — the office weekend, or a
       // part-timer's own off-days. Sent so the leave dialog can show the same day
       // count the server will actually deduct; it used to assume Sunday for everyone,

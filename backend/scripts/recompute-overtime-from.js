@@ -1,11 +1,8 @@
 /**
- * Ek din se aage ke saare attendance records ka overtime DOBARA ginta hai — naye niyam se
- * (late aaye to OT der se, OT_LATE_SHIFT_FLOOR_YMD se). Floor se pehle ke din is niyam ko
- * chhoote hi nahi (shift 0 → wahi purana jawab), isliye unhe chhedne ka sawaal hi nahi.
- *
- * Kab chahiye: niyam ki taareekh (11 Sep) aaj se pehle ki hai, to us din ke records purane
- * code se gine hue stored hain. Ye script unhe naye niyam par laati hai, aur jis mahine me
- * kuch badla uske overtime points bhi dobara ginti hai.
+ * Ek din se aage ke saare attendance records ka overtime DOBARA ginta hai — aaj ke code se.
+ * Jab overtime ka niyam badle (ya wapas ho), us din ke baad ke stored `overtimeMinutes`
+ * purane code ke hisaab se pade rehte hain; ye script unhe aaj ke computeWork par laati
+ * hai aur jis user-month me kuch badla uske overtime points bhi dobara ginti hai.
  *
  * DEKHNE KE LIYE (kuch likhta nahi):   node scripts/recompute-overtime-from.js --from 2026-09-11
  * SACH ME CHALANE KE LIYE:             node scripts/recompute-overtime-from.js --from 2026-09-11 --apply
@@ -19,7 +16,6 @@ import { Attendance } from '../src/models/Attendance.js';
 import { PointEntry } from '../src/models/PointEntry.js';
 import { companyDayFromYMD, computeWork, ymdInTz } from '../src/lib/time.js';
 import { effectiveSchedule } from '../src/lib/schedule.js';
-import { otLateShift } from '../src/services/attendance.service.js';
 import { recomputeUserMonthOvertime } from '../src/services/bonus.service.js';
 
 const APPLY = process.argv.includes('--apply');
@@ -36,7 +32,7 @@ async function main() {
   const users = new Map((await User.find().select('name schedule employmentType').lean()).map((u) => [String(u._id), u]));
   const recs = await Attendance.find({
     date: { $gte: companyDayFromYMD(fromArg) }, checkInAt: { $ne: null }, checkOutAt: { $ne: null },
-  }).select('user date checkInAt checkOutAt overtimeMinutes status excused').lean();
+  }).select('user date checkInAt checkOutAt overtimeMinutes').lean();
 
   const ops = [];
   const months = new Set();
@@ -45,11 +41,10 @@ async function main() {
     const u = users.get(String(r.user));
     if (!u) continue;
     const sched = effectiveSchedule(u, settings);
-    const shift = otLateShift(r, r.date, sched);
-    const { overtimeMinutes } = computeWork(r.checkInAt, r.checkOutAt, r.date, sched.workEnd, sched.overtimeAfterMinutes, shift);
+    const { overtimeMinutes } = computeWork(r.checkInAt, r.checkOutAt, r.date, sched.workEnd, sched.overtimeAfterMinutes);
     const old = r.overtimeMinutes || 0;
     if (overtimeMinutes === old) continue;
-    console.log(`  ${ymdInTz(r.date)}  ${u.name.padEnd(24)} in ${fmt(r.checkInAt)}  out ${fmt(r.checkOutAt)}  late+${shift}m   OT ${old} → ${overtimeMinutes} min`);
+    console.log(`  ${ymdInTz(r.date)}  ${u.name.padEnd(24)} in ${fmt(r.checkInAt)}  out ${fmt(r.checkOutAt)}   OT ${old} → ${overtimeMinutes} min`);
     ops.push({ updateOne: { filter: { _id: r._id }, update: { $set: { overtimeMinutes } } } });
     months.add(`${r.user}|${ymdInTz(r.date).slice(0, 7)}`);
   }

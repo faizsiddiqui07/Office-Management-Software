@@ -41,8 +41,6 @@ export function CheckInCard() {
     wfhOfficeWide,
     elapsedMin,
     overtimeMin,
-    overtimeStartAt,
-    overtimeLateShiftMin,
     cooldownLeftMs,
     inCooldown,
     wouldBeLate,
@@ -106,14 +104,6 @@ export function CheckInCard() {
             <Stat label={checkedOut ? 'Worked' : 'Elapsed'} value={checkedIn ? formatDuration(elapsedMin) : '—'} />
             <Stat label="Overtime" value={checkedIn ? formatDuration(overtimeMin) : '—'} highlight={overtimeMin > 0} />
           </div>
-
-          {/* A late arrival moves the overtime start back by the minutes it was late beyond
-              grace. Said here, on the day, so the smaller figure never reads as a bug. */}
-          {checkedIn && !checkedOut && overtimeLateShiftMin > 0 && overtimeStartAt ? (
-            <p className="-mt-1 text-center text-xs text-muted-foreground">
-              Overtime counts from {formatTime(new Date(overtimeStartAt))} today — {overtimeLateShiftMin} min later, for arriving {overtimeLateShiftMin} min past grace.
-            </p>
-          ) : null}
 
           {data?.gps?.enabled && !checkedOut ? (
             <p className="-mb-1 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">

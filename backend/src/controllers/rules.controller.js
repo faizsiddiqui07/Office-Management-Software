@@ -39,7 +39,7 @@ async function ensureSeeded() {
 // page then belongs to the CEO's edits, so later wording fixes can't ride the seed. This
 // applies them by EXACT-matching the old default text — a rule the CEO has since edited (its
 // text differs) is left untouched. Version-gated so it runs once per bump.
-const RULES_TEXT_VERSION = 7;
+const RULES_TEXT_VERSION = 6;
 const RULE_TEXT_UPDATES = [
   {
     from: 'Every assigned task has a due date. Finish the work and submit it on or before that date.',
@@ -82,11 +82,6 @@ const RULE_ADDITIONS = [
   {
     section: 'To-Do & Tasks',
     text: 'Once you have assigned a task, its due date is FINAL — you cannot move it, earlier or later. Only the CEO & President can change a due date. Applies to work assigned from 1 August 2026.',
-  },
-  // 2026-09-12: a late arrival pushes that day's overtime start back by the same minutes.
-  {
-    section: 'Overtime',
-    text: 'Arrive after your grace period and that day’s overtime starts later by the same number of minutes — check in 20 minutes past your grace, and overtime counts from 20 minutes after it otherwise would. Arriving inside the grace changes nothing, and a late that leadership has excused (on-duty) doesn’t count. Measured against YOUR own shift and grace. Applies from 11 September 2026.',
   },
 ];
 
