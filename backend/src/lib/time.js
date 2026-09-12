@@ -54,15 +54,35 @@ export function isLateCheckIn(checkInAt, dayInstant, workStart, graceMinutes = 0
 }
 
 /**
- * Worked + overtime minutes for a completed day.
- * Overtime = time worked past (workEnd + `overtimeAfterMinutes`). The buffer is the office's
- * "overtime only counts N minutes after your shift ends" setting — e.g. shift ends 6 PM and
- * a 60-minute buffer means overtime is only the time past 7 PM. 0 = counts from the shift
- * end itself. workedMinutes is the full clocked time and never touched by the buffer.
+ * How many whole minutes AFTER the grace period somebody checked in. 0 when they were on
+ * time or inside the grace — the grace is forgiven entirely, not counted from the shift
+ * start. Rounded to the minute the same way workedMinutes is, so a check-in a few seconds
+ * past the grace reads as 0 here even though isLateCheckIn (a strict instant compare)
+ * already calls the day late: the -1 late mark applies, the overtime clock does not move.
  */
-export function computeWork(checkInAt, checkOutAt, dayInstant, workEnd, overtimeAfterMinutes = 0) {
+export function lateMinutesBeyondGrace(checkInAt, dayInstant, workStart, graceMinutes = 0) {
+  const threshold = companyDayInstantAt(dayInstant, workStart).getTime() + Math.max(0, graceMinutes) * 60000;
+  return Math.max(0, Math.round((checkInAt.getTime() - threshold) / 60000));
+}
+
+/**
+ * Worked + overtime minutes for a completed day.
+ * Overtime = time worked past (workEnd + `overtimeAfterMinutes` + `lateShiftMinutes`).
+ *
+ * The buffer is the office's "overtime only counts N minutes after your shift ends"
+ * setting — e.g. shift ends 6 PM and a 60-minute buffer means overtime is only the time
+ * past 7 PM. 0 = counts from the shift end itself.
+ *
+ * `lateShiftMinutes` (owner's rule, 12 Sep 2026) pushes that threshold back by however
+ * late the person was beyond their grace. Two people leaving at 7:30 used to earn the same
+ * overtime whether they had arrived at 10:05 or 10:35; now the one who arrived twenty
+ * minutes past grace starts their overtime twenty minutes later. The caller decides
+ * whether the day qualifies (a late that was excused, a half-day, a day before the rule
+ * began — all pass 0). workedMinutes is the full clocked time and never touched by either.
+ */
+export function computeWork(checkInAt, checkOutAt, dayInstant, workEnd, overtimeAfterMinutes = 0, lateShiftMinutes = 0) {
   const workEndAt = companyDayInstantAt(dayInstant, workEnd);
-  const otThreshold = new Date(workEndAt.getTime() + Math.max(0, overtimeAfterMinutes) * 60000);
+  const otThreshold = new Date(workEndAt.getTime() + (Math.max(0, overtimeAfterMinutes) + Math.max(0, lateShiftMinutes)) * 60000);
   const workedMinutes = Math.max(0, Math.round((checkOutAt.getTime() - checkInAt.getTime()) / 60000));
   const overtimeMinutes = Math.max(0, Math.round((checkOutAt.getTime() - otThreshold.getTime()) / 60000));
   return { workedMinutes, overtimeMinutes };

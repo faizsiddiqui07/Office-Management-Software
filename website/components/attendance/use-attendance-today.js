@@ -110,7 +110,11 @@ export function useAttendanceToday() {
   // person's own override) — so the live ticker starts from that same instant. Counting
   // from bare workEnd made the card promise minutes the check-out would then score as 0.
   const overtimeBufferMs = (data?.settings?.overtimeAfterMinutes || 0) * 60000;
-  const overtimeStartAt = workEndAt != null ? workEndAt + overtimeBufferMs : null;
+  // A late arrival starts overtime later by the minutes it was late beyond grace (server
+  // decides; 0 for anyone on time). Same reason as the buffer: the ticker must count
+  // from the instant check-out will actually score from.
+  const overtimeLateShiftMs = (data?.settings?.overtimeLateShiftMinutes || 0) * 60000;
+  const overtimeStartAt = workEndAt != null ? workEndAt + overtimeBufferMs + overtimeLateShiftMs : null;
 
   let elapsedMin = 0;
   let overtimeMin = 0;
@@ -152,6 +156,11 @@ export function useAttendanceToday() {
     wfhOfficeWide,
     elapsedMin,
     overtimeMin,
+    // When overtime starts counting today, and how much of that is a late-arrival shift —
+    // so the card can say "from 7:19 PM (19 min late)" instead of leaving a smaller
+    // number unexplained.
+    overtimeStartAt,
+    overtimeLateShiftMin: data?.settings?.overtimeLateShiftMinutes || 0,
     cooldownMin,
     cooldownLeftMs,
     inCooldown,

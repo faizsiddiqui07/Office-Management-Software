@@ -7,7 +7,7 @@ import { LEADERSHIP } from '../lib/permissions.js';
 import { companyDayFromYMD, companyDayInstantAt, isLateCheckIn, computeWork } from '../lib/time.js';
 import { effectiveSchedule } from '../lib/schedule.js';
 import { onCheckOut, clearAbsencePenalty, reconcileLatePenalty, reconcilePerfectMonth } from './bonus.service.js';
-import { isOffDayFor } from './attendance.service.js';
+import { isOffDayFor, otLateShift } from './attendance.service.js';
 
 function httpError(status, code, message) {
   const e = new Error(message);
@@ -160,7 +160,7 @@ async function applyToAttendance(reg) {
     record.checkOutAt = companyDayInstantAt(day, reg.requestedCheckOut);
   }
   if (record.checkInAt && record.checkOutAt) {
-    const { workedMinutes, overtimeMinutes } = computeWork(record.checkInAt, record.checkOutAt, day, sched.workEnd, sched.overtimeAfterMinutes);
+    const { workedMinutes, overtimeMinutes } = computeWork(record.checkInAt, record.checkOutAt, day, sched.workEnd, sched.overtimeAfterMinutes, otLateShift(record, day, sched));
     record.workedMinutes = workedMinutes;
     record.overtimeMinutes = overtimeMinutes;
   }
