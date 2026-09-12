@@ -136,10 +136,10 @@ async function main() {
 
   // ═══ TEST 4 — floor se PEHLE ka din: purana niyam ═══
   console.log(`\nTEST 4 — ${OT_LATE_SHIFT_FLOOR_YMD} se pehle ka din: koi shift nahi`);
-  const OLD = '2026-09-08'; // Tuesday, floor se pehle
+  const OLD = '2026-09-10'; // Thursday, floor (11 Sep) se ek din pehle
   await setAttendanceRecord(late._id, OLD, '10:35', '19:30');
-  check('8 Sep: 10:35 aaya phir bhi 30 min OT (purana niyam)', (await otOf(late, OLD)) === 30, String(await otOf(late, OLD)));
-  check('8 Sep: status phir bhi LATE (sirf OT ki baat hai, late-mark nahi badla)', (await Attendance.findOne({ user: late._id, date: companyDayFromYMD(OLD) })).status === 'LATE');
+  check('10 Sep: 10:35 aaya phir bhi 30 min OT (purana niyam)', (await otOf(late, OLD)) === 30, String(await otOf(late, OLD)));
+  check('10 Sep: status phir bhi LATE (sirf OT ki baat hai, late-mark nahi badla)', (await Attendance.findOne({ user: late._id, date: companyDayFromYMD(OLD) })).status === 'LATE');
   // floor ke theek din par lagta hai
   await setAttendanceRecord(late._id, OT_LATE_SHIFT_FLOOR_YMD, '10:35', '19:30');
   check(`${OT_LATE_SHIFT_FLOOR_YMD} (floor ka din): 11 min`, (await otOf(late, OT_LATE_SHIFT_FLOOR_YMD)) === 11, String(await otOf(late, OT_LATE_SHIFT_FLOOR_YMD)));
@@ -147,13 +147,13 @@ async function main() {
   // ═══ TEST 5 — recomputeAllOvertime purane din na chhede, naye par sahi rahe ═══
   console.log('\nTEST 5 — office-wide recompute: purana waisa, naya waisa');
   await recomputeAllOvertime();
-  check('8 Sep ab bhi 30', (await otOf(late, OLD)) === 30, String(await otOf(late, OLD)));
+  check('10 Sep ab bhi 30', (await otOf(late, OLD)) === 30, String(await otOf(late, OLD)));
   check('15 Sep ab bhi 11', (await otOf(late)) === 11, String(await otOf(late)));
   check('Early Bird ab bhi 30', (await otOf(early)) === 30);
 
   // ═══ TEST 6 — mahine ke points ═══
   console.log('\nTEST 6 — mahine ke overtime points (2/hr, >30 min leftover = +1)');
-  // Late Comer Sep me: 8 Sep 30 + 14 Sep 11 + 15 Sep 11 = 52 min → 0 hr, leftover 52 > 30 → +1
+  // Late Comer Sep me: 10 Sep 30 + 11 Sep 11 + 15 Sep 11 = 52 min → 0 hr, leftover 52 > 30 → +1
   check('Late Comer: 52 min → 1 point', (await otPts(late)) === 1, String(await otPts(late)));
   // Early Bird: 30 min → 0
   check('Early Bird: 30 min → 0 point (30 > 30 nahi)', (await otPts(early)) === 0, String(await otPts(early)));

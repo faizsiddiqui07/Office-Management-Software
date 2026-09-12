@@ -86,7 +86,7 @@ const RULE_ADDITIONS = [
   // 2026-09-12: a late arrival pushes that day's overtime start back by the same minutes.
   {
     section: 'Overtime',
-    text: 'Arrive after your grace period and that day’s overtime starts later by the same number of minutes — check in 20 minutes past your grace, and overtime counts from 20 minutes after it otherwise would. Arriving inside the grace changes nothing, and a late that leadership has excused (on-duty) doesn’t count. Measured against YOUR own shift and grace. Applies from 14 September 2026.',
+    text: 'Arrive after your grace period and that day’s overtime starts later by the same number of minutes — check in 20 minutes past your grace, and overtime counts from 20 minutes after it otherwise would. Arriving inside the grace changes nothing, and a late that leadership has excused (on-duty) doesn’t count. Measured against YOUR own shift and grace. Applies from 11 September 2026.',
   },
 ];
 

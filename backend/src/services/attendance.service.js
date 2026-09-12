@@ -33,7 +33,7 @@ import { onCheckIn, onCheckOut, recomputeUserMonthOvertime, reconcileLatePenalty
  * or the office-wide recompute runs, so without a floor the rule would quietly rewrite
  * every earlier month's points the next time anyone touched a record.
  */
-export const OT_LATE_SHIFT_FLOOR_YMD = '2026-09-14';
+export const OT_LATE_SHIFT_FLOOR_YMD = '2026-09-11';
 
 /**
  * Minutes a day's late arrival pushes its overtime threshold back. 0 when the rule does
