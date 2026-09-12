@@ -4,8 +4,9 @@ import { Setting } from '../models/Setting.js';
 import { User } from '../models/User.js';
 import { notify, clearNotificationsFor } from '../models/Notification.js';
 import { LEADERSHIP } from '../lib/permissions.js';
-import { companyDayFromYMD, companyDayInstantAt, isLateCheckIn, computeWork } from '../lib/time.js';
+import { companyDayFromYMD, companyDayInstantAt, computeWork } from '../lib/time.js';
 import { effectiveSchedule } from '../lib/schedule.js';
+import { judgeCheckIn, penaltyRungs } from '../lib/lateLadder.js';
 import { onCheckOut, clearAbsencePenalty, reconcileLatePenalty, reconcilePerfectMonth } from './bonus.service.js';
 import { isOffDayFor } from './attendance.service.js';
 
@@ -135,8 +136,6 @@ async function applyToAttendance(reg) {
   // self check-in, so a corrected time on such a day records PRESENT, not LATE.
   const offDay = await isOffDayFor(owner, reg.dateYMD, settings);
   let record = await Attendance.findOne({ user: reg.user, date: day });
-  // A half-day leave day is never "late" — only the other half was owed.
-  const halfLeave = !!record?.halfDayLeave;
   // Checked again at approval time, not just when the request was raised: a leave can
   // be approved in between, and overwriting an untouched ON_LEAVE marker here would
   // leave the day counted as both leave (balance still spent) and present.
@@ -154,7 +153,9 @@ async function applyToAttendance(reg) {
   if (reg.requestedCheckIn) {
     const inAt = companyDayInstantAt(day, reg.requestedCheckIn);
     record.checkInAt = inAt;
-    record.status = !offDay && !halfLeave && isLateCheckIn(inAt, day, sched.workStart, sched.graceMinutes) ? 'LATE' : 'PRESENT';
+    // The ladder decides late exactly as a self check-in would — a half-day leave's
+    // worked morning is never late, its worked afternoon is due at the shift midpoint.
+    record.status = !offDay && judgeCheckIn(inAt, day, record, sched).rungs > 0 ? 'LATE' : 'PRESENT';
   }
   if (reg.requestedCheckOut) {
     record.checkOutAt = companyDayInstantAt(day, reg.requestedCheckOut);
@@ -181,7 +182,7 @@ async function applyToAttendance(reg) {
   // building garbage keys that matched nothing, so an approved correction had never
   // actually cleared the daily-scan absence penalty or reconciled the late one. owner is
   // a fresh User doc (findById above) whose _id is a real ObjectId → the right key.
-  try { await reconcileLatePenalty(owner._id, reg.dateYMD, record.status === 'LATE' && !record.excused); } catch (e) { console.error('bonus hook (correction late reconcile) failed', e?.message); }
+  try { await reconcileLatePenalty(owner._id, reg.dateYMD, penaltyRungs(record, day, sched)); } catch (e) { console.error('bonus hook (correction late reconcile) failed', e?.message); }
   // The perfect-attendance month award is decided ONCE at month-end and never revisited.
   // A correction to a CLOSED month (turning an absent/late day good) leaves that month
   // blemish-free, but the award was already denied — so re-run the month's verdict, the

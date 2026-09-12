@@ -44,9 +44,25 @@ export function CheckInCard() {
     cooldownLeftMs,
     inCooldown,
     wouldBeLate,
+    lateRungs,
+    latePenaltyNow,
+    lateArrivalPoints,
+    nextLateMarkAt,
+    afternoonHalf,
     checkInMut,
     checkOutMut,
   } = useAttendanceToday();
+
+  // What this late check-in costs, in the ladder's own words — "over 1 hour late" is
+  // measured from the start time (or from the afternoon half's due time), and the next
+  // mark is named so somebody two minutes short of it knows to hurry.
+  const lateCostLine = React.useMemo(() => {
+    if (!latePenaltyNow) return '';
+    const h = lateRungs - 1;
+    const howLate = h > 0 ? `over ${h} hour${h > 1 ? 's' : ''} late${afternoonHalf ? ' for the afternoon half' : ''}` : afternoonHalf ? 'late for the afternoon half' : 'late';
+    const more = nextLateMarkAt ? `, and −${lateArrivalPoints} more after ${formatTime(new Date(nextLateMarkAt))}` : '';
+    return `Checking in now is ${howLate} — −${latePenaltyNow} point${latePenaltyNow > 1 ? 's' : ''}${more}.`;
+  }, [latePenaltyNow, lateRungs, afternoonHalf, nextLateMarkAt, lateArrivalPoints]);
 
   const [lateOpen, setLateOpen] = React.useState(false);
   const [lateCategory, setLateCategory] = React.useState('');
@@ -161,7 +177,7 @@ export function CheckInCard() {
         open={lateOpen}
         onOpenChange={setLateOpen}
         title="You're checking in late"
-        description="Add a quick reason so your team has the context — totally optional."
+        description={`${lateCostLine ? `${lateCostLine} ` : ''}Add a quick reason so your team has the context — totally optional.`}
         footer={
           <>
             <Button variant="outline" onClick={() => setLateOpen(false)}>

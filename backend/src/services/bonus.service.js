@@ -8,7 +8,8 @@ import { LeaveRequest } from '../models/LeaveRequest.js';
 import { can } from '../lib/permissions.js';
 import { ownerRoleKeys } from '../lib/roles.js';
 import { ymdInTz, companyDayFromYMD, dayOfWeekInTz } from '../lib/time.js';
-import { userWeekendDays } from '../lib/schedule.js';
+import { userWeekendDays, effectiveSchedule } from '../lib/schedule.js';
+import { penaltyRungs, lateReasonText } from '../lib/lateLadder.js';
 import { hadAccessOn, splitByJoining, periodStartFor } from '../lib/joining.js';
 import { APP_LIVE_YMD } from '../lib/appLive.js';
 import { holidayYMDSet } from './holiday.service.js';
@@ -38,7 +39,7 @@ export const AUTO_RULES = [
   { key: 'forwardLate', label: 'Forwarded a task, done late', hint: 'For whoever passed the work down — when the chain finishes late', sign: 'penalty' },
   { key: 'assignTaskDone', label: 'Work you assigned gets done', hint: 'For whoever handed the work out — paid when the task is completed, on time OR late; handing work out is never penalised (work assigned from 1 Aug 2026)', sign: 'reward' },
   { key: 'punctualStreak', label: 'Punctual streak', hint: '6 on-time days in a row — Sunday/holiday/leave/WFH neither break nor count; a late or unexplained absence resets the count', sign: 'reward' },
-  { key: 'lateArrival', label: 'Each late arrival', hint: 'Every day they check in late', sign: 'penalty' },
+  { key: 'lateArrival', label: 'Each late arrival', hint: 'Per rung of the late ladder: past the grace = 1, past the first full hour after the start = 2 (the most a morning costs); an afternoon-half worker is due at the shift midpoint with no grace, one more rung per hour up to the shift end (from 13 Sep 2026)', sign: 'penalty' },
   { key: 'overtimeHour', label: 'Each hour of overtime', hint: 'Per full hour worked past the shift', sign: 'reward' },
   { key: 'absentDay', label: 'Each absent day', hint: 'A working day with no attendance and no leave', sign: 'penalty' },
   { key: 'noLeaveMonth', label: 'No leave taken all month', hint: 'Awarded when the month ends', sign: 'reward' },
@@ -869,14 +870,22 @@ export async function taskBonusPreview(taskId) {
  * a day can still turn into an absence-with-leave, and a run whose 6th day is followed
  * by leave/holiday has no check-in to trigger on.
  */
-export async function onCheckIn(user, dateYMD, isLate) {
+/**
+ * `late` is the ladder's verdict for the check-in — `{ rungs, afternoon }` from
+ * lateLadder.judgeCheckIn (a bare number or boolean is read as that many rungs, 0 = on
+ * time). Each rung costs the lateArrival amount, so a 2-rung day writes −2 × it.
+ */
+const asLate = (late) => (late && typeof late === 'object' ? { rungs: Number(late.rungs) || 0, afternoon: !!late.afternoon } : { rungs: Number(late) || 0, afternoon: false });
+
+export async function onCheckIn(user, dateYMD, late) {
   const s = await Setting.getSingleton();
   const b = s.bonus || {};
   if (!b.enabled) return;
-  if (isLate) {
+  const l = asLate(late);
+  if (l.rungs > 0) {
     const pts = rulePoints(b, 'lateArrival', dateYMD);
     if (pts) {
-      await awardOnce(`auto_late:${user._id}:${dateYMD}`, { user: user._id, month: dateYMD.slice(0, 7), points: -Math.abs(pts), reason: `Late arrival · ${dateYMD}`, source: 'auto_late', earnedYMD: dateYMD });
+      await awardOnce(`auto_late:${user._id}:${dateYMD}`, { user: user._id, month: dateYMD.slice(0, 7), points: -Math.abs(pts) * l.rungs, reason: lateReasonText(dateYMD, l), source: 'auto_late', earnedYMD: dateYMD });
     }
   }
 }
@@ -887,18 +896,37 @@ export async function onCheckIn(user, dateYMD, isLate) {
  * once; otherwise any existing penalty for that day is removed. This is what lets an
  * "excuse (on-duty)" actually take the minus back, and un-excusing put it back.
  */
-export async function reconcileLatePenalty(userId, dateYMD, shouldPenalise) {
+export async function reconcileLatePenalty(userId, dateYMD, late) {
   const s = await Setting.getSingleton();
   const b = s.bonus || {};
   const key = `auto_late:${userId}:${dateYMD}`;
-  if (b.enabled && shouldPenalise) {
+  const l = asLate(late);
+  if (b.enabled && l.rungs > 0) {
     const pts = rulePoints(b, 'lateArrival', dateYMD);
     if (pts) {
-      await awardOnce(key, { user: userId, month: dateYMD.slice(0, 7), points: -Math.abs(pts), reason: `Late arrival · ${dateYMD}`, source: 'auto_late', earnedYMD: dateYMD });
+      // `replace`: a reconcile follows a real change to the day (a corrected check-in
+      // time, an un-excuse, a half-day approved or cancelled over it), and the rung count
+      // must move with it — an insert-only write would leave a corrected 12:20 check-in
+      // paying the −1 its original 10:20 entry wrote.
+      await awardOnce(key, { user: userId, month: dateYMD.slice(0, 7), points: -Math.abs(pts) * l.rungs, reason: lateReasonText(dateYMD, l), source: 'auto_late', earnedYMD: dateYMD }, { replace: true });
       return;
     }
   }
   await PointEntry.deleteMany({ dedupeKey: key });
+}
+
+/**
+ * Reconcile a day's late penalty from whatever its attendance record NOW says — used
+ * where the caller changed the record without holding the schedule (a half-day leave
+ * approved or cancelled over a real check-in, an excuse). No record, or a record the
+ * ladder finds nothing to charge for, clears the penalty.
+ */
+export async function reconcileLateFromRecord(userId, dateYMD) {
+  const record = await Attendance.findOne({ user: userId, date: companyDayFromYMD(dateYMD) }).select('checkInAt status excused halfDayLeave halfDayPart').lean();
+  if (!record) return reconcileLatePenalty(userId, dateYMD, 0);
+  const s = await Setting.getSingleton();
+  const owner = await User.findById(userId).select('employmentType schedule').lean();
+  return reconcileLatePenalty(userId, dateYMD, penaltyRungs(record, companyDayFromYMD(dateYMD), effectiveSchedule(owner || {}, s)));
 }
 
 /**
@@ -1580,19 +1608,24 @@ export async function backfillMonth(month) {
     // could not see the excuse — and its insert-only upsert quietly RE-ADDED the penalty a
     // month later. Both are filtered here, and any penalty a previous pass resurrected is
     // removed, since nothing else in the system would ever clear it again.
+    // From the ladder's floor a late day owes as many rungs as its check-in climbed (and
+    // an afternoon-half worker's late owes too), so each record is judged against its
+    // owner's own shift — penaltyRungs applies every exemption above and the floor.
     const recFilter = { date: { $gte: companyDayFromYMD(start), $lte: companyDayFromYMD(end) }, status: 'LATE' };
-    const recs = await Attendance.find(recFilter).select('user date excused halfDayLeave');
+    const recs = await Attendance.find(recFilter).select('user date checkInAt status excused halfDayLeave halfDayPart').lean();
+    const owners = new Map((await User.find({ _id: { $in: [...new Set(recs.map((r) => String(r.user)))] } }).select('employmentType schedule').lean()).map((u) => [String(u._id), u]));
     for (const r of recs) {
       const ymd = ymdInTz(r.date);
       const key = `auto_late:${r.user}:${ymd}`;
-      if (r.excused || r.halfDayLeave) {
+      const late = penaltyRungs(r, r.date, effectiveSchedule(owners.get(String(r.user)) || {}, s));
+      if (!late.rungs) {
         // eslint-disable-next-line no-await-in-loop
         await PointEntry.deleteMany({ dedupeKey: key });
         // eslint-disable-next-line no-continue
         continue;
       }
       // eslint-disable-next-line no-await-in-loop
-      await awardOnce(key, { user: r.user, month: ymd.slice(0, 7), points: -Math.abs(rulePoints(b, 'lateArrival', ymd)), reason: `Late arrival · ${ymd}`, source: 'auto_late', earnedYMD: ymd });
+      await awardOnce(key, { user: r.user, month: ymd.slice(0, 7), points: -Math.abs(rulePoints(b, 'lateArrival', ymd)) * late.rungs, reason: lateReasonText(ymd, late), source: 'auto_late', earnedYMD: ymd });
     }
   }
   // Overtime is one row per person for the whole month, so recompute it per person rather

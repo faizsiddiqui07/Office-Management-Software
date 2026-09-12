@@ -15,8 +15,9 @@ import { APP_LIVE_YMD } from '../lib/appLive.js';
 import { computeWorkingDays } from './workingDays.service.js';
 import { holidayYMDSet } from './holiday.service.js';
 import { birthdayYMDSet } from '../lib/birthday.js';
-import { reconcileLatePenalty, clearAbsencePenalty, reconcileNoLeaveMonth, reconcilePerfectMonth, reconcileAbsence } from './bonus.service.js';
-import { userWeekendDays } from '../lib/schedule.js';
+import { reconcileLateFromRecord, clearAbsencePenalty, reconcileNoLeaveMonth, reconcilePerfectMonth, reconcileAbsence } from './bonus.service.js';
+import { userWeekendDays, effectiveSchedule } from '../lib/schedule.js';
+import { judgeCheckIn, LATE_LADDER_FLOOR_YMD } from '../lib/lateLadder.js';
 import { runTransaction } from '../lib/transaction.js';
 
 const PAID_TYPES = ['CASUAL', 'SICK', 'PAID'];
@@ -633,7 +634,7 @@ export async function recordLeaveForUser(actor, userId, { type, startYMD, endYMD
  * meant somebody who came in anyway (or whose leave was approved after they had already
  * worked the day) paid for a day the sheet still shows them present for.
  */
-async function markAttendanceOnLeave(userId, fromYMD, toYMD, halfDay, weekendDays, holidays, session, halfDayPart = null) {
+async function markAttendanceOnLeave(userId, fromYMD, toYMD, halfDay, weekendDays, holidays, session, halfDayPart = null, sched = null) {
   const { workingDates } = computeWorkingDays({ fromYMD, toYMD, halfDay, weekendDays, holidays });
   const part = halfDay ? (halfDayPart === 'SECOND' ? 'SECOND' : 'FIRST') : null; // which half is off
   let marked = 0;
@@ -677,10 +678,14 @@ async function markAttendanceOnLeave(userId, fromYMD, toYMD, halfDay, weekendDay
       // charged 0.5 (also true).
       existing.halfDayLeave = true;
       existing.halfDayPart = part;
-      // A half-day is never "late" for the worked half (owner's rule): if they'd checked
-      // in late before this was approved, drop the LATE status here. The -1 penalty the
-      // late check-in wrote is taken back post-commit in decideLeave (reconcileLatePenalty).
-      if (existing.status === 'LATE') existing.status = 'PRESENT';
+      // The worked half is judged afresh now that we know WHICH half it was: the morning
+      // half is never late (owner's rule), the afternoon half is due at the shift
+      // midpoint (the ladder, from its floor). A LATE written against 10:00 by a check-in
+      // that turns out to be the afternoon half is re-read against 2:00 here. The penalty
+      // follows post-commit in decideLeave (reconcileLateFromRecord).
+      if (['PRESENT', 'LATE'].includes(existing.status)) {
+        existing.status = sched && judgeCheckIn(existing.checkInAt, day, existing, sched).rungs > 0 ? 'LATE' : 'PRESENT';
+      }
       // eslint-disable-next-line no-await-in-loop
       await existing.save({ session });
       marked += 1;
@@ -726,7 +731,7 @@ async function markAttendanceWFH(userId, ymd, weekendDays, holidays, session) {
  * had actually marked, stranding a record on a cancelled request. Only untouched rows
  * are removed, so real attendance is never destroyed.
  */
-async function revertAttendanceOnLeave(userId, fromYMD, toYMD, session, type = null) {
+async function revertAttendanceOnLeave(userId, fromYMD, toYMD, session, type = null, sched = null) {
   // Remove only the kind of mark THIS request put down. Cancelling a leave must not
   // delete a WFH day sitting inside the same range (the office may have declared it),
   // and cancelling a WFH day must not disturb a leave.
@@ -746,16 +751,25 @@ async function revertAttendanceOnLeave(userId, fromYMD, toYMD, session, type = n
     // A half-day approved over a worked morning only FLAGGED the real record (see
     // markAttendanceOnLeave) — cancelling clears the flag, never the attendance itself.
     // Approved leaves can't overlap, so any flag inside this range belongs to this one.
-    await Attendance.updateMany(
-      {
-        user: userId,
-        date: { $gte: companyDayFromYMD(fromYMD), $lte: companyDayFromYMD(toYMD) },
-        halfDayLeave: true,
-        checkInAt: { $ne: null },
-      },
-      { $set: { halfDayLeave: false, halfDayPart: null } },
-      { session },
-    );
+    const flagged = await Attendance.find({
+      user: userId,
+      date: { $gte: companyDayFromYMD(fromYMD), $lte: companyDayFromYMD(toYMD) },
+      halfDayLeave: true,
+      checkInAt: { $ne: null },
+    }).session(session);
+    for (const rec of flagged) {
+      rec.halfDayLeave = false;
+      rec.halfDayPart = null;
+      // Without the leave it is a full day again, so the check-in is judged against the
+      // morning: somebody who came at 2:40 for an afternoon half that is now cancelled
+      // was simply late. Only from the ladder's floor — an old day keeps its old verdict.
+      // The penalty follows post-commit in cancelLeave (reconcileLateFromRecord).
+      if (sched && ymdInTz(rec.date) >= LATE_LADDER_FLOOR_YMD && ['PRESENT', 'LATE'].includes(rec.status)) {
+        rec.status = judgeCheckIn(rec.checkInAt, rec.date, rec, sched).rungs > 0 ? 'LATE' : 'PRESENT';
+      }
+      // eslint-disable-next-line no-await-in-loop
+      await rec.save({ session });
+    }
   }
 }
 
@@ -799,7 +813,7 @@ export async function fixHalfDayLatePenalties() {
     // eslint-disable-next-line no-await-in-loop
     await Attendance.updateOne({ _id: r._id }, { $set: { status: 'PRESENT' } });
     // eslint-disable-next-line no-await-in-loop
-    await reconcileLatePenalty(r.user, ymd, false); // take the -1 back
+    await reconcileLateFromRecord(r.user, ymd); // take the -1 back (status is PRESENT now)
   }
   await Setting.updateOne({ key: 'global' }, { $set: { halfDayLateFixed: true } });
   Setting.invalidateCache();
@@ -931,7 +945,7 @@ export async function decideLeave(approver, id, decision, note, { replaceAttenda
     // would still bill for days the sheet shows them present for. Taking the count from
     // the marking itself is the only version where the balance and the attendance
     // cannot disagree.
-    const days = await markAttendanceOnLeave(fresh.user, fresh.startYMD, fresh.endYMD, fresh.halfDay, ownerWeekends, holidays, session, fresh.halfDayPart);
+    const days = await markAttendanceOnLeave(fresh.user, fresh.startYMD, fresh.endYMD, fresh.halfDay, ownerWeekends, holidays, session, fresh.halfDayPart, effectiveSchedule(owner, settings));
     if (days <= 0) {
       throw httpError(409, 'NO_WORKING_DAYS', 'There is nothing left to approve on those dates — they are holidays, non-working days, or days already worked. Reject the request instead.');
     }
@@ -962,11 +976,12 @@ export async function decideLeave(approver, id, decision, note, { replaceAttenda
   // Points reconciliation for an approved leave (best-effort, post-commit like every other
   // bonus hook). WFH is a worked day — none of this applies to it.
   if (!wfh) {
-    // A half-day never carries a late penalty. If they checked in late for the worked half
-    // before this approval, the -1 is already on the ledger — take it back (status was
-    // already fixed to PRESENT inside the txn).
+    // A half-day's late penalty follows its worked half. If they had checked in before
+    // this approval, the status was re-judged inside the txn (morning half: never late;
+    // afternoon half: due at the midpoint) — bring the ledger to what the record now says:
+    // the old −1 taken back, or the afternoon rungs written.
     if (result.halfDay) {
-      try { await reconcileLatePenalty(result.user, result.startYMD, false); } catch (e) { console.error('half-day late reconcile failed', e?.message); }
+      try { await reconcileLateFromRecord(result.user, result.startYMD); } catch (e) { console.error('half-day late reconcile failed', e?.message); }
     }
     // L1: a day that is now on leave is no longer an absence — drop any absent penalty the
     // daily scan wrote for it. Backdated sick leave is the common case: the scan had
@@ -1183,6 +1198,12 @@ export async function cancelLeave(viewer, id) {
     throw httpError(403, 'SELF_DECISION', 'You cannot cancel your own approved leave — ask another approver to do it');
   }
 
+  // The owner's own shift: a half-day cancelled over a real check-in re-judges that
+  // check-in against a full day (revertAttendanceOnLeave).
+  const cancelSettings = await Setting.getSingleton();
+  const cancelOwner = await User.findById(request.user).select('employmentType schedule').lean();
+  const cancelSched = effectiveSchedule(cancelOwner || {}, cancelSettings);
+
   const result = await runTransaction(async (session) => {
     const fresh = await LeaveRequest.findById(id).session(session);
     // Re-check inside the transaction so two cancels racing each other can't each put
@@ -1201,7 +1222,7 @@ export async function cancelLeave(viewer, id) {
       await bal.save({ session });
     }
 
-    await revertAttendanceOnLeave(fresh.user, fresh.startYMD, fresh.endYMD, session, fresh.type);
+    await revertAttendanceOnLeave(fresh.user, fresh.startYMD, fresh.endYMD, session, fresh.type, cancelSched);
 
     fresh.status = 'CANCELLED';
     fresh.decidedBy = viewer._id;
@@ -1213,6 +1234,11 @@ export async function cancelLeave(viewer, id) {
   // Points reconciliation after a cancel (best-effort, post-commit). WFH was a worked day,
   // never leave — none of this applies to it.
   if (!isWFH(result.type)) {
+    // A half-day cancelled over a real check-in was re-judged as a full day inside the
+    // txn — the late penalty must say the same thing the record now does.
+    if (result.halfDay) {
+      try { await reconcileLateFromRecord(result.user, result.startYMD); } catch (e) { console.error('half-day late reconcile (cancel) failed', e?.message); }
+    }
     // A day that reverted from ON_LEAVE back to nothing is an absence again — put the
     // −absentDay back where it's due (undoes L1's clear-on-approve). reconcileAbsence
     // itself skips holidays / off-days / days with attendance / today+future, so walking

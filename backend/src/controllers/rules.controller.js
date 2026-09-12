@@ -10,6 +10,7 @@ import { currentLeaveYear } from '../lib/leaveYear.js';
 import { joinedYMD } from '../lib/joining.js';
 import { WFH_YEARLY_CAP } from '../services/leave.service.js';
 import { DEFAULT_RULE_SECTIONS } from '../lib/rulesSeed.js';
+import { lateMarksHM, LATE_LADDER_FLOOR_YMD } from '../lib/lateLadder.js';
 
 /** Only the owner tier (CEO & President) may change the rules; everyone reads them. */
 export function requireOwner(req, res, next) {
@@ -39,7 +40,7 @@ async function ensureSeeded() {
 // page then belongs to the CEO's edits, so later wording fixes can't ride the seed. This
 // applies them by EXACT-matching the old default text — a rule the CEO has since edited (its
 // text differs) is left untouched. Version-gated so it runs once per bump.
-const RULES_TEXT_VERSION = 6;
+const RULES_TEXT_VERSION = 7;
 const RULE_TEXT_UPDATES = [
   {
     from: 'Every assigned task has a due date. Finish the work and submit it on or before that date.',
@@ -63,6 +64,11 @@ const RULE_TEXT_UPDATES = [
     from: 'Every full hour of overtime earns +{overtimeHourPoints} point(s). Overtime is totalled once for the whole month: full hours pay in full, and a leftover of more than 30 minutes pays half.',
     to: 'Every full hour of overtime earns +{overtimeHourPoints} point(s). Overtime is totalled once for the whole month, not day by day.',
   },
+  // 2026-09-12: the late ladder — a second rung past the first full hour, capped there.
+  {
+    from: 'Checking in after your start time{graceNote} counts as LATE. Each late arrival cuts −{lateArrivalPoints} point(s).',
+    to: 'Checking in after your start time{graceNote} counts as LATE and cuts −{lateArrivalPoints} point(s). Check in after {lateSecondMark} — more than a full hour past your start — and another −{lateArrivalPoints} is cut, −{lateMaxPoints} in all; that is the most a late morning costs, however late it gets. Even one minute past a mark counts. Applies from 13 September 2026.',
+  },
   {
     from: 'Seniors can assign tasks to their team. Only ASSIGNED tasks earn or cut points — your personal to-dos never affect points.',
     to: 'Seniors can assign tasks to their team. Only ASSIGNED tasks earn or cut points — and only if the CEO & President can see the task: they assigned it themselves, or at least one of them is TAGGED on it. If a senior assigns work to a junior WITHOUT tagging a CEO/President, that task earns no points either. Personal to-dos never affect points.',
@@ -82,6 +88,11 @@ const RULE_ADDITIONS = [
   {
     section: 'To-Do & Tasks',
     text: 'Once you have assigned a task, its due date is FINAL — you cannot move it, earlier or later. Only the CEO & President can change a due date. Applies to work assigned from 1 August 2026.',
+  },
+  // 2026-09-12: the afternoon half of a half-day leave is due at the shift midpoint.
+  {
+    section: 'Attendance & Timing',
+    text: 'Working the AFTERNOON half of a half-day leave: you are due at {afternoonStart} sharp — there is no grace. Check in after it and −{lateArrivalPoints} point(s) are cut, and −{lateArrivalPoints} more at every hour mark after that ({afternoonMarks}) until you have checked in — right up to your end time. Working the MORNING half of a half-day is never counted late. Applies from 13 September 2026.',
   },
 ];
 
@@ -159,10 +170,22 @@ async function ruleTokens(user) {
   const bal = await LeaveBalance.findOne({ user: user._id, year }).select('totalQuota').lean();
   const myQuota = bal ? bal.totalQuota : quotaForJoiner(joinedYMD(user), year, s.annualLeaveQuota);
 
+  // The late ladder in the viewer's own shift terms (lateLadder.js is the one place the
+  // marks come from, so the page and the scorer cannot disagree): the second morning mark
+  // and its ceiling, and the afternoon-half marks for a first-half leave.
+  const lateEach = pts('lateArrival');
+  const morningMarks = lateMarksHM(LATE_LADDER_FLOOR_YMD, null, sched);
+  const afternoonMarks = lateMarksHM(LATE_LADDER_FLOOR_YMD, { halfDayLeave: true, halfDayPart: 'FIRST' }, sched);
+  const listHM = (arr) => arr.map(fmt12).join(', ');
+
   return {
     workStart: fmt12(sched.workStart),
     workEnd: fmt12(sched.workEnd),
     graceMinutes: grace,
+    lateSecondMark: fmt12(morningMarks[1] || morningMarks[0] || sched.workStart),
+    lateMaxPoints: lateEach * morningMarks.length,
+    afternoonStart: fmt12(afternoonMarks[0] || sched.workEnd),
+    afternoonMarks: afternoonMarks.length > 1 ? listHM(afternoonMarks.slice(1)) : 'none before your end time',
     overtimeAfterMinutes: otBuffer,
     overtimeAfterNote,
     // Reads as part of a sentence — empty when there is no grace, so "after your start

@@ -34,7 +34,8 @@ export const DEFAULT_RULE_SECTIONS = [
     rules: [
       { text: 'Your office hours: {workStart} to {workEnd}. This shows YOUR OWN shift — if your timing differs from the office default, your timing is what counts.' },
       { text: 'Check in when you arrive and check out when you leave, every working day, from the Attendance page.' },
-      { text: 'Checking in after your start time{graceNote} counts as LATE. Each late arrival cuts −{lateArrivalPoints} point(s).' },
+      { text: 'Checking in after your start time{graceNote} counts as LATE and cuts −{lateArrivalPoints} point(s). Check in after {lateSecondMark} — more than a full hour past your start — and another −{lateArrivalPoints} is cut, −{lateMaxPoints} in all; that is the most a late morning costs, however late it gets. Even one minute past a mark counts. Applies from 13 September 2026.' },
+      { text: 'Working the AFTERNOON half of a half-day leave: you are due at {afternoonStart} sharp — there is no grace. Check in after it and −{lateArrivalPoints} point(s) are cut, and −{lateArrivalPoints} more at every hour mark after that ({afternoonMarks}) until you have checked in — right up to your end time. Working the MORNING half of a half-day is never counted late. Applies from 13 September 2026.' },
       { text: 'Being on time 6 working days in a row earns +{streakPoints} points — and then the count starts again towards the next 6. A late arrival or an unexplained absence resets the count to 0, and the very next day starts a fresh one. Sundays, holidays, approved leave and WFH neither break the run nor count towards the 6.' },
       { text: 'Perfect attendance for the WHOLE month (no absents, no lates) earns +{perfectMonthPoints} bonus points when the month ends.' },
       { text: 'A working day with no attendance and no approved leave counts as ABSENT and cuts −{absentPoints} point(s). If you cannot come, apply for leave — never just skip.' },

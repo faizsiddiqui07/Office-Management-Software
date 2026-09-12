@@ -131,15 +131,28 @@ export function useAttendanceToday() {
       : 0;
   const inCooldown = cooldownLeftMs > 0;
 
-  // Would checking in right now be late? → the caller asks for an optional reason.
+  // Would checking in right now be late — and what would it cost? The server sends the
+  // late ladder for THIS person TODAY (lateMarks): past k of those instants the day is k
+  // rungs late, each rung costing lateArrivalPoints. It is empty on a day they cannot be
+  // late at all. The same list scores the real check-in, so the warning here is exactly
+  // what the ledger will say. (A payload without lateMarks — an older API — falls back
+  // to the one-rung start-plus-grace rule.)
+  const lateMarks = Array.isArray(data?.lateMarks) ? data.lateMarks.map((m) => new Date(m).getTime()) : null;
   const lateThreshold = data?.workStartAt
     ? new Date(data.workStartAt).getTime() + (data.settings?.graceMinutes || 0) * 60000
     : null;
+  const lateRungs = lateMarks
+    ? lateMarks.filter((m) => now > m).length
+    : lateThreshold != null && now > lateThreshold ? 1 : 0;
+  // The next mark still ahead — "one more is cut after 11:00 AM". Null once past them all.
+  const nextLateMarkAt = lateMarks ? (lateMarks.find((m) => now <= m) ?? null) : null;
+  const lateArrivalPoints = data?.lateArrivalPoints || 0;
+  const latePenaltyNow = lateRungs * lateArrivalPoints;
   // Working from home today: the day is already recorded, so there is nothing to clock
   // and no lateness to explain. Every caller hides its check-in control on this.
   const isWFH = data?.isWFH ?? record?.status === 'WFH';
   const wfhOfficeWide = !!data?.wfhOfficeWide;
-  const wouldBeLate = !isWFH && !checkedIn && lateThreshold != null && now > lateThreshold;
+  const wouldBeLate = !isWFH && !checkedIn && lateRungs > 0;
 
   return {
     data,
@@ -156,6 +169,11 @@ export function useAttendanceToday() {
     cooldownLeftMs,
     inCooldown,
     wouldBeLate,
+    lateRungs,
+    latePenaltyNow,
+    lateArrivalPoints,
+    nextLateMarkAt,
+    afternoonHalf: !!data?.afternoonHalf,
     checkInMut,
     checkOutMut,
   };
