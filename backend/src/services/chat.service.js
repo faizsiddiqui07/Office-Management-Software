@@ -242,6 +242,10 @@ export async function listMessages(user, conversationId, { before, after, limit 
       peerDeliveredUpToSeq: peerMember?.deliveredUpToSeq || 0,
       peerReadUpToSeq: peerMember?.readUpToSeq || 0,
       myUnread: me?.unread || 0,
+      // Maine khud kahan tak padha tha — isi par "X naye message" wali line lagti hai.
+      // `myUnread` se kaam nahi chalta: chat kholte hi wo 0 ho jaata hai, aur tab line
+      // ka koi thikana hi nahi bachta.
+      myReadUpToSeq: me?.readUpToSeq || 0,
       muted: !!(me?.mutedUntil && me.mutedUntil > new Date()),
     },
     hasMore,

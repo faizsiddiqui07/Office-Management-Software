@@ -106,6 +106,27 @@ async function main() {
   const back = await chat.markRead(brij, c1.id, 0);
   check('watermark peeche nahi jaata', back.readUpToSeq === 1, `readUpToSeq=${back.readUpToSeq}`);
 
+  console.log('');
+  console.log('PART 5b — "X naye message" wali line ka nishaan');
+  // Line kahan lagegi, ye server ke do numbers se tay hota hai: kitne unread hain, aur
+  // maine kahan tak padha tha. Dono ek saath sahi hone chahiye.
+  const freshConv = await chat.openDirect(asha, chhaya._id);
+  await chat.sendMessage(chhaya, freshConv.id, { text: 'pehla' });
+  await chat.sendMessage(chhaya, freshConv.id, { text: 'doosra' });
+  let fresh = await chat.listMessages(asha, freshConv.id);
+  check('kholte waqt unread ki ginti milti hai', fresh.conversation.myUnread === 2, `${fresh.conversation.myUnread}`);
+  check('aur "kahan tak padha tha" ka nishaan bhi', fresh.conversation.myReadUpToSeq === 0, `${fresh.conversation.myReadUpToSeq}`);
+  await chat.markRead(asha, freshConv.id);
+  await chat.sendMessage(chhaya, freshConv.id, { text: 'teesra' });
+  fresh = await chat.listMessages(asha, freshConv.id);
+  check('padhne ke baad nishaan aage sarak jaata hai', fresh.conversation.myReadUpToSeq === 2, `${fresh.conversation.myReadUpToSeq}`);
+  check('aur nayi ginti sirf naye message ki hai', fresh.conversation.myUnread === 1, `${fresh.conversation.myUnread}`);
+  const below = fresh.messages.filter((m) => m.seq > fresh.conversation.myReadUpToSeq);
+  check('line ke neeche theek wahi message aayenge', below.length === 1 && below[0].text === 'teesra');
+  await chat.markRead(asha, freshConv.id);
+  fresh = await chat.listMessages(asha, freshConv.id);
+  check('sab padh lene par koi line nahi (unread 0)', fresh.conversation.myUnread === 0);
+
   console.log('\nPART 6 — reply, delete-for-me, mute');
   const r1 = await chat.sendMessage(brij, c1.id, { text: 'Mil gayi, dhanyavaad', replyToSeq: 1 });
   check('reply me quote juda hai', r1.replyTo?.seq === 1 && r1.replyTo.text.includes('Namaste Brij'));

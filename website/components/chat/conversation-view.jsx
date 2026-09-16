@@ -1,7 +1,8 @@
 'use client';
 
 import * as React from 'react';
-import { ArrowLeft, Bell, BellOff, Check, CheckCheck, Clock, CornerUpLeft, Paperclip, Send, Trash2, X, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Bell, BellOff, Check, CheckCheck, Clock, Copy, CornerUpLeft, Paperclip, Send, Trash2, X, ChevronDown } from 'lucide-react';
+import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
@@ -25,7 +26,7 @@ function Ticks({ msg, peerDelivered, peerRead }) {
 const clock = (iso) =>
   new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false });
 
-function Bubble({ msg, peerDelivered, peerRead, onReply, onDelete, onOpenImage }) {
+function Bubble({ msg, peerDelivered, peerRead, onReply, onCopy, onDelete, onOpenImage }) {
   return (
     <div className={cn('group flex w-full gap-1.5', msg.mine ? 'justify-end' : 'justify-start')}>
       {/* Actions — hover par, bubble ke bahar, taaki text kabhi na dhanke */}
@@ -43,6 +44,16 @@ function Bubble({ msg, peerDelivered, peerRead, onReply, onDelete, onOpenImage }
         >
           <CornerUpLeft className="size-3.5" />
         </button>
+        {msg.text ? (
+          <button
+            type="button"
+            onClick={() => onCopy(msg)}
+            title="Copy karein"
+            className="rounded-full p-1.5 text-muted-foreground hover:bg-foreground/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+          >
+            <Copy className="size-3.5" />
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={() => onDelete(msg)}
@@ -132,6 +143,24 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
   const topRef = React.useRef(null);
   const inputRef = React.useRef(null);
 
+  /**
+   * "X naye message" wali line kahan lagegi — chat kholte waqt ka nishaan, JAMA HUA.
+   *
+   * Ye freeze karna hi is feature ka poora kaam hai. Chat khulte hi sab padha hua maan
+   * liya jaata hai (unread 0, watermark aage), to agar line har render par taaza data se
+   * banti to wo turant gayab ho jaati — ya naye message aane par upar-neeche kudti.
+   * Isliye pehli baar jo mila, wahi pakad kar rakh lete hain; chat badalne par hi naya.
+   */
+  const anchorRef = React.useRef({ id: null, seq: 0, count: 0 });
+  if (conversation && anchorRef.current.id !== conversationId) {
+    anchorRef.current = {
+      id: conversationId,
+      seq: conversation.myUnread > 0 ? conversation.myReadUpToSeq || 0 : 0,
+      count: conversation.myUnread || 0,
+    };
+  }
+  const unreadAnchor = anchorRef.current.id === conversationId ? anchorRef.current : { seq: 0, count: 0 };
+
   const who = conversation?.peer ?? peer;
   const peerDelivered = conversation?.peerDeliveredUpToSeq ?? 0;
   const peerRead = conversation?.peerReadUpToSeq ?? 0;
@@ -186,6 +215,16 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
     setReplyTo(null);
     setAtBottom(true);
     inputRef.current?.focus();
+  };
+
+  const copyText = async (msg) => {
+    try {
+      await navigator.clipboard.writeText(msg.text || '');
+      toast.success('Copy ho gaya');
+    } catch {
+      // http par ya purane browser me clipboard nahi milta — jhooth mat bolo
+      toast.error('Copy nahi ho paaya — text select karke copy karein');
+    }
   };
 
   const pickFile = async (e) => {
@@ -271,8 +310,20 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
           {messages.map((m, i) => {
             const prev = messages[i - 1];
             const newDay = !prev || new Date(prev.createdAt).toDateString() !== new Date(m.createdAt).toDateString();
+            // Pehla wo message jo kholte waqt unread tha — usi ke upar line lagti hai.
+            const firstUnread =
+              unreadAnchor.count > 0 && m.seq > unreadAnchor.seq && (!prev || prev.seq <= unreadAnchor.seq);
             return (
               <React.Fragment key={m.id}>
+                {firstUnread ? (
+                  <div className="my-2 flex items-center gap-2">
+                    <span className="h-px flex-1 bg-primary/30" />
+                    <span className="shrink-0 rounded-full bg-primary/12 px-2.5 py-0.5 text-[11px] font-medium text-primary">
+                      {unreadAnchor.count} naye message
+                    </span>
+                    <span className="h-px flex-1 bg-primary/30" />
+                  </div>
+                ) : null}
                 {newDay ? (
                   <div className="my-2 flex justify-center">
                     <span className="rounded-full bg-foreground/[0.07] px-3 py-1 text-[11px] text-muted-foreground">
@@ -285,6 +336,7 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
                   peerDelivered={peerDelivered}
                   peerRead={peerRead}
                   onReply={setReplyTo}
+                  onCopy={copyText}
                   onDelete={(x) => !x.pending && del.mutate(x.id)}
                   onOpenImage={setViewing}
                 />
