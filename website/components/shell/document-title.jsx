@@ -17,6 +17,7 @@ const TITLES = {
   '/dues': 'Dues',
   '/announcements': 'Announcements',
   '/calendar': 'Calendar',
+  '/chat': 'Chat',
   '/rewards': 'Rewards',
   '/team': 'Team',
   '/expenses': 'Expenses',

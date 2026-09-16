@@ -15,6 +15,7 @@ import {
   Settings,
   ShieldCheck,
   UserPlus,
+  MessagesSquare,
   UserRound,
   Users,
   Wallet,
@@ -88,6 +89,9 @@ const ALIAS = { viewUserData: 'viewEveryone' };
 export const NAV_ITEMS = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { label: 'To-Do', href: '/todo', icon: ListTodo },
+  // Chat har page ke floating button se bhi khulta hai; sidebar ka link laptop par
+  // asli workspace hai aur notification ka landing bhi (/chat?c=…).
+  { label: 'Chat', href: '/chat', icon: MessagesSquare },
   // For people who hold an approval DUTY. Approving work you handed out isn't one —
   // anybody can delegate a task, and that approval already lives on the To-Do page
   // next to the work itself. Without this gate the inbox appeared for nine people

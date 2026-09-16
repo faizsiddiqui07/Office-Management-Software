@@ -78,9 +78,15 @@ export async function listConversations(user) {
     .filter((c) => c.lastMessageAt) // an opened-but-never-used thread isn't a chat yet
     .map((c) => {
       const me = c.members.find((m) => String(m.user) === String(user._id));
+      const peerMember = c.members.find((m) => String(m.user) !== String(user._id));
       const peer = peerOf(c, user._id);
       return {
         id: String(c._id),
+        // Chat list par bhi asli tick dikhana hai. Iske bina list har apne message par
+        // double-tick dikhati thi — chahe saamne wale ne khola bhi na ho, jo jhooth hai.
+        lastMessageSeq: c.lastSeq,
+        peerDeliveredUpToSeq: peerMember?.deliveredUpToSeq || 0,
+        peerReadUpToSeq: peerMember?.readUpToSeq || 0,
         peer: peer
           ? { id: String(peer._id), name: peer.name, avatarUrl: peer.avatarUrl || '', designation: peer.designation || '' }
           : null,

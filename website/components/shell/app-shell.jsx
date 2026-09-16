@@ -10,6 +10,7 @@ import { ForcePasswordChange } from '@/components/auth/force-password-change';
 import { LoadingState } from '@/components/glass/skeletons';
 import { AnnouncementPopup } from '@/components/announcements/announcement-popup';
 import { BirthdayPopup } from '@/components/calendar/birthday-popup';
+import { ChatFab } from '@/components/chat/chat-fab';
 import { EodDigestPopup } from '@/components/tasks/eod-digest-popup';
 import { PwaRegister } from '@/components/pwa/pwa-register';
 import { DocumentTitle } from './document-title';
@@ -61,6 +62,9 @@ export function AppShell({ children }) {
           {children}
         </main>
       </div>
+      {/* Chat ka floating button — shell me, kisi page ke andar NAHI: page template ka
+          framer-motion wrapper `position: fixed` ko todta hai (dekho chat-fab.jsx). */}
+      <ChatFab />
       <BirthdayPopup />
       {/* Owners only, after the office cut-off, once a day — see the component. */}
       <EodDigestPopup />
