@@ -26,6 +26,7 @@ import { visitorsRouter } from './visitors.routes.js';
 import { rulesRouter } from './rules.routes.js';
 import { tasksRouter } from './tasks.routes.js';
 import { bonusRouter } from './bonus.routes.js';
+import { chatRouter } from './chat.routes.js';
 
 /**
  * Root API router, mounted at /api in index.js.
@@ -86,6 +87,7 @@ apiRouter.use('/visitors', visitorsRouter);
 apiRouter.use('/rules', rulesRouter);
 apiRouter.use('/tasks', tasksRouter);
 apiRouter.use('/bonus', bonusRouter);
+apiRouter.use('/chat', chatRouter);
 
 // ── Feature routers (added in later phases) ───────────────
 // apiRouter.use('/leaves', leavesRouter);
