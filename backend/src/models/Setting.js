@@ -24,6 +24,15 @@ const settingSchema = new mongoose.Schema(
     // mishap where a slow phone makes someone tap again — the button has already
     // flipped to "Check out" — and they instantly check themselves out. 0 = off.
     checkOutCooldownMinutes: { type: Number, default: 30 },
+    /**
+     * Chat kitne din rakhni hai. **0 = hamesha** (owner ka faisla), aur yahi default hai.
+     *
+     * Ye switch abhi BAND rakha gaya hai par bana isliye hai ki team badhne par bas ek
+     * number badalna pade. 15 logon par 512 MB bharne me ~9 saal lagenge; 100 logon par
+     * wahi 2-3 mahine me bhar jaata hai — us din ye switch hi bachaata hai (warna
+     * database ka paid plan lena padta).
+     */
+    chatRetentionDays: { type: Number, default: 0 },
     // Day-of-week numbers that are weekends (0 = Sunday … 6 = Saturday).
     weekendDays: { type: [Number], default: [0] },
     annualLeaveQuota: { type: Number, default: 18 },

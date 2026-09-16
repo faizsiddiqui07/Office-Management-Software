@@ -25,7 +25,9 @@ export function ChatFab() {
   const [open, setOpen] = React.useState(false);
   const unread = useChatUnread();
 
-  const onChatPage = pathname?.startsWith('/chat');
+  // Theek `/chat` aur uske andar ke raaste — `/chat-records` (owner ki alag screen)
+  // par button dikhna chahiye, wo chat karne ki jagah nahi hai.
+  const onChatPage = pathname === '/chat' || pathname?.startsWith('/chat/');
 
   // Escape se band, aur khula ho to background scroll na ho (phone par panel ke peeche
   // page khiskta rehna sabse zyada khalta hai).

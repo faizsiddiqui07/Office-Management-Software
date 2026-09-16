@@ -115,10 +115,16 @@ export const NAV_ITEMS = [
   // The office rule book — everyone reads it; CEO & President edit it on the page itself.
   { label: 'Rules', href: '/rules', icon: BookOpen },
   { label: 'Settings', href: '/settings', icon: Settings, permission: 'manageSettings' },
+  // Sirf CEO & President. Kisi permission se nahi juda — ye jaan-bujh kar hai: ye ek
+  // role ka haq hai, koi aisa switch nahi jo kisi aur ko de diya jaye.
+  { label: 'Chat records', href: '/chat-records', icon: ShieldCheck, ownerOnly: true },
 ];
 
 export function navItemsFor(user) {
   return NAV_ITEMS.filter((item) => {
+    // `ownerOnly` sirf CEO & President ke liye — permission se nahi juda, kyunki kisi ki
+    // chat padhna ek role ka haq hai, ek dete-lete rehne wala switch nahi.
+    if (item.ownerOnly) return !!user?.isOwner;
     // `anyOf` for the pages that belong to more than one duty — a nav item shouldn't
     // need a single permission to exist when two different ones both grant it.
     if (item.anyOf) return item.anyOf.some((p) => can(user, p));

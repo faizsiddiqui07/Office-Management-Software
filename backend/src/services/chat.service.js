@@ -506,3 +506,25 @@ export async function mediaLink(user, messageId, { thumb = false } = {}) {
   });
   return { url, expiresIn: 300 };
 }
+
+
+/**
+ * Purani chat hatao — sirf tab jab owner ne retention chaalu kiya ho.
+ *
+ * Default 0 hai (hamesha rakho), isliye ye rozana chal kar bhi kuch nahi karta. Jab
+ * kabhi chaalu ho, ye message hataata hai aur jin chats ka aakhri message hi hat gaya
+ * unka nishaan bhi theek kar deta hai.
+ *
+ * File ke bytes S3 par hain — unki apni lifecycle policy hai, isliye yahan se S3 ko
+ * nahi chheda jaata (ek jagah ki galti se dusri jagah ka data na ude).
+ */
+export async function pruneOldChats() {
+  const { Setting } = await import('../models/Setting.js');
+  const s = await Setting.getSingleton();
+  const days = Number(s.chatRetentionDays) || 0;
+  if (days <= 0) return { pruned: 0, off: true };
+
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const res = await Message.deleteMany({ createdAt: { $lt: cutoff } });
+  return { pruned: res.deletedCount || 0, cutoff };
+}

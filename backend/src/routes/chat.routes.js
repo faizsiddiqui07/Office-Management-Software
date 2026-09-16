@@ -17,6 +17,7 @@ import {
   mediaLink,
 } from '../services/chat.service.js';
 import { chatMediaConfigured, MAX_FILE_BYTES } from '../lib/chatMedia.js';
+import { listUserChats, readUserChat, searchMyMessages } from '../services/chatAdmin.service.js';
 
 /**
  * 1:1 chat.
@@ -107,3 +108,21 @@ chatRouter.post('/conversations/:id/mute', handle((req) =>
 
 // Hide one message from my own view; the other side keeps it.
 chatRouter.delete('/messages/:id', handle((req) => deleteForMe(req.user, req.params.id)));
+
+
+// Apni hi chat me dhoondho. Message encrypted pade hain, isliye MongoDB unme khoj nahi
+// sakta — server unhe khol kar chhaanta hai, ek seema tak (dekho chatAdmin.service).
+chatRouter.get('/search', handle((req) => searchMyMessages(req.user, req.query.q, { limit: req.query.limit })));
+
+/**
+ * ── Sirf CEO & President ──────────────────────────────────────────────────────
+ *
+ * Yahan se koi bhi kisi ki chat nikal sakta hai — poore chat ka ekmatra apwaad.
+ * Har call par teen cheezein hoti hain: role ki jaanch, Activity log me entry, aur us
+ * employee ko notification. Teeno chatAdmin.service me hain; wahan ka comment padhein
+ * pehle kuch bhi badalne se.
+ */
+chatRouter.get('/admin/users/:id/chats', handle((req) => listUserChats(req.user, req.params.id)));
+
+chatRouter.get('/admin/users/:id/chats/:conversationId', handle((req) =>
+  readUserChat(req.user, req.params.id, req.params.conversationId, { limit: req.query.limit })));

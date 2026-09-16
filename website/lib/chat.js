@@ -320,3 +320,44 @@ export function useSendFile(conversationId) {
 
   return { send, progress, cancel: () => abortRef.current?.() };
 }
+
+
+// ── Sirf CEO & President ──────────────────────────────────────────────────────
+
+/** Ek employee ki saari chats ki list (sirf list — koi message nahi). */
+export function useUserChats(userId) {
+  return useQuery({
+    queryKey: ['chat', 'admin', 'chats', userId],
+    queryFn: () => api.get(`/chat/admin/users/${userId}/chats`),
+    enabled: !!userId,
+    staleTime: 60_000,
+  });
+}
+
+/**
+ * Ek poori chat kholo.
+ *
+ * `enabled` jaan-bujh kar bahar se aata hai: ye call HAR BAAR Activity log me entry
+ * banati hai aur us employee ko notification bhejti hai. Isliye ye tabhi chalni chahiye
+ * jab admin ne sach me kholne ka faisla kiya ho — kisi hover ya prefetch par nahi.
+ */
+export function useUserChatMessages(userId, conversationId, enabled) {
+  return useQuery({
+    queryKey: ['chat', 'admin', 'messages', userId, conversationId],
+    queryFn: () => api.get(`/chat/admin/users/${userId}/chats/${conversationId}`),
+    enabled: !!userId && !!conversationId && !!enabled,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+}
+
+/** Apni hi chat me dhoondho. */
+export function useChatSearch(q) {
+  const needle = String(q || '').trim();
+  return useQuery({
+    queryKey: ['chat', 'search', needle],
+    queryFn: () => api.get(`/chat/search?q=${encodeURIComponent(needle)}`),
+    enabled: needle.length >= 2,
+    staleTime: 30_000,
+  });
+}
