@@ -4,6 +4,7 @@ import * as React from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { useChatRealtime } from '@/components/chat/chat-realtime';
+import { shrinkImage, makeImageThumb, makeVideoThumb, uploadToS3, isImage, isVideo } from '@/lib/chat-media';
 
 /**
  * Chat ke saare data hooks.
@@ -211,4 +212,106 @@ export function dayLabel(iso) {
   y.setDate(y.getDate() - 1);
   if (d.toDateString() === y.toDateString()) return 'Kal';
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: d.getFullYear() === now.getFullYear() ? undefined : 'numeric' });
+}
+
+
+// ── File / photo / PDF ────────────────────────────────────────────────────────
+
+/** Attachment ka button dikhana bhi hai ya nahi (S3 set hai ya nahi). */
+export function useMediaConfig() {
+  const { data } = useQuery({
+    queryKey: ['chat', 'media-config'],
+    queryFn: () => api.get('/chat/media-config'),
+    staleTime: 30 * 60_000,
+  });
+  return data ?? { enabled: false, maxBytes: 0 };
+}
+
+/**
+ * Kisi file ko kholne ka link.
+ *
+ * Link sirf 5 minute chalta hai (wo khud ek chaabi hai), isliye ise cache me lamba nahi
+ * rakha ja sakta — 4 minute baad taaza maang liya jaata hai.
+ */
+export function useMediaUrl(messageId, { thumb = false, enabled = true } = {}) {
+  const { data } = useQuery({
+    queryKey: ['chat', 'media', messageId, thumb ? 'thumb' : 'full'],
+    queryFn: () => api.get(`/chat/media/${messageId}${thumb ? '?thumb=1' : ''}`),
+    enabled: !!messageId && enabled,
+    staleTime: 4 * 60_000,
+    gcTime: 5 * 60_000,
+    retry: false,
+  });
+  return data?.url || '';
+}
+
+/**
+ * File bhejne ka poora safar: chhota karo → thumbnail banao → parwana lo → S3 par
+ * chadhao → message bhejo.
+ *
+ * Bytes kabhi hamare server se nahi guzarte. Progress isliye dikhta hai ki bina uske ek
+ * badi file "atki hui" lagti hai, aur cancel isliye ki bada video bhejte waqt uska na
+ * hona sabse zyada chidhata hai.
+ */
+export function useSendFile(conversationId) {
+  const qc = useQueryClient();
+  const [progress, setProgress] = React.useState(null); // null | 0..100
+  const abortRef = React.useRef(null);
+
+  const send = React.useCallback(
+    async (file, { caption = '' } = {}) => {
+      setProgress(0);
+      try {
+        const mime = file.type || 'application/octet-stream';
+        let blob = file;
+        let width = 0;
+        let height = 0;
+        let durationSec = 0;
+        let thumbBlob = null;
+
+        if (isImage(mime)) {
+          const shrunk = await shrinkImage(file);
+          blob = shrunk.blob; width = shrunk.width; height = shrunk.height;
+          thumbBlob = await makeImageThumb(file);
+        } else if (isVideo(mime)) {
+          const t = await makeVideoThumb(file);
+          thumbBlob = t.blob; width = t.width; height = t.height; durationSec = t.durationSec;
+        }
+
+        const signed = await api.post(`/chat/conversations/${conversationId}/uploads`, {
+          withThumb: !!thumbBlob,
+        });
+
+        const up = uploadToS3(signed.file, blob, { onProgress: setProgress });
+        abortRef.current = up.abort;
+        await up.promise;
+
+        // Thumbnail ka fail hona poore bhejne ko nahi rokta — jhalak na ho to icon chalega.
+        if (thumbBlob && signed.thumb) {
+          await uploadToS3(signed.thumb, thumbBlob).promise.catch(() => {});
+        }
+
+        await api.post(`/chat/conversations/${conversationId}/messages`, {
+          text: caption,
+          upload: {
+            uploadToken: signed.uploadToken,
+            name: file.name,
+            mime,
+            width,
+            height,
+            durationSec,
+          },
+        });
+
+        qc.invalidateQueries({ queryKey: msgKey(conversationId) });
+        qc.invalidateQueries({ queryKey: LIST_KEY });
+      } finally {
+        abortRef.current = null;
+        setProgress(null);
+      }
+    },
+    [conversationId, qc],
+  );
+
+  return { send, progress, cancel: () => abortRef.current?.() };
 }

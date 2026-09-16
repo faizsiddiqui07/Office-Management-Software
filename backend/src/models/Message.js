@@ -29,6 +29,28 @@ const messageSchema = new mongoose.Schema(
     kind: { type: String, enum: ['TEXT', 'FILE'], default: 'TEXT' },
     body: { type: Buffer, default: null }, // encrypted; null for a file-only message
     /**
+     * Ek attachment (photo / video / PDF / document).
+     *
+     * Bytes S3 par hain, yahan sirf unka pata. `key` me kuch bhi pehchan wala nahi hota
+     * (dekho lib/chatMedia.js), aur asli filename YAHAN encrypted rakha jaata hai —
+     * "Salary-Rahul.pdf" jaisa naam apne aap me hi kaafi bata deta hai.
+     *
+     * `size` client ke kehne par nahi, S3 se HeadObject karke bharı jaati hai: warna
+     * quota jhooth bol kar paar kiya ja sakta tha, aur bina upload kiye bhi message ban
+     * jaata (key likh do, file bhejo hi mat).
+     */
+    file: {
+      key: { type: String, default: '' },
+      thumbKey: { type: String, default: '' },
+      name: { type: Buffer, default: null }, // encrypted filename
+      mime: { type: String, default: '' },
+      size: { type: Number, default: 0 },
+      width: { type: Number, default: 0 },
+      height: { type: Number, default: 0 },
+      durationSec: { type: Number, default: 0 },
+      _id: false,
+    },
+    /**
      * A quoted reply. The quoted text is stored again (encrypted) rather than looked up
      * by seq, so the bubble renders from one document — and so editing or deleting the
      * original doesn't rewrite history inside a reply that already quoted it.

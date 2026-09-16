@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { ArrowLeft, Check, CheckCheck, Clock, CornerUpLeft, Send, Trash2, X, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Check, CheckCheck, Clock, CornerUpLeft, Paperclip, Send, Trash2, X, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
@@ -9,6 +9,9 @@ import {
   useMessages, useSendMessage, useMarkRead, useDeleteMessage, chatInitials, dayLabel,
 } from '@/lib/chat';
 import { useChatRealtime } from './chat-realtime';
+import { useMediaConfig, useSendFile } from '@/lib/chat';
+import { FileBubble, ImageViewer } from './file-bubble';
+import { prettyBytes } from '@/lib/chat-media';
 
 /** Sent / delivered / read — sirf apne bheje hue message par. */
 function Ticks({ msg, peerDelivered, peerRead }) {
@@ -22,7 +25,7 @@ function Ticks({ msg, peerDelivered, peerRead }) {
 const clock = (iso) =>
   new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false });
 
-function Bubble({ msg, peerDelivered, peerRead, onReply, onDelete }) {
+function Bubble({ msg, peerDelivered, peerRead, onReply, onDelete, onOpenImage }) {
   return (
     <div className={cn('group flex w-full gap-1.5', msg.mine ? 'justify-end' : 'justify-start')}>
       {/* Actions — hover par, bubble ke bahar, taaki text kabhi na dhanke */}
@@ -53,6 +56,7 @@ function Bubble({ msg, peerDelivered, peerRead, onReply, onDelete }) {
       <div
         className={cn(
           'max-w-[78%] rounded-2xl px-3 py-2 text-sm shadow-sm',
+          msg.file && 'px-1.5 pt-1.5',
           msg.mine
             ? 'rounded-br-sm bg-primary text-primary-foreground'
             : 'rounded-bl-sm bg-foreground/[0.06] text-foreground',
@@ -70,7 +74,18 @@ function Bubble({ msg, peerDelivered, peerRead, onReply, onDelete }) {
           </div>
         ) : null}
 
-        <p className="whitespace-pre-wrap break-words">{msg.text}</p>
+        {msg.file ? (
+          <div className={cn(msg.text && 'mb-1.5')}>
+            <FileBubble
+              messageId={msg.id}
+              file={msg.file}
+              mine={msg.mine}
+              onOpenImage={() => onOpenImage(msg)}
+            />
+          </div>
+        ) : null}
+
+        {msg.text ? <p className="whitespace-pre-wrap break-words">{msg.text}</p> : null}
 
         <span
           className={cn(
@@ -102,9 +117,14 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
     return () => setActive(null);
   }, [conversationId, setActive]);
 
+  const media = useMediaConfig();
+  const upload = useSendFile(conversationId);
   const [text, setText] = React.useState('');
   const [replyTo, setReplyTo] = React.useState(null);
   const [atBottom, setAtBottom] = React.useState(true);
+  const [viewing, setViewing] = React.useState(null); // poori screen wali photo
+  const [fileError, setFileError] = React.useState('');
+  const fileRef = React.useRef(null);
 
   const scrollRef = React.useRef(null);
   const bottomRef = React.useRef(null);
@@ -165,6 +185,24 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
     setReplyTo(null);
     setAtBottom(true);
     inputRef.current?.focus();
+  };
+
+  const pickFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // wahi file dobara chunne par bhi onChange chale
+    if (!file) return;
+    setFileError('');
+    if (media.maxBytes && file.size > media.maxBytes) {
+      setFileError(`File bahut badi hai — ${prettyBytes(media.maxBytes)} tak hi bhej sakte hain`);
+      return;
+    }
+    setAtBottom(true);
+    try {
+      await upload.send(file, { caption: text.trim() });
+      setText('');
+    } catch (err) {
+      if (!err?.cancelled) setFileError(err?.message || 'File nahi bheji ja saki');
+    }
   };
 
   return (
@@ -232,6 +270,7 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
                   peerRead={peerRead}
                   onReply={setReplyTo}
                   onDelete={(x) => !x.pending && del.mutate(x.id)}
+                  onOpenImage={setViewing}
                 />
               </React.Fragment>
             );
@@ -271,7 +310,53 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
           </div>
         ) : null}
 
+        {upload.progress !== null ? (
+          <div className="mb-2 flex items-center gap-3 rounded-lg bg-foreground/[0.05] px-3 py-2">
+            <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-foreground/10">
+              <div
+                className="h-full rounded-full bg-primary transition-[width] duration-200"
+                style={{ width: `${upload.progress}%` }}
+              />
+            </div>
+            <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{upload.progress}%</span>
+            <button
+              type="button"
+              onClick={upload.cancel}
+              className="shrink-0 rounded-full p-1 text-muted-foreground hover:bg-foreground/10"
+              aria-label="Upload rok dein"
+            >
+              <X className="size-3.5" />
+            </button>
+          </div>
+        ) : null}
+
+        {fileError ? (
+          <p className="mb-2 rounded-lg bg-destructive/10 px-3 py-1.5 text-xs text-destructive">{fileError}</p>
+        ) : null}
+
         <div className="flex items-end gap-2">
+          {media.enabled ? (
+            <>
+              <input
+                id="chat-file"
+                ref={fileRef}
+                type="file"
+                className="sr-only"
+                onChange={pickFile}
+                accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip"
+              />
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                disabled={upload.progress !== null}
+                className="grid size-9 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-foreground/10 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                aria-label="File bhejein"
+                title="Photo, video, PDF ya document bhejein"
+              >
+                <Paperclip className="size-4" />
+              </button>
+            </>
+          ) : null}
           <textarea
             id="chat-composer"
             ref={inputRef}
@@ -290,6 +375,14 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
           </Button>
         </div>
       </form>
+
+      {viewing ? (
+        <ImageViewer
+          messageId={viewing.id}
+          name={viewing.file?.name || 'Photo'}
+          onClose={() => setViewing(null)}
+        />
+      ) : null}
     </div>
   );
 }

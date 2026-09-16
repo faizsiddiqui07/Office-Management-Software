@@ -13,7 +13,10 @@ import {
   markRead,
   deleteForMe,
   setMuted,
+  requestUpload,
+  mediaLink,
 } from '../services/chat.service.js';
+import { chatMediaConfigured, MAX_FILE_BYTES } from '../lib/chatMedia.js';
 
 /**
  * 1:1 chat.
@@ -74,7 +77,26 @@ chatRouter.get('/conversations/:id/messages', handle((req) =>
   })));
 
 chatRouter.post('/conversations/:id/messages', handle((req) =>
-  sendMessage(req.user, req.params.id, { text: req.body?.text, replyToSeq: req.body?.replyToSeq })));
+  sendMessage(req.user, req.params.id, {
+    text: req.body?.text,
+    replyToSeq: req.body?.replyToSeq,
+    upload: req.body?.upload,
+  })));
+
+// File bhejne se pehle: browser ko S3 ka seedha upload parwana. Bytes Lambda se guzarte
+// hi nahi — API Gateway ka ~6MB cap aur 30s timeout isi tarah bypass hote hain.
+chatRouter.post('/conversations/:id/uploads', handle((req) =>
+  requestUpload(req.user, req.params.id, { withThumb: !!req.body?.withThumb })));
+
+// File kholne ka 5-minute wala link (?thumb=1 se chhoti jhalak).
+chatRouter.get('/media/:id', handle((req) =>
+  mediaLink(req.user, req.params.id, { thumb: req.query.thumb === '1' })));
+
+// Frontend ko pata hona chahiye ki attachment ka button dikhana bhi hai ya nahi.
+chatRouter.get('/media-config', handle(() => ({
+  enabled: chatMediaConfigured(),
+  maxBytes: MAX_FILE_BYTES,
+})));
 
 // I've read this chat up to here (blank = all of it).
 chatRouter.post('/conversations/:id/read', handle((req) =>

@@ -4,6 +4,10 @@ import { Message } from '../models/Message.js';
 import { User } from '../models/User.js';
 import { sealBytes, openBytes } from '../lib/secretBox.js';
 import { publishToUsers, hasConversationOpen } from './chatRealtime.service.js';
+import {
+  chatMediaConfigured, signUpload, readUploadToken, headObject, signDownload,
+  MAX_FILE_BYTES, DAILY_QUOTA_BYTES,
+} from '../lib/chatMedia.js';
 
 /**
  * 1:1 chat.
@@ -41,6 +45,43 @@ function readBody(buf) {
 function sealPreview(text) {
   const t = String(text || '').replace(/\s+/g, ' ').trim();
   return sealBytes(t.length > PREVIEW_CHARS ? `${t.slice(0, PREVIEW_CHARS - 1)}…` : t);
+}
+
+/**
+ * Notification aur chat-list ke liye file ka chhota parichay — naam KABHI nahi.
+ *
+ * "Ek PDF" theek hai; "Salary-Rahul.pdf" nahi, kyunki wo mez par pade phone par kisi
+ * rahgeer ko bhi dikh jaata.
+ */
+function fileLabel(f) {
+  if (!f) return '';
+  const m = String(f.mime || '');
+  if (m.startsWith('image/')) return 'Ek photo bheji';
+  if (m.startsWith('video/')) return 'Ek video bheji';
+  if (m.startsWith('audio/')) return 'Ek audio bheja';
+  if (m === 'application/pdf') return 'Ek PDF bheji';
+  return 'Ek file bheji';
+}
+
+/**
+ * Attachment ka wo hissa jo client ko dikhaya ja sakta hai.
+ *
+ * S3 ka `key` client ko KABHI nahi jaata — download hamesha /chat/media/:id se hota hai,
+ * jahan pehle "ye chat teri hai?" jaancha jaata hai aur tab 5-minute ka signed link
+ * banta hai. Key bahar jaate hi wo ek sthayi pata ban jaati, aur uske aage koi jaanch
+ * nahi rehti.
+ */
+function fileOut(m) {
+  if (m.kind !== 'FILE' || !m.file?.key) return null;
+  return {
+    name: readBody(m.file.name) || 'file',
+    mime: m.file.mime,
+    size: m.file.size,
+    width: m.file.width || 0,
+    height: m.file.height || 0,
+    durationSec: m.file.durationSec || 0,
+    hasThumb: !!m.file.thumbKey,
+  };
 }
 
 /** The person on the other side of a DIRECT conversation. */
@@ -210,6 +251,7 @@ export async function listMessages(user, conversationId, { before, after, limit 
       sender: String(m.sender),
       kind: m.kind,
       text: readBody(m.body),
+      file: fileOut(m),
       replyTo: m.replyTo?.seq
         ? { seq: m.replyTo.seq, mine: String(m.replyTo.sender) === String(user._id), text: readBody(m.replyTo.preview) }
         : null,
@@ -227,12 +269,39 @@ export async function listMessages(user, conversationId, { before, after, limit 
  * them together is what keeps a busy chat inside the free database tier's operations
  * budget — and it means the seq can never be handed to two senders.
  */
-export async function sendMessage(user, conversationId, { text, replyToSeq } = {}) {
+export async function sendMessage(user, conversationId, { text, replyToSeq, upload } = {}) {
   const clean = String(text ?? '').trim();
-  if (!clean) throw httpError(400, 'EMPTY', 'Type something to send');
+  if (!upload && !clean) throw httpError(400, 'EMPTY', 'Type something to send');
   if (clean.length > 4000) throw httpError(400, 'TOO_LONG', 'That message is too long (4000 characters max)');
 
   const conv = await mine(conversationId, user._id);
+
+  // ── File wala message ─────────────────────────────────────────────────────
+  // Client jo bhi bhejta hai uspar bharosa nahi: key ki parchi (HMAC) dobara jaanchi
+  // jaati hai — warna koi bhi kisi doosri chat ki file ka key likh kar use apne message
+  // me chipka deta. Aur size S3 se poochha jaata hai, client se nahi.
+  let fileDoc = null;
+  if (upload) {
+    if (!chatMediaConfigured()) throw httpError(503, 'MEDIA_OFF', 'File bhejna abhi chaalu nahi hai');
+    const signed = readUploadToken(upload.uploadToken, { conversationId: conv._id, userId: user._id });
+    if (!signed) throw httpError(400, 'BAD_UPLOAD', 'Ye upload ab valid nahi hai — dobara koshish karein');
+
+    const head = await headObject(signed.key);
+    if (!head) throw httpError(400, 'NO_FILE', 'File upload poori nahi hui');
+    if (head.size > MAX_FILE_BYTES) throw httpError(400, 'TOO_BIG', 'File bahut badi hai');
+
+    const mime = String(upload.mime || 'application/octet-stream').slice(0, 100);
+    fileDoc = {
+      key: signed.key,
+      thumbKey: signed.thumbKey || '',
+      name: sealBytes(String(upload.name || 'file').slice(0, 200)),
+      mime,
+      size: head.size,
+      width: Number(upload.width) || 0,
+      height: Number(upload.height) || 0,
+      durationSec: Number(upload.durationSec) || 0,
+    };
+  }
 
   let replyTo;
   if (replyToSeq != null) {
@@ -248,8 +317,8 @@ export async function sendMessage(user, conversationId, { text, replyToSeq } = {
       $set: {
         lastMessageAt: new Date(),
         lastMessageBy: user._id,
-        lastMessagePreview: sealPreview(clean),
-        lastMessageKind: 'TEXT',
+        lastMessagePreview: sealPreview(clean || fileLabel(fileDoc)),
+        lastMessageKind: fileDoc ? 'FILE' : 'TEXT',
       },
     },
     { new: true, arrayFilters: [{ 'other.user': { $ne: user._id } }] },
@@ -261,8 +330,9 @@ export async function sendMessage(user, conversationId, { text, replyToSeq } = {
     seq: stamped.lastSeq,
     sender: user._id,
     participants: conv.participants.map((p) => p._id ?? p),
-    kind: 'TEXT',
-    body: sealBytes(clean),
+    kind: fileDoc ? 'FILE' : 'TEXT',
+    body: clean ? sealBytes(clean) : null,
+    ...(fileDoc ? { file: fileDoc } : {}),
     ...(replyTo ? { replyTo } : {}),
   });
 
@@ -275,8 +345,9 @@ export async function sendMessage(user, conversationId, { text, replyToSeq } = {
     seq: doc.seq,
     sender: String(user._id),
     senderName: user.name,
-    kind: 'TEXT',
+    kind: doc.kind,
     text: clean,
+    file: fileOut(doc),
     replyTo: replyTo
       ? { seq: replyTo.seq, sender: String(replyTo.sender), text: readBody(replyTo.preview) }
       : null,
@@ -306,7 +377,7 @@ export async function sendMessage(user, conversationId, { text, replyToSeq } = {
     import('../lib/push.js')
       .then(({ sendPush }) => sendPush(peerId, {
         title: user.name,
-        body: 'Aapko ek message bheja',
+        body: fileDoc ? fileLabel(fileDoc) : 'Aapko ek message bheja',
         link: `/chat?c=${conv._id}`,
         type: `chat:${conv._id}`, // per-chat tag: ek chat doosri ki notification na mitaye
       }))
@@ -318,8 +389,9 @@ export async function sendMessage(user, conversationId, { text, replyToSeq } = {
     seq: doc.seq,
     mine: true,
     sender: String(user._id),
-    kind: 'TEXT',
+    kind: doc.kind,
     text: clean,
+    file: fileOut(doc),
     replyTo: replyTo ? { seq: replyTo.seq, mine: String(replyTo.sender) === String(user._id), text: readBody(replyTo.preview) } : null,
     createdAt: doc.createdAt,
     conversationId: String(conv._id),
@@ -387,4 +459,56 @@ export async function setMuted(user, conversationId, until) {
     { arrayFilters: [{ 'me.user': user._id }] },
   );
   return { muted: !!until };
+}
+
+
+/**
+ * Ek file bhejne ki taiyari: browser ko S3 ka seedha "presigned POST" milta hai.
+ *
+ * Yahan teen cheezein jaanchi jaati hain — chat meri hai (mine), aaj ka quota bacha hai,
+ * aur media chaalu hai. Bytes iske baad server ko chhoote hi nahi.
+ */
+export async function requestUpload(user, conversationId, { withThumb = false } = {}) {
+  if (!chatMediaConfigured()) throw httpError(503, 'MEDIA_OFF', 'File bhejna abhi chaalu nahi hai');
+  const conv = await mine(conversationId, user._id);
+
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const used = await Message.aggregate([
+    { $match: { sender: user._id, kind: 'FILE', createdAt: { $gte: since } } },
+    { $group: { _id: null, bytes: { $sum: '$file.size' } } },
+  ]);
+  const spent = used[0]?.bytes || 0;
+  if (spent >= DAILY_QUOTA_BYTES) {
+    throw httpError(429, 'QUOTA', 'Aaj ke liye file bhejne ki seema poori ho gayi — kal phir');
+  }
+
+  const signed = await signUpload({ conversationId: conv._id, userId: user._id, withThumb });
+  return { ...signed, remainingBytes: Math.max(0, DAILY_QUOTA_BYTES - spent) };
+}
+
+/**
+ * File kholne/download karne ka link.
+ *
+ * Har baar taaza signed link banta hai, aur banne se PEHLE wahi membership filter chalta
+ * hai jo baaki har jagah chalta hai. Signed link khud ek chaabi hai (jiske paas hai wo
+ * khol lega), isliye 5 minute me mar jaata hai — aur kabhi public URL nahi diya jaata.
+ */
+export async function mediaLink(user, messageId, { thumb = false } = {}) {
+  if (!isId(messageId)) throw httpError(404, 'NOT_FOUND', 'File not found');
+  const m = await Message.findOne({ _id: messageId, participants: user._id, kind: 'FILE' })
+    .select('file deletedFor')
+    .lean();
+  if (!m || !m.file?.key) throw httpError(404, 'NOT_FOUND', 'File not found');
+  if ((m.deletedFor || []).some((u) => String(u) === String(user._id))) {
+    throw httpError(404, 'NOT_FOUND', 'File not found');
+  }
+
+  const key = thumb ? m.file.thumbKey : m.file.key;
+  if (!key) throw httpError(404, 'NOT_FOUND', 'File not found');
+
+  const url = await signDownload(key, {
+    filename: thumb ? 'thumb' : readBody(m.file.name) || 'file',
+    mime: thumb ? 'image/jpeg' : m.file.mime,
+  });
+  return { url, expiresIn: 300 };
 }
