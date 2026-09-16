@@ -28,6 +28,8 @@ const SCRATCH = [
   'rewards_verify_scratch',
   'test_cron_scratch',
   'test_whosout_scratch',
+  // Chat ka kaam karte waqt bane (test scripts khud saaf karti hain; ye UI wala nahi karta)
+  'office_ui_demo',
 ];
 // Inko kabhi nahi — chahe list me galti se aa bhi jaayen.
 const NEVER = new Set(['office_management', 'office_demo', 'admin', 'local', 'config']);
