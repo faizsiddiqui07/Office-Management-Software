@@ -3,6 +3,7 @@ import { Conversation, pairKeyOf } from '../models/Conversation.js';
 import { Message } from '../models/Message.js';
 import { User } from '../models/User.js';
 import { sealBytes, openBytes } from '../lib/secretBox.js';
+import { publishToUsers, hasConversationOpen } from './chatRealtime.service.js';
 
 /**
  * 1:1 chat.
@@ -160,7 +161,7 @@ async function mine(conversationId, userId) {
  * have to get the page before it. Cursor, not skip: skip gets slower the further back you
  * scroll and can repeat or drop a message when a new one arrives mid-scroll.
  */
-export async function listMessages(user, conversationId, { before, limit } = {}) {
+export async function listMessages(user, conversationId, { before, after, limit } = {}) {
   const conv = await mine(conversationId, user._id);
   const me = memberOf(conv, user._id);
   const n = Math.min(Math.max(Number(limit) || PAGE, 1), 100);
@@ -172,10 +173,20 @@ export async function listMessages(user, conversationId, { before, limit } = {})
     seq: { $gt: me?.clearedUpToSeq || 0 },
   };
   if (before != null && Number.isFinite(Number(before))) q.seq.$lt = Number(before);
+  // `after` aage ki taraf chalta hai — yahi WebSocket toot-ne ke baad ki BHARPAI hai.
+  // API Gateway kisi connection ko 2 ghante se zyada aur 10 minute khaali rehne par
+  // nahi rakhta, aur ye dono limits badhai nahi ja sakti. Jab connection tootta hai,
+  // us beech ke message socket par kabhi nahi aayenge — client dobara judte hi
+  // `after=<mera aakhri seq>` maang kar unhe bhar leta hai. Iske bina message CHUPCHAP
+  // gayab hote: na error, na retry — chat app ka sabse bura bug.
+  if (after != null && Number.isFinite(Number(after))) q.seq.$gt = Math.max(Number(after), me?.clearedUpToSeq || 0);
 
-  const rows = await Message.find(q).sort({ seq: -1 }).limit(n + 1).lean();
+  const rows = await Message.find(q).sort({ seq: after != null ? 1 : -1 }).limit(n + 1).lean();
   const hasMore = rows.length > n;
-  const page = (hasMore ? rows.slice(0, n) : rows).reverse(); // oldest → newest for rendering
+  const kept = hasMore ? rows.slice(0, n) : rows;
+  // Peeche wala page naya→purana aata hai, aage wala pehle se purana→naya. Render
+  // hamesha purana→naya hota hai, isliye sirf peeche wale ko ulta karo.
+  const page = after != null ? kept : [...kept].reverse();
 
   const peer = peerOf(conv, user._id);
   const peerMember = conv.members.find((m) => String(m.user) !== String(user._id));
@@ -255,22 +266,49 @@ export async function sendMessage(user, conversationId, { text, replyToSeq } = {
     ...(replyTo ? { replyTo } : {}),
   });
 
-  // Tell the other person — best-effort, and deliberately CONTENT-FREE.
-  //
-  // Two rules the owner set: the notification never carries the message text (a phone on
-  // a desk must not show it to whoever walks past), and chat does NOT write into the
-  // Notification collection — that bell belongs to approvals and leave requests, and a
-  // chatty afternoon would bury them. So: web push only, no bell row.
   const peerMember = conv.members.find((m) => String(m.user) !== String(user._id));
+  const peerId = peerOf(conv, user._id)?._id;
   const mutedNow = peerMember?.mutedUntil && peerMember.mutedUntil > new Date();
-  if (!mutedNow) {
-    const peerId = peerOf(conv, user._id)?._id;
+
+  const wire = {
+    id: String(doc._id),
+    seq: doc.seq,
+    sender: String(user._id),
+    senderName: user.name,
+    kind: 'TEXT',
+    text: clean,
+    replyTo: replyTo
+      ? { seq: replyTo.seq, sender: String(replyTo.sender), text: readBody(replyTo.preview) }
+      : null,
+    createdAt: doc.createdAt,
+  };
+
+  // Turant dono taraf pahunchao — saamne wale ko naya message, aur APNE baaki tabs ko bhi
+  // (ek tab se bheja hua message doosre khule tab me bhi turant dikhna chahiye).
+  await publishToUsers([peerId, user._id], {
+    type: 'chat:message',
+    conversationId: String(conv._id),
+    message: wire,
+  }).catch(() => {});
+
+  // Push — best-effort aur JAAN-BUJH KAR khaali.
+  //
+  // Do niyam owner ke: notification me message ka text kabhi nahi jaata (mez par pada
+  // phone kisi rahgeer ko na padha de), aur chat `Notification` collection me entry nahi
+  // banati — wo ghanti approvals/leaves ki hai, aur ek batuni dopahar use daba deti.
+  //
+  // Aur agar saamne wale ke kisi tab me YE chat abhi khuli hai to push bhejna hi nahi —
+  // wo message screen par dekh chuka hai. Ye faisla SERVER par hota hai, service worker
+  // me nahi: service worker jo push leke notification na dikhaye, uspar Chrome origin ko
+  // penalise karta hai aur subscription tak radd kar sakta hai.
+  const watchingNow = await hasConversationOpen(peerId, conv._id).catch(() => false);
+  if (!mutedNow && !watchingNow) {
     import('../lib/push.js')
       .then(({ sendPush }) => sendPush(peerId, {
         title: user.name,
         body: 'Aapko ek message bheja',
         link: `/chat?c=${conv._id}`,
-        type: `chat:${conv._id}`, // per-chat tag: a new chat must not replace another's
+        type: `chat:${conv._id}`, // per-chat tag: ek chat doosri ki notification na mitaye
       }))
       .catch(() => {});
   }
@@ -316,6 +354,16 @@ export async function markRead(user, conversationId, upToSeq) {
     { new: true, arrayFilters: [{ 'me.user': user._id }] },
   );
   const m = memberOf(updated, user._id);
+
+  // Saamne wale ke tick turant neele ho jaayein — uske liye ye event hi sab kuch hai.
+  const peerId = peerOf(conv, user._id)?._id;
+  await publishToUsers([peerId], {
+    type: 'chat:read',
+    conversationId: String(conv._id),
+    by: String(user._id),
+    upToSeq: upto,
+  }).catch(() => {});
+
   return { readUpToSeq: m?.readUpToSeq || 0, unread: 0 };
 }
 

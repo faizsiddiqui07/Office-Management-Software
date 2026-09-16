@@ -11,6 +11,7 @@ import { LoadingState } from '@/components/glass/skeletons';
 import { AnnouncementPopup } from '@/components/announcements/announcement-popup';
 import { BirthdayPopup } from '@/components/calendar/birthday-popup';
 import { ChatFab } from '@/components/chat/chat-fab';
+import { ChatRealtimeProvider } from '@/components/chat/chat-realtime';
 import { EodDigestPopup } from '@/components/tasks/eod-digest-popup';
 import { PwaRegister } from '@/components/pwa/pwa-register';
 import { DocumentTitle } from './document-title';
@@ -50,6 +51,9 @@ export function AppShell({ children }) {
   }
 
   return (
+    // Chat ka live connection poore shell par — chat band ho tab bhi chalta rehta hai,
+    // warna floating button ka unread badge zinda hi na rahe.
+    <ChatRealtimeProvider>
     <div className="relative min-h-dvh">
       <DocumentTitle />
       <UpdatePrompt />
@@ -71,5 +75,6 @@ export function AppShell({ children }) {
       <AnnouncementPopup />
       <PwaRegister />
     </div>
+    </ChatRealtimeProvider>
   );
 }

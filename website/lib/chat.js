@@ -3,15 +3,19 @@
 import * as React from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { useChatRealtime } from '@/components/chat/chat-realtime';
 
 /**
  * Chat ke saare data hooks.
  *
- * PHASE 1 me naya message polling se aata hai — jo chat KHULI hai sirf wahi, aur sirf
- * jab tab saamne ho (React Query ka default refetchIntervalInBackground=false yahi
- * karta hai). Ye jaan-bujh kar arzi hai: Phase 2 me WebSocket aayega aur ye dono
- * interval hat jaayenge. Tab tak poll sirf khuli chat par hai, har chat par nahi —
- * warna free database tier ka 100-operations/second wala budget chat akela kha jaata.
+ * Naya message WebSocket se aata hai (lib/chat-socket.js). Polling ab sirf FALLBACK hai:
+ * jab tak socket live hai, har interval BAND rehta hai; socket toote ya WebSocket abhi
+ * set hi na hua ho, to polling apne aap sambhal leti hai. `useChatRealtime()` ka
+ * `connected` hi ye switch hai.
+ *
+ * Ye farak sirf saholat ka nahi, paise ka hai: 3-second polling 100 users par ~INR 3,233
+ * mahina padti hai aur free database tier ki 100-operations/second wali deewar ~81 users
+ * par hi tod deti hai; WebSocket wahi kaam ~INR 89 me karta hai.
  */
 
 const LIST_KEY = ['chat', 'conversations'];
@@ -20,11 +24,12 @@ const msgKey = (id) => ['chat', 'messages', id];
 
 /** Floating button ka badge. */
 export function useChatUnread() {
+  const { connected } = useChatRealtime();
   const { data } = useQuery({
     queryKey: UNREAD_KEY,
     queryFn: () => api.get('/chat/unread'),
     staleTime: 20_000,
-    refetchInterval: 60_000,
+    refetchInterval: connected ? false : 60_000,
     refetchOnWindowFocus: true,
   });
   return data?.unread ?? 0;
@@ -32,12 +37,13 @@ export function useChatUnread() {
 
 /** Meri chat list, naye message wali sabse upar. */
 export function useConversations(enabled = true) {
+  const { connected } = useChatRealtime();
   return useQuery({
     queryKey: LIST_KEY,
     queryFn: () => api.get('/chat/conversations'),
     enabled,
     staleTime: 10_000,
-    refetchInterval: enabled ? 30_000 : false,
+    refetchInterval: enabled && !connected ? 30_000 : false,
     refetchOnWindowFocus: true,
   });
 }
@@ -59,6 +65,7 @@ export function useContacts(enabled = true) {
  * karte waqt pages ko ULTA jodna padta hai (aakhri page sabse purana hai).
  */
 export function useMessages(conversationId, { live = true } = {}) {
+  const { connected } = useChatRealtime();
   const q = useInfiniteQuery({
     queryKey: msgKey(conversationId),
     enabled: !!conversationId,
@@ -67,7 +74,8 @@ export function useMessages(conversationId, { live = true } = {}) {
     initialPageParam: null,
     getNextPageParam: (last) => (last?.hasMore ? last.messages[0]?.seq ?? null : null),
     staleTime: 2_000,
-    refetchInterval: live ? 5_000 : false, // Phase 2 me WebSocket isko hata dega
+    // Socket live hai to poll ki zaroorat hi nahi — naya message khud aa jaata hai.
+    refetchInterval: live && !connected ? 5_000 : false,
     refetchOnWindowFocus: true,
   });
 

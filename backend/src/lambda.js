@@ -1,6 +1,7 @@
 import serverless from 'serverless-http';
 import { app, initApp } from './app.js';
 import { runScheduledJobs } from './services/scheduler.service.js';
+import { initChatSocket, isSocketEvent, handleSocketEvent } from './lib/chatSocket.js';
 
 /**
  * AWS Lambda entry point (handler = "src/lambda.handler" in the Lambda config).
@@ -25,6 +26,12 @@ export const handler = async (event, context) => {
   // Keep the Mongo connection (and role cache) alive between warm invocations.
   context.callbackWaitsForEmptyEventLoop = false;
   await initApp(); // idempotent + cached
+  await initChatSocket(); // no-op jab tak CHAT_WS_ENDPOINT set na ho
+
+  // Chat ka WebSocket ($connect / $disconnect / $default). Ye Express ke through NAHI
+  // jaata: WebSocket event me na HTTP method hota hai na path, to serverless-http ke paas
+  // route karne ko kuch hai hi nahi.
+  if (isSocketEvent(event)) return handleSocketEvent(event);
 
   // DEMO ONLY: nightly EventBridge fires {"job":"demo-reset"} to wipe + reseed the demo
   // DB so each day starts fresh. Double-guarded — it runs ONLY when DEMO_MODE is set AND

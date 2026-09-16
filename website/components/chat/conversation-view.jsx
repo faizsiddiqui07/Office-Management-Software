@@ -8,6 +8,7 @@ import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import {
   useMessages, useSendMessage, useMarkRead, useDeleteMessage, chatInitials, dayLabel,
 } from '@/lib/chat';
+import { useChatRealtime } from './chat-realtime';
 
 /** Sent / delivered / read — sirf apne bheje hue message par. */
 function Ticks({ msg, peerDelivered, peerRead }) {
@@ -91,6 +92,15 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
   const send = useSendMessage(conversationId);
   const markRead = useMarkRead();
   const del = useDeleteMessage(conversationId);
+  const { setActive } = useChatRealtime();
+
+  // Server ko batao ki ye chat is waqt saamne khuli hai — tabhi wo iska push bhejna
+  // chhod deta hai. Band karte waqt saaf karna zaroori hai, warna chat band hone ke baad
+  // bhi notification rukte rahenge.
+  React.useEffect(() => {
+    setActive(conversationId || null);
+    return () => setActive(null);
+  }, [conversationId, setActive]);
 
   const [text, setText] = React.useState('');
   const [replyTo, setReplyTo] = React.useState(null);

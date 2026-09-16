@@ -1,6 +1,8 @@
 import express from 'express';
 import { requireAuth } from '../middleware/auth.js';
 import { ok } from '../lib/apiResponse.js';
+import { issueTicket, TICKET_TTL_SECONDS } from '../lib/chatTicket.js';
+import { realtimeEnabled } from '../services/chatRealtime.service.js';
 import {
   listContacts,
   listConversations,
@@ -45,9 +47,31 @@ chatRouter.get('/unread', handle(async (req) => ({ unread: await unreadTotal(req
 // Start (or reopen) the chat with one colleague.
 chatRouter.post('/conversations', handle((req) => openDirect(req.user, req.body?.peerId)));
 
-// One page of history, newest first. ?before=<seq> walks backwards.
+/**
+ * WebSocket kholne ki parchi.
+ *
+ * Browser ka WebSocket custom header nahi bhej sakta, isliye pehchaan URL me jaati hai —
+ * aur URL access logs me likha jaata hai. Login token yahan bhejna khatarnaak hai (is app
+ * me wo lifetime hai), isliye ek 60-second ki alag parchi milti hai. Client har baar
+ * judne se pehle nayi le leta hai.
+ */
+chatRouter.get('/ws-ticket', handle((req) => ({
+  ticket: issueTicket(req.user._id),
+  expiresIn: TICKET_TTL_SECONDS,
+  // Client ko pata hona chahiye ki live connection sambhav hai ya nahi — nahi hai to wo
+  // polling par hi chalta rehta hai, koi error nahi.
+  url: process.env.CHAT_WS_URL || '',
+  enabled: !!process.env.CHAT_WS_URL && realtimeEnabled(),
+})));
+
+// One page of history. ?before=<seq> walks backwards (purana), ?after=<seq> aage —
+// `after` hi reconnect ke baad chhoote hue message bharta hai.
 chatRouter.get('/conversations/:id/messages', handle((req) =>
-  listMessages(req.user, req.params.id, { before: req.query.before, limit: req.query.limit })));
+  listMessages(req.user, req.params.id, {
+    before: req.query.before,
+    after: req.query.after,
+    limit: req.query.limit,
+  })));
 
 chatRouter.post('/conversations/:id/messages', handle((req) =>
   sendMessage(req.user, req.params.id, { text: req.body?.text, replyToSeq: req.body?.replyToSeq })));
