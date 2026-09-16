@@ -105,6 +105,23 @@ karte hi nahi**.
 > usne pehle hi maanga tha, use padh bhi le. Isliye ye lagane se aaj jo chal raha hai wo
 > waise ka waisa chalta rahega.
 
+### `AllowedOrigins` me kya likhna hai — dhyan se
+
+**Wahi likhna hai jo browser ke address bar me dikhta hai**, poora `https://` ke saath aur
+bina aakhri slash ke.
+
+- Agar site **Amplify ke default domain** se bhi khulti hai
+  (`https://main.dxxxxxxxx.amplifyapp.com`), to **wo bhi** is list me jodiye — warna wahan
+  se upload chupchap fail hoga.
+- **Demo site (`demo.architectusbureau.com`) yahan mat jodiye.** Uska backend alag hai aur
+  bucket bhi alag. Kabhi demo par bhi file bhejna chaalu karein to **us** bucket ki CORS me
+  daaliyega, is wale me nahi.
+
+**Galat/adhoora origin hone par kya dikhega:** user ko sirf **"Upload nahi ho paaya"**
+milega. Server ke kisi log me kuch nahi aayega — kyunki bytes server ko chhoote hi nahi.
+Pakka karne ka tareeka: **F12 → Console**, wahan CORS wali laal line dikhegi jisme wahi
+origin likha hoga jo aapko list me daalna tha.
+
 > **Branding par iska koi asar nahi.** CORS sirf **deta** hai, chheenta nahi — aur logo
 > `<img src>` se load hota hai, jispar CORS lagta hi nahi. Site ka asli pata
 > `team.architectusbureau.com` hai (jaancha gaya — `app.` exist nahi karta, aur
@@ -183,10 +200,26 @@ Teeno action kyun chahiye, seedha code se:
 | --- | --- |
 | `s3:PutObject` | `signUpload()` ki presigned POST — browser isi se file chadhata hai |
 | `s3:GetObject` | `headObject()` (asli size naapna) aur `signDownload()` (5-min link) |
-| `s3:DeleteObject` | `deleteObjects()` — message hatne par bytes bhi hatte hain |
+| `s3:DeleteObject` | `deleteObjects()` — **aaj kahin se bulaya nahi jaata** (neeche dekhein) |
 
 `/chat/*` sab kuch cover karta hai: asli file `chat/2026/09/<random>.b` hai aur thumbnail
 `chat/2026/09/<random>.t` — dono isi ke andar.
+
+> **`s3:DeleteObject` ke baare me saaf baat.** `deleteObjects()` function code me **hai**,
+> par abhi use **kahin se bulaya nahi jaata** — jaancha gaya, `src/` me ek bhi call nahi.
+> Matlab: jo file ek baar chadh gayi, wo S3 par **hamesha** rahegi.
+>
+> Aaj isse koi nuksan nahi, kyunki message delete hote hi nahi — "delete" sirf apni nazar
+> se hataata hai (`deleteForMe`), doosre ko dikhta rehta hai. Aur retention **"hamesha
+> rakho"** par hai, to purani chat bhi nahi hataai jaati.
+>
+> **Par jis din retention chaalu karenge**, us din `pruneOldChats()` database se message ki
+> row hata dega aur **S3 ki file peeche chhoot jayegi** — aur uska key sirf usi row me tha,
+> to wo bytes phir kabhi koi dhoondh bhi nahi payega. Chup-chaap storage ka bill.
+>
+> Permission ab bhi de dijiye (tab kaam aayegi, aur akele se kuch hota nahi). Ye kaam
+> `audits/00-open-bugs.md` me darj hai — retention chaalu karne se **pehle** theek karna
+> hai.
 
 ## 4) Env var lagao
 
@@ -212,8 +245,21 @@ hai. (Yahi ek bucket rakhne ka chhota sa bonus hai.)
 4. Ek photo bhejo — progress bar chalega, phir jhalak dikhegi
 5. Ek PDF bhejo — naam, size aur download ka button dikhna chahiye
 
+> **Paperclip turant na dikhe to ghabrahat nahi** — pehle se khule hue tab me purana jawab
+> yaad pada rehta hai. **Page refresh kijiye** (ya tab band karke naya kholiye), phir
+> dikhega.
+
+> **Photo bhejte waqt jhalak na bane par bhi file chali jayegi** — thumbnail alag se
+> chadhta hai aur uska fail hona upload ko nahi rokta. Yaani "jhalak nahi bani" ka matlab
+> CORS ki galti ho, ye zaroori nahi. CORS galat hone par to poora upload hi fail hota hai
+> ("Upload nahi ho paaya").
+
 Kuch galat ho to sirf `CHAT_MEDIA_BUCKET` hata do — attachment ka button gayab ho jayega
-aur baaki chat waise ka waisa chalta rahega. Branding par koi asar nahi.
+aur **text wali chat** waise ki waisi chalti rahegi. Branding par koi asar nahi.
+
+> **Dhyan rahe:** pehle se bheji hui file ki jhalak aur download tab tak kaam nahi karenge
+> — bubble to dikhega, par uspar **hamesha ghoomta hua spinner** rahega, koi error message
+> nahi aayega. Env var wapas lagate hi wo apne aap theek ho jayenge.
 
 ---
 

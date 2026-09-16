@@ -185,3 +185,19 @@ ki copy abhi overdue hui hi nahi.
 1. **Purane audits (01–07) ki PARKED list abhi UNVERIFIED hai.** Unme se kaafi galat ya bahut chhote nikal sakte hain — audit 08 me verifier ne finders ke numbers **6× tak** kam kiye the. Final report banane se pehle unhe verify karna hoga, warna list se zyada dara hua lagega.
 2. **Ek hi bug kai page par milta hai.** "Aaj ka adhoora din absent gin liya" **teen** jagah mil chuka hai (Attendance, Reports R2, ab dossier T6). Fix ek shared helper me hona chahiye, warna chauthi jagah milegi. Aise cross-page patterns [00-index.md](00-index.md) me numbered list me hain.
 3. **Tarteeb ka sujhaav:** pehle wo bug jinse **paisa/points** galat hote hain, phir wo jo **do jagah do jawab** dete hain, phir performance, phir polish.
+
+---
+
+## Chat — S3 ki file kabhi delete nahi hoti
+
+**Kahan:** `backend/src/lib/chatMedia.js:197` (`deleteObjects`) · `backend/src/services/chat.service.js` (`pruneOldChats`)
+
+`deleteObjects()` likha hua hai par **`src/` me kahin se bulaya nahi jaata** (grep se pushti). Yaani jo file ek baar S3 par chadh gayi, wo hamesha wahin rahegi.
+
+**Aaj nuksan nahi:** message sach me delete hote hi nahi — "delete" sirf `deleteForMe` hai (apni nazar se hatana), aur retention default **"hamesha rakho"** (`chatRetentionDays: 0`) par hai, to `pruneOldChats` kuch hataata hi nahi.
+
+**Jis din retention chaalu hoga, tab:** `pruneOldChats()` `Message.deleteMany(...)` karega — DB se row hat jayegi aur **S3 ki file peeche chhoot jayegi**. File ka key sirf usi row me tha, isliye wo bytes phir kabhi koi dhoondh bhi nahi payega. Chup-chaap badhta hua storage bill.
+
+**Isliye:** retention chaalu karne se **pehle** `pruneOldChats` me file/thumb ke key ikatthe karke `deleteObjects()` bulana hoga (row delete karne se pehle). IAM me `s3:DeleteObject` pehle se de diya gaya hai, to AWS ki taraf se kuch nahi karna.
+
+Dhyan: `DEPLOY-CHAT-MEDIA.md` me IAM wali table pehle jhoothi thi ("message hatne par bytes bhi hatte hain") — wo theek kar di gayi hai.
