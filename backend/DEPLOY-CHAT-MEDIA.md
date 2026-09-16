@@ -5,7 +5,10 @@ Iske bina chat **chalta rahega**, bas attachment ka button nahi dikhega (server 
 
 **Kharcha:** 15 users par ~₹8/mahina, 100 users par ~₹51/mahina (Mumbai).
 
-~8 minute ka kaam, sab console se. **Naya bucket nahi banana** — wahi purana istemal hoga.
+~6 minute ka kaam, sab console se. **Naya bucket nahi banana** — wahi purana istemal hoga.
+
+Chaar step zaroori hain (1, 3, 4, 5). **Step 2 aaj ke liye nahi hai** — wo chhoda ja sakta
+hai, wajah wahin likhi hai.
 
 ---
 
@@ -82,12 +85,62 @@ Bucket → **Permissions** → **Cross-origin resource sharing (CORS)** → **Ed
 Iske bina browser upload ko hi mana kar dega. (`localhost` wali line development ke liye
 hai — chahein to prod me hata dein.)
 
+**Ab tak wo box khaali kyun tha** — ye galti nahi thi. CORS sirf tab lagta hai jab
+**browser ka JavaScript** doosre domain se baat kare. Aaj tak hua hi nahi:
+
+| Kaam | Kaise hota hai | CORS? |
+| --- | --- | --- |
+| Logo dikhna | `<img src="…s3…/branding/logo.png">` | Nahi — `<img>` CORS poochta hi nahi |
+| Logo chadhana | Browser → **Lambda** → S3 (server-side `PutObject`) | Nahi — browser S3 ko chhoota hi nahi |
+| Chat ki file bhejna | `xhr.open('POST', url)` — browser **seedha** S3 ko | **Haan** ← pehli baar |
+
+**Isme asal zaroorat sirf `POST` ki hai.** `GET` aur `ExposeHeaders` aaj kahin istemal
+nahi hote — download `<img src>` / `<video src>` / `<a href>` se hota hai (teeno par CORS
+nahi lagta), aur upload sirf `xhr.status` padhta hai, koi header nahi. Wo isliye rakhe
+hain ki kal download ka tareeka badle to phir console na kholna pade — aur ye **kuch widen
+karte hi nahi**.
+
+> **CORS koi taala nahi hai.** Wo kisi ko file khol kar nahi deta — bucket private hi
+> rehta hai, signature ab bhi chahiye. CORS sirf browser ko ijazat deta hai ki jo jawab
+> usne pehle hi maanga tha, use padh bhi le. Isliye ye lagane se aaj jo chal raha hai wo
+> waise ka waisa chalta rahega.
+
 > **Branding par iska koi asar nahi.** CORS sirf **deta** hai, chheenta nahi — aur logo
 > `<img src>` se load hota hai, jispar CORS lagta hi nahi. Site ka asli pata
 > `team.architectusbureau.com` hai (jaancha gaya — `app.` exist nahi karta, aur
 > `architectusbureau.com` alag marketing site hai).
 
-## 2) Adhoore upload apne aap saaf hon
+## 2) Adhoore upload apne aap saaf hon — **AAJ ZAROORI NAHI, CHHOD SAKTE HAIN**
+
+**Pehle ye padh lijiye, warna waqt barbaad hoga.** Ye step is doc me ek galatfehmi se aaya
+tha. Aaj iska koi kaam nahi hai.
+
+S3 ka **"Multipart Upload"** badi file ko tukdon me chadhane ka API hai — tukde ek-ek
+karke jaate hain, aakhir me "jod do" kaha jaata hai. Beech me cancel/crash ho to chadhe
+hue tukde S3 par pade reh jaate hain: listing me **dikhte tak nahi**, par **bill me poora
+storage** lagta hai. Ye rule unhi ko 1 din me hataati hai.
+
+**Par hum multipart istemal karte hi nahi.** Poora code jaancha gaya — `CreateMultipartUpload`,
+`UploadPart`, `lib-storage`: kahin nahi. S3 par likhne ke sirf do raaste hain, aur dono
+single-shot hain:
+
+| Raasta | Kya karta hai |
+| --- | --- |
+| `createPresignedPost` (chat ki file) | Browser ek hi `POST` me poori file bhejta hai |
+| `PutObjectCommand` (logo) | Lambda ek hi request me bhejta hai |
+
+> **Naam ka dhokha:** `multipart/form-data` (browser ka form bhejne ka tareeka, jo hum
+> istemal karte hain) aur **S3 Multipart Upload** (badi file ke tukdon wala API, jo hum
+> nahi karte) — do bilkul alag cheezein hain. Ye doc pehle isi par phisla tha.
+
+Aaj upload beech me cancel ho ya net kat jaye to POST bas mar jaata hai — S3 adhoora
+object banata hi nahi, kuch peeche nahi chhoot-ta. **Safai ki zaroorat hi nahi.**
+
+**To karein ya na karein?** 30 second lagte hain, khatra shoonya hai, aur jis din
+**25 MB se badi file** ka kaam hoga us din chunking aayegi, multipart aayega — aur tab ye
+rule pehle se lagi hogi. Ye wo cheez hai jo baad me yaad nahi rehti aur chup-chaap bill
+khaati hai. Isliye laga dena theek hai, par **jaan kar ki ye aaj ke liye nahi, kal ke liye
+hai**. Chhodna bhi utna hi theek hai.
 
 Bucket → **Management** → **Create lifecycle rule**
 
@@ -96,9 +149,6 @@ Bucket → **Management** → **Create lifecycle rule**
 - Tick: **Delete expired object delete markers or incomplete multipart uploads** →
   **Delete incomplete multipart uploads** → **1 day**
 - **Create rule**
-
-Cancel ya crash hue upload S3 par adhoore tukde chhod jaate hain — wo console me dikhte
-tak nahi par bill me aate hain.
 
 > **Prefix `chat/` jaan-bujh kar hai.** Bucket saajha hai, isliye har rule seemit honi
 > chahiye — taaki koi kabhi ye na soche ki ye rule branding ko bhi chhoo sakti hai. (Ye
