@@ -8,10 +8,18 @@ import crypto from 'node:crypto';
  * choti si video bhi nahi ja sakti. Isliye server sirf ek "presigned POST" deta hai aur
  * browser bytes khud S3 ko bhejta hai. Bytes Lambda ko chhoote hi nahi.
  *
- * ALAG BUCKET, jaan-bujh kar: maujooda `architectus-bureau-office-assets` ke `branding/`
- * par public-read policy hai (logo sabko dikhna chahiye). Chat ki file wahan rakhna ek
- * galat policy-edit ki doori par leak hai. Naya bucket poori tarah private hai aur har
- * download 5 minute wale signed link se hi hota hai.
+ * BUCKET WAHI PURANA hai (`architectus-bureau-office-assets`), `chat/` prefix ke saath.
+ * Pehle yahan "alag bucket lo" likha tha — kyunki us bucket ke `branding/` par public-read
+ * policy hai (logo bina login ke dikhna chahiye). Jaanch par wo policy `/branding/*` tak
+ * hi seemit nikli, aur uske baad bucket par Block-public-access ke teen switch ON kar
+ * diye gaye — jisme "koi nayi/badli hui public policy nahi" bhi hai. Yaani `chat/` par ab
+ * do taale hain: policy usse chhooti hi nahi, aur policy widen ho hi nahi sakti.
+ *
+ * Isliye bucket ka naam yahan kabhi mat likhna — sirf CHAT_MEDIA_BUCKET padho. Kal ko
+ * alag bucket lena ho to sirf env var badlega, ye file nahi. Poora byora aur console ke
+ * steps: backend/DEPLOY-CHAT-MEDIA.md
+ *
+ * Download hamesha 5 minute wale signed link se hota hai — public URL kabhi nahi.
  *
  * Key me kuch NAHI bataya jaata — na kiski file hai, na kis chat ki, na filename, na
  * extension. Sirf tareekh aur random. Warna bucket ki listing se hi "kisne kisko kya

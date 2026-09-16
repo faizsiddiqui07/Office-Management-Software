@@ -5,27 +5,62 @@ Iske bina chat **chalta rahega**, bas attachment ka button nahi dikhega (server 
 
 **Kharcha:** 15 users par ~₹8/mahina, 100 users par ~₹51/mahina (Mumbai).
 
-~10 minute ka kaam, sab console se.
+~8 minute ka kaam, sab console se. **Naya bucket nahi banana** — wahi purana istemal hoga.
 
 ---
 
-## 1) Naya bucket banao
+## 0) Pehle ye samajh lijiye — bucket naya kyun nahi
 
-**S3** → **Create bucket**
+Shuru me is doc me likha tha "naya bucket banao, purana mat chhuo". Wo ab **galat** hai,
+aur kyun galat hai ye likh dena zaroori hai — warna 6 mahine baad koi phir se yahi sawaal
+uthayega.
 
-- Name: `architectus-bureau-chat-media`
-- Region: **Asia Pacific (Mumbai) ap-south-1** — Lambda ke saath hi, warna har file
-  do region ke beech ghoomegi (dheemi aur mehngi)
-- **Block all public access: ON (chaaron)** — ye sabse zaroori setting hai
-- **Bucket Versioning: Disable**
-- **Default encryption: SSE-S3** (Amazon S3 managed keys)
-- **Create bucket**
+Purane bucket (`architectus-bureau-office-assets`) ki policy **jaanchi gayi**, aur wo
+theek se seemit nikli:
 
-> **Purana bucket (`architectus-bureau-office-assets`) istemal MAT karna.** Uske
-> `branding/` par public-read policy hai (logo sabko dikhna chahiye). Chat ki file wahan
-> rakhna ek galat policy-edit ki doori par leak hai.
+```json
+{
+  "Sid": "PublicReadBranding",
+  "Effect": "Allow",
+  "Principal": "*",
+  "Action": "s3:GetObject",
+  "Resource": "arn:aws:s3:::architectus-bureau-office-assets/branding/*"
+}
+```
 
-## 2) CORS lagao
+`/branding/*` par khatam — `/*` par nahi. Bahar se jaanch kar ke bhi dekha gaya
+(bina login, bina signature):
+
+| Kya maanga | Jawab |
+| --- | --- |
+| `branding/logo-dark-….png` | **200**, asli 23 KB ki PNG — logo public hai (aur hona hi chahiye, login page bina login ke dikhta hai) |
+| `chat/probe.b` | **403** |
+| `probe.txt` (bucket ki jad me) | **403** |
+| poori listing (`/`) | **AccessDenied** — kaun si file hai, ye bhi nahi pata chalta |
+
+Uske baad bucket par **Block public access ke teen switch ON** kar diye gaye:
+
+- ☑ …through **new** ACLs
+- ☑ …through **any** ACLs
+- ☑ …through **new** public bucket or access point policies
+- ☐ …through **any** public bucket policies — **ye OFF hi rahega** (ON karte hi logo gayab)
+
+Teesre switch ka matlab: maujooda branding policy chalti rahegi, par koi use badal kar
+`/*` **nahi** kar sakta — S3 aisi koshish ko hi reject kar dega.
+
+Yaani ab chat ki file par **do taale** hain: policy bhi (`chat/` public hai hi nahi), aur
+BPA bhi (policy widen ho hi nahi sakti). Itni hi suraksha naye bucket se milti — bina naya
+bucket banaye mil gayi, aur ek kam cheez sambhalni padegi.
+
+> **Do cheezein jinhe haath nahi lagana:**
+> 1. Chautha BPA switch (*any* public bucket policies) — ON karte hi login page ka logo
+>    gayab.
+> 2. `PublicReadBranding` policy — ab wo teesre switch ki wajah se **jam** hai. Badalni ho
+>    to: switch OFF → policy badlo → switch wapas ON. Upar wali JSON hi uska backup hai.
+
+---
+
+## 1) CORS lagao
 
 Bucket → **Permissions** → **Cross-origin resource sharing (CORS)** → **Edit**:
 
@@ -47,12 +82,17 @@ Bucket → **Permissions** → **Cross-origin resource sharing (CORS)** → **Ed
 Iske bina browser upload ko hi mana kar dega. (`localhost` wali line development ke liye
 hai — chahein to prod me hata dein.)
 
-## 3) Adhoore upload apne aap saaf hon
+> **Branding par iska koi asar nahi.** CORS sirf **deta** hai, chheenta nahi — aur logo
+> `<img src>` se load hota hai, jispar CORS lagta hi nahi. Site ka asli pata
+> `team.architectusbureau.com` hai (jaancha gaya — `app.` exist nahi karta, aur
+> `architectusbureau.com` alag marketing site hai).
+
+## 2) Adhoore upload apne aap saaf hon
 
 Bucket → **Management** → **Create lifecycle rule**
 
-- Rule name: `abort-incomplete-uploads`
-- Scope: **whole bucket**
+- Rule name: `chat-abort-incomplete-uploads`
+- Scope: **Limit the scope with prefix** → prefix: `chat/`
 - Tick: **Delete expired object delete markers or incomplete multipart uploads** →
   **Delete incomplete multipart uploads** → **1 day**
 - **Create rule**
@@ -60,7 +100,11 @@ Bucket → **Management** → **Create lifecycle rule**
 Cancel ya crash hue upload S3 par adhoore tukde chhod jaate hain — wo console me dikhte
 tak nahi par bill me aate hain.
 
-## 4) Lambda ko ijazat do
+> **Prefix `chat/` jaan-bujh kar hai.** Bucket saajha hai, isliye har rule seemit honi
+> chahiye — taaki koi kabhi ye na soche ki ye rule branding ko bhi chhoo sakti hai. (Ye
+> rule waise bhi koi object delete nahi karti, sirf adhoore tukde.)
+
+## 3) Lambda ko ijazat do
 
 Lambda → `office-management-api` → **Configuration** → **Permissions** → role kholo →
 **Add permissions** → **Create inline policy** → **JSON**:
@@ -72,7 +116,7 @@ Lambda → `office-management-api` → **Configuration** → **Permissions** →
     {
       "Effect": "Allow",
       "Action": ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"],
-      "Resource": "arn:aws:s3:::architectus-bureau-chat-media/chat/*"
+      "Resource": "arn:aws:s3:::architectus-bureau-office-assets/chat/*"
     }
   ]
 }
@@ -80,25 +124,46 @@ Lambda → `office-management-api` → **Configuration** → **Permissions** →
 
 Policy name: `ChatMediaAccess` → **Create policy**.
 
-## 5) Env var lagao
+Branding wali maujooda permission **alag** hai — use chhedna nahi, ye nayi policy uske
+saath-saath lagegi.
+
+Teeno action kyun chahiye, seedha code se:
+
+| Action | Kahan lagta hai |
+| --- | --- |
+| `s3:PutObject` | `signUpload()` ki presigned POST — browser isi se file chadhata hai |
+| `s3:GetObject` | `headObject()` (asli size naapna) aur `signDownload()` (5-min link) |
+| `s3:DeleteObject` | `deleteObjects()` — message hatne par bytes bhi hatte hain |
+
+`/chat/*` sab kuch cover karta hai: asli file `chat/2026/09/<random>.b` hai aur thumbnail
+`chat/2026/09/<random>.t` — dono isi ke andar.
+
+## 4) Env var lagao
 
 Lambda → **Configuration** → **Environment variables** → **Edit**:
 
 | Key | Value |
 | --- | --- |
-| `CHAT_MEDIA_BUCKET` | `architectus-bureau-chat-media` |
+| `CHAT_MEDIA_BUCKET` | `architectus-bureau-office-assets` |
 
 > Zip me daalne se kaam nahi chalta — env var console me hi set hote hain.
+> (`JWT_EXPIRES_IN` ke waqt yahi galti ho chuki hai.)
 
-## 6) Nayi zip upload karo, phir jaanch lo
+Region alag se batane ki zaroorat nahi: code `ASSETS_REGION || AWS_REGION || ap-south-1`
+padhta hai, aur wahi bucket branding bhi istemal karta hai — to region apne aap mil jaata
+hai. (Yahi ek bucket rakhne ka chhota sa bonus hai.)
 
-1. `npm run package:lambda` → Lambda → **Code** → upload
-2. Chat kholo → composer me **📎 (paperclip)** ka button dikhna chahiye
-3. Ek photo bhejo — progress bar chalega, phir jhalak dikhegi
-4. Ek PDF bhejo — naam, size aur download ka button dikhna chahiye
+## 5) Nayi zip upload karo, phir jaanch lo
+
+1. `npm run package:lambda` → Lambda → **Code** → **Upload from** → `.zip` → **Save**
+2. **Sabse pehle login page kholo** — logo dikhna chahiye. Nahi dikhe to BPA ka chautha
+   switch galti se ON ho gaya hai.
+3. Chat kholo → composer me **📎 (paperclip)** ka button dikhna chahiye
+4. Ek photo bhejo — progress bar chalega, phir jhalak dikhegi
+5. Ek PDF bhejo — naam, size aur download ka button dikhna chahiye
 
 Kuch galat ho to sirf `CHAT_MEDIA_BUCKET` hata do — attachment ka button gayab ho jayega
-aur baaki chat waise ka waisa chalta rahega.
+aur baaki chat waise ka waisa chalta rahega. Branding par koi asar nahi.
 
 ---
 
@@ -107,10 +172,10 @@ aur baaki chat waise ka waisa chalta rahega.
 - **Bytes hamare server se guzarte hi nahi.** Browser seedha S3 par daalta hai (presigned
   POST). API Gateway ka ~6 MB cap aur 30-second timeout isi tarah bypass hote hain —
   warna ek chhoti video bhi na jaati.
-- **Bucket me kuch bhi padhne layak nahi hai.** Har file ka naam `chat/2026/09/<random>.b`
+- **`chat/` me kuch bhi padhne layak nahi hai.** Har file ka naam `chat/2026/09/<random>.b`
   hai — na kiski hai, na kis chat ki, na asli filename, na extension. Har object ka
   Content-Type `application/octet-stream`. Asli naam message ke document me **encrypted**
-  rakha hai. Yaani bucket ki listing se bhi "kisne kisko kya bheja" pata nahi chalta.
+  rakha hai. Yaani listing mil bhi jaye to "kisne kisko kya bheja" pata nahi chalta.
 - **Download hamesha 5-minute wale signed link se.** Public URL kabhi nahi, aur link
   banne se pehle har baar wahi jaanch chalti hai — "ye chat aapki hai?"
 
