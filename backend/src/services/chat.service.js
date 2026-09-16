@@ -3,7 +3,8 @@ import { Conversation, pairKeyOf } from '../models/Conversation.js';
 import { Message } from '../models/Message.js';
 import { User } from '../models/User.js';
 import { sealBytes, openBytes } from '../lib/secretBox.js';
-import { publishToUsers, hasConversationOpen } from './chatRealtime.service.js';
+import { publishToUsers } from './chatRealtime.service.js';
+import { notifyNewMessage, clearPushState } from './chatPush.service.js';
 import {
   chatMediaConfigured, signUpload, readUploadToken, headObject, signDownload,
   MAX_FILE_BYTES, DAILY_QUOTA_BYTES,
@@ -362,27 +363,16 @@ export async function sendMessage(user, conversationId, { text, replyToSeq, uplo
     message: wire,
   }).catch(() => {});
 
-  // Push — best-effort aur JAAN-BUJH KAR khaali.
-  //
-  // Do niyam owner ke: notification me message ka text kabhi nahi jaata (mez par pada
-  // phone kisi rahgeer ko na padha de), aur chat `Notification` collection me entry nahi
-  // banati — wo ghanti approvals/leaves ki hai, aur ek batuni dopahar use daba deti.
-  //
-  // Aur agar saamne wale ke kisi tab me YE chat abhi khuli hai to push bhejna hi nahi —
-  // wo message screen par dekh chuka hai. Ye faisla SERVER par hota hai, service worker
-  // me nahi: service worker jo push leke notification na dikhaye, uspar Chrome origin ko
-  // penalise karta hai aur subscription tak radd kar sakta hai.
-  const watchingNow = await hasConversationOpen(peerId, conv._id).catch(() => false);
-  if (!mutedNow && !watchingNow) {
-    import('../lib/push.js')
-      .then(({ sendPush }) => sendPush(peerId, {
-        title: user.name,
-        body: fileDoc ? fileLabel(fileDoc) : 'Aapko ek message bheja',
-        link: `/chat?c=${conv._id}`,
-        type: `chat:${conv._id}`, // per-chat tag: ek chat doosri ki notification na mitaye
-      }))
-      .catch(() => {});
-  }
+  // Notification — kab, kya aur kitni baar, sab chatPush.service me ek jagah hai
+  // (khaali text, khuli chat par suppress, aur das message par das ghantiyan nahi).
+  // Best-effort: jawab ka intezaar nahi, message to ja hi chuka hai.
+  notifyNewMessage({
+    toUser: peerId,
+    fromName: user.name,
+    conversationId: conv._id,
+    fileLabel: fileDoc ? fileLabel(fileDoc) : '',
+    muted: !!mutedNow,
+  }).catch(() => {});
 
   return {
     id: String(doc._id),
@@ -426,6 +416,10 @@ export async function markRead(user, conversationId, upToSeq) {
     { new: true, arrayFilters: [{ 'me.user': user._id }] },
   );
   const m = memberOf(updated, user._id);
+
+  // Chat padh li — notification ki ginti bhi saaf, taaki agle message par phir se
+  // poora notification aur buzz mile (warna wo "2 naye message" kehta).
+  clearPushState(user._id, conv._id).catch(() => {});
 
   // Saamne wale ke tick turant neele ho jaayein — uske liye ye event hi sab kuch hai.
   const peerId = peerOf(conv, user._id)?._id;

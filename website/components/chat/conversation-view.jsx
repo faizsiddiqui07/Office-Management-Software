@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { ArrowLeft, Check, CheckCheck, Clock, CornerUpLeft, Paperclip, Send, Trash2, X, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Bell, BellOff, Check, CheckCheck, Clock, CornerUpLeft, Paperclip, Send, Trash2, X, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
@@ -9,7 +9,7 @@ import {
   useMessages, useSendMessage, useMarkRead, useDeleteMessage, chatInitials, dayLabel,
 } from '@/lib/chat';
 import { useChatRealtime } from './chat-realtime';
-import { useMediaConfig, useSendFile } from '@/lib/chat';
+import { useMediaConfig, useSendFile, useSetMuted } from '@/lib/chat';
 import { FileBubble, ImageViewer } from './file-bubble';
 import { prettyBytes } from '@/lib/chat-media';
 
@@ -119,6 +119,7 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
 
   const media = useMediaConfig();
   const upload = useSendFile(conversationId);
+  const setMuted = useSetMuted(conversationId);
   const [text, setText] = React.useState('');
   const [replyTo, setReplyTo] = React.useState(null);
   const [atBottom, setAtBottom] = React.useState(true);
@@ -225,12 +226,27 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
           {who?.avatarUrl ? <AvatarImage src={who.avatarUrl} alt={who.name} /> : null}
           <AvatarFallback className="text-xs">{chatInitials(who?.name)}</AvatarFallback>
         </Avatar>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold">{who?.name ?? '…'}</p>
           {who?.designation ? (
             <p className="truncate text-xs text-muted-foreground">{who.designation}</p>
           ) : null}
         </div>
+
+        {/* Ghanti band/chaalu — sirf IS chat ke liye, aur sirf MERE liye. Saamne wale ko
+            kuch pata nahi chalta (WhatsApp me bhi aisa hi hai). */}
+        <button
+          type="button"
+          onClick={() =>
+            setMuted.mutate(
+              conversation?.muted ? null : new Date(Date.now() + 365 * 24 * 3600 * 1000).toISOString(),
+            )}
+          className="shrink-0 rounded-full p-2 text-muted-foreground hover:bg-foreground/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+          aria-label={conversation?.muted ? 'Notification chaalu karein' : 'Is chat ki notification band karein'}
+          title={conversation?.muted ? 'Notification band hai — chaalu karein' : 'Notification band karein'}
+        >
+          {conversation?.muted ? <BellOff className="size-4" /> : <Bell className="size-4" />}
+        </button>
       </div>
 
       {/* Messages */}

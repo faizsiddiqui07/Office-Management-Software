@@ -175,7 +175,12 @@ export function useSetMuted(conversationId) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (until) => api.post(`/chat/conversations/${conversationId}/mute`, { until }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: LIST_KEY }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: LIST_KEY });
+      // Khuli chat ka header bhi isi se ghanti ka nishaan badalta hai — sirf list
+      // refresh karne se wo purana hi dikhta rehta.
+      qc.invalidateQueries({ queryKey: msgKey(conversationId) });
+    },
   });
 }
 

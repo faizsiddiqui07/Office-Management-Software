@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { useConversations, useContacts, chatInitials, chatTime } from '@/lib/chat';
+import { IosPushHint } from './ios-push-hint';
 
 /**
  * Chat list par apne aakhri message ka tick — wahi teen haalat jo bubble par hoti hain.
@@ -98,6 +99,8 @@ export function ChatList({ activeId, onOpenConversation, onOpenPeer }) {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+        <IosPushHint />
+
         {isLoading ? (
           <p className="px-3 py-6 text-center text-sm text-muted-foreground">Khul rahi hai…</p>
         ) : null}
