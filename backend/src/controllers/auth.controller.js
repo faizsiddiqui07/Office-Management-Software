@@ -99,10 +99,11 @@ export function me(req, res) {
 
 export async function updateProfile(req, res, next) {
   try {
-    const { name, phone, avatarUrl, dateOfBirth } = req.body;
+    const { name, phone, avatarUrl, dateOfBirth, skipAvatarPrompt } = req.body;
     const user = await User.findById(req.user._id);
     if (name !== undefined) user.name = name;
     if (phone !== undefined) user.phone = phone;
+    if (skipAvatarPrompt === true) user.avatarPromptSkippedAt = new Date();
     let birthdayChanged = false;
     if (dateOfBirth !== undefined) {
       if (dateOfBirth && dateOfBirth > ymdInTz(new Date())) {

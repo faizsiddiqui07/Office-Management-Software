@@ -37,6 +37,10 @@ const userSchema = new mongoose.Schema(
     // exempts a birthday from the late-arrival penalty. Blank = not recorded.
     dateOfBirth: { type: String, default: '' },
     avatarUrl: { type: String, default: '' },
+    // "Apni profile photo lagao" wale modal par "Skip for now" kab dabaya — modal 7 din
+    // tak dobara nahi tangta. Server par isliye ki phone par skip kiya to laptop par
+    // phir na aaye. Photo lagte hi iska koi matlab nahi rehta.
+    avatarPromptSkippedAt: { type: Date, default: null },
     dateOfJoining: { type: Date, default: Date.now },
     // Offboarding: the person's last working day (YYYY-MM-DD, company TZ). Set when winding
     // an account down; the exit summary is reviewed before deactivating. Blank = not leaving.

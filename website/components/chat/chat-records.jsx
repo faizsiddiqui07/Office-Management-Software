@@ -39,6 +39,7 @@ function AdminMessage({ m, personId }) {
         {m.text ? <p className="whitespace-pre-wrap break-words">{m.text}</p> : null}
         <p className="mt-0.5 text-right text-[10px] text-muted-foreground">
           {new Date(m.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false })}
+          {m.deletedForEveryoneAt ? ' · deleted for everyone by the sender' : ''}
           {m.deletedForCount ? ' · deleted by a participant (for themselves)' : ''}
         </p>
       </div>

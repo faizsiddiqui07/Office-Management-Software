@@ -14,6 +14,7 @@ import { ChatFab } from '@/components/chat/chat-fab';
 import { ChatRealtimeProvider } from '@/components/chat/chat-realtime';
 import { EodDigestPopup } from '@/components/tasks/eod-digest-popup';
 import { PwaRegister } from '@/components/pwa/pwa-register';
+import { ProfilePhotoPrompt } from '@/components/profile/photo-prompt';
 import { DocumentTitle } from './document-title';
 import { UpdatePrompt } from './update-prompt';
 
@@ -73,6 +74,9 @@ export function AppShell({ children }) {
       {/* Owners only, after the office cut-off, once a day — see the component. */}
       <EodDigestPopup />
       <AnnouncementPopup />
+      {/* Sabse aakhir me, taaki baaki popups ke UPAR aaye: jiski photo nahi, use pehle
+          yahi dikhe — naya employee password badalte hi isi par utarta hai. */}
+      <ProfilePhotoPrompt />
       <PwaRegister />
     </div>
     </ChatRealtimeProvider>

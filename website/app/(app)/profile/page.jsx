@@ -8,12 +8,12 @@ import { api, ApiError, setAuthToken } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useLiteMode } from '@/lib/lite-mode';
 import { roleName } from '@/lib/permissions';
-import { downscaleImage } from '@/lib/image';
 import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/glass/page-header';
 import { GlassPanel } from '@/components/glass/glass-panel';
 import { NotificationsCard } from '@/components/pwa/notifications-card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { AvatarCropDialog } from '@/components/profile/avatar-cropper';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PasswordInput } from '@/components/ui/password-input';
@@ -37,6 +37,7 @@ export default function ProfilePage() {
   const photoRef = React.useRef(null);
   const [pwd, setPwd] = React.useState({ currentPassword: '', newPassword: '', confirm: '' });
   const [savingPwd, setSavingPwd] = React.useState(false);
+  const [cropFile, setCropFile] = React.useState(null); // cropper me khuli hui file
 
   React.useEffect(() => {
     if (user) setForm({ name: user.name ?? '', phone: user.phone ?? '', dateOfBirth: user.dateOfBirth ?? '', avatarUrl: user.avatarUrl ?? '' });
@@ -58,28 +59,31 @@ export default function ProfilePage() {
     }
   };
 
-  const pickPhoto = async (e) => {
+  // File chunte hi cropper khulta hai (WhatsApp jaisa circle); save wahin se hota hai.
+  const pickPhoto = (e) => {
     const input = e.target;
     const file = input.files?.[0];
+    input.value = '';
     if (!file) return;
-    if (file.size > 8 * 1024 * 1024) {
-      toast.error('Photo must be under 8 MB');
-      input.value = '';
+    if (file.size > 12 * 1024 * 1024) {
+      toast.error('Photo must be under 12 MB');
       return;
     }
+    setCropFile(file);
+  };
+
+  const saveCropped = async (dataUrl) => {
     setPhotoBusy(true);
     try {
-      // Downscale to a small square-ish avatar and store as a data-URL.
-      const dataUrl = await downscaleImage(file, { maxDim: 256, mime: 'image/jpeg', quality: 0.85 });
       await api.patch('/auth/profile', { avatarUrl: dataUrl });
       setForm((f) => ({ ...f, avatarUrl: dataUrl }));
+      setCropFile(null);
       await refresh();
       toast.success('Photo updated');
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Could not update the photo');
     } finally {
       setPhotoBusy(false);
-      input.value = '';
     }
   };
 
@@ -154,6 +158,7 @@ export default function ProfilePage() {
                 </span>
               </button>
               <input ref={photoRef} type="file" accept="image/*" onChange={pickPhoto} className="hidden" />
+              <AvatarCropDialog file={cropFile} onDone={saveCropped} onCancel={() => setCropFile(null)} busy={photoBusy} />
               <div className="min-w-0 text-sm">
                 <p className="font-medium">{user.name}</p>
                 <p className="text-muted-foreground">{roleName(user)} · {user.employeeId}</p>

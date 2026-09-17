@@ -30,6 +30,7 @@ import { formatTime, formatDuration, companyYMD } from '@/lib/time';
 import { formatYMD } from '@/lib/leave';
 import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/glass/page-header';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { GlassPanel } from '@/components/glass/glass-panel';
 import { GlassCard } from '@/components/glass/glass-card';
 import { StatCard } from '@/components/glass/stat-card';
@@ -193,6 +194,17 @@ export default function UserDossierPage() {
           eyebrow="Team member"
           title={u?.name || 'Loading…'}
           icon={UserCircle}
+          // Bandi ki asli photo — badi, gol, halki ring ke saath. Photo na ho to initials.
+          media={
+            u ? (
+              <Avatar className="size-16 shadow-lg shadow-primary/10 ring-2 ring-primary/30 ring-offset-2 ring-offset-background sm:size-20">
+                {u.avatarUrl ? <AvatarImage src={u.avatarUrl} alt={u.name} /> : null}
+                <AvatarFallback className="bg-primary/10 text-lg font-semibold text-primary sm:text-xl">
+                  {(u.name || '').split(' ').filter(Boolean).map((p) => p[0]).slice(0, 2).join('').toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+            ) : null
+          }
           description={
             u
               ? [

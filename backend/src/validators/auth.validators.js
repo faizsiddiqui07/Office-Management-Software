@@ -28,4 +28,6 @@ export const updateProfileSchema = z.object({
   // Accepts a normal URL or a small base64 data-URL (photos are downscaled
   // client-side to ~256px, same store-in-Mongo pattern as the company logos).
   avatarUrl: z.string().max(200000).optional().or(z.literal('')),
+  // Profile-photo modal par "Skip for now" — server par tareekh darj hoti hai.
+  skipAvatarPrompt: z.boolean().optional(),
 });
