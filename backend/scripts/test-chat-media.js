@@ -29,6 +29,7 @@ import { loadRoles } from '../src/lib/roles.js';
 import { sealBytes } from '../src/lib/secretBox.js';
 import { readUploadToken, MAX_FILE_BYTES, DAILY_QUOTA_BYTES } from '../src/lib/chatMedia.js';
 import * as chat from '../src/services/chat.service.js';
+import { Setting } from '../src/models/Setting.js';
 
 let failures = 0;
 function check(name, cond, extra = '') {
@@ -193,6 +194,31 @@ async function main() {
   const fresh = await import(`../src/lib/chatMedia.js?nocache=${Date.now()}`);
   check('bucket na ho to media band dikhta hai', fresh.chatMediaConfigured() === false);
   process.env.CHAT_MEDIA_BUCKET = bucket;
+
+  console.log('');
+  console.log('PART 9b — Settings ka switch: owner file bhejna band kar de');
+  // Default: ON. Bucket set hai (upar), to sab chalna chahiye.
+  check('default me switch ON hai', (await chat.mediaConfig()).enabled === true);
+
+  await Setting.updateOne({ key: 'global' }, { $set: { chatFilesEnabled: false } }, { upsert: true });
+  Setting.invalidateCache();
+  check('OFF karte hi button ka jawab false', (await chat.mediaConfig()).enabled === false);
+  await throwsWith('OFF par upload ki parchi nahi milti', 'MEDIA_OFF', () => chat.requestUpload(brij, ab.id));
+  // Purane tab ke paas parchi bachi ho to bhi message nahi banta — taala service me hai,
+  // button me nahi.
+  await throwsWith('OFF par file wala message bhi nahi banta', 'MEDIA_OFF', () =>
+    chat.sendMessage(brij, ab.id, { upload: { uploadToken: 'x.y' } }));
+  const textOk = await chat.sendMessage(brij, ab.id, { text: 'switch band hai par text chalta hai' })
+    .then(() => 'sent').catch((e) => e.code);
+  check('OFF par bhi TEXT message chalta hai', textOk === 'sent', `${textOk}`);
+  // Pehle se bheji file ab bhi khulti hai (spinner-forever nahi) — link ka raasta 404 nahi deta.
+  const oldFile = await Message.findOne({ conversation: ab.id, kind: 'FILE' }).lean();
+  const linkOk = await chat.mediaLink(brij, oldFile._id).then(() => 'ok').catch((e) => e.code);
+  check('OFF par purani file ka link ab bhi banta hai (404 nahi)', linkOk !== 'NOT_FOUND' && linkOk !== 'MEDIA_OFF', `${linkOk}`);
+
+  await Setting.updateOne({ key: 'global' }, { $set: { chatFilesEnabled: true } });
+  Setting.invalidateCache();
+  check('wapas ON karte hi button wapas', (await chat.mediaConfig()).enabled === true);
 
   console.log('\nPART 10 — seemaayein');
   check('file ki seema 25 MB hai', MAX_FILE_BYTES === 25 * 1024 * 1024);

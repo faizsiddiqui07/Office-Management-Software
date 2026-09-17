@@ -65,6 +65,28 @@ function fileLabel(f) {
 }
 
 /**
+ * File bhejna is waqt chalu hai ya nahi — DO sharatein, dono chahiye:
+ *   1. S3 bucket set hai (CHAT_MEDIA_BUCKET) — deploy ki baat.
+ *   2. Owner ne Settings me switch ON rakha hai — roz-marra ka faisla.
+ *
+ * Yahi ek jagah hai jahan ye tay hota hai; button dikhana (media-config), upload ki
+ * parchi dena (requestUpload) aur message banana (sendMessage) — teeno isi se poochte
+ * hain. Sirf button chhupa dena kaafi nahi hota: purana tab ya seedha API call phir
+ * bhi file bhej deta.
+ */
+export async function filesAllowed() {
+  if (!chatMediaConfigured()) return false;
+  const { Setting } = await import('../models/Setting.js');
+  const s = await Setting.getSingleton();
+  return s?.chatFilesEnabled !== false;
+}
+
+/** Frontend ke liye: attachment ka button dikhana hai ya nahi, aur seema kya hai. */
+export async function mediaConfig() {
+  return { enabled: await filesAllowed(), maxBytes: MAX_FILE_BYTES };
+}
+
+/**
  * Attachment ka wo hissa jo client ko dikhaya ja sakta hai.
  *
  * S3 ka `key` client ko KABHI nahi jaata — download hamesha /chat/media/:id se hota hai,
@@ -287,7 +309,7 @@ export async function sendMessage(user, conversationId, { text, replyToSeq, uplo
   // me chipka deta. Aur size S3 se poochha jaata hai, client se nahi.
   let fileDoc = null;
   if (upload) {
-    if (!chatMediaConfigured()) throw httpError(503, 'MEDIA_OFF', 'File sharing is turned off');
+    if (!(await filesAllowed())) throw httpError(503, 'MEDIA_OFF', 'File sharing is turned off');
     const signed = readUploadToken(upload.uploadToken, { conversationId: conv._id, userId: user._id });
     if (!signed) throw httpError(400, 'BAD_UPLOAD', 'This upload has expired — please try again');
 
@@ -467,7 +489,7 @@ export async function setMuted(user, conversationId, until) {
  * aur media chaalu hai. Bytes iske baad server ko chhoote hi nahi.
  */
 export async function requestUpload(user, conversationId, { withThumb = false } = {}) {
-  if (!chatMediaConfigured()) throw httpError(503, 'MEDIA_OFF', 'File sharing is turned off');
+  if (!(await filesAllowed())) throw httpError(503, 'MEDIA_OFF', 'File sharing is turned off');
   const conv = await mine(conversationId, user._id);
 
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000);

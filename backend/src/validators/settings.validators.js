@@ -36,6 +36,7 @@ export const updateSettingsSchema = z.object({
   annualLeaveQuota: numOpt(z.coerce.number().int().min(0).max(365)),
   currency: z.string().min(1).max(8).optional(),
   expenseCategories: z.array(z.string().min(1).max(40)).optional(),
+  chatFilesEnabled: z.boolean().optional(),
   checkinAlerts: z
     .object({
       enabled: z.boolean().optional(),

@@ -15,8 +15,8 @@ import {
   setMuted,
   requestUpload,
   mediaLink,
+  mediaConfig,
 } from '../services/chat.service.js';
-import { chatMediaConfigured, MAX_FILE_BYTES } from '../lib/chatMedia.js';
 import { listUserChats, readUserChat, searchMyMessages } from '../services/chatAdmin.service.js';
 
 /**
@@ -94,10 +94,7 @@ chatRouter.get('/media/:id', handle((req) =>
   mediaLink(req.user, req.params.id, { thumb: req.query.thumb === '1' })));
 
 // Frontend ko pata hona chahiye ki attachment ka button dikhana bhi hai ya nahi.
-chatRouter.get('/media-config', handle(() => ({
-  enabled: chatMediaConfigured(),
-  maxBytes: MAX_FILE_BYTES,
-})));
+chatRouter.get('/media-config', handle(() => mediaConfig()));
 
 // I've read this chat up to here (blank = all of it).
 chatRouter.post('/conversations/:id/read', handle((req) =>

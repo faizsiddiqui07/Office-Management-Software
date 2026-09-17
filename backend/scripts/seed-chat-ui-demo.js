@@ -36,7 +36,7 @@ async function main() {
   const mk = (name, email, role, designation, id) =>
     User.create({ name, email, passwordHash: hash, role, employeeId: id, designation, isActive: true, mustChangePassword: false });
 
-  const asha = await mk('Asha Verma', 'asha@demo.co', 'CEO_PRESIDENT', 'CEO & President', 'AB-001');
+  const asha = await mk('Asha Verma', 'asha@demo.co', 'CEO', 'CEO & President', 'AB-001');
   const brij = await mk('Brij Mehta', 'brij@demo.co', 'MANAGER', 'Project Manager', 'AB-002');
   const chhaya = await mk('Chhaya Rao', 'chhaya@demo.co', 'EMPLOYEE', 'Architect', 'AB-003');
   await mk('Dev Sharma', 'dev@demo.co', 'EMPLOYEE', 'Site Engineer', 'AB-004');

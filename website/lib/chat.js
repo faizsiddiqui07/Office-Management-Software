@@ -227,7 +227,9 @@ export function useMediaConfig() {
   const { data } = useQuery({
     queryKey: ['chat', 'media-config'],
     queryFn: () => api.get('/chat/media-config'),
-    staleTime: 30 * 60_000,
+    // 2 minute, 30 nahi: owner Settings me file-sharing band kare to doosron ke khule
+    // tab me paperclip jaldi gayab ho. Endpoint sasta hai (cached setting, S3 nahi).
+    staleTime: 2 * 60_000,
   });
   return data ?? { enabled: false, maxBytes: 0 };
 }

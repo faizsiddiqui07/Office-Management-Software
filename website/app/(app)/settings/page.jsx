@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { BellRing, Building2, CheckCircle2, Crosshair, ImageUp, KeyRound, Loader2, Mail, MapPin, Plus, Send, Settings, ShieldAlert, Trash2, X } from 'lucide-react';
+import { BellRing, Building2, CheckCircle2, Crosshair, ImageUp, KeyRound, Loader2, Mail, MapPin, MessagesSquare, Plus, Send, Settings, ShieldAlert, Trash2, X } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can } from '@/lib/permissions';
@@ -69,6 +69,7 @@ export default function SettingsPage() {
         annualLeaveQuota: s.annualLeaveQuota ?? 18,
         currency: s.currency ?? 'INR',
         expenseCategories: [...(s.expenseCategories ?? [])],
+        chatFilesEnabled: s.chatFilesEnabled !== false,
         checkinAlerts: {
           enabled: s.checkinAlerts?.enabled !== false,
           onlyLate: s.checkinAlerts?.onlyLate === true,
@@ -239,6 +240,9 @@ export default function SettingsPage() {
       });
       setBaseline(form); // saved — the bar hides immediately
       await queryClient.invalidateQueries({ queryKey: SETTINGS_KEY });
+      // The chat composer caches "may I attach?" — refresh it so the owner's own tab
+      // reflects the file-sharing switch right away instead of after the cache expires.
+      queryClient.invalidateQueries({ queryKey: ['chat', 'media-config'] });
       toast.success('Settings saved — applied across the app');
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Could not save settings');
@@ -537,6 +541,27 @@ export default function SettingsPage() {
                   </button>
                 ))}
               </div>
+            </div>
+          </GlassPanel>
+
+          <GlassPanel className="space-y-4 p-6">
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              <MessagesSquare className="size-4 text-primary" /> Chat
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Controls what people can send in the team chat.
+            </p>
+            <div className="flex items-center justify-between gap-4 rounded-xl bg-muted/30 px-4 py-3 ring-1 ring-border">
+              <div className="min-w-0 space-y-0.5">
+                <p className="text-sm font-medium">Allow file sharing</p>
+                <p className="text-xs text-muted-foreground">
+                  Photos, videos, PDFs and documents. When off, the attach button disappears and only text can be sent — files already shared stay viewable.
+                </p>
+              </div>
+              <Switch
+                checked={form.chatFilesEnabled}
+                onCheckedChange={(v) => set('chatFilesEnabled', v)}
+              />
             </div>
           </GlassPanel>
 

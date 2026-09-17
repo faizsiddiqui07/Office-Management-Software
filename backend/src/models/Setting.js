@@ -33,6 +33,17 @@ const settingSchema = new mongoose.Schema(
      * database ka paid plan lena padta).
      */
     chatRetentionDays: { type: Number, default: 0 },
+    /**
+     * Chat me file (photo/video/PDF) bhejna chaalu hai ya nahi — owner ka switch.
+     *
+     * Ye sirf BHEJNE par lagta hai. Band karne par pehle se bheji hui file dikhti aur
+     * khulti rehti hain — warna purane message par hamesha ghoomta spinner reh jaata,
+     * aur "usne wo PDF kab bheji thi" ka jawab bhi gayab ho jaata.
+     *
+     * S3 bucket (CHAT_MEDIA_BUCKET) alag sharat hai: dono chahiye. Bucket na ho to ye
+     * switch ON ho kar bhi kuch nahi karta.
+     */
+    chatFilesEnabled: { type: Boolean, default: true },
     // Day-of-week numbers that are weekends (0 = Sunday … 6 = Saturday).
     weekendDays: { type: [Number], default: [0] },
     annualLeaveQuota: { type: Number, default: 18 },
