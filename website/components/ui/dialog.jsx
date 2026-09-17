@@ -39,7 +39,12 @@ function DialogOverlay({
     <DialogPrimitive.Backdrop
       data-slot="dialog-overlay"
       className={cn(
-        "fixed inset-0 isolate z-50 bg-black/10 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
+        // Phone par backdrop-blur NAHI: page ke glass cards (backdrop-filter) ke upar ek
+        // aur backdrop-filter wala fixed overlay Android Chrome me compositing tod deta
+        // hai — cards sheet ke background ke UPAR aur uske text ke NEECHE paint hote hain
+        // ("UI fat jaata hai"). Emulator me nahi dikhta, asli phone par dikhta hai. Isliye
+        // phone par sirf gehra dim, blur sm+ (desktop) par hi.
+        "fixed inset-0 isolate z-50 bg-black/40 duration-100 sm:bg-black/10 sm:supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
         className
       )}
       {...props} />
@@ -59,7 +64,10 @@ function DialogContent({
         data-slot="dialog-content"
         className={cn(
           // Mobile: a bottom sheet — full width, pinned to the bottom, sliding up.
-          "fixed bottom-0 left-0 z-50 grid max-h-[calc(100dvh-3rem)] w-full gap-4 overflow-y-auto rounded-t-2xl rounded-b-none bg-popover p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] text-sm text-popover-foreground ring-1 ring-foreground/10 duration-200 outline-none",
+          // `isolate` + `will-change-transform`: sheet ko apni compositing layer do, taaki
+          // page ke glass cards (backdrop-filter, apni layer par) kabhi iske upar na aa
+          // sakein — dekho overlay ka comment upar.
+          "fixed bottom-0 left-0 isolate z-50 grid max-h-[calc(100dvh-3rem)] w-full gap-4 overflow-y-auto overscroll-contain rounded-t-2xl rounded-b-none bg-popover p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] text-sm text-popover-foreground ring-1 ring-foreground/10 duration-200 outline-none will-change-transform",
           "data-open:animate-in data-open:fade-in-0 data-open:slide-in-from-bottom-10 data-closed:animate-out data-closed:fade-out-0 data-closed:slide-out-to-bottom-10",
           // sm+: a centered card — wider default (overridable via className).
           "sm:top-1/2 sm:bottom-auto sm:left-1/2 sm:max-w-lg sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl sm:p-6 sm:pb-6 sm:max-h-[calc(100dvh-4rem)]",

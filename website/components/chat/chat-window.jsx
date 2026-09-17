@@ -7,18 +7,15 @@ import { ConversationView } from './conversation-view';
 import { useOpenDirect } from '@/lib/chat';
 
 /**
- * List + conversation, ek hi component me — aur yahi dono jagah chalta hai:
+ * /chat ka poora page: list + conversation.
  *
- *   mode="panel"  floating button wala slide-over. Sankra hai, isliye ek waqt me EK
- *                 hi cheez: ya list, ya chat (back button ke saath) — bilkul WhatsApp
- *                 mobile jaisa.
- *   mode="page"   /chat ka poora page. Bade screen par dono saath-saath; phone par
- *                 wahi ek-ek wala bartav, kyunki jagah utni hi hai.
+ * Bade screen par dono saath-saath; phone par ek waqt me EK — ya list, ya chat (back
+ * button ke saath) — bilkul WhatsApp mobile jaisa, kyunki jagah utni hi hai.
  *
- * Dono ek hi component share karte hain taaki panel aur page kabhi alag na ho jaayein
- * (do copies rakhte to ek me bug theek hota, doosre me reh jaata).
+ * Pehle iska ek "panel" mode bhi tha (floating button ka slide-over). Wo hata diya —
+ * floating button ab seedha is page par laata hai. Dekho chat-fab.jsx.
  */
-export function ChatWindow({ mode = 'panel', initialConversationId = null, onOpenedConversation }) {
+export function ChatWindow({ initialConversationId = null, onOpenedConversation }) {
   const [active, setActive] = React.useState(
     initialConversationId ? { id: initialConversationId, peer: null } : null,
   );
@@ -34,7 +31,7 @@ export function ChatWindow({ mode = 'panel', initialConversationId = null, onOpe
     onOpenedConversation?.(c.id);
   };
 
-  // "Sab log" se kisi par tap — chat pehle se ho sakti hai, ya abhi banegi.
+  // "Everyone" se kisi par tap — chat pehle se ho sakti hai, ya abhi banegi.
   const openPeer = (u) => {
     openDirect.mutate(u.id, {
       onSuccess: (conv) => {
@@ -44,23 +41,6 @@ export function ChatWindow({ mode = 'panel', initialConversationId = null, onOpe
     });
   };
 
-  const isPage = mode === 'page';
-
-  // ── Panel: ek waqt me ek ──────────────────────────────────────────────────
-  if (!isPage) {
-    return active ? (
-      <ConversationView
-        conversationId={active.id}
-        peer={active.peer}
-        showBack
-        onBack={() => setActive(null)}
-      />
-    ) : (
-      <ChatList activeId={null} onOpenConversation={openConversation} onOpenPeer={openPeer} />
-    );
-  }
-
-  // ── Page: bade screen par dono, phone par ek ──────────────────────────────
   return (
     <div className="flex h-full min-h-0">
       <div

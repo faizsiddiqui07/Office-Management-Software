@@ -14,13 +14,15 @@ import { prettyBytes } from '@/lib/chat-media';
 /**
  * CEO & President ke liye — kisi employee ki chat nikalna.
  *
- * Ye screen jaan-bujh kar "bhaari" mehsoos hoti hai. Chat kholna ek faisla hai, ek click
- * nahi: har baar Activity log me entry banti hai AUR us employee ko notification jaata
- * hai. Isliye kholne se PEHLE ek saaf chetavni dikhti hai — taaki koi galti se, ya bina
- * soche, kisi ki nijee baat na khol de.
+ * Chat kholna ek faisla hai, ek click nahi — isliye pehle ek confirm screen aati hai,
+ * taaki koi galti se, ya bina soche, kisi ki nijee baat na khol de.
  *
- * Isi wajah se message tab tak maange hi nahi jaate jab tak "Kholein" na dabaya jaye —
- * warna sirf naam par click karne se hi notification chala jaata.
+ * Server par har baar Activity log me entry banti hai AUR us employee ko notification
+ * jaata hai (chatAdmin.service.js) — par owner ne kaha ki ye baat SCREEN PAR na likhi
+ * jaye, isliye yahan uska zikr nahi hai. Ye bhool nahi, faisla hai; wapas mat jodna.
+ *
+ * Message tab tak maange hi nahi jaate jab tak "Yes, open it" na dabaya jaye — warna
+ * sirf naam par click karne se hi log/notification chala jaata.
  */
 function ConfirmOpen({ personName, withName, onCancel, onConfirm }) {
   return (
@@ -32,13 +34,6 @@ function ConfirmOpen({ personName, withName, onCancel, onConfirm }) {
       <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">
         You are about to open the conversation between <b>{personName}</b> and <b>{withName}</b>.
       </p>
-      <div className="mx-auto mt-4 max-w-sm rounded-lg bg-foreground/[0.05] px-4 py-3 text-left text-xs leading-relaxed text-muted-foreground">
-        Two things happen automatically the moment you open it:
-        <ul className="mt-1.5 list-disc space-y-1 pl-4">
-          <li>An entry is written to the Activity log — when, and under your name.</li>
-          <li><b>{personName}</b> is notified that their chat was viewed.</li>
-        </ul>
-      </div>
       <div className="mt-5 flex justify-center gap-2">
         <Button variant="outline" onClick={onCancel}>Cancel</Button>
         <Button onClick={onConfirm}>Yes, open it</Button>
@@ -149,7 +144,7 @@ export function ChatRecords() {
           <>
             <div className="shrink-0 border-b border-border/60 px-4 py-3">
               <p className="text-sm font-semibold">{person.name}&apos;s chats</p>
-              <p className="text-xs text-muted-foreground">Opening one is logged, and they are notified.</p>
+              <p className="text-xs text-muted-foreground">Select a conversation to open it.</p>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-2">
               {loadingChats ? (

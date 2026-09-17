@@ -301,8 +301,8 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
 
         {!isLoading && !messages.length ? (
           <div className="py-10 text-center">
-            <p className="text-sm text-muted-foreground">Abhi koi message nahi.</p>
-            <p className="mt-1 text-xs text-muted-foreground">Neeche likh kar shuruaat karein.</p>
+            <p className="text-sm text-muted-foreground">No messages yet.</p>
+            <p className="mt-1 text-xs text-muted-foreground">Start the conversation below.</p>
           </div>
         ) : null}
 

@@ -141,7 +141,7 @@ export function ImageViewer({ messageId, name, onClose }) {
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-[60] flex flex-col bg-black/90 backdrop-blur-sm">
+    <div className="fixed inset-0 isolate z-[60] flex flex-col bg-black/90 sm:backdrop-blur-sm">
       <div className="flex shrink-0 items-center justify-between gap-3 px-4 py-3 text-white">
         <p className="min-w-0 truncate text-sm">{name}</p>
         <div className="flex shrink-0 items-center gap-1">

@@ -34,7 +34,7 @@ export default function ChatRecordsPage() {
         eyebrow="Chat records"
         title="Chat records"
         icon={ShieldCheck}
-        description="Open any employee's chat when there is a genuine need. Every access is written to the Activity log and the employee is notified."
+        description="Look up any employee's conversations."
       />
       <ChatRecords />
     </div>
