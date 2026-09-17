@@ -390,7 +390,14 @@ export function useUserChatMessages(userId, conversationId, enabled) {
     queryKey: ['chat', 'admin', 'messages', userId, conversationId],
     queryFn: () => api.get(`/chat/admin/users/${userId}/chats/${conversationId}`),
     enabled: !!userId && !!conversationId && !!enabled,
-    staleTime: 5 * 60_000,
+    // Har GET server par Activity-log entry + us employee ko notification bhejta hai.
+    // Isliye ye query APNE AAP kabhi dobara nahi chalti — na focus par, na reconnect par,
+    // na stale hone par. Ek baar khola = ek entry. Warna tab badalne bhar se employee ko
+    // "aapki chat dekhi gayi" baar-baar jaata.
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
     retry: false,
   });
 }
