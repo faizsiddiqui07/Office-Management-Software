@@ -28,20 +28,20 @@ function ConfirmOpen({ personName, withName, onCancel, onConfirm }) {
       <div className="mx-auto mb-4 grid size-11 place-items-center rounded-full bg-warning/15">
         <AlertTriangle className="size-5 text-amber-600 dark:text-amber-400" />
       </div>
-      <h3 className="text-base font-semibold">Ye chat kholni hai?</h3>
+      <h3 className="text-base font-semibold">Open this chat?</h3>
       <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">
-        <b>{personName}</b> aur <b>{withName}</b> ki baat-cheet khulegi.
+        You are about to open the conversation between <b>{personName}</b> and <b>{withName}</b>.
       </p>
       <div className="mx-auto mt-4 max-w-sm rounded-lg bg-foreground/[0.05] px-4 py-3 text-left text-xs leading-relaxed text-muted-foreground">
-        Kholte hi do cheezein apne aap hongi:
+        Two things happen automatically the moment you open it:
         <ul className="mt-1.5 list-disc space-y-1 pl-4">
-          <li>Activity log me entry banegi — kab, aur aapke naam se.</li>
-          <li><b>{personName}</b> ko notification jaayega ki unki chat dekhi gayi.</li>
+          <li>An entry is written to the Activity log — when, and under your name.</li>
+          <li><b>{personName}</b> is notified that their chat was viewed.</li>
         </ul>
       </div>
       <div className="mt-5 flex justify-center gap-2">
-        <Button variant="outline" onClick={onCancel}>Rehne dein</Button>
-        <Button onClick={onConfirm}>Haan, kholein</Button>
+        <Button variant="outline" onClick={onCancel}>Cancel</Button>
+        <Button onClick={onConfirm}>Yes, open it</Button>
       </div>
     </div>
   );
@@ -68,7 +68,7 @@ function AdminMessage({ m, personId }) {
         {m.text ? <p className="whitespace-pre-wrap break-words">{m.text}</p> : null}
         <p className="mt-0.5 text-right text-[10px] text-muted-foreground">
           {new Date(m.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false })}
-          {m.deletedForCount ? ' · kisi ne apne liye hataya' : ''}
+          {m.deletedForCount ? ' · deleted by a participant (for themselves)' : ''}
         </p>
       </div>
     </div>
@@ -104,7 +104,7 @@ export function ChatRecords() {
               id="records-search"
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Kis ki chat?"
+              placeholder="Whose chat?"
               className="bg-background/50 pl-9"
             />
           </div>
@@ -141,22 +141,22 @@ export function ChatRecords() {
           <div className="grid h-full place-items-center p-6">
             <EmptyState
               icon={ShieldCheck}
-              title="Kisi ka naam chunein"
-              description="Baayin taraf se chunein — phir unki chats ki list dikhegi."
+              title="Select a person"
+              description="Pick someone on the left to see their list of chats."
             />
           </div>
         ) : !chat ? (
           <>
             <div className="shrink-0 border-b border-border/60 px-4 py-3">
-              <p className="text-sm font-semibold">{person.name} ki chats</p>
-              <p className="text-xs text-muted-foreground">Kholne par log banega aur unhe bata diya jayega.</p>
+              <p className="text-sm font-semibold">{person.name}&apos;s chats</p>
+              <p className="text-xs text-muted-foreground">Opening one is logged, and they are notified.</p>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-2">
               {loadingChats ? (
-                <p className="py-8 text-center text-sm text-muted-foreground">Aa rahi hain…</p>
+                <p className="py-8 text-center text-sm text-muted-foreground">Loading…</p>
               ) : null}
               {!loadingChats && !chats?.chats?.length ? (
-                <p className="py-8 text-center text-sm text-muted-foreground">Inki koi chat nahi hai.</p>
+                <p className="py-8 text-center text-sm text-muted-foreground">This person has no chats.</p>
               ) : null}
               {(chats?.chats ?? []).map((c) => (
                 <button
@@ -168,7 +168,7 @@ export function ChatRecords() {
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium">{c.with?.name ?? '—'}</span>
                     <span className="block truncate text-xs text-muted-foreground">
-                      {c.messageCount} message · aakhri {chatTime(c.lastMessageAt)}
+                      {c.messageCount} {c.messageCount === 1 ? 'message' : 'messages'} · last {chatTime(c.lastMessageAt)}
                     </span>
                   </span>
                 </button>
@@ -189,7 +189,7 @@ export function ChatRecords() {
                 type="button"
                 onClick={() => { setChat(null); setConfirmed(false); }}
                 className="rounded-full p-1.5 hover:bg-foreground/10"
-                aria-label="Wapas"
+                aria-label="Back"
               >
                 <ArrowLeft className="size-4" />
               </button>
@@ -198,19 +198,19 @@ export function ChatRecords() {
                   {person.name} ↔ {chat.with?.name ?? '—'}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {opened?.conversation?.messageCount ?? chat.messageCount} message
-                  {opened?.truncated ? ' · sirf shuruaat dikh rahi hai' : ''}
+                  {opened?.conversation?.messageCount ?? chat.messageCount} messages
+                  {opened?.truncated ? ' · showing the beginning only' : ''}
                 </p>
               </div>
             </div>
             <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto px-3 py-3">
               {loadingMsgs ? (
                 <p className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
-                  <Loader2 className="size-4 animate-spin" /> Khul rahi hai…
+                  <Loader2 className="size-4 animate-spin" /> Opening…
                 </p>
               ) : null}
               {error ? (
-                <p className="py-8 text-center text-sm text-destructive">Ye chat nahi khuli.</p>
+                <p className="py-8 text-center text-sm text-destructive">This chat could not be opened.</p>
               ) : null}
               {(opened?.messages ?? []).map((m, i, arr) => {
                 const prev = arr[i - 1];

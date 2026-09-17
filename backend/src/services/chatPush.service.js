@@ -43,8 +43,8 @@ async function deliver(userId, payload) {
 
 /** Notification ka text — naam bhejne wale ka, baaki kuch nahi. */
 function bodyFor(count, fileLabel) {
-  if (count > 1) return `${count} naye message`;
-  return fileLabel || 'Aapko ek message bheja';
+  if (count > 1) return `${count} new messages`;
+  return fileLabel || 'Sent you a message';
 }
 
 /**

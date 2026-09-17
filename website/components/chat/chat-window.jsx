@@ -81,9 +81,9 @@ export function ChatWindow({ mode = 'panel', initialConversationId = null, onOpe
           <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
             <MessagesSquare className="size-8 text-muted-foreground" />
             <div>
-              <p className="text-sm font-medium">Koi chat chunein</p>
+              <p className="text-sm font-medium">Select a chat</p>
               <p className="mt-1 text-xs text-muted-foreground">
-                Baayin taraf se kisi colleague par tap karein.
+                Pick a colleague from the list on the left.
               </p>
             </div>
           </div>

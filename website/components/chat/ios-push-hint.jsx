@@ -62,17 +62,17 @@ export function IosPushHint() {
     <div className="mx-2 mb-2 flex items-start gap-2.5 rounded-lg border border-primary/25 bg-primary/[0.07] px-3 py-2.5">
       <Share className="mt-0.5 size-4 shrink-0 text-primary" />
       <div className="min-w-0 flex-1">
-        <p className="text-xs font-semibold">iPhone par notification chaalu karein</p>
+        <p className="text-xs font-semibold">Turn on notifications on iPhone</p>
         <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
-          Safari me neeche <b>Share</b> dabaayein → <b>Add to Home Screen</b>. Uske baad hi naye
-          message ka notification aayega.
+          In Safari, tap <b>Share</b> → <b>Add to Home Screen</b>. New-message notifications
+          only work once the app is installed.
         </p>
       </div>
       <button
         type="button"
         onClick={dismiss}
         className="-mr-1 -mt-1 shrink-0 rounded-full p-1 text-muted-foreground hover:bg-foreground/10"
-        aria-label="Hata dein"
+        aria-label="Dismiss"
       >
         <X className="size-3.5" />
       </button>

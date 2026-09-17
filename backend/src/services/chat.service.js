@@ -57,11 +57,11 @@ function sealPreview(text) {
 function fileLabel(f) {
   if (!f) return '';
   const m = String(f.mime || '');
-  if (m.startsWith('image/')) return 'Ek photo bheji';
-  if (m.startsWith('video/')) return 'Ek video bheji';
-  if (m.startsWith('audio/')) return 'Ek audio bheja';
-  if (m === 'application/pdf') return 'Ek PDF bheji';
-  return 'Ek file bheji';
+  if (m.startsWith('image/')) return 'Sent a photo';
+  if (m.startsWith('video/')) return 'Sent a video';
+  if (m.startsWith('audio/')) return 'Sent an audio clip';
+  if (m === 'application/pdf') return 'Sent a PDF';
+  return 'Sent a file';
 }
 
 /**
@@ -287,13 +287,13 @@ export async function sendMessage(user, conversationId, { text, replyToSeq, uplo
   // me chipka deta. Aur size S3 se poochha jaata hai, client se nahi.
   let fileDoc = null;
   if (upload) {
-    if (!chatMediaConfigured()) throw httpError(503, 'MEDIA_OFF', 'File bhejna abhi chaalu nahi hai');
+    if (!chatMediaConfigured()) throw httpError(503, 'MEDIA_OFF', 'File sharing is turned off');
     const signed = readUploadToken(upload.uploadToken, { conversationId: conv._id, userId: user._id });
-    if (!signed) throw httpError(400, 'BAD_UPLOAD', 'Ye upload ab valid nahi hai — dobara koshish karein');
+    if (!signed) throw httpError(400, 'BAD_UPLOAD', 'This upload has expired — please try again');
 
     const head = await headObject(signed.key);
-    if (!head) throw httpError(400, 'NO_FILE', 'File upload poori nahi hui');
-    if (head.size > MAX_FILE_BYTES) throw httpError(400, 'TOO_BIG', 'File bahut badi hai');
+    if (!head) throw httpError(400, 'NO_FILE', 'The file upload did not complete');
+    if (head.size > MAX_FILE_BYTES) throw httpError(400, 'TOO_BIG', 'File is too large');
 
     const mime = String(upload.mime || 'application/octet-stream').slice(0, 100);
     fileDoc = {
@@ -467,7 +467,7 @@ export async function setMuted(user, conversationId, until) {
  * aur media chaalu hai. Bytes iske baad server ko chhoote hi nahi.
  */
 export async function requestUpload(user, conversationId, { withThumb = false } = {}) {
-  if (!chatMediaConfigured()) throw httpError(503, 'MEDIA_OFF', 'File bhejna abhi chaalu nahi hai');
+  if (!chatMediaConfigured()) throw httpError(503, 'MEDIA_OFF', 'File sharing is turned off');
   const conv = await mine(conversationId, user._id);
 
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -477,7 +477,7 @@ export async function requestUpload(user, conversationId, { withThumb = false } 
   ]);
   const spent = used[0]?.bytes || 0;
   if (spent >= DAILY_QUOTA_BYTES) {
-    throw httpError(429, 'QUOTA', 'Aaj ke liye file bhejne ki seema poori ho gayi — kal phir');
+    throw httpError(429, 'QUOTA', 'Daily file-sharing limit reached — try again tomorrow');
   }
 
   const signed = await signUpload({ conversationId: conv._id, userId: user._id, withThumb });

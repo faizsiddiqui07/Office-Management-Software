@@ -151,12 +151,12 @@ export function ImageViewer({ messageId, name, onClose }) {
               target="_blank"
               rel="noopener noreferrer"
               className="rounded-full p-2 hover:bg-white/15"
-              aria-label="Download karein"
+              aria-label="Download"
             >
               <Download className="size-5" />
             </a>
           ) : null}
-          <button type="button" onClick={onClose} className="rounded-full p-2 hover:bg-white/15" aria-label="Band karein">
+          <button type="button" onClick={onClose} className="rounded-full p-2 hover:bg-white/15" aria-label="Close">
             <X className="size-5" />
           </button>
         </div>
@@ -165,7 +165,7 @@ export function ImageViewer({ messageId, name, onClose }) {
         type="button"
         onClick={onClose}
         className="flex min-h-0 flex-1 items-center justify-center p-4"
-        aria-label="Band karein"
+        aria-label="Close"
       >
         {url ? (
           // eslint-disable-next-line @next/next/no-img-element

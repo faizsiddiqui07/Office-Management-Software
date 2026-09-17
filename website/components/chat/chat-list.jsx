@@ -92,7 +92,7 @@ export function ChatList({ activeId, onOpenConversation, onOpenPeer }) {
             id="chat-search"
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Naam se dhoondhein…"
+            placeholder="Search by name…"
             className="bg-background/50 pl-9"
           />
         </div>
@@ -102,7 +102,7 @@ export function ChatList({ activeId, onOpenConversation, onOpenPeer }) {
         <IosPushHint />
 
         {isLoading ? (
-          <p className="px-3 py-6 text-center text-sm text-muted-foreground">Khul rahi hai…</p>
+          <p className="px-3 py-6 text-center text-sm text-muted-foreground">Loading…</p>
         ) : null}
 
         {convs.map((c) => (
@@ -110,7 +110,7 @@ export function ChatList({ activeId, onOpenConversation, onOpenPeer }) {
             key={c.id}
             avatarUrl={c.peer?.avatarUrl}
             name={c.peer?.name ?? 'Unknown'}
-            sub={c.lastMessageKind === 'FILE' ? 'Ek file' : c.lastMessage}
+            sub={c.lastMessageKind === 'FILE' ? 'Attachment' : c.lastMessage}
             time={chatTime(c.lastMessageAt)}
             unread={c.unread}
             muted={c.muted}
@@ -123,7 +123,7 @@ export function ChatList({ activeId, onOpenConversation, onOpenPeer }) {
         {others.length ? (
           <>
             <p className="px-3 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Sab log
+              Everyone
             </p>
             {others.map((u) => (
               <Row
@@ -141,7 +141,7 @@ export function ChatList({ activeId, onOpenConversation, onOpenPeer }) {
           <div className="flex flex-col items-center gap-2 px-3 py-10 text-center">
             <MessageSquarePlus className="size-6 text-muted-foreground" />
             <p className="text-sm text-muted-foreground">
-              {needle ? 'Is naam ka koi nahi mila' : 'Abhi koi chat nahi'}
+              {needle ? 'No one matches that name' : 'No chats yet'}
             </p>
           </div>
         ) : null}

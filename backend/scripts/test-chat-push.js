@@ -64,7 +64,7 @@ async function main() {
   check('Brij ko gaya (khud ko nahi)', pushes[0].userId === String(brij._id));
   check('title me bhejne wale ka naam', pushes[0].title === 'Asha Verma', pushes[0].title);
   check('body me MESSAGE KA TEXT NAHI hai', !pushes[0].body.includes('Sector 45'), pushes[0].body);
-  check('body saada hai', pushes[0].body === 'Aapko ek message bheja', pushes[0].body);
+  check('body saada hai', pushes[0].body === 'Sent you a message', pushes[0].body);
   check('pehle par buzz hota hai (renotify)', pushes[0].renotify === true);
   check('tag per-chat hai', pushes[0].type === `chat:${conv.id}`, pushes[0].type);
   check('link seedha usi chat par kholta hai', pushes[0].link === `/chat?c=${conv.id}`);
@@ -80,9 +80,9 @@ async function main() {
   check('9 aur message gaye par push bhi 9 hi bane', pushes.length === 9, `${pushes.length}`);
   check('inme se KISI par buzz nahi hua', pushes.every((p) => p.renotify === false));
   check('sabka tag ek hi hai (ek doosre ko badal dete hain)', new Set(pushes.map((p) => p.type)).size === 1);
-  check('text "N naye message" ban gaya', /naye message/.test(pushes[pushes.length - 1].body), pushes[pushes.length - 1].body);
-  check('ginti badhti gayi', pushes[pushes.length - 1].body === '10 naye message', pushes[pushes.length - 1].body);
-  check('kisi bhi push me message ka matn nahi', pushes.every((p) => !/message \d/.test(p.body) || /naye message/.test(p.body)));
+  check('text "N naye message" ban gaya', /new messages/.test(pushes[pushes.length - 1].body), pushes[pushes.length - 1].body);
+  check('ginti badhti gayi', pushes[pushes.length - 1].body === '10 new messages', pushes[pushes.length - 1].body);
+  check('kisi bhi push me message ka matn nahi', pushes.every((p) => !/message \d/.test(p.body) || /new messages/.test(p.body)));
 
   console.log('\nPART 4 — padh lene par ginti saaf');
   await chat.markRead(brij, conv.id);
@@ -91,7 +91,7 @@ async function main() {
   pushes.length = 0;
   await chat.sendMessage(asha, conv.id, { text: 'naya silsila' });
   await settle();
-  check('agla message phir se pehla maana gaya', pushes[0].body === 'Aapko ek message bheja', pushes[0].body);
+  check('agla message phir se pehla maana gaya', pushes[0].body === 'Sent you a message', pushes[0].body);
   check('aur uspar phir buzz hua', pushes[0].renotify === true);
 
   console.log('\nPART 5 — jo chat saamne khuli hai uska notification nahi');
@@ -124,9 +124,9 @@ async function main() {
   await settle();
   // File wala notification seedha service se — asli S3 ke bina.
   const { notifyNewMessage } = await import('../src/services/chatPush.service.js');
-  await notifyNewMessage({ toUser: brij._id, fromName: 'Asha Verma', conversationId: conv.id, fileLabel: 'Ek PDF bheji' });
+  await notifyNewMessage({ toUser: brij._id, fromName: 'Asha Verma', conversationId: conv.id, fileLabel: 'Sent a PDF' });
   await settle();
-  check('file ka type bataya jaata hai', pushes[0]?.body === 'Ek PDF bheji', pushes[0]?.body);
+  check('file ka type bataya jaata hai', pushes[0]?.body === 'Sent a PDF', pushes[0]?.body);
   check('par FILE KA NAAM kabhi nahi', !/\.pdf/i.test(pushes[0]?.body || ''));
 
   console.log('\nPART 8 — dono taraf alag-alag ginti');

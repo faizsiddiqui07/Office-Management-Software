@@ -21,8 +21,8 @@ export default function ChatRecordsPage() {
       <div className="py-16">
         <EmptyState
           icon={ShieldCheck}
-          title="Ye jagah sirf CEO & President ke liye hai"
-          description="Kisi aur ki chat dekhne ka haq sirf unhe hai."
+          title="Only the CEO & President can view this"
+          description="Only they are allowed to open another person's chat."
         />
       </div>
     );
@@ -34,7 +34,7 @@ export default function ChatRecordsPage() {
         eyebrow="Chat records"
         title="Chat records"
         icon={ShieldCheck}
-        description="Zaroorat padne par kisi bhi employee ki chat kholi ja sakti hai — har baar Activity log me entry banti hai aur us employee ko bata diya jaata hai."
+        description="Open any employee's chat when there is a genuine need. Every access is written to the Activity log and the employee is notified."
       />
       <ChatRecords />
     </div>

@@ -41,7 +41,7 @@ function httpError(status, code, message) {
 /** Taala #1 — sirf CEO & President. */
 function requireOwner(admin) {
   if (!isOwnerRole(admin?.role)) {
-    throw httpError(403, 'FORBIDDEN', 'Sirf CEO & President kisi ki chat dekh sakte hain');
+    throw httpError(403, 'FORBIDDEN', 'Only the CEO & President can view chat records');
   }
 }
 
@@ -65,8 +65,8 @@ async function recordAccess(admin, target, conversation, what) {
   await notify({
     user: target._id,
     type: 'CHAT_ACCESS',
-    title: 'Aapki chat dekhi gayi',
-    message: `${admin.name} ne ${what}`,
+    title: 'Your chat was viewed',
+    message: `${admin.name} ${what}`,
     link: '/chat',
   });
 }
@@ -74,10 +74,10 @@ async function recordAccess(admin, target, conversation, what) {
 /** Kis-kis se is bande ki baat hui hai (sirf list, koi message nahi). */
 export async function listUserChats(admin, userId) {
   requireOwner(admin);
-  if (!mongoose.isValidObjectId(userId)) throw httpError(404, 'NOT_FOUND', 'Ye banda nahi mila');
+  if (!mongoose.isValidObjectId(userId)) throw httpError(404, 'NOT_FOUND', 'Person not found');
 
   const target = await User.findById(userId).select('name email designation avatarUrl isActive').lean();
-  if (!target) throw httpError(404, 'NOT_FOUND', 'Ye banda nahi mila');
+  if (!target) throw httpError(404, 'NOT_FOUND', 'Person not found');
 
   const convs = await Conversation.find({ participants: userId })
     .sort({ lastMessageAt: -1 })
@@ -116,18 +116,18 @@ export async function listUserChats(admin, userId) {
 export async function readUserChat(admin, userId, conversationId, { limit = 500 } = {}) {
   requireOwner(admin);
   if (!mongoose.isValidObjectId(userId) || !mongoose.isValidObjectId(conversationId)) {
-    throw httpError(404, 'NOT_FOUND', 'Chat nahi mili');
+    throw httpError(404, 'NOT_FOUND', 'Chat not found');
   }
 
   const target = await User.findById(userId).select('name').lean();
-  if (!target) throw httpError(404, 'NOT_FOUND', 'Ye banda nahi mila');
+  if (!target) throw httpError(404, 'NOT_FOUND', 'Person not found');
 
   // Chat us bande ki honi CHAHIYE — admin bhi koi bhi random chat nahi khol sakta, wo
   // jis employee ki jaanch kar raha hai bas usi ki.
   const conv = await Conversation.findOne({ _id: conversationId, participants: userId })
     .populate('participants', 'name designation')
     .lean();
-  if (!conv) throw httpError(404, 'NOT_FOUND', 'Chat nahi mili');
+  if (!conv) throw httpError(404, 'NOT_FOUND', 'Chat not found');
 
   const n = Math.min(Math.max(Number(limit) || 500, 1), 2000);
   const rows = await Message.find({ conversation: conv._id })
@@ -138,7 +138,7 @@ export async function readUserChat(admin, userId, conversationId, { limit = 500 
 
   const other = conv.participants.find((p) => String(p._id) !== String(userId));
   await recordAccess(admin, { _id: userId, name: target.name }, conv,
-    `aapki ${other?.name || 'kisi'} ke saath ki chat kholi`);
+    `opened your chat with ${other?.name || 'someone'}`);
 
   return {
     conversation: {

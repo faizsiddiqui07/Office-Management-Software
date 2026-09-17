@@ -51,7 +51,7 @@ export function ChatFab() {
       {open ? (
         <button
           type="button"
-          aria-label="Chat band karein"
+          aria-label="Close chat"
           onClick={() => setOpen(false)}
           className="fixed inset-0 z-40 bg-black/25 backdrop-blur-[2px] animate-in fade-in"
         />
@@ -77,7 +77,7 @@ export function ChatFab() {
             type="button"
             onClick={() => setOpen(false)}
             className="rounded-full p-1.5 text-muted-foreground hover:bg-foreground/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-            aria-label="Band karein"
+            aria-label="Close"
           >
             <X className="size-4" />
           </button>
@@ -93,7 +93,7 @@ export function ChatFab() {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        aria-label={open ? 'Chat band karein' : `Chat kholein${unread ? ` — ${unread} naye message` : ''}`}
+        aria-label={open ? 'Close chat' : `Open chat${unread ? ` — ${unread} unread` : ''}`}
         className={cn(
           'fixed bottom-6 right-6 z-50 grid size-14 place-items-center rounded-full',
           'bg-primary text-primary-foreground shadow-lg shadow-primary/25',

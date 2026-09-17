@@ -149,9 +149,9 @@ export function uploadToS3({ url, fields }, blob, { onProgress } = {}) {
     };
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) resolve();
-      else reject(new Error(`S3 ne mana kiya (${xhr.status})`));
+      else reject(new Error(`Storage rejected the upload (${xhr.status})`));
     };
-    xhr.onerror = () => reject(new Error('Upload nahi ho paaya'));
+    xhr.onerror = () => reject(new Error('Upload failed'));
     xhr.onabort = () => reject(Object.assign(new Error('cancelled'), { cancelled: true }));
     xhr.open('POST', url);
     xhr.send(form);

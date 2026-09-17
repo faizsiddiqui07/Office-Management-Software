@@ -204,7 +204,7 @@ export function chatTime(iso) {
   if (sameDay) return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false });
   const y = new Date(now);
   y.setDate(y.getDate() - 1);
-  if (d.toDateString() === y.toDateString()) return 'Kal';
+  if (d.toDateString() === y.toDateString()) return 'Yesterday';
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 }
 
@@ -212,10 +212,10 @@ export function chatTime(iso) {
 export function dayLabel(iso) {
   const d = new Date(iso);
   const now = new Date();
-  if (d.toDateString() === now.toDateString()) return 'Aaj';
+  if (d.toDateString() === now.toDateString()) return 'Today';
   const y = new Date(now);
   y.setDate(y.getDate() - 1);
-  if (d.toDateString() === y.toDateString()) return 'Kal';
+  if (d.toDateString() === y.toDateString()) return 'Yesterday';
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: d.getFullYear() === now.getFullYear() ? undefined : 'numeric' });
 }
 

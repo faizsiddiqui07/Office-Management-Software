@@ -39,7 +39,7 @@ function Bubble({ msg, peerDelivered, peerRead, onReply, onCopy, onDelete, onOpe
         <button
           type="button"
           onClick={() => onReply(msg)}
-          title="Jawab dein"
+          title="Reply"
           className="rounded-full p-1.5 text-muted-foreground hover:bg-foreground/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
         >
           <CornerUpLeft className="size-3.5" />
@@ -48,7 +48,7 @@ function Bubble({ msg, peerDelivered, peerRead, onReply, onCopy, onDelete, onOpe
           <button
             type="button"
             onClick={() => onCopy(msg)}
-            title="Copy karein"
+            title="Copy"
             className="rounded-full p-1.5 text-muted-foreground hover:bg-foreground/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
           >
             <Copy className="size-3.5" />
@@ -57,7 +57,7 @@ function Bubble({ msg, peerDelivered, peerRead, onReply, onCopy, onDelete, onOpe
         <button
           type="button"
           onClick={() => onDelete(msg)}
-          title="Mere liye hata dein"
+          title="Delete for me"
           className="rounded-full p-1.5 text-muted-foreground hover:bg-foreground/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
         >
           <Trash2 className="size-3.5" />
@@ -220,10 +220,10 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
   const copyText = async (msg) => {
     try {
       await navigator.clipboard.writeText(msg.text || '');
-      toast.success('Copy ho gaya');
+      toast.success('Copied');
     } catch {
       // http par ya purane browser me clipboard nahi milta — jhooth mat bolo
-      toast.error('Copy nahi ho paaya — text select karke copy karein');
+      toast.error('Could not copy — select the text and copy it manually');
     }
   };
 
@@ -233,7 +233,7 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
     if (!file) return;
     setFileError('');
     if (media.maxBytes && file.size > media.maxBytes) {
-      setFileError(`File bahut badi hai — ${prettyBytes(media.maxBytes)} tak hi bhej sakte hain`);
+      setFileError(`File is too large — the limit is ${prettyBytes(media.maxBytes)}`);
       return;
     }
     setAtBottom(true);
@@ -241,7 +241,7 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
       await upload.send(file, { caption: text.trim() });
       setText('');
     } catch (err) {
-      if (!err?.cancelled) setFileError(err?.message || 'File nahi bheji ja saki');
+      if (!err?.cancelled) setFileError(err?.message || 'Could not send the file');
     }
   };
 
@@ -281,8 +281,8 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
               conversation?.muted ? null : new Date(Date.now() + 365 * 24 * 3600 * 1000).toISOString(),
             )}
           className="shrink-0 rounded-full p-2 text-muted-foreground hover:bg-foreground/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-          aria-label={conversation?.muted ? 'Notification chaalu karein' : 'Is chat ki notification band karein'}
-          title={conversation?.muted ? 'Notification band hai — chaalu karein' : 'Notification band karein'}
+          aria-label={conversation?.muted ? 'Unmute notifications' : 'Mute notifications for this chat'}
+          title={conversation?.muted ? 'Muted — click to unmute' : 'Mute notifications'}
         >
           {conversation?.muted ? <BellOff className="size-4" /> : <Bell className="size-4" />}
         </button>
@@ -292,11 +292,11 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
       <div ref={scrollRef} onScroll={onScroll} className="relative min-h-0 flex-1 overflow-y-auto px-3 py-3">
         <div ref={topRef} />
         {isFetchingNextPage ? (
-          <p className="py-2 text-center text-xs text-muted-foreground">Purane message aa rahe hain…</p>
+          <p className="py-2 text-center text-xs text-muted-foreground">Loading older messages…</p>
         ) : null}
 
         {isLoading ? (
-          <p className="py-8 text-center text-sm text-muted-foreground">Khul raha hai…</p>
+          <p className="py-8 text-center text-sm text-muted-foreground">Loading…</p>
         ) : null}
 
         {!isLoading && !messages.length ? (
@@ -319,7 +319,7 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
                   <div className="my-2 flex items-center gap-2">
                     <span className="h-px flex-1 bg-primary/30" />
                     <span className="shrink-0 rounded-full bg-primary/12 px-2.5 py-0.5 text-[11px] font-medium text-primary">
-                      {unreadAnchor.count} naye message
+                      {unreadAnchor.count} unread {unreadAnchor.count === 1 ? 'message' : 'messages'}
                     </span>
                     <span className="h-px flex-1 bg-primary/30" />
                   </div>
@@ -356,7 +356,7 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
             bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
           }}
           className="absolute bottom-20 right-4 grid size-9 place-items-center rounded-full border border-border/60 bg-background/90 shadow-md backdrop-blur hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-          aria-label="Neeche jayein"
+          aria-label="Jump to latest"
         >
           <ChevronDown className="size-4" />
         </button>
@@ -371,7 +371,7 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
               type="button"
               onClick={() => setReplyTo(null)}
               className="rounded-full p-0.5 hover:bg-foreground/10"
-              aria-label="Jawab hataayein"
+              aria-label="Cancel reply"
             >
               <X className="size-3.5" />
             </button>
@@ -391,7 +391,7 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
               type="button"
               onClick={upload.cancel}
               className="shrink-0 rounded-full p-1 text-muted-foreground hover:bg-foreground/10"
-              aria-label="Upload rok dein"
+              aria-label="Cancel upload"
             >
               <X className="size-3.5" />
             </button>
@@ -418,8 +418,8 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
                 onClick={() => fileRef.current?.click()}
                 disabled={upload.progress !== null}
                 className="grid size-9 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-foreground/10 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-                aria-label="File bhejein"
-                title="Photo, video, PDF ya document bhejein"
+                aria-label="Attach a file"
+                title="Send a photo, video, PDF or document"
               >
                 <Paperclip className="size-4" />
               </button>
@@ -435,7 +435,7 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
               // Enter bhejta hai, Shift+Enter nayi line — WhatsApp desktop jaisa.
               if (e.key === 'Enter' && !e.shiftKey) submit(e);
             }}
-            placeholder="Message likhein…"
+            placeholder="Type a message…"
             className="max-h-32 min-h-9 flex-1 resize-none rounded-xl border border-border/60 bg-background/50 px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
           />
           <Button type="submit" size="icon" disabled={!text.trim() || send.isPending} className="size-9 shrink-0 rounded-full">

@@ -23,7 +23,7 @@ export default function ChatPage() {
         eyebrow="Chat"
         title="Chat"
         icon={MessagesSquare}
-        description="Apne colleagues se seedhi baat. Aapki chat sirf aap dono dekh sakte hain."
+        description="Direct messages with your colleagues. Only the two of you can see a chat."
       />
       <GlassCard className="h-[calc(100dvh-16rem)] min-h-[440px] overflow-hidden p-0">
         <ChatWindow mode="page" initialConversationId={conversationId} />
