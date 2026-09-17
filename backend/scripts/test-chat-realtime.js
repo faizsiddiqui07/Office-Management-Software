@@ -130,6 +130,16 @@ async function main() {
   check('padhne par sirf saamne wale ko event gaya', readEvents.length === 1 && readEvents[0].connectionId === 'asha-tab1');
   check('read event me kitna padha wo hai', readEvents[0].event.upToSeq === 1);
 
+  // Delete for everyone — dono taraf 'chat:deleted' jaaye, taaki bubble turant tombstone bane.
+  sender.sent.length = 0;
+  const toWipe = await chat.sendMessage(asha, conv.id, { text: 'galti se' });
+  sender.sent.length = 0;
+  await chat.deleteForEveryone(asha, toWipe.id);
+  const delEvents = sender.sent.filter((s) => s.event.type === 'chat:deleted');
+  check('delete-for-everyone par event dono taraf gaya', delEvents.length === 2, `${delEvents.length} sent`);
+  check('event me message id + seq hai', delEvents[0].event.messageId === toWipe.id && delEvents[0].event.seq === toWipe.seq);
+  check('event me matn NAHI hai', !JSON.stringify(delEvents[0].event).includes('galti se'));
+
   console.log('\nPART 5 — mara hua connection apne aap hat jaata hai');
   await handleSocketEvent(wsEvent('$connect', 'asha-dead', { queryStringParameters: { ticket: issueTicket(asha._id) } }));
   check('abhi Asha ke do connection hain', (await ChatConnection.countDocuments({ user: asha._id })) === 2);

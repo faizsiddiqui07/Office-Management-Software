@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useChatSocket } from '@/lib/chat-socket';
+import { markDeletedInCache } from '@/lib/chat';
 import { useAuth } from '@/lib/auth';
 
 /**
@@ -88,6 +89,15 @@ export function ChatRealtimeProvider({ children }) {
           );
           return { ...old, pages };
         });
+        qc.invalidateQueries({ queryKey: ['chat', 'conversations'] });
+        return;
+      }
+
+      if (ev.type === 'chat:deleted') {
+        // Bhejne wale ne "delete for everyone" kiya → bubble usi pal tombstone. Ye event
+        // zaroori hai: reconnect wali bharpai sirf NAYE seq laati hai, purane message ka
+        // badlaav usse kabhi nahi aata.
+        markDeletedInCache(qc, ev.conversationId, ev.messageId);
         qc.invalidateQueries({ queryKey: ['chat', 'conversations'] });
       }
     },

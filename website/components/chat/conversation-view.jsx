@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { ArrowLeft, Bell, BellOff, Check, CheckCheck, Clock, Copy, CornerUpLeft, Paperclip, Send, Trash2, X, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Ban, Bell, BellOff, Check, CheckCheck, Clock, Copy, CornerUpLeft, Paperclip, Send, Trash2, X, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -11,7 +11,9 @@ import {
 } from '@/lib/chat';
 import { useChatRealtime } from './chat-realtime';
 import { useMediaConfig, useSendFile, useSetMuted } from '@/lib/chat';
-import { FileBubble, ImageViewer } from './file-bubble';
+import { FileBubble, MediaViewer } from './file-bubble';
+import { MessageActions } from './message-actions';
+import { useLongPress } from '@/lib/use-long-press';
 import { prettyBytes } from '@/lib/chat-media';
 
 /** Sent / delivered / read — sirf apne bheje hue message par. */
@@ -26,9 +28,17 @@ function Ticks({ msg, peerDelivered, peerRead }) {
 const clock = (iso) =>
   new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false });
 
-function Bubble({ msg, peerDelivered, peerRead, onReply, onCopy, onDelete, onOpenImage }) {
+function Bubble({ msg, peerDelivered, peerRead, onReply, onCopy, onDelete, onOpenImage, onOpenMenu }) {
+  // Phone: der tak dabao → menu. Desktop: right-click → wahi menu (hover buttons bhi hain).
+  const press = useLongPress(() => !msg.pending && onOpenMenu(msg));
   return (
-    <div className={cn('group flex w-full gap-1.5', msg.mine ? 'justify-end' : 'justify-start')}>
+    <div
+      {...press}
+      className={cn(
+        'group flex w-full gap-1.5 select-none [-webkit-touch-callout:none] sm:select-text',
+        msg.mine ? 'justify-end' : 'justify-start',
+      )}
+    >
       {/* Actions — hover par, bubble ke bahar, taaki text kabhi na dhanke */}
       <div
         className={cn(
@@ -36,14 +46,16 @@ function Bubble({ msg, peerDelivered, peerRead, onReply, onCopy, onDelete, onOpe
           msg.mine ? 'order-first' : 'order-last',
         )}
       >
-        <button
-          type="button"
-          onClick={() => onReply(msg)}
-          title="Reply"
-          className="rounded-full p-1.5 text-muted-foreground hover:bg-foreground/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-        >
-          <CornerUpLeft className="size-3.5" />
-        </button>
+        {!msg.deleted ? (
+          <button
+            type="button"
+            onClick={() => onReply(msg)}
+            title="Reply"
+            className="rounded-full p-1.5 text-muted-foreground hover:bg-foreground/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+          >
+            <CornerUpLeft className="size-3.5" />
+          </button>
+        ) : null}
         {msg.text ? (
           <button
             type="button"
@@ -57,7 +69,7 @@ function Bubble({ msg, peerDelivered, peerRead, onReply, onCopy, onDelete, onOpe
         <button
           type="button"
           onClick={() => onDelete(msg)}
-          title="Delete for me"
+          title="Delete"
           className="rounded-full p-1.5 text-muted-foreground hover:bg-foreground/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
         >
           <Trash2 className="size-3.5" />
@@ -66,8 +78,9 @@ function Bubble({ msg, peerDelivered, peerRead, onReply, onCopy, onDelete, onOpe
 
       <div
         className={cn(
-          'max-w-[78%] rounded-2xl px-3 py-2 text-sm shadow-sm',
-          msg.file && 'px-1.5 pt-1.5',
+          'rounded-2xl px-3 py-2 text-sm shadow-sm',
+          // File wala bubble zyada chauda — photo sach me dikhe. Text wala pehle jaisa.
+          msg.file ? 'w-full max-w-[85%] px-1.5 pt-1.5 sm:max-w-[440px]' : 'max-w-[78%]',
           msg.mine
             ? 'rounded-br-sm bg-primary text-primary-foreground'
             : 'rounded-bl-sm bg-foreground/[0.06] text-foreground',
@@ -91,9 +104,15 @@ function Bubble({ msg, peerDelivered, peerRead, onReply, onCopy, onDelete, onOpe
               messageId={msg.id}
               file={msg.file}
               mine={msg.mine}
-              onOpenImage={() => onOpenImage(msg)}
+              onOpen={() => onOpenImage(msg)}
             />
           </div>
+        ) : null}
+
+        {msg.deleted ? (
+          <p className="flex items-center gap-1.5 italic opacity-70">
+            <Ban className="size-3.5 shrink-0" /> This message was deleted
+          </p>
         ) : null}
 
         {msg.text ? <p className="whitespace-pre-wrap break-words">{msg.text}</p> : null}
@@ -135,6 +154,7 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
   const [replyTo, setReplyTo] = React.useState(null);
   const [atBottom, setAtBottom] = React.useState(true);
   const [viewing, setViewing] = React.useState(null); // poori screen wali photo
+  const [menuFor, setMenuFor] = React.useState(null); // long-press / right-click wala menu
   const [fileError, setFileError] = React.useState('');
   const fileRef = React.useRef(null);
 
@@ -337,8 +357,9 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
                   peerRead={peerRead}
                   onReply={setReplyTo}
                   onCopy={copyText}
-                  onDelete={(x) => !x.pending && del.mutate(x.id)}
+                  onDelete={(x) => !x.pending && setMenuFor({ ...x, _step: 'delete' })}
                   onOpenImage={setViewing}
+                  onOpenMenu={setMenuFor}
                 />
               </React.Fragment>
             );
@@ -445,12 +466,16 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
       </form>
 
       {viewing ? (
-        <ImageViewer
-          messageId={viewing.id}
-          name={viewing.file?.name || 'Photo'}
-          onClose={() => setViewing(null)}
-        />
+        <MediaViewer message={viewing} onClose={() => setViewing(null)} />
       ) : null}
+
+      <MessageActions
+        target={menuFor}
+        onClose={() => setMenuFor(null)}
+        onReply={(m) => { setReplyTo(m); inputRef.current?.focus(); }}
+        onCopy={copyText}
+        onDelete={(m, scope) => del.mutate({ id: m.id, scope })}
+      />
     </div>
   );
 }

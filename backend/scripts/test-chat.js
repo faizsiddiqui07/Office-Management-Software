@@ -138,6 +138,23 @@ async function main() {
   check('Brij ko wahi message abhi bhi dikhta hai', brijView.messages.some((m) => m.seq === 1));
   await chat.setMuted(asha, c1.id, new Date(Date.now() + 3600e3));
   check('mute lag gaya', (await chat.listConversations(asha))[0].muted === true);
+
+  console.log('');
+  console.log('PART 6b — delete for everyone');
+  const dm = await chat.sendMessage(brij, c1.id, { text: 'galti se bhej diya' });
+  // Doosre ka message koi delete-for-everyone nahi kar sakta — aur jawab 404 hai, 403 nahi.
+  await throws404('Asha Brij ka message sabke liye nahi hata sakti', () => chat.deleteForEveryone(asha, dm.id));
+  const wiped = await chat.deleteForEveryone(brij, dm.id);
+  check('bhejne wala hata sakta hai', wiped.id === dm.id && !!wiped.deletedAt);
+  const av = (await chat.listMessages(asha, c1.id)).messages.find((m) => m.seq === dm.seq);
+  const bv = (await chat.listMessages(brij, c1.id)).messages.find((m) => m.seq === dm.seq);
+  check('dono ko bubble ab bhi dikhta hai (tombstone), gayab nahi', !!av && !!bv);
+  check('dono ke liye deleted=true aur text khaali', av.deleted === true && av.text === '' && bv.deleted === true && bv.text === '');
+  check('chat list ka preview bhi badla', (await chat.listConversations(asha))[0].lastMessage === 'This message was deleted');
+  await throws404('dobara delete-for-everyone 404', () => chat.deleteForEveryone(brij, dm.id));
+  // Records (CEO/President) me matn bacha rehta hai — ye owner ka faisla hai.
+  const rawDel = await Message.findOne({ _id: dm.id }).lean();
+  check('DB me body abhi bhi hai (records ke liye)', (Buffer.isBuffer(rawDel.body) || rawDel.body?._bsontype === 'Binary') && !!rawDel.deletedAt);
   await chat.setMuted(asha, c1.id, null);
   check('unmute ho gaya', (await chat.listConversations(asha))[0].muted === false);
 

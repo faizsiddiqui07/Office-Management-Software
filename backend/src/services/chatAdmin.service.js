@@ -160,6 +160,9 @@ export async function readUserChat(admin, userId, conversationId, { limit = 500 
       // tha"). Matn phir bhi maujood hai, kyunki delete-for-me sirf apni nazar se hataata
       // hai.
       deletedForCount: (m.deletedFor || []).length,
+      // "Delete for everyone" — participants ko ye gaya hua dikhta hai, par records me
+      // matn maujood hai (wajah Message.js me). Nishaan ke saath dikhao.
+      deletedForEveryoneAt: m.deletedAt || null,
       createdAt: m.createdAt,
     })),
     truncated: conv.lastSeq > rows.length,
@@ -179,7 +182,7 @@ export async function searchMyMessages(user, q, { limit = 40 } = {}) {
   const needle = String(q || '').trim().toLowerCase();
   if (needle.length < 2) return { results: [], scanned: 0 };
 
-  const rows = await Message.find({ participants: user._id, deletedFor: { $ne: user._id }, kind: 'TEXT' })
+  const rows = await Message.find({ participants: user._id, deletedFor: { $ne: user._id }, deletedAt: null, kind: 'TEXT' })
     .sort({ createdAt: -1 })
     .limit(MAX_SCAN)
     .select('conversation seq sender body createdAt')

@@ -172,7 +172,7 @@ export async function headObject(key) {
 }
 
 /** Download ka 5-minute wala link. Public URL kabhi nahi. */
-export async function signDownload(key, { filename, mime } = {}) {
+export async function signDownload(key, { filename, mime, attachment = false } = {}) {
   if (!bucket() || !key) return '';
   const { GetObjectCommand } = await import('@aws-sdk/client-s3');
   const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
@@ -184,7 +184,8 @@ export async function signDownload(key, { filename, mime } = {}) {
     // hamesha gumnaam octet-stream hi pada rehta hai.
     ...(mime ? { ResponseContentType: mime } : {}),
     ...(filename
-      ? { ResponseContentDisposition: `inline; filename="${String(filename).replace(/["\\\r\n]/g, '_')}"` }
+      // `attachment` = browser save kare (Download button); `inline` = dikhaye (viewer).
+      ? { ResponseContentDisposition: `${attachment ? 'attachment' : 'inline'}; filename="${String(filename).replace(/["\\\r\n]/g, '_')}"` }
       : {}),
   });
   // 5 minute: link khud ek chaabi hai (jiske paas hai wo khol sakta hai), isliye umar

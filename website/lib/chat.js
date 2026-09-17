@@ -158,15 +158,54 @@ export function useMarkRead() {
   });
 }
 
-/** Sirf mere liye chhupao — saamne wale ke paas raha rahega. */
+/**
+ * Message hatao — do tarah se, WhatsApp jaisa:
+ *   scope 'me'        → sirf meri nazar se; saamne wale ke paas raha rahega
+ *   scope 'everyone'  → sirf apna bheja hua; dono taraf "This message was deleted"
+ *
+ * Cache turant badalta hai (optimistic) taaki tap par bubble usi pal jaaye/badle —
+ * server se jawab aane tak ka intezaar phone par sust lagta hai. Fail ho to wapas.
+ */
 export function useDeleteMessage(conversationId) {
   const qc = useQueryClient();
+  const key = msgKey(conversationId);
   return useMutation({
-    mutationFn: (messageId) => api.delete(`/chat/messages/${messageId}`),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: msgKey(conversationId) });
+    mutationFn: ({ id, scope = 'me' }) =>
+      api.delete(`/chat/messages/${id}${scope === 'everyone' ? '?scope=everyone' : ''}`),
+    onMutate: async ({ id, scope = 'me' }) => {
+      await qc.cancelQueries({ queryKey: key });
+      const prev = qc.getQueryData(key);
+      qc.setQueryData(key, (old) => {
+        if (!old?.pages?.length) return old;
+        const pages = old.pages.map((p) => ({
+          ...p,
+          messages: scope === 'everyone'
+            ? p.messages.map((m) => (m.id === id ? { ...m, deleted: true, text: '', file: null } : m))
+            : p.messages.filter((m) => m.id !== id),
+        }));
+        return { ...old, pages };
+      });
+      return { prev };
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.prev) qc.setQueryData(key, ctx.prev);
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: key });
       qc.invalidateQueries({ queryKey: LIST_KEY });
     },
+  });
+}
+
+/** Ek message ko cache me tombstone bana do — realtime 'chat:deleted' isi se lagta hai. */
+export function markDeletedInCache(qc, conversationId, messageId) {
+  qc.setQueryData(msgKey(conversationId), (old) => {
+    if (!old?.pages?.length) return old;
+    const pages = old.pages.map((p) => ({
+      ...p,
+      messages: p.messages.map((m) => (m.id === messageId ? { ...m, deleted: true, text: '', file: null } : m)),
+    }));
+    return { ...old, pages };
   });
 }
 
@@ -240,13 +279,16 @@ export function useMediaConfig() {
  * Link sirf 5 minute chalta hai (wo khud ek chaabi hai), isliye ise cache me lamba nahi
  * rakha ja sakta — 4 minute baad taaza maang liya jaata hai.
  */
-export function useMediaUrl(messageId, { thumb = false, enabled = true } = {}) {
+export function useMediaUrl(messageId, { thumb = false, enabled = true, download = false, fresh = false } = {}) {
+  const q = thumb ? '?thumb=1' : download ? '?download=1' : '';
   const { data } = useQuery({
-    queryKey: ['chat', 'media', messageId, thumb ? 'thumb' : 'full'],
-    queryFn: () => api.get(`/chat/media/${messageId}${thumb ? '?thumb=1' : ''}`),
+    queryKey: ['chat', 'media', messageId, thumb ? 'thumb' : download ? 'download' : 'full', fresh ? 'fresh' : ''],
+    queryFn: () => api.get(`/chat/media/${messageId}${q}`),
     enabled: !!messageId && enabled,
-    staleTime: 4 * 60_000,
-    gcTime: 5 * 60_000,
+    // `fresh`: viewer ke liye har baar naya link — viewer 5 minute se zyada khula rah
+    // sakta hai, aur cache wala link beech me mar jaata.
+    staleTime: fresh ? 0 : 4 * 60_000,
+    gcTime: fresh ? 0 : 5 * 60_000,
     retry: false,
   });
   return data?.url || '';

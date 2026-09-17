@@ -277,8 +277,11 @@ export async function listMessages(user, conversationId, { before, after, limit 
       mine: String(m.sender) === String(user._id),
       sender: String(m.sender),
       kind: m.kind,
-      text: readBody(m.body),
-      file: fileOut(m),
+      // Delete-for-everyone: participants ko na text milta hai na file — sirf nishaan.
+      // (Body DB me rehta hai, CEO/President ke records ke liye — dekho Message.js.)
+      deleted: !!m.deletedAt,
+      text: m.deletedAt ? '' : readBody(m.body),
+      file: m.deletedAt ? null : fileOut(m),
       replyTo: m.replyTo?.seq
         ? { seq: m.replyTo.seq, mine: String(m.replyTo.sender) === String(user._id), text: readBody(m.replyTo.preview) }
         : null,
@@ -470,6 +473,46 @@ export async function deleteForMe(user, messageId) {
   return { id: String(messageId) };
 }
 
+/**
+ * "Delete for everyone" — sirf apna bheja hua message, aur sirf ek baar.
+ *
+ * Dono taraf bubble ki jagah "This message was deleted" aa jaata hai (live event se, ya
+ * agle refetch par). Body/file DB me rehte hain — CEO/President ke records ke liye (wajah
+ * Message.js me). Isliye yahan S3 se kuch nahi hataya jaata.
+ *
+ * Filter me `sender: me` hai, `participants: me` nahi — doosre ka message delete-for-
+ * everyone karne ki koshish bhi 404 hai, 403 nahi (chat ka niyam: kuch bhi maujood hone
+ * ka sabut mat do).
+ */
+export async function deleteForEveryone(user, messageId) {
+  if (!isId(messageId)) throw httpError(404, 'NOT_FOUND', 'Message not found');
+  const now = new Date();
+  const m = await Message.findOneAndUpdate(
+    { _id: messageId, sender: user._id, deletedAt: null },
+    { $set: { deletedAt: now } },
+    { new: true },
+  ).select('conversation seq participants').lean();
+  if (!m) throw httpError(404, 'NOT_FOUND', 'Message not found');
+
+  // Aakhri message tha to chat list ka preview bhi badlo — warna wahan purana text
+  // dikhta rehta jabki chat me "deleted" hai.
+  await Conversation.updateOne(
+    { _id: m.conversation, lastSeq: m.seq },
+    { $set: { lastMessagePreview: sealPreview('This message was deleted'), lastMessageKind: 'TEXT' } },
+  );
+
+  const others = (m.participants || []).map(String);
+  await publishToUsers(others, {
+    type: 'chat:deleted',
+    conversationId: String(m.conversation),
+    messageId: String(m._id),
+    seq: m.seq,
+    deletedAt: now,
+  }).catch(() => {});
+
+  return { id: String(m._id), seq: m.seq, deletedAt: now };
+}
+
 /** Mute / unmute this chat's notifications for me. `until` null = unmute. */
 export async function setMuted(user, conversationId, until) {
   const conv = await mine(conversationId, user._id);
@@ -513,12 +556,13 @@ export async function requestUpload(user, conversationId, { withThumb = false } 
  * hai jo baaki har jagah chalta hai. Signed link khud ek chaabi hai (jiske paas hai wo
  * khol lega), isliye 5 minute me mar jaata hai — aur kabhi public URL nahi diya jaata.
  */
-export async function mediaLink(user, messageId, { thumb = false } = {}) {
+export async function mediaLink(user, messageId, { thumb = false, download = false } = {}) {
   if (!isId(messageId)) throw httpError(404, 'NOT_FOUND', 'File not found');
   const m = await Message.findOne({ _id: messageId, participants: user._id, kind: 'FILE' })
-    .select('file deletedFor')
+    .select('file deletedFor deletedAt')
     .lean();
   if (!m || !m.file?.key) throw httpError(404, 'NOT_FOUND', 'File not found');
+  if (m.deletedAt) throw httpError(404, 'NOT_FOUND', 'File not found');
   if ((m.deletedFor || []).some((u) => String(u) === String(user._id))) {
     throw httpError(404, 'NOT_FOUND', 'File not found');
   }
@@ -529,6 +573,9 @@ export async function mediaLink(user, messageId, { thumb = false } = {}) {
   const url = await signDownload(key, {
     filename: thumb ? 'thumb' : readBody(m.file.name) || 'file',
     mime: thumb ? 'image/jpeg' : m.file.mime,
+    // `download`: browser ko "save karo" bolo, "dikhao" nahi — Download button isi se.
+    // Warna PDF/photo nayi tab me khul jaati hai aur user ko lagta hai download nahi hua.
+    attachment: !!download,
   });
   return { url, expiresIn: 300 };
 }

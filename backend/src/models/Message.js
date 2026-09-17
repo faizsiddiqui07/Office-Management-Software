@@ -62,8 +62,18 @@ const messageSchema = new mongoose.Schema(
       _id: false,
     },
     // "Delete for me": the sender or the receiver hides it from their own view; the other
-    // side is untouched. Delete-for-everyone is a later phase and will clear `body`.
+    // side is untouched.
     deletedFor: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }], default: [] },
+    /**
+     * "Delete for everyone" — sirf bhejne wala kar sakta hai. Dono taraf bubble ki jagah
+     * "This message was deleted" dikhta hai, file ka link band ho jaata hai.
+     *
+     * Body aur file JAAN-BUJH KAR nahi mitaye jaate. Owner ka faisla hai ki CEO/President
+     * ke Chat records shikayat/handover me kaam aayein — agar bhejne wala delete karke
+     * sabut mita sakta, to wo maksad hi khatam. Records me ye message "deleted by sender"
+     * ke nishaan ke saath dikhta rahega. Participants ke liye ye poori tarah gaya hua hai.
+     */
+    deletedAt: { type: Date, default: null },
     editedAt: { type: Date, default: null },
   },
   { timestamps: true },

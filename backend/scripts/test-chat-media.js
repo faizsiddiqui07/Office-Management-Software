@@ -174,6 +174,11 @@ async function main() {
   check('Asha ki jaanch paar hoti hai (usne nahi hataya)',
     ashaErr === null || (ashaErr.status !== 404 && ashaErr.code !== 'NOT_FOUND'),
     ashaErr ? `${ashaErr.code || ashaErr.name}` : 'link mil gaya');
+  // Delete-for-everyone: bhejne wala hataye to DONO ke liye file band — Asha ki bhi.
+  await chat.deleteForEveryone(asha, fm._id);
+  await throwsWith('sabke liye hataane par Asha ko bhi link nahi', 'NOT_FOUND', () => chat.mediaLink(asha, fm._id));
+  const rawFile = await Message.findOne({ _id: fm._id }).select('file deletedAt').lean();
+  check('S3 ki file DB me abhi bhi darj hai (records ke liye, hataai nahi)', !!rawFile.file?.key && !!rawFile.deletedAt);
 
   console.log('\nPART 8 — din ka quota');
   await Message.create({

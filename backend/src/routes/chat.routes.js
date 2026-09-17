@@ -12,6 +12,7 @@ import {
   sendMessage,
   markRead,
   deleteForMe,
+  deleteForEveryone,
   setMuted,
   requestUpload,
   mediaLink,
@@ -91,7 +92,7 @@ chatRouter.post('/conversations/:id/uploads', handle((req) =>
 
 // File kholne ka 5-minute wala link (?thumb=1 se chhoti jhalak).
 chatRouter.get('/media/:id', handle((req) =>
-  mediaLink(req.user, req.params.id, { thumb: req.query.thumb === '1' })));
+  mediaLink(req.user, req.params.id, { thumb: req.query.thumb === '1', download: req.query.download === '1' })));
 
 // Frontend ko pata hona chahiye ki attachment ka button dikhana bhi hai ya nahi.
 chatRouter.get('/media-config', handle(() => mediaConfig()));
@@ -103,8 +104,12 @@ chatRouter.post('/conversations/:id/read', handle((req) =>
 chatRouter.post('/conversations/:id/mute', handle((req) =>
   setMuted(req.user, req.params.id, req.body?.until ?? null)));
 
-// Hide one message from my own view; the other side keeps it.
-chatRouter.delete('/messages/:id', handle((req) => deleteForMe(req.user, req.params.id)));
+// ?scope=everyone → sirf apna message, dono taraf se hat jaata hai (tombstone).
+// Default (scope=me) → sirf meri nazar se; doosri taraf waisa ka waisa.
+chatRouter.delete('/messages/:id', handle((req) =>
+  req.query.scope === 'everyone'
+    ? deleteForEveryone(req.user, req.params.id)
+    : deleteForMe(req.user, req.params.id)));
 
 
 // Apni hi chat me dhoondho. Message encrypted pade hain, isliye MongoDB unme khoj nahi
