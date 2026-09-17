@@ -1,10 +1,9 @@
 'use client';
 
 import * as React from 'react';
-import { ShieldCheck, Search, AlertTriangle, ArrowLeft, Paperclip, Loader2 } from 'lucide-react';
+import { ShieldCheck, Search, ArrowLeft, Paperclip, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { GlassCard } from '@/components/glass/glass-card';
 import { EmptyState } from '@/components/glass/empty-state';
@@ -14,34 +13,11 @@ import { prettyBytes } from '@/lib/chat-media';
 /**
  * CEO & President ke liye — kisi employee ki chat nikalna.
  *
- * Chat kholna ek faisla hai, ek click nahi — isliye pehle ek confirm screen aati hai,
- * taaki koi galti se, ya bina soche, kisi ki nijee baat na khol de.
- *
- * Server par har baar Activity log me entry banti hai AUR us employee ko notification
- * jaata hai (chatAdmin.service.js) — par owner ne kaha ki ye baat SCREEN PAR na likhi
- * jaye, isliye yahan uska zikr nahi hai. Ye bhool nahi, faisla hai; wapas mat jodna.
- *
- * Message tab tak maange hi nahi jaate jab tak "Yes, open it" na dabaya jaye — warna
- * sirf naam par click karne se hi log/notification chala jaata.
+ * Chat par click = seedha khul jaati hai. Pehle beech me ek "Open this chat?" wali
+ * confirm screen thi; owner ne use hatwa diya. Server par har baar Activity log me entry
+ * AUR us employee ko notification waise hi jaate hain (chatAdmin.service.js) — bas screen
+ * par uska zikr nahi hai, aur koi confirm bhi nahi. Dono owner ke faisle hain, bhool nahi.
  */
-function ConfirmOpen({ personName, withName, onCancel, onConfirm }) {
-  return (
-    <div className="mx-auto max-w-lg py-10 text-center">
-      <div className="mx-auto mb-4 grid size-11 place-items-center rounded-full bg-warning/15">
-        <AlertTriangle className="size-5 text-amber-600 dark:text-amber-400" />
-      </div>
-      <h3 className="text-base font-semibold">Open this chat?</h3>
-      <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">
-        You are about to open the conversation between <b>{personName}</b> and <b>{withName}</b>.
-      </p>
-      <div className="mt-5 flex justify-center gap-2">
-        <Button variant="outline" onClick={onCancel}>Cancel</Button>
-        <Button onClick={onConfirm}>Yes, open it</Button>
-      </div>
-    </div>
-  );
-}
-
 function AdminMessage({ m, personId }) {
   const fromTarget = String(m.senderId) === String(personId);
   return (
@@ -74,19 +50,16 @@ export function ChatRecords() {
   const [q, setQ] = React.useState('');
   const [person, setPerson] = React.useState(null);
   const [chat, setChat] = React.useState(null);
-  const [confirmed, setConfirmed] = React.useState(false);
 
   const { data: people } = useContacts();
   const { data: chats, isLoading: loadingChats } = useUserChats(person?.id);
-  const { data: opened, isLoading: loadingMsgs, error } = useUserChatMessages(person?.id, chat?.id, confirmed);
+  const { data: opened, isLoading: loadingMsgs, error } = useUserChatMessages(person?.id, chat?.id, !!chat);
 
   const needle = q.trim().toLowerCase();
   const list = (people ?? []).filter((u) => !needle || u.name.toLowerCase().includes(needle));
 
-  // Banda ya chat badle to confirmation dobara maango — ek baar "haan" kehna aage ke
-  // liye khula parwana nahi ban sakta.
-  const pickPerson = (u) => { setPerson(u); setChat(null); setConfirmed(false); };
-  const pickChat = (c) => { setChat(c); setConfirmed(false); };
+  const pickPerson = (u) => { setPerson(u); setChat(null); };
+  const pickChat = (c) => setChat(c);
 
   return (
     <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
@@ -170,19 +143,12 @@ export function ChatRecords() {
               ))}
             </div>
           </>
-        ) : !confirmed ? (
-          <ConfirmOpen
-            personName={person.name}
-            withName={chat.with?.name ?? '—'}
-            onCancel={() => setChat(null)}
-            onConfirm={() => setConfirmed(true)}
-          />
         ) : (
           <>
             <div className="flex shrink-0 items-center gap-2 border-b border-border/60 px-3 py-2.5">
               <button
                 type="button"
-                onClick={() => { setChat(null); setConfirmed(false); }}
+                onClick={() => setChat(null)}
                 className="rounded-full p-1.5 hover:bg-foreground/10"
                 aria-label="Back"
               >
