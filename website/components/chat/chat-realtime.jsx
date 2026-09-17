@@ -59,6 +59,10 @@ export function ChatRealtimeProvider({ children }) {
                 sender: m.sender,
                 kind: m.kind,
                 text: m.text,
+                // Server file bhejta hai; ise chhod dene par live aayi photo/PDF bina
+                // attachment ke dikhti thi jab tak refetch na ho.
+                file: m.file ?? null,
+                deleted: false,
                 replyTo: m.replyTo ? { seq: m.replyTo.seq, mine: false, text: m.replyTo.text } : null,
                 createdAt: m.createdAt,
               },
@@ -98,6 +102,10 @@ export function ChatRealtimeProvider({ children }) {
         // zaroori hai: reconnect wali bharpai sirf NAYE seq laati hai, purane message ka
         // badlaav usse kabhi nahi aata.
         markDeletedInCache(qc, ev.conversationId, ev.messageId);
+        // Aur invalidate bhi: agar is chat ka koi fetch (purana page / refetch) abhi udaan
+        // me hai, to uska jawab fetch-shuru wale snapshot se cache likh deta hai aur upar
+        // wala tombstone mit jaata hai. invalidate us fetch ko radd karke taaza laata hai.
+        qc.invalidateQueries({ queryKey: ['chat', 'messages', ev.conversationId] });
         qc.invalidateQueries({ queryKey: ['chat', 'conversations'] });
       }
     },

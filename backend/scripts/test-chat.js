@@ -152,6 +152,12 @@ async function main() {
   check('dono ke liye deleted=true aur text khaali', av.deleted === true && av.text === '' && bv.deleted === true && bv.text === '');
   check('chat list ka preview bhi badla', (await chat.listConversations(asha))[0].lastMessage === 'This message was deleted');
   await throws404('dobara delete-for-everyone 404', () => chat.deleteForEveryone(brij, dm.id));
+  // Bypass ki koshish: mite hue message ko quote karke uska text wapas nikaalna.
+  const rq = await chat.sendMessage(asha, c1.id, { text: 'hm', replyToSeq: dm.seq });
+  check('mite hue message ko quote karne par text NAHI milta', !rq.replyTo || !rq.replyTo.text);
+  const rqRow = (await chat.listMessages(brij, c1.id)).messages.find((m) => m.seq === rq.seq);
+  check('list me bhi quote ka text nahi', !rqRow?.replyTo || !rqRow.replyTo.text);
+  await chat.markRead(brij, c1.id); // PART 7 ki ginti saaf rahe
   // Records (CEO/President) me matn bacha rehta hai — ye owner ka faisla hai.
   const rawDel = await Message.findOne({ _id: dm.id }).lean();
   check('DB me body abhi bhi hai (records ke liye)', (Buffer.isBuffer(rawDel.body) || rawDel.body?._bsontype === 'Binary') && !!rawDel.deletedAt);

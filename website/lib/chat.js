@@ -285,10 +285,14 @@ export function useMediaUrl(messageId, { thumb = false, enabled = true, download
     queryKey: ['chat', 'media', messageId, thumb ? 'thumb' : download ? 'download' : 'full', fresh ? 'fresh' : ''],
     queryFn: () => api.get(`/chat/media/${messageId}${q}`),
     enabled: !!messageId && enabled,
-    // `fresh`: viewer ke liye har baar naya link — viewer 5 minute se zyada khula rah
-    // sakta hai, aur cache wala link beech me mar jaata.
-    staleTime: fresh ? 0 : 4 * 60_000,
+    // `fresh`: viewer ke liye har KHOLNE par naya link (gcTime 0 → band hote hi cache se
+    // gayab, agla open phir maangta hai), par khule rehte hue link STABLE rahe — warna
+    // net aate-jaate (reconnect) ya tab badalne par link badal jaata aur video/PDF beech
+    // me dobara shuru ho jaata.
+    staleTime: fresh ? Infinity : 4 * 60_000,
     gcTime: fresh ? 0 : 5 * 60_000,
+    refetchOnReconnect: !fresh,
+    refetchOnWindowFocus: !fresh,
     retry: false,
   });
   return data?.url || '';
@@ -392,9 +396,11 @@ export function useUserChatMessages(userId, conversationId, enabled) {
     enabled: !!userId && !!conversationId && !!enabled,
     // Har GET server par Activity-log entry + us employee ko notification bhejta hai.
     // Isliye ye query APNE AAP kabhi dobara nahi chalti — na focus par, na reconnect par,
-    // na stale hone par. Ek baar khola = ek entry. Warna tab badalne bhar se employee ko
+    // na stale hone par, na topbar ke Refresh button se (wo bina filter ke sab invalidate
+    // karta hai; 'static' wali query us se bhi bach jaati hai — query-core khud ise
+    // chhod deta hai). Ek baar khola = ek entry. Warna tab badalne bhar se employee ko
     // "aapki chat dekhi gayi" baar-baar jaata.
-    staleTime: Infinity,
+    staleTime: 'static',
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,

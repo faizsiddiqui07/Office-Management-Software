@@ -335,7 +335,14 @@ export async function sendMessage(user, conversationId, { text, replyToSeq, uplo
 
   let replyTo;
   if (replyToSeq != null) {
-    const q = await Message.findOne({ conversation: conv._id, participants: user._id, seq: Number(replyToSeq) })
+    // `deletedAt: null` + `deletedFor` yahan SURAKSHA hai, saja-sajawat nahi: bina iske koi
+    // bhi participant "delete for everyone" kiye message ka seq quote karke uska text
+    // (80 char tak) wapas nikaal leta — UI Reply chhupata hai, par API seedha bhi
+    // bulai ja sakti hai. Mita hua message quote nahi hota, bas.
+    const q = await Message.findOne({
+      conversation: conv._id, participants: user._id, seq: Number(replyToSeq),
+      deletedAt: null, deletedFor: { $ne: user._id },
+    })
       .select('seq sender body').lean();
     if (q) replyTo = { seq: q.seq, sender: q.sender, preview: sealPreview(readBody(q.body)) };
   }

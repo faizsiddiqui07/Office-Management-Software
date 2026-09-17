@@ -4,6 +4,7 @@ import * as React from 'react';
 import { Download, FileText, File as FileIcon, Play, X, Loader2, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useMediaUrl } from '@/lib/chat';
+import { api } from '@/lib/api';
 import { prettyBytes, isImage, isVideo, isPdf } from '@/lib/chat-media';
 import { PdfPages } from './pdf-pages';
 
@@ -130,7 +131,29 @@ export function MediaViewer({ message, onClose }) {
   const file = message?.file;
   const kind = !file ? 'none' : isImage(file.mime) ? 'image' : isVideo(file.mime) ? 'video' : isPdf(file.mime) ? 'pdf' : 'other';
   const url = useMediaUrl(message?.id, { fresh: true, enabled: !!file });
-  const downloadUrl = useMediaUrl(message?.id, { download: true, enabled: !!file });
+
+  // Download/Open ka link CLICK par mint hota hai, kholte waqt nahi: link 5 minute me mar
+  // jaata hai, aur viewer usse zyada khula rah sakta hai — purana link S3 ka AccessDenied
+  // XML dikhata. "Open" me tab pehle (user-gesture me) khulti hai, phir link — warna
+  // popup-blocker await ke baad rok deta hai.
+  const [minting, setMinting] = React.useState(false);
+  const mintAndGo = React.useCallback(async (download) => {
+    if (minting || !message?.id) return;
+    setMinting(true);
+    const win = download ? null : window.open('about:blank', '_blank', 'noopener,noreferrer');
+    try {
+      const res = await api.get(`/chat/media/${message.id}${download ? '?download=1' : ''}`);
+      const freshUrl = res?.url;
+      if (!freshUrl) throw new Error('no url');
+      if (download) window.location.assign(freshUrl); // attachment disposition → page par rehkar save
+      else if (win) win.location.href = freshUrl;
+      else window.open(freshUrl, '_blank', 'noopener,noreferrer');
+    } catch {
+      win?.close();
+    } finally {
+      setMinting(false);
+    }
+  }, [minting, message?.id]);
 
   React.useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && onClose();
@@ -153,17 +176,16 @@ export function MediaViewer({ message, onClose }) {
           <p className="text-[11px] text-white/60">{prettyBytes(file.size)}</p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          {downloadUrl ? (
-            <a
-              href={downloadUrl}
-              download={file.name}
-              className="rounded-full p-2 hover:bg-white/15"
-              aria-label="Download"
-              title="Download"
-            >
-              <Download className="size-5" />
-            </a>
-          ) : null}
+          <button
+            type="button"
+            onClick={() => mintAndGo(true)}
+            disabled={minting}
+            className="rounded-full p-2 hover:bg-white/15 disabled:opacity-50"
+            aria-label="Download"
+            title="Download"
+          >
+            {minting ? <Loader2 className="size-5 animate-spin" /> : <Download className="size-5" />}
+          </button>
           <button type="button" onClick={onClose} className="rounded-full p-2 hover:bg-white/15" aria-label="Close">
             <X className="size-5" />
           </button>
@@ -197,14 +219,12 @@ export function MediaViewer({ message, onClose }) {
               <p className="mt-1 text-xs text-white/60">This file type can&apos;t be previewed here.</p>
             </div>
             <div className="flex gap-2">
-              <a href={url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-4 py-2 text-sm hover:bg-white/25">
+              <button type="button" onClick={() => mintAndGo(false)} disabled={minting} className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-4 py-2 text-sm hover:bg-white/25 disabled:opacity-50">
                 <ExternalLink className="size-4" /> Open
-              </a>
-              {downloadUrl ? (
-                <a href={downloadUrl} download={file.name} className="inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-2 text-sm font-medium text-black hover:bg-white/90">
-                  <Download className="size-4" /> Download
-                </a>
-              ) : null}
+              </button>
+              <button type="button" onClick={() => mintAndGo(true)} disabled={minting} className="inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-2 text-sm font-medium text-black hover:bg-white/90 disabled:opacity-50">
+                <Download className="size-4" /> Download
+              </button>
             </div>
           </div>
         )}

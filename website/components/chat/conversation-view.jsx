@@ -155,6 +155,16 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
   const [atBottom, setAtBottom] = React.useState(true);
   const [viewing, setViewing] = React.useState(null); // poori screen wali photo
   const [menuFor, setMenuFor] = React.useState(null); // long-press / right-click wala menu
+
+  // Delete-for-everyone aaya (live event ya refetch) to us message ke purane snapshot
+  // saaf karo — warna reply ka quote, khula menu, ya viewer mite hue text/file ko
+  // dikhata rehta.
+  React.useEffect(() => {
+    const gone = (x) => x && messages.find((m) => m.id === x.id)?.deleted;
+    if (gone(replyTo)) setReplyTo(null);
+    if (gone(menuFor)) setMenuFor(null);
+    if (gone(viewing)) setViewing(null);
+  }, [messages, replyTo, menuFor, viewing]);
   const [fileError, setFileError] = React.useState('');
   const fileRef = React.useRef(null);
 

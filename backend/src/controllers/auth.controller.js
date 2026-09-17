@@ -115,6 +115,9 @@ export async function updateProfile(req, res, next) {
     let previousAvatar = null;
     if (avatarUrl !== undefined) {
       previousAvatar = user.avatarUrl;
+      // Photo jaan-bujh kar hataai → "photo lagao" wala modal turant na tange. Wo
+      // faisla tha, bhool nahi. (7 din baad phir yaad dilata hai, baaki sabki tarah.)
+      if (avatarUrl === '' && previousAvatar) user.avatarPromptSkippedAt = new Date();
       // A fresh upload arrives as a data URL — store it in S3 and keep only the URL in
       // the user doc (same as the brand images; falls back to the data URL if the
       // bucket isn't configured). '' clears the avatar. Anything else (already a URL)

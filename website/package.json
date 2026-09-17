@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "postinstall": "node -e \"require('fs').copyFileSync('node_modules/pdfjs-dist/build/pdf.worker.min.mjs','public/pdf.worker.min.mjs')\""
+    "postinstall": "node scripts/copy-pdfjs-assets.js"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
