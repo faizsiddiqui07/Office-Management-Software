@@ -2,7 +2,7 @@
 
 import { AppDialog } from '@/components/glass/app-dialog';
 import { StatusBadge } from '@/components/glass/status-badge';
-import { formatMoney } from '@/lib/expense';
+import { formatMoneyTrim as formatMoney } from '@/lib/expense';
 import { formatYMD } from '@/lib/leave';
 
 function Row({ label, children }) {

@@ -19,7 +19,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { roleName } from '@/lib/permissions';
-import { rupeesToPaise, paiseToRupees, todayYMD } from '@/lib/expense';
+import { rupeesToPaise, paiseToRupeesTrim as paiseToRupees, todayYMD } from '@/lib/expense';
 
 /**
  * Shared dialog for logging a DUE / PAYMENT, or EDITING an existing one (pass `entry`).

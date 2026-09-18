@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ArrowDownLeft, ArrowUpRight, Check, CheckCircle2, Copy, Download, HandCoins, QrCode, Smartphone, Wallet } from 'lucide-react';
 import { QRCodeCanvas, QRCodeSVG } from 'qrcode.react';
 import { api } from '@/lib/api';
-import { formatMoney } from '@/lib/expense';
+import { formatMoneyTrim as formatMoney, paiseToRupeesTrim } from '@/lib/expense';
 import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/glass/page-header';
 import { GlassCard } from '@/components/glass/glass-card';
@@ -107,7 +107,7 @@ function UpiPay({ pending, upi }) {
   const payingCustom = customAmt || !hasPending;
   const amountPaise = payingCustom ? Math.round((parseFloat(amtStr) || 0) * 100) : pending;
   const valid = amountPaise > 0;
-  const amount = (amountPaise / 100).toFixed(2);
+  const amount = paiseToRupeesTrim(amountPaise); // "40", na ki "40.00" — slip aur UPI link dono me
   const slipTitle = payingCustom ? 'Office advance payment' : 'Office dues payment';
 
   /**

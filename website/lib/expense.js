@@ -65,6 +65,25 @@ export function paiseToRupees(paise) {
 }
 
 /**
+ * Dues page ka niyam (owner): poore rupaye par ".00" nahi — "₹40", "₹1,250". Paise hon to
+ * hi dikhein — "₹40.50". Baaki app (expenses, reports) abhi bhi formatMoney par hai;
+ * wahan badalna ho to alag faisla.
+ */
+export function formatMoneyTrim(paise, currency = 'INR') {
+  const r = (paise || 0) / 100;
+  const digits = Number.isInteger(r) ? 0 : 2;
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency', currency, minimumFractionDigits: digits, maximumFractionDigits: digits,
+  }).format(r);
+}
+
+/** Paise → "40" ya "40.50" (input/slip ke liye, bina ₹ ke) — .00 nahi. */
+export function paiseToRupeesTrim(paise) {
+  const r = (paise || 0) / 100;
+  return Number.isInteger(r) ? String(r) : r.toFixed(2);
+}
+
+/**
  * The company FISCAL year (Apr 1 – Mar 31, matching the leave year). `year` is
  * the starting calendar year; `label` reads like "FY 2026–27".
  */

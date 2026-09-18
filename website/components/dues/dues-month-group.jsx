@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { ChevronDown } from 'lucide-react';
-import { formatMoney } from '@/lib/expense';
+import { formatMoneyTrim as formatMoney } from '@/lib/expense';
 import { cn } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select';
 import { SORTS } from '@/lib/dues-history';

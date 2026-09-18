@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { api, downloadFile, API_BASE_URL } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { formatMoney } from '@/lib/expense';
+import { formatMoneyTrim as formatMoney } from '@/lib/expense';
 import { cn } from '@/lib/utils';
 import { roleName } from '@/lib/permissions';
 import { PageHeader } from '@/components/glass/page-header';
