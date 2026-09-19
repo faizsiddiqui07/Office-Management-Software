@@ -67,6 +67,38 @@ export async function loadCompanyLogo(logoUrl) {
   }
 }
 
+/**
+ * ManagiBot (product) — PDF ke liye. src/assets me PNG, ek baar padh kar cache.
+ * Client ka logo na ho aur naam bhi na ho, tab header me yahi dikhta hai.
+ */
+export const PRODUCT_NAME = 'ManagiBot';
+export const PRODUCT_TAGLINE = 'ManagiBot | A product of BrainQbit';
+let productLogoCache = null;
+export function productLogo() {
+  if (productLogoCache) return productLogoCache;
+  try {
+    const p = new URL('../assets/managibot.png', import.meta.url);
+    productLogoCache = { format: 'png', dataUri: `data:image/png;base64,${fs.readFileSync(p).toString('base64')}`, product: true };
+  } catch {
+    productLogoCache = null;
+  }
+  return productLogoCache;
+}
+
+/**
+ * PDF ke header ke liye logo — owner ka niyam:
+ *   1. Company ne Settings se logo lagaya → wahi
+ *   2. Logo nahi par naam hai → null (renderer naam likhta hai)
+ *   3. Kuch bhi nahi → ManagiBot ka logo (`product: true` — renderer ise safed chip par
+ *      rakhta hai, kyunki header ki patti gehri hai aur logo navy hai)
+ */
+export async function loadPdfLogo(company = {}) {
+  const own = await loadCompanyLogo(company.logoDark || company.logoUrl || company.logoLight);
+  if (own) return own;
+  if (String(company.name || '').trim()) return null;
+  return productLogo();
+}
+
 /** Delete the file referenced by a public logo URL, if it exists. */
 export function deleteLogoFile(logoUrl) {
   try {

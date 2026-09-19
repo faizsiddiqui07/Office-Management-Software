@@ -16,16 +16,16 @@ const inter = Inter({
 
 export const metadata = {
   title: {
-    default: 'Architectus Bureau',
-    template: '%s | Architectus Bureau',
+    default: 'ManagiBot',
+    template: '%s | ManagiBot',
   },
   description: 'Internal office management — attendance, leaves, announcements, and more.',
-  applicationName: 'Architectus Bureau',
+  applicationName: 'ManagiBot',
   // Stop Chrome/Google offering to "translate this page" — the UI is already English
   // and the auto-translate bar kept popping up on open and garbling the labels.
   other: { google: 'notranslate' },
   manifest: '/manifest.webmanifest',
-  appleWebApp: { capable: true, title: 'Architectus Bureau', statusBarStyle: 'default' },
+  appleWebApp: { capable: true, title: 'ManagiBot', statusBarStyle: 'default' },
   // App icon = ManagiBot ka nishaan, HAMESHA — public/brand/ se, code me. Settings se
   // kabhi nahi badalta (owner ka faisla: ye product ka icon hai, client ka nahi).
   // ?v pichhla cached favicon hataata hai.

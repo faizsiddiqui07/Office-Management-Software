@@ -6,7 +6,7 @@
  * pixel se match ho, warna icon reject aur app install hi nahi hoti). Ab icon fixed hain
  * aur unke size pakke — isliye wo sab naapne-taulne ka kaam gaya.
  *
- * Naam/short_name pehle jaise hi hain (badalna alag faisla hai).
+ * Naam bhi product ka — ManagiBot (owner ka niyam).
  */
 export const dynamic = 'force-static';
 
@@ -21,9 +21,9 @@ const ICONS = [
 
 export function GET() {
   const manifest = {
-    name: 'Architectus Bureau',
+    name: 'ManagiBot',
     id: '/dashboard',
-    short_name: 'Architectus',
+    short_name: 'ManagiBot',
     description: 'Attendance, leaves, dues, expenses and more — your office in one place.',
     start_url: '/dashboard',
     scope: '/',

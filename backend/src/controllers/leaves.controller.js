@@ -3,7 +3,7 @@ import { can } from '../lib/permissions.js';
 import { applyLeaveSchema, decisionSchema, listLeavesQuerySchema } from '../validators/leaves.validators.js';
 import * as svc from '../services/leave.service.js';
 import { renderLeaveLedgerToStream } from '../services/reportPdf.service.js';
-import { loadCompanyLogo } from '../lib/brand.js';
+import { loadPdfLogo } from '../lib/brand.js';
 import { currentLeaveYear } from '../lib/leaveYear.js';
 import { User } from '../models/User.js';
 import { audit } from '../models/AuditLog.js';
@@ -33,7 +33,7 @@ export async function leaveLedger(req, res, next) {
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="leave-ledger-${target.employeeId || target._id}-${data.period.label.replace(/[^\w-]/g, '')}.pdf"`);
-    const stream = await renderLeaveLedgerToStream(data, await loadCompanyLogo(data.company.logoDark || data.company.logoUrl || data.company.logoLight));
+    const stream = await renderLeaveLedgerToStream(data, await loadPdfLogo(data.company));
     stream.on('error', (err) => next(err));
     stream.pipe(res);
     return undefined;

@@ -1,5 +1,6 @@
 import { createElement as E } from 'react';
 import { Document, Page, View, Text, Image, StyleSheet, renderToStream } from '@react-pdf/renderer';
+import { PRODUCT_TAGLINE } from '../lib/brand.js';
 
 const DEFAULT_ACCENT = '#E5342B';
 const HEADER_BG = '#1B1F2A'; // dark band so a light/transparent logo stays crisp
@@ -184,9 +185,13 @@ function comparisonBlock(data) {
 
 /* ── Header / footer ─────────────────────────────────────── */
 function header(data, logo, accent, titleLabel) {
-  const left = logo
-    ? E(Image, { src: logo.dataUri, style: styles.logo })
-    : E(Text, { style: styles.bandCompany }, data.company.name);
+  // Company ka logo → wahi. Nahi → naam. Kuch nahi → ManagiBot (product), safed chip par
+  // kyunki patti gehri hai aur logo navy.
+  const left = logo?.product
+    ? E(View, { style: { backgroundColor: '#ffffff', borderRadius: 4, paddingVertical: 3, paddingHorizontal: 6 } }, E(Image, { src: logo.dataUri, style: styles.logo }))
+    : logo
+      ? E(Image, { src: logo.dataUri, style: styles.logo })
+      : E(Text, { style: styles.bandCompany }, data.company.name);
   return E(
     View,
     {},
@@ -228,11 +233,14 @@ function metaLine(data) {
 }
 
 function footer(data, titleLabel) {
-  return E(Text, {
-    style: styles.footer,
-    fixed: true,
-    render: ({ pageNumber, totalPages }) => `${data.company.name} · ${titleLabel}    ·    Page ${pageNumber} of ${totalPages}`,
-  });
+  // Har PDF ke footer me product ka naam — owner ka niyam. Beech me, halka.
+  return E(
+    View,
+    { style: styles.footer, fixed: true },
+    E(Text, {}, `${data.company.name} · ${titleLabel}`),
+    E(Text, {}, PRODUCT_TAGLINE),
+    E(Text, { render: ({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}` }),
+  );
 }
 
 /* ── Company sections ────────────────────────────────────── */

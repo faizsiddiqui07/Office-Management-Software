@@ -17,10 +17,9 @@ import { Input } from '@/components/ui/input';
 import { PasswordInput } from '@/components/ui/password-input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { Brand, PRODUCT_LOGO, PRODUCT_NAME } from '@/components/shell/brand';
+import { Brand, ProductCredit, PRODUCT_LOGO, PRODUCT_NAME } from '@/components/shell/brand';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { useAuth } from '@/lib/auth';
-import { usePublicBranding } from '@/lib/settings';
 
 const features = [
   { icon: CalendarClock, title: 'Smart attendance', desc: 'Check-in, late and overtime — captured automatically.' },
@@ -31,10 +30,6 @@ const features = [
 export default function LoginPage() {
   const router = useRouter();
   const { user, isLoading, login } = useAuth();
-  const { data: branding } = usePublicBranding();
-  const companyName = branding?.companyName?.trim() || 'Architectus Bureau';
-  // Left panel is always a dark gradient → always use the light (dark-mode) logo.
-  // Falls back to the uploaded app icon, then to the company name in text.
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
   const [loading, setLoading] = React.useState(false);
@@ -120,7 +115,7 @@ export default function LoginPage() {
           </div>
 
           <div className="relative flex items-center justify-between text-xs text-white/60">
-            <span>© {new Date().getFullYear()} {companyName}</span>
+            <ProductCredit />
             <span className="inline-flex items-center gap-1.5">
               <ShieldCheck className="size-4" /> Secure &amp; private
             </span>

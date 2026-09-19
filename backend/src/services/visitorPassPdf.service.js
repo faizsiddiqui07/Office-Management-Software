@@ -1,5 +1,6 @@
 import { createElement as E } from 'react';
 import { Document, Page, View, Text, Image, StyleSheet, renderToStream } from '@react-pdf/renderer';
+import { PRODUCT_TAGLINE } from '../lib/brand.js';
 
 // A small, printable visitor pass — one card per visitor. Shares the register PDF's brand
 // language (dark band + accent bar) so a printed pass and the register look like one system.
@@ -60,7 +61,9 @@ function buildPassDoc(data, logo) {
       E(
         View,
         { style: styles.band },
-        logo ? E(Image, { style: styles.logo, src: logo.dataUri }) : E(Text, { style: styles.bandCompany }, data.company?.name || 'Company'),
+        logo?.product
+          ? E(View, { style: { backgroundColor: '#ffffff', borderRadius: 4, paddingVertical: 2, paddingHorizontal: 5 } }, E(Image, { style: styles.logo, src: logo.dataUri }))
+          : logo ? E(Image, { style: styles.logo, src: logo.dataUri }) : E(Text, { style: styles.bandCompany }, data.company?.name || 'Company'),
         E(Text, { style: styles.bandTitle }, 'Visitor pass'),
       ),
       E(View, { style: [styles.accentBar, { backgroundColor: accent }] }),
@@ -70,6 +73,7 @@ function buildPassDoc(data, logo) {
       v.company ? E(Text, { style: styles.company }, v.company) : null,
       E(View, { style: styles.rows }, ...rows),
       E(Text, { style: styles.note }, `${data.company?.name || 'Reception'} · Please wear this pass and return it on the way out.`),
+      E(Text, { fixed: true, style: { position: 'absolute', bottom: 8, left: 0, right: 0, textAlign: 'center', fontSize: 6, color: '#9ca3af' } }, PRODUCT_TAGLINE),
     ),
   );
 }

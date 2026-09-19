@@ -1,5 +1,6 @@
 import { createElement as E } from 'react';
 import { Document, Page, View, Text, Image, StyleSheet, renderToStream } from '@react-pdf/renderer';
+import { PRODUCT_TAGLINE } from '../lib/brand.js';
 
 const DEFAULT_ACCENT = '#E5342B';
 const HEADER_BG = '#1B1F2A';
@@ -74,7 +75,9 @@ function buildDoc(data, logo) {
     E(
       View,
       { style: styles.band },
-      logo ? E(Image, { style: styles.logo, src: logo.dataUri }) : E(Text, { style: styles.bandCompany }, data.company?.name || 'Company'),
+      logo?.product
+        ? E(View, { style: { backgroundColor: '#ffffff', borderRadius: 4, paddingVertical: 3, paddingHorizontal: 6 } }, E(Image, { style: styles.logo, src: logo.dataUri }))
+        : logo ? E(Image, { style: styles.logo, src: logo.dataUri }) : E(Text, { style: styles.bandCompany }, data.company?.name || 'Company'),
       E(
         View,
         { style: styles.bandRight },
@@ -99,6 +102,7 @@ function buildDoc(data, logo) {
     View,
     { key: 'f', fixed: true, style: styles.footer },
     E(Text, {}, `${data.company?.name || ''} · Visitor register`),
+    E(Text, {}, PRODUCT_TAGLINE),
     E(Text, { render: ({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}` }),
   );
 

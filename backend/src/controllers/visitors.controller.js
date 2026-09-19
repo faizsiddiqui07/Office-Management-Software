@@ -12,7 +12,7 @@ import { audit } from '../models/AuditLog.js';
 import { toCsv } from '../lib/csv.js';
 import { renderVisitorsPdf } from '../services/visitorPdf.service.js';
 import { renderVisitorPassPdf } from '../services/visitorPassPdf.service.js';
-import { loadCompanyLogo } from '../lib/brand.js';
+import { loadPdfLogo } from '../lib/brand.js';
 
 /** A short human-readable pass number derived from the entry id (no extra field/counter). */
 function passNoFor(v) {
@@ -97,8 +97,7 @@ export async function exportPdf(req, res, next) {
       generatedAt: new Date().toISOString().slice(0, 10),
       visitors,
     };
-    const logos = await Setting.getLogos();
-    const logo = await loadCompanyLogo(logos.logoDark || logos.logoUrl || logos.logoLight);
+    const logo = await loadPdfLogo({ ...(await Setting.getLogos()), name: data.company.name });
     const stream = await renderVisitorsPdf(data, logo);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', 'attachment; filename="visitors.pdf"');
@@ -143,8 +142,7 @@ export async function exportPass(req, res, next) {
       passNo: passNoFor(v),
       visitor: v,
     };
-    const logos = await Setting.getLogos();
-    const logo = await loadCompanyLogo(logos.logoDark || logos.logoUrl || logos.logoLight);
+    const logo = await loadPdfLogo({ ...(await Setting.getLogos()), name: data.company.name });
     const stream = await renderVisitorPassPdf(data, logo);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="visitor-pass-${passNoFor(v)}.pdf"`);

@@ -6,7 +6,7 @@ import {
 } from '../validators/holidays.validators.js';
 import * as svc from '../services/holiday.service.js';
 import { renderHolidayListToStream } from '../services/reportPdf.service.js';
-import { loadCompanyLogo } from '../lib/brand.js';
+import { loadPdfLogo } from '../lib/brand.js';
 import { audit } from '../models/AuditLog.js';
 
 function handleErr(res, err, next) {
@@ -41,7 +41,7 @@ export async function listPdf(req, res, next) {
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="holiday-list-${year}.pdf"`);
-    const stream = await renderHolidayListToStream(data, await loadCompanyLogo(data.company.logoDark || data.company.logoUrl || data.company.logoLight));
+    const stream = await renderHolidayListToStream(data, await loadPdfLogo(data.company));
     stream.on('error', (err) => next(err));
     stream.pipe(res);
     return undefined;

@@ -7,7 +7,7 @@ import {
 } from '../validators/expenses.validators.js';
 import * as svc from '../services/expense.service.js';
 import { renderExpenseListToStream } from '../services/reportPdf.service.js';
-import { loadCompanyLogo } from '../lib/brand.js';
+import { loadPdfLogo } from '../lib/brand.js';
 import { computePeriod, previousPeriod } from '../services/report.service.js';
 import { ymdInTz } from '../lib/time.js';
 import { Setting } from '../models/Setting.js';
@@ -111,7 +111,7 @@ export async function exportPdf(req, res, next) {
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="expenses-${q.from || 'all'}-to-${q.to || 'all'}.pdf"`);
-    const stream = await renderExpenseListToStream(data, await loadCompanyLogo(data.company.logoDark || data.company.logoUrl || data.company.logoLight));
+    const stream = await renderExpenseListToStream(data, await loadPdfLogo(data.company));
     stream.on('error', (err) => next(err));
     stream.pipe(res);
     return undefined;

@@ -1,7 +1,7 @@
 import { ok, fail } from '../lib/apiResponse.js';
 import { ymdInTz } from '../lib/time.js';
 import { can } from '../lib/permissions.js';
-import { loadCompanyLogo } from '../lib/brand.js';
+import { loadPdfLogo } from '../lib/brand.js';
 import { buildReport, buildSelfReport, selfComparison, companyComparison } from '../services/report.service.js';
 import { renderReportToStream, renderSelfReportToStream } from '../services/reportPdf.service.js';
 import { audit } from '../models/AuditLog.js';
@@ -149,7 +149,7 @@ export async function download(req, res, next) {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${periodFilename(`${type}-report`, type, data.period)}"`);
 
-    const stream = await renderReportToStream(data, sections, await loadCompanyLogo(data.company.logoDark || data.company.logoUrl || data.company.logoLight));
+    const stream = await renderReportToStream(data, sections, await loadPdfLogo(data.company));
     stream.on('error', (err) => next(err));
     stream.pipe(res);
     return undefined;
@@ -195,7 +195,7 @@ export async function selfDownload(req, res, next) {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${periodFilename('my-report', type, data.period)}"`);
 
-    const stream = await renderSelfReportToStream(data, sections, await loadCompanyLogo(data.company.logoDark || data.company.logoUrl || data.company.logoLight));
+    const stream = await renderSelfReportToStream(data, sections, await loadPdfLogo(data.company));
     stream.on('error', (err) => next(err));
     stream.pipe(res);
     return undefined;

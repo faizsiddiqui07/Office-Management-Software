@@ -7,7 +7,7 @@ import { ymdInTz, formatCompany } from '../lib/time.js';
 import { isOwnerRole } from '../lib/roles.js';
 import { audit } from '../models/AuditLog.js';
 import { renderTasksPdf } from '../services/taskPdf.service.js';
-import { loadCompanyLogo } from '../lib/brand.js';
+import { loadPdfLogo } from '../lib/brand.js';
 
 function handleErr(res, err, next) {
   if (err && err.status) return res.status(err.status).json(fail(err.code || 'ERROR', err.message));
@@ -284,8 +284,7 @@ export async function exportPdf(req, res, next) {
       view,
       tasks,
     };
-    const logos = await Setting.getLogos();
-    const logo = await loadCompanyLogo(logos.logoDark || logos.logoUrl || logos.logoLight);
+    const logo = await loadPdfLogo({ ...(await Setting.getLogos()), name: data.company.name });
     const stream = await renderTasksPdf(data, logo);
     res.setHeader('Content-Type', 'application/pdf');
     // The view goes in the filename, or a tagged export would overwrite the "mine" one.

@@ -11,6 +11,7 @@ import { LoadingState } from '@/components/glass/skeletons';
 import { AnnouncementPopup } from '@/components/announcements/announcement-popup';
 import { BirthdayPopup } from '@/components/calendar/birthday-popup';
 import { ChatFab } from '@/components/chat/chat-fab';
+import { ProductCredit } from '@/components/shell/brand';
 import { ChatRealtimeProvider } from '@/components/chat/chat-realtime';
 import { EodDigestPopup } from '@/components/tasks/eod-digest-popup';
 import { PwaRegister } from '@/components/pwa/pwa-register';
@@ -63,9 +64,13 @@ export function AppShell({ children }) {
         <Topbar user={user} />
         {/* My tasks / Assigned tasks shortcuts, on every page — see the component. */}
         <QuickTaskActions />
-        <main className="mx-auto w-full max-w-7xl px-4 pb-12 pt-4 sm:px-6 lg:px-8">
+        <main className="mx-auto w-full max-w-7xl px-4 pb-6 pt-4 sm:px-6 lg:px-8">
           {children}
         </main>
+        {/* Har page ke neeche product ka naam — hardcode, Settings se nahi (owner ka niyam). */}
+        <footer className="mx-auto w-full max-w-7xl px-4 pb-8 pt-2 text-center text-[11px] text-muted-foreground sm:px-6 lg:px-8">
+          <ProductCredit />
+        </footer>
       </div>
       {/* Chat ka floating button — shell me, kisi page ke andar NAHI: page template ka
           framer-motion wrapper `position: fixed` ko todta hai (dekho chat-fab.jsx). */}
