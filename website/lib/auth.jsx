@@ -8,6 +8,45 @@ import { disablePush } from './pwa';
 const AuthContext = createContext(null);
 
 const ME_KEY = ['auth', 'me'];
+/** The WebSocket ticket that rode along with bootstrap — chat-socket.js picks it up. */
+export const WS_TICKET_KEY = ['chat', 'ws-ticket'];
+
+/**
+ * One request instead of eleven. GET /bootstrap returns who you are PLUS everything the
+ * shell asks for the moment it mounts (settings, branding, badges, notifications, chat
+ * unread, points, today's birthdays, unseen announcements, the owners' round-up, and a
+ * WebSocket ticket) — each part in exactly the shape its own endpoint returns. We drop
+ * each part into the cache under the key its hook uses, so the hooks find fresh data on
+ * mount and skip their own fetch. Nothing else changes: polling, invalidation and every
+ * later refetch still go to the individual endpoints.
+ *
+ * Why it matters: on Lambda one container serves one request at a time, so eleven
+ * parallel requests on open meant up to eleven cold starts of 3–4 s each — that was the
+ * morning "app takes forever to open". A part the server couldn't build comes back null
+ * and is simply not seeded; its hook fetches as before.
+ */
+function seedFromBootstrap(queryClient, b) {
+  const seed = (key, value) => {
+    if (value != null) queryClient.setQueryData(key, value);
+  };
+  // Keys spelled out here (not imported) — lib/settings.js imports useAuth from this
+  // file, and a two-way import between the two is the kind of thing that works until
+  // the bundler decides otherwise. They must match SETTINGS_KEY / BRANDING_KEY there.
+  seed(['settings'], b.settings);
+  seed(['branding'], b.branding);
+  seed(['badges'], b.badges);
+  seed(['notifications'], b.notifications);
+  seed(['chat', 'unread'], b.chatUnread);
+  seed(['bonus', 'me', ''], b.bonusMe);
+  seed(['announcements', 'active-unseen'], b.announcementsUnseen);
+  // Day-keyed queries use the SERVER's date so a device whose clock disagrees just
+  // fetches on its own rather than showing the wrong day's data.
+  if (b.today) {
+    seed(['holidays', 'today', b.today], b.holidaysToday);
+    seed(['tasks', 'eod-digest', b.today], b.eodDigest);
+  }
+  if (b.wsTicket) seed(WS_TICKET_KEY, { ...b.wsTicket, fetchedAt: Date.now() });
+}
 
 export function AuthProvider({ children }) {
   const queryClient = useQueryClient();
@@ -16,8 +55,9 @@ export function AuthProvider({ children }) {
     queryKey: ME_KEY,
     queryFn: async () => {
       try {
-        const res = await api.get('/auth/me');
-        return res.user ?? null;
+        const res = await api.get('/bootstrap');
+        if (res?.user) seedFromBootstrap(queryClient, res);
+        return res?.user ?? null;
       } catch (err) {
         if (err instanceof ApiError && err.status === 401) return null;
         throw err;

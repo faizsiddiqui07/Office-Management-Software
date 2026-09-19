@@ -29,9 +29,7 @@ function backfillLogos(s) {
 
 export async function getSettings(_req, res, next) {
   try {
-    const s = await Setting.getFullSingleton();
-    if (backfillLogos(s)) await s.save();
-    res.json(ok({ settings: s.toJSON() }));
+    res.json(ok({ settings: await settingsPayload() }));
   } catch (err) {
     next(err);
   }
@@ -41,26 +39,34 @@ export async function getSettings(_req, res, next) {
  * unauthenticated login page so it can show the right theme-aware logo. */
 export async function getBranding(_req, res, next) {
   try {
-    const b = await Setting.getBranding();
-    res.json(
-      ok({
-        branding: {
-          companyName: b.companyName,
-          logoLight: b.logoLight,
-          // Legacy back-fill applied in memory: an old single logo doubles as the dark one.
-          logoDark: b.logoDark || b.logoUrl,
-          logoUrl: b.logoUrl,
-          brandColor: b.brandColor,
-          // Backgrounds ride along (tiny S3 URLs) so the login page shows the same
-          // wallpaper as the app — no image ships with the frontend at all.
-          bgLight: b.bgLight,
-          bgDark: b.bgDark,
-        },
-      }),
-    );
+    res.json(ok({ branding: await brandingPayload() }));
   } catch (err) {
     next(err);
   }
+}
+
+/** The public branding object — shared by GET /settings/branding and /bootstrap. */
+export async function brandingPayload() {
+  const b = await Setting.getBranding();
+  return {
+    companyName: b.companyName,
+    logoLight: b.logoLight,
+    // Legacy back-fill applied in memory: an old single logo doubles as the dark one.
+    logoDark: b.logoDark || b.logoUrl,
+    logoUrl: b.logoUrl,
+    brandColor: b.brandColor,
+    // Backgrounds ride along (tiny S3 URLs) so the login page shows the same
+    // wallpaper as the app — no image ships with the frontend at all.
+    bgLight: b.bgLight,
+    bgDark: b.bgDark,
+  };
+}
+
+/** Full settings JSON (any signed-in user) — shared by GET /settings and /bootstrap. */
+export async function settingsPayload() {
+  const s = await Setting.getFullSingleton();
+  if (backfillLogos(s)) await s.save();
+  return s.toJSON();
 }
 
 export async function updateSettings(req, res, next) {

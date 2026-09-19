@@ -27,6 +27,8 @@ import { rulesRouter } from './rules.routes.js';
 import { tasksRouter } from './tasks.routes.js';
 import { bonusRouter } from './bonus.routes.js';
 import { chatRouter } from './chat.routes.js';
+import { requireAuth } from '../middleware/auth.js';
+import { bootstrap } from '../controllers/bootstrap.controller.js';
 
 /**
  * Root API router, mounted at /api in index.js.
@@ -66,6 +68,8 @@ apiRouter.get('/health', (_req, res) => {
 });
 
 apiRouter.use('/auth', authRouter);
+// App khulte hi ek call me sab (dekho controllers/bootstrap.controller.js).
+apiRouter.get('/bootstrap', requireAuth, bootstrap);
 apiRouter.use('/users', usersRouter);
 apiRouter.use('/attendance', attendanceRouter);
 apiRouter.use('/leaves', leavesRouter);

@@ -17,7 +17,7 @@ import { permissionsForRole, roleLabel, isOwnerRole } from '../lib/roles.js';
 import { clientIp, lockedFor, recordFailure, clearFailures } from '../lib/loginGuard.js';
 
 /** User JSON + their effective permission keys (for the cosmetic client `can()`). */
-function userWithPermissions(user) {
+export function userWithPermissions(user) {
   return {
     ...user.toJSON(),
     permissions: permissionsForRole(user.role),

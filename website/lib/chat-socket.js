@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { WS_TICKET_KEY } from '@/lib/auth';
 
 /**
  * Chat ka live connection.
@@ -65,7 +66,12 @@ export function useChatSocket({ activeConversationId = null, onMessage } = {}) {
       if (cancelled || closedRef.current) return;
       let info;
       try {
-        info = await api.get('/chat/ws-ticket');
+        // Bootstrap ke saath ek parchi aayi thi — 60 s me chalti hai, to pehli baar
+        // judne me wahi kaam aati hai (ek request bachi). Ek hi baar: nikaal kar hata do,
+        // taaki reconnect hamesha taazi le.
+        const seeded = qc.getQueryData(WS_TICKET_KEY);
+        qc.removeQueries({ queryKey: WS_TICKET_KEY, exact: true });
+        info = seeded && Date.now() - (seeded.fetchedAt || 0) < 45_000 ? seeded : await api.get('/chat/ws-ticket');
       } catch {
         return; // login nahi, ya server naraz — polling chalti rahegi
       }

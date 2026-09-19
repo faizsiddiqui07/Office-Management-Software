@@ -23,6 +23,9 @@ export function NotificationsBell() {
   const { data } = useQuery({
     queryKey: ['notifications'],
     queryFn: () => api.get('/notifications'),
+    // Bootstrap seeds this on open; a staleTime lets that seed count as fresh instead
+    // of being refetched the instant the bell mounts. Mark-read invalidates explicitly.
+    staleTime: 30_000,
     refetchInterval: 60000,
   });
   const notifications = data?.notifications ?? [];

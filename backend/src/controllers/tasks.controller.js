@@ -68,23 +68,28 @@ export async function eodDigest(req, res, next) {
     if (!isOwnerRole(req.user.role)) {
       return res.status(403).json(fail('FORBIDDEN', 'Only CEO & President see the daily round-up'));
     }
-    const s = await Setting.getSingleton();
-    const cfg = s.eodDigest || {};
-    const after = /^\d{2}:\d{2}$/.test(cfg.time || '') ? cfg.time : '19:00';
-    const enabled = cfg.enabled !== false;
-    const today = ymdInTz(new Date());
-    const nowHM = formatCompany(new Date(), 'HH:mm');
-
-    // Before the cut-off there is nothing to show yet — say so rather than sending the
-    // day's half-finished list, which the client would then have to sit on.
-    if (!enabled || nowHM < after) {
-      return res.json(ok({ ready: false, enabled, after, dateYMD: today, people: [], total: 0 }));
-    }
-    const digest = await svc.eodDigest(today);
-    return res.json(ok({ ready: true, enabled, after, ...digest }));
+    return res.json(ok(await eodDigestPayload()));
   } catch (err) {
     return next(err);
   }
+}
+
+/** Today's round-up (owner check is the CALLER's job) — shared by the route and /bootstrap. */
+export async function eodDigestPayload() {
+  const s = await Setting.getSingleton();
+  const cfg = s.eodDigest || {};
+  const after = /^\d{2}:\d{2}$/.test(cfg.time || '') ? cfg.time : '19:00';
+  const enabled = cfg.enabled !== false;
+  const today = ymdInTz(new Date());
+  const nowHM = formatCompany(new Date(), 'HH:mm');
+
+  // Before the cut-off there is nothing to show yet — say so rather than sending the
+  // day's half-finished list, which the client would then have to sit on.
+  if (!enabled || nowHM < after) {
+    return { ready: false, enabled, after, dateYMD: today, people: [], total: 0 };
+  }
+  const digest = await svc.eodDigest(today);
+  return { ready: true, enabled, after, ...digest };
 }
 
 export async function list(req, res, next) {
