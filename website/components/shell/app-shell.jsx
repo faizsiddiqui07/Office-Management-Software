@@ -7,6 +7,7 @@ import { AppSidebar } from './app-sidebar';
 import { Topbar } from './topbar';
 import { QuickTaskActions } from './quick-task-actions';
 import { ForcePasswordChange } from '@/components/auth/force-password-change';
+import { LoadingState } from '@/components/glass/skeletons';
 import { LaunchScreen } from './launch-screen';
 import { AnnouncementPopup } from '@/components/announcements/announcement-popup';
 import { BirthdayPopup } from '@/components/calendar/birthday-popup';
@@ -32,9 +33,20 @@ export function AppShell({ children }) {
     if (!isLoading && !user) router.replace('/login');
   }, [isLoading, user, router]);
 
-  // Same picture as the iOS launch image, so the open feels like one continuous screen —
-  // also while the effect above sends a signed-out visitor to /login.
-  if (isLoading || !user) return <LaunchScreen />;
+  // While /bootstrap loads (and while the effect above sends a signed-out visitor to
+  // /login): on iOS the twin of the launch image, so the open reads as one continuous
+  // screen; everywhere else the plain spinner — Android already had Chrome's own splash.
+  // Both are rendered; `data-ios` on <html> (set before first paint) picks one via CSS.
+  if (isLoading || !user) {
+    return (
+      <>
+        <LaunchScreen />
+        <div className="not-ios flex min-h-dvh items-center justify-center">
+          <LoadingState label={isLoading ? 'Loading your workspace…' : 'Redirecting to sign in…'} />
+        </div>
+      </>
+    );
+  }
 
   if (user.mustChangePassword) {
     return <ForcePasswordChange user={user} />;

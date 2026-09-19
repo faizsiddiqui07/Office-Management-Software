@@ -425,6 +425,22 @@
 }
 
 /* ────────────────────────────────────────────────────────────
+   iOS-only launch screen. `data-ios` is set on <html> by the inline script in
+   app/layout.jsx before first paint (see there for why). Both the launch screen and the
+   plain spinner are in the HTML; this picks one. Android keeps the spinner — Chrome
+   already showed its own splash from the manifest.
+   ──────────────────────────────────────────────────────────── */
+.ios-only {
+  display: none;
+}
+:root[data-ios='true'] .ios-only {
+  display: block;
+}
+:root[data-ios='true'] .not-ios {
+  display: none;
+}
+
+/* ────────────────────────────────────────────────────────────
    Vengeance UI — supporting styles for the installed components
    (glass-dock, spotlight-navbar, glow-border-card, animated-rays)
    ──────────────────────────────────────────────────────────── */

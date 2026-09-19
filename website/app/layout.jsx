@@ -62,16 +62,21 @@ export default function RootLayout({ children }) {
             __html: "try{if(localStorage.getItem('om_lite_ui')==='1'){document.documentElement.dataset.lite='true'}}catch(e){}",
           }}
         />
-        {/* Launch screen geometry for the installed iOS app (components/shell/launch-screen.jsx).
-            The iOS launch image covers the WHOLE screen, but with statusBarStyle 'default'
-            the web view starts below the status bar — so "44% of the screen" and "44% of the
-            viewport" are different pixels and the logo would hop on hand-off. Here, before
-            first paint: --ls-h/--ls-s = the real screen (iOS reports `screen` in portrait
-            terms whatever the orientation), --ls-off = the bar (screen − viewport). Only in
-            standalone mode; a browser tab keeps the plain viewport defaults. */}
+        {/* Launch screen (components/shell/launch-screen.jsx) is iOS-ONLY: Android's Chrome
+            already draws a splash from the manifest, so a second logo screen there would be
+            a double splash. Decided here, before first paint, the same way Lite mode is —
+            `data-ios` on <html> switches the launch screen in and the plain spinner out (CSS
+            in globals.css), so an iPhone never flashes the spinner first. iPadOS 13+ says
+            "Macintosh" in its UA; the touch-points check catches it.
+            Then, for the installed iOS app, the launch image covers the WHOLE screen but with
+            statusBarStyle 'default' the web view starts below the status bar — so "44% of the
+            screen" and "44% of the viewport" are different pixels and the logo would hop on
+            hand-off. --ls-h/--ls-s = the real screen (iOS reports `screen` in portrait terms
+            whatever the orientation), --ls-off = the bar (screen − viewport). Standalone only;
+            a Safari tab keeps the plain viewport defaults. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: "try{if(matchMedia('(display-mode: standalone)').matches||navigator.standalone){var p=innerWidth<=innerHeight,a=screen.width,b=screen.height,h=p?Math.max(a,b):Math.min(a,b),w=p?Math.min(a,b):Math.max(a,b),s=document.documentElement.style;s.setProperty('--ls-h',h+'px');s.setProperty('--ls-s',Math.min(w,h)+'px');s.setProperty('--ls-off',Math.max(0,h-innerHeight)+'px')}}catch(e){}",
+            __html: "try{var d=document.documentElement,n=navigator;if(/iPhone|iPad|iPod/.test(n.userAgent)||(n.platform==='MacIntel'&&n.maxTouchPoints>1)){d.dataset.ios='true';if(matchMedia('(display-mode: standalone)').matches||n.standalone){var p=innerWidth<=innerHeight,a=screen.width,b=screen.height,h=p?Math.max(a,b):Math.min(a,b),w=p?Math.min(a,b):Math.max(a,b),s=d.style;s.setProperty('--ls-h',h+'px');s.setProperty('--ls-s',Math.min(w,h)+'px');s.setProperty('--ls-off',Math.max(0,h-innerHeight)+'px')}}}catch(e){}",
           }}
         />
         {/* Catch the browser's install offer the instant it arrives.
