@@ -35,7 +35,6 @@ export default function LoginPage() {
   const companyName = branding?.companyName?.trim() || 'Architectus Bureau';
   // Left panel is always a dark gradient → always use the light (dark-mode) logo.
   // Falls back to the uploaded app icon, then to the company name in text.
-  const panelLogo = branding?.logoDark || branding?.logoUrl || branding?.logoLight || branding?.appIcon || '';
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
   const [loading, setLoading] = React.useState(false);
@@ -78,18 +77,12 @@ export default function LoginPage() {
             />
           </div>
 
-          <div className="relative flex flex-col items-start gap-3">
-            {/* Product ka logo pehle (fixed, code se) — client ka uske neeche (Settings se). */}
+          <div className="relative">
+            {/* Sirf product ka logo — client ka logo login par nahi, wo sidebar me aata hai. */}
             <span className="inline-flex items-center rounded-xl bg-white px-3 py-1.5 shadow-sm">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={PRODUCT_LOGO} alt={PRODUCT_NAME} className="h-9 w-auto max-w-[240px] object-contain" />
             </span>
-            {panelLogo ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={panelLogo} alt={companyName} className="h-10 w-auto max-w-[240px] object-contain" />
-            ) : (
-              <p className="text-xl font-semibold tracking-tight">{companyName}</p>
-            )}
           </div>
 
           <div className="relative space-y-8">

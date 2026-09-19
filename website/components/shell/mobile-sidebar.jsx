@@ -45,7 +45,7 @@ export function MobileSidebar({ user }) {
         <SheetTitle className="sr-only">Navigation menu</SheetTitle>
         <div className="flex h-full flex-col p-4">
           <Link href="/dashboard" className="px-1" onClick={() => setOpen(false)}>
-            <Brand />
+            <Brand showClient />
           </Link>
 
           <nav className="mt-6 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pb-2">

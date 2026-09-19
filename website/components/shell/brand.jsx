@@ -4,30 +4,26 @@ import { cn } from '@/lib/utils';
 import { useSettings, usePublicBranding } from '@/lib/settings';
 
 /**
- * Brand = do hisse, upar-neeche:
+ * ManagiBot ek PRODUCT hai jo companies ko diya jaata hai. Isliye:
  *
- *   1. PRODUCT ka logo (ManagiBot) — CODE se aata hai, `public/brand/`. Settings se kabhi
- *      nahi badalta, chahe jo ho jaye. Badalna ho to yahan file badlo. Owner ka faisla:
- *      ye software ka naam hai, client ka nahi.
- *   2. CLIENT ka logo — Settings → Branding se upload hota hai (S3), product logo ke
- *      THEEK NEECHE. Upload na ho to company ka naam text me.
+ *   • Product ka logo (ManagiBot) HAR JAGAH — login, sidebar, header, app icon. Ye CODE se
+ *     aata hai (`public/brand/`); Settings se kabhi nahi badalta, chahe jo ho jaye.
+ *   • Client (company) apna logo Settings → Branding se upload karta hai, aur wo SIRF EK
+ *     jagah dikhta hai: login ke baad sidebar me, ManagiBot ke theek neeche
+ *     (`showClient`). Aur kahin nahi — na login par, na header par, na app icon me.
  *
- * `compact` (phone ka topbar, <500px): sirf product ka gol nishaan — wahan do line ki
- * jagah nahi hai. Client ka logo phone par sidebar (menu) me dikhta hai.
- *
- * `size`: 'sidebar' (default — desktop sidebar, mobile menu, login) ya 'topbar' (56px ki
- * patti — dono line chhoti).
+ * `compact` (phone ka header): sirf product ka gol nishaan.
+ * `size="topbar"`: 56px ki patti ke liye chhota.
  */
 export const PRODUCT_NAME = 'ManagiBot';
 export const PRODUCT_LOGO = '/brand/managibot.webp';
 export const PRODUCT_MARK = '/brand/managibot-mark.webp';
 
-export function Brand({ className, compact = false, size = 'sidebar' }) {
+export function Brand({ className, compact = false, size = 'sidebar', showClient = false }) {
   const { data: settings } = useSettings();
   const { data: branding } = usePublicBranding();
-  // Prefer live (authed) settings; fall back to public branding (works on login).
   const b = settings || branding;
-  const name = b?.companyName?.trim() || 'Architectus Bureau';
+  const name = b?.companyName?.trim() || '';
 
   // Product logo ke neeche hamesha SAFED chip: logo navy+blue hai, dark theme aur login ke
   // purple panel par seedha rakhne se "Managi" dab jaata tha. Chip par rang waise ke waise.
@@ -43,9 +39,8 @@ export function Brand({ className, compact = false, size = 'sidebar' }) {
   }
 
   const topbar = size === 'topbar';
-  // Client ka wordmark — light/dark alag ho sakte hain, theme ke hisaab se CSS se toggle.
-  const light = (b?.logoLight || b?.logoDark || b?.logoUrl || '').trim();
-  const dark = (b?.logoDark || b?.logoUrl || b?.logoLight || '').trim();
+  const light = showClient ? (b?.logoLight || b?.logoDark || b?.logoUrl || '').trim() : '';
+  const dark = showClient ? (b?.logoDark || b?.logoUrl || b?.logoLight || '').trim() : '';
 
   return (
     <div className={cn('flex min-w-0 flex-col items-start', topbar ? 'gap-0.5' : 'gap-1.5', className)}>
@@ -59,23 +54,23 @@ export function Brand({ className, compact = false, size = 'sidebar' }) {
         />
       </span>
 
-      {/* 2. Client — Settings se; na ho to naam */}
-      {light || dark ? (
-        <span className="flex items-center">
-          {light ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={light} alt={name} className={cn('block w-auto object-contain dark:hidden', topbar ? 'h-[18px] max-w-[130px]' : 'h-7 max-w-[180px]')} />
-          ) : null}
-          {dark ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={dark} alt={name} className={cn('hidden w-auto object-contain dark:block', topbar ? 'h-[18px] max-w-[130px]' : 'h-7 max-w-[180px]')} />
-          ) : null}
-        </span>
-      ) : (
-        <p className={cn('max-w-[180px] truncate font-medium tracking-tight text-muted-foreground', topbar ? 'text-[11px]' : 'text-xs')}>
-          {name}
-        </p>
-      )}
+      {/* 2. Client — sirf sidebar me (showClient); logo na ho to company ka naam */}
+      {showClient ? (
+        light || dark ? (
+          <span className="flex items-center">
+            {light ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={light} alt={name} className="block h-7 w-auto max-w-[180px] object-contain dark:hidden" />
+            ) : null}
+            {dark ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={dark} alt={name} className="hidden h-7 w-auto max-w-[180px] object-contain dark:block" />
+            ) : null}
+          </span>
+        ) : name ? (
+          <p className="max-w-[180px] truncate text-xs font-medium tracking-tight text-muted-foreground">{name}</p>
+        ) : null
+      ) : null}
     </div>
   );
 }

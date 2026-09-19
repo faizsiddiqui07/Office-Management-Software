@@ -16,7 +16,7 @@ export function AppSidebar({ user }) {
     <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col p-4 lg:flex">
       <div className="glass glass-highlight flex h-full flex-col rounded-3xl p-4">
         <Link href="/dashboard" className="px-1">
-          <Brand />
+          <Brand showClient />
         </Link>
 
         <nav className="mt-7 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pr-1">

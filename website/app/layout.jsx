@@ -26,17 +26,17 @@ export const metadata = {
   other: { google: 'notranslate' },
   manifest: '/manifest.webmanifest',
   appleWebApp: { capable: true, title: 'Architectus Bureau', statusBarStyle: 'default' },
-  // One icon everywhere — browser tab, install / home-screen, and iOS. /app-icon is a
-  // same-origin route that streams the Settings-uploaded icon from S3 (browsers require
-  // install icons on the site's own origin; the bytes still live in S3, managed from the
-  // website — no image ships with the frontend). ?v busts the previously cached favicon.
+  // App icon = ManagiBot ka nishaan, HAMESHA — public/brand/ se, code me. Settings se
+  // kabhi nahi badalta (owner ka faisla: ye product ka icon hai, client ka nahi).
+  // ?v pichhla cached favicon hataata hai.
   icons: {
     icon: [
-      { url: '/app-icon?v=5', sizes: '512x512', type: 'image/png' },
-      { url: '/app-icon?v=5', sizes: '192x192', type: 'image/png' },
+      { url: '/brand/icon-512.png?v=6', sizes: '512x512', type: 'image/png' },
+      { url: '/brand/icon-192.png?v=6', sizes: '192x192', type: 'image/png' },
+      { url: '/brand/favicon-64.png?v=6', sizes: '64x64', type: 'image/png' },
     ],
-    shortcut: ['/app-icon?v=5'],
-    apple: [{ url: '/app-icon?v=5', sizes: '180x180', type: 'image/png' }],
+    shortcut: ['/brand/favicon-64.png?v=6'],
+    apple: [{ url: '/brand/apple-touch-icon.png?v=6', sizes: '180x180', type: 'image/png' }],
   },
 };
 

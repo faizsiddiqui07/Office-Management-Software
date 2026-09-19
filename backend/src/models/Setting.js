@@ -7,7 +7,6 @@ const settingSchema = new mongoose.Schema(
     logoUrl: { type: String, default: '' }, // legacy — mirrors the dark logo
     logoLight: { type: String, default: '' }, // shown on light backgrounds (light theme)
     logoDark: { type: String, default: '' }, // shown on dark backgrounds (dark theme)
-    appIcon: { type: String, default: '' }, // square app mark — favicon / PWA install icon / compact header
     bgLight: { type: String, default: '' }, // app background photo for light theme
     bgDark: { type: String, default: '' }, // app background photo for dark theme
     // Brand accent used to theme generated PDF reports (#RRGGBB).
@@ -256,7 +255,7 @@ const FRESH_MS = 3_000;
  * settings-reading endpoint crawl. getSingleton therefore EXCLUDES them; the few places
  * that genuinely render images use getBranding()/getFullSingleton() below.
  */
-const HEAVY_FIELDS = ['logoUrl', 'logoLight', 'logoDark', 'appIcon', 'bgLight', 'bgDark'];
+const HEAVY_FIELDS = ['logoUrl', 'logoLight', 'logoDark', 'bgLight', 'bgDark'];
 const LEAN_PROJECTION = HEAVY_FIELDS.map((f) => `-${f}`).join(' ');
 
 let brandingCached = null;
@@ -305,7 +304,7 @@ settingSchema.statics.getSingleton = async function getSingleton() {
 settingSchema.statics.getBranding = async function getBranding() {
   if (brandingCached && Date.now() - brandingAt < BRANDING_FRESH_MS) return brandingCached;
   const doc = await this.findOne({ key: 'global' })
-    .select('companyName brandColor logoUrl logoLight logoDark appIcon bgLight bgDark')
+    .select('companyName brandColor logoUrl logoLight logoDark bgLight bgDark')
     .lean();
   brandingCached = {
     companyName: doc?.companyName || 'Office Management',
@@ -313,7 +312,6 @@ settingSchema.statics.getBranding = async function getBranding() {
     logoUrl: doc?.logoUrl || '',
     logoLight: doc?.logoLight || '',
     logoDark: doc?.logoDark || '',
-    appIcon: doc?.appIcon || '',
     bgLight: doc?.bgLight || '',
     bgDark: doc?.bgDark || '',
   };
