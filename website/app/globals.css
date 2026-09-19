@@ -417,6 +417,13 @@
   transition-duration: 0.001ms !important;
 }
 
+/* …except the three dots on the launch screen: with them frozen, a slow /bootstrap
+   (retries can run 15 s) looks like a hung app. Three tiny dots cost nothing. */
+:root[data-lite='true'] .launch-dots i {
+  animation-duration: 2s !important;
+  animation-iteration-count: infinite !important;
+}
+
 /* ────────────────────────────────────────────────────────────
    Vengeance UI — supporting styles for the installed components
    (glass-dock, spotlight-navbar, glow-border-card, animated-rays)

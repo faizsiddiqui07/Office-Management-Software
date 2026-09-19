@@ -7,7 +7,7 @@ import { AppSidebar } from './app-sidebar';
 import { Topbar } from './topbar';
 import { QuickTaskActions } from './quick-task-actions';
 import { ForcePasswordChange } from '@/components/auth/force-password-change';
-import { LoadingState } from '@/components/glass/skeletons';
+import { LaunchScreen } from './launch-screen';
 import { AnnouncementPopup } from '@/components/announcements/announcement-popup';
 import { BirthdayPopup } from '@/components/calendar/birthday-popup';
 import { ChatFab } from '@/components/chat/chat-fab';
@@ -32,21 +32,9 @@ export function AppShell({ children }) {
     if (!isLoading && !user) router.replace('/login');
   }, [isLoading, user, router]);
 
-  if (isLoading) {
-    return (
-      <div className="flex min-h-dvh items-center justify-center">
-        <LoadingState label="Loading your workspace…" />
-      </div>
-    );
-  }
-
-  if (!user) {
-    return (
-      <div className="flex min-h-dvh items-center justify-center">
-        <LoadingState label="Redirecting to sign in…" />
-      </div>
-    );
-  }
+  // Same picture as the iOS launch image, so the open feels like one continuous screen —
+  // also while the effect above sends a signed-out visitor to /login.
+  if (isLoading || !user) return <LaunchScreen />;
 
   if (user.mustChangePassword) {
     return <ForcePasswordChange user={user} />;
