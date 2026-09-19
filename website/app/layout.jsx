@@ -5,6 +5,7 @@ import { ThemeProvider } from '@/components/providers/theme-provider';
 import { QueryProvider } from '@/lib/queryClient';
 import { AuthProvider } from '@/lib/auth';
 import { AppBackground } from '@/components/glass/app-background';
+import { DesktopPreloader } from '@/components/shell/desktop-preloader';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { IOS_STARTUP_IMAGES } from '@/lib/ios-splash';
@@ -54,6 +55,15 @@ export const viewport = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en" translate="no" suppressHydrationWarning>
+      <head>
+        {/* The desktop preloader's art (components/shell/desktop-preloader.jsx), requested
+            alongside the CSS instead of after it — as CSS backgrounds they are otherwise
+            discovered only once the stylesheet has arrived and can pop in mid-entrance.
+            `media` mirrors the preloader's gate, so phones never download them. */}
+        <link rel="preload" as="image" href="/brand/launch-tile.png" media="(hover: hover) and (pointer: fine)" />
+        <link rel="preload" as="image" href="/brand/wordmark-light.png" media="(hover: hover) and (pointer: fine) and (prefers-color-scheme: light)" />
+        <link rel="preload" as="image" href="/brand/wordmark-dark.png" media="(hover: hover) and (pointer: fine) and (prefers-color-scheme: dark)" />
+      </head>
       <body className={`${inter.variable} min-h-dvh font-sans antialiased`}>
         {/* Apply the per-device "Lite UI" choice before anything paints, so a slow
             phone never flashes the heavy glass version first. */}
@@ -98,6 +108,8 @@ export default function RootLayout({ children }) {
             <AuthProvider>
               <TooltipProvider>
                 <AppBackground />
+                {/* Desktop/laptop only (CSS-gated); in the HTML so it is there from first paint. */}
+                <DesktopPreloader />
                 {children}
                 <Toaster />
               </TooltipProvider>
