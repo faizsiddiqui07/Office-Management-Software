@@ -17,7 +17,7 @@ import { Input } from '@/components/ui/input';
 import { PasswordInput } from '@/components/ui/password-input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { Brand } from '@/components/shell/brand';
+import { Brand, PRODUCT_LOGO, PRODUCT_NAME } from '@/components/shell/brand';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { useAuth } from '@/lib/auth';
 import { usePublicBranding } from '@/lib/settings';
@@ -78,12 +78,17 @@ export default function LoginPage() {
             />
           </div>
 
-          <div className="relative">
+          <div className="relative flex flex-col items-start gap-3">
+            {/* Product ka logo pehle (fixed, code se) — client ka uske neeche (Settings se). */}
+            <span className="inline-flex items-center rounded-xl bg-white px-3 py-1.5 shadow-sm">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={PRODUCT_LOGO} alt={PRODUCT_NAME} className="h-9 w-auto max-w-[240px] object-contain" />
+            </span>
             {panelLogo ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={panelLogo} alt={companyName} className="h-12 w-auto max-w-[260px] object-contain" />
+              <img src={panelLogo} alt={companyName} className="h-10 w-auto max-w-[240px] object-contain" />
             ) : (
-              <p className="text-2xl font-semibold tracking-tight">{companyName}</p>
+              <p className="text-xl font-semibold tracking-tight">{companyName}</p>
             )}
           </div>
 

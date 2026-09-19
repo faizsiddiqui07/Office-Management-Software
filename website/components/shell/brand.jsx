@@ -1,64 +1,81 @@
 'use client';
 
-import { Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSettings, usePublicBranding } from '@/lib/settings';
 
-export function Brand({ className, compact = false }) {
+/**
+ * Brand = do hisse, upar-neeche:
+ *
+ *   1. PRODUCT ka logo (ManagiBot) — CODE se aata hai, `public/brand/`. Settings se kabhi
+ *      nahi badalta, chahe jo ho jaye. Badalna ho to yahan file badlo. Owner ka faisla:
+ *      ye software ka naam hai, client ka nahi.
+ *   2. CLIENT ka logo — Settings → Branding se upload hota hai (S3), product logo ke
+ *      THEEK NEECHE. Upload na ho to company ka naam text me.
+ *
+ * `compact` (phone ka topbar, <500px): sirf product ka gol nishaan — wahan do line ki
+ * jagah nahi hai. Client ka logo phone par sidebar (menu) me dikhta hai.
+ *
+ * `size`: 'sidebar' (default — desktop sidebar, mobile menu, login) ya 'topbar' (56px ki
+ * patti — dono line chhoti).
+ */
+export const PRODUCT_NAME = 'ManagiBot';
+export const PRODUCT_LOGO = '/brand/managibot.webp';
+export const PRODUCT_MARK = '/brand/managibot-mark.webp';
+
+export function Brand({ className, compact = false, size = 'sidebar' }) {
   const { data: settings } = useSettings();
   const { data: branding } = usePublicBranding();
   // Prefer live (authed) settings; fall back to public branding (works on login).
   const b = settings || branding;
   const name = b?.companyName?.trim() || 'Architectus Bureau';
 
-  // Compact (small mobile screens): the square app mark, uploaded via Settings (S3).
-  // Falls back to the Sparkles gradient mark until one is uploaded.
+  // Product logo ke neeche hamesha SAFED chip: logo navy+blue hai, dark theme aur login ke
+  // purple panel par seedha rakhne se "Managi" dab jaata tha. Chip par rang waise ke waise.
   if (compact) {
-    const mark = (b?.appIcon || '').trim();
     return (
       <div className={cn('flex items-center', className)}>
-        {mark ? (
-          <img src={mark} alt={name} className="size-10 shrink-0 rounded-lg object-contain" />
-        ) : (
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-info text-white shadow-glow">
-            <Sparkles className="size-5" />
-          </span>
-        )}
+        <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-white p-1 shadow-sm ring-1 ring-black/5">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={PRODUCT_MARK} alt={PRODUCT_NAME} className="size-full object-contain" />
+        </span>
       </div>
     );
   }
 
-  // Main wordmark — separate light/dark versions, toggled by theme via CSS.
+  const topbar = size === 'topbar';
+  // Client ka wordmark — light/dark alag ho sakte hain, theme ke hisaab se CSS se toggle.
   const light = (b?.logoLight || b?.logoDark || b?.logoUrl || '').trim();
   const dark = (b?.logoDark || b?.logoUrl || b?.logoLight || '').trim();
 
-  if (light || dark) {
-    return (
-      <div className={cn('flex items-center', className)}>
-        {light ? (
-          <img src={light} alt={name} className="block h-9 w-auto max-w-[180px] object-contain dark:hidden" />
-        ) : null}
-        {dark ? (
-          <img src={dark} alt={name} className="hidden h-9 w-auto max-w-[180px] object-contain dark:block" />
-        ) : null}
-      </div>
-    );
-  }
-
-  // Text fallback when no logo is uploaded.
-  const parts = name.split(' ');
-  const line1 = parts[0];
-  const line2 = parts.slice(1).join(' ') || 'Workspace';
-
   return (
-    <div className={cn('flex items-center gap-2.5', className)}>
-      <span className="flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-info text-white shadow-glow">
-        <Sparkles className="size-5" />
+    <div className={cn('flex min-w-0 flex-col items-start', topbar ? 'gap-0.5' : 'gap-1.5', className)}>
+      {/* 1. Product — fixed, safed chip par */}
+      <span className={cn('inline-flex items-center rounded-lg bg-white shadow-sm ring-1 ring-black/5', topbar ? 'px-1.5 py-0.5' : 'px-2 py-1')}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={PRODUCT_LOGO}
+          alt={PRODUCT_NAME}
+          className={cn('block w-auto object-contain', topbar ? 'h-[18px] max-w-[120px]' : 'h-7 max-w-[170px]')}
+        />
       </span>
-      <div className="leading-tight">
-        <p className="max-w-[140px] truncate text-sm font-semibold tracking-tight">{line1}</p>
-        <p className="max-w-[140px] truncate text-[11px] text-muted-foreground">{line2}</p>
-      </div>
+
+      {/* 2. Client — Settings se; na ho to naam */}
+      {light || dark ? (
+        <span className="flex items-center">
+          {light ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={light} alt={name} className={cn('block w-auto object-contain dark:hidden', topbar ? 'h-[18px] max-w-[130px]' : 'h-7 max-w-[180px]')} />
+          ) : null}
+          {dark ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={dark} alt={name} className={cn('hidden w-auto object-contain dark:block', topbar ? 'h-[18px] max-w-[130px]' : 'h-7 max-w-[180px]')} />
+          ) : null}
+        </span>
+      ) : (
+        <p className={cn('max-w-[180px] truncate font-medium tracking-tight text-muted-foreground', topbar ? 'text-[11px]' : 'text-xs')}>
+          {name}
+        </p>
+      )}
     </div>
   );
 }

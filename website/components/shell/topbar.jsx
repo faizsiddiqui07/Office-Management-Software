@@ -25,7 +25,7 @@ export function Topbar({ user }) {
               <Brand compact />
             </span>
             <span className="hidden min-w-0 min-[500px]:flex">
-              <Brand />
+              <Brand size="topbar" />
             </span>
           </Link>
         </div>
