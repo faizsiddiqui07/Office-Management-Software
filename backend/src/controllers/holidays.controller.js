@@ -5,7 +5,6 @@ import {
   listHolidaysQuerySchema,
 } from '../validators/holidays.validators.js';
 import * as svc from '../services/holiday.service.js';
-import { renderHolidayListToStream } from '../services/reportPdf.service.js';
 import { loadPdfLogo } from '../lib/brand.js';
 import { audit } from '../models/AuditLog.js';
 
@@ -13,6 +12,11 @@ function handleErr(res, err, next) {
   if (err && err.status) return res.status(err.status).json(fail(err.code || 'ERROR', err.message));
   return next(err);
 }
+
+// PDF ki library (react-pdf + pdfkit + fontkit) BHAARI hai — saikdon files. Isliye static
+// import nahi: sirf tab load ho jab koi sach me PDF maange, warna har cold start use
+// bewajah utha leta (naapa gaya: init ka bada hissa yahi tha).
+const pdfModule = () => import('../services/reportPdf.service.js');
 
 export async function list(req, res, next) {
   try {
@@ -41,7 +45,7 @@ export async function listPdf(req, res, next) {
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="holiday-list-${year}.pdf"`);
-    const stream = await renderHolidayListToStream(data, await loadPdfLogo(data.company));
+    const stream = await (await pdfModule()).renderHolidayListToStream(data, await loadPdfLogo(data.company));
     stream.on('error', (err) => next(err));
     stream.pipe(res);
     return undefined;

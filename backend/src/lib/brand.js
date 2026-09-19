@@ -77,7 +77,8 @@ let productLogoCache = null;
 export function productLogo() {
   if (productLogoCache) return productLogoCache;
   try {
-    const p = new URL('../assets/managibot.png', import.meta.url);
+    // Root-relative, `import.meta.url` se nahi: bundle (dist/) aur seedha src/ dono se chale.
+    const p = path.join(process.env.LAMBDA_TASK_ROOT || process.cwd(), 'src', 'assets', 'managibot.png');
     productLogoCache = { format: 'png', dataUri: `data:image/png;base64,${fs.readFileSync(p).toString('base64')}`, product: true };
   } catch {
     productLogoCache = null;

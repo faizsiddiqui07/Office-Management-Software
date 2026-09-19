@@ -55,3 +55,6 @@ Thumbs.db
 
 # Throwaway diagnostic scripts (_tmp_*.mjs) — never part of the app
 _tmp_*.mjs
+
+# esbuild staging for lambda.zip
+backend/build/

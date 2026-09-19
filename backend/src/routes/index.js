@@ -41,8 +41,9 @@ export const apiRouter = express.Router();
  */
 const BUILD = (() => {
   try {
-    const here = path.dirname(fileURLToPath(import.meta.url));
-    return JSON.parse(fs.readFileSync(path.join(here, '..', 'build-info.json'), 'utf8'));
+    // Root-relative (bundle dist/ me ho ya src/ me — dono se wahi file).
+    const root = process.env.LAMBDA_TASK_ROOT || process.cwd();
+    return JSON.parse(fs.readFileSync(path.join(root, 'src', 'build-info.json'), 'utf8'));
   } catch {
     return { commit: 'dev', subject: '', builtAt: null };
   }

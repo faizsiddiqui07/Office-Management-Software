@@ -6,7 +6,6 @@ import {
   summaryQuerySchema,
 } from '../validators/expenses.validators.js';
 import * as svc from '../services/expense.service.js';
-import { renderExpenseListToStream } from '../services/reportPdf.service.js';
 import { loadPdfLogo } from '../lib/brand.js';
 import { computePeriod, previousPeriod } from '../services/report.service.js';
 import { ymdInTz } from '../lib/time.js';
@@ -18,6 +17,11 @@ function handleErr(res, err, next) {
   if (err && err.status) return res.status(err.status).json(fail(err.code || 'ERROR', err.message));
   return next(err);
 }
+
+// PDF ki library (react-pdf + pdfkit + fontkit) BHAARI hai — saikdon files. Isliye static
+// import nahi: sirf tab load ho jab koi sach me PDF maange, warna har cold start use
+// bewajah utha leta (naapa gaya: init ka bada hissa yahi tha).
+const pdfModule = () => import('../services/reportPdf.service.js');
 
 export async function meta(_req, res, next) {
   try {
@@ -111,7 +115,7 @@ export async function exportPdf(req, res, next) {
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="expenses-${q.from || 'all'}-to-${q.to || 'all'}.pdf"`);
-    const stream = await renderExpenseListToStream(data, await loadPdfLogo(data.company));
+    const stream = await (await pdfModule()).renderExpenseListToStream(data, await loadPdfLogo(data.company));
     stream.on('error', (err) => next(err));
     stream.pipe(res);
     return undefined;

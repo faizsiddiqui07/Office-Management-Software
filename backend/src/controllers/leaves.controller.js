@@ -2,7 +2,6 @@ import { ok, fail } from '../lib/apiResponse.js';
 import { can } from '../lib/permissions.js';
 import { applyLeaveSchema, decisionSchema, listLeavesQuerySchema } from '../validators/leaves.validators.js';
 import * as svc from '../services/leave.service.js';
-import { renderLeaveLedgerToStream } from '../services/reportPdf.service.js';
 import { loadPdfLogo } from '../lib/brand.js';
 import { currentLeaveYear } from '../lib/leaveYear.js';
 import { User } from '../models/User.js';
@@ -33,7 +32,7 @@ export async function leaveLedger(req, res, next) {
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="leave-ledger-${target.employeeId || target._id}-${data.period.label.replace(/[^\w-]/g, '')}.pdf"`);
-    const stream = await renderLeaveLedgerToStream(data, await loadPdfLogo(data.company));
+    const stream = await (await pdfModule()).renderLeaveLedgerToStream(data, await loadPdfLogo(data.company));
     stream.on('error', (err) => next(err));
     stream.pipe(res);
     return undefined;
@@ -73,6 +72,11 @@ export async function wfhDays(_req, res, next) {
     return next(err);
   }
 }
+
+// PDF ki library (react-pdf + pdfkit + fontkit) BHAARI hai — saikdon files. Isliye static
+// import nahi: sirf tab load ho jab koi sach me PDF maange, warna har cold start use
+// bewajah utha leta (naapa gaya: init ka bada hissa yahi tha).
+const pdfModule = () => import('../services/reportPdf.service.js');
 
 export async function balance(req, res, next) {
   try {

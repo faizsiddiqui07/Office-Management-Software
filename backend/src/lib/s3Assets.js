@@ -1,4 +1,3 @@
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 
 /**
  * Branding images (logos + app backgrounds) live in an S3 bucket, NOT in the database.
@@ -19,9 +18,13 @@ import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client
 
 const REGION = process.env.ASSETS_REGION || process.env.AWS_REGION || 'ap-south-1';
 
+// AWS SDK lazy: sirf logo/avatar upload par chahiye, har cold start par nahi (chatMedia.js jaisa).
 let client = null;
-function s3() {
-  if (!client) client = new S3Client({ region: REGION });
+async function s3() {
+  if (!client) {
+    const { S3Client } = await import('@aws-sdk/client-s3');
+    client = new S3Client({ region: REGION });
+  }
   return client;
 }
 
@@ -41,7 +44,8 @@ export function isAssetUrl(url) {
 /** Upload one image; returns its permanent public URL. */
 export async function uploadAsset({ buffer, contentType, keyPrefix, ext }) {
   const key = `branding/${keyPrefix}-${Date.now()}.${ext}`;
-  await s3().send(new PutObjectCommand({
+  const { PutObjectCommand } = await import('@aws-sdk/client-s3');
+  await (await s3()).send(new PutObjectCommand({
     Bucket: process.env.ASSETS_BUCKET,
     Key: key,
     Body: buffer,
@@ -60,7 +64,8 @@ export async function deleteAsset(url) {
   if (!isAssetUrl(url)) return;
   const key = url.slice(assetBaseUrl().length).split('?')[0];
   try {
-    await s3().send(new DeleteObjectCommand({ Bucket: process.env.ASSETS_BUCKET, Key: key }));
+    const { DeleteObjectCommand } = await import('@aws-sdk/client-s3');
+    await (await s3()).send(new DeleteObjectCommand({ Bucket: process.env.ASSETS_BUCKET, Key: key }));
   } catch (e) {
     console.error('asset delete failed', key, e?.message);
   }

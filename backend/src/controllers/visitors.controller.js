@@ -10,8 +10,6 @@ import { Setting } from '../models/Setting.js';
 import { Visitor } from '../models/Visitor.js';
 import { audit } from '../models/AuditLog.js';
 import { toCsv } from '../lib/csv.js';
-import { renderVisitorsPdf } from '../services/visitorPdf.service.js';
-import { renderVisitorPassPdf } from '../services/visitorPassPdf.service.js';
 import { loadPdfLogo } from '../lib/brand.js';
 
 /** A short human-readable pass number derived from the entry id (no extra field/counter). */
@@ -23,6 +21,13 @@ function handleErr(res, err, next) {
   if (err && err.status) return res.status(err.status).json(fail(err.code || 'ERROR', err.message));
   return next(err);
 }
+
+// PDF ki library (react-pdf + pdfkit + fontkit) BHAARI hai — saikdon files. Isliye static
+// import nahi: sirf tab load ho jab koi sach me PDF maange, warna har cold start use
+// bewajah utha leta (naapa gaya: init ka bada hissa yahi tha).
+const pdfModule_renderVisitorsPdf = () => import('../services/visitorPdf.service.js');
+
+const pdfModule_renderVisitorPassPdf = () => import('../services/visitorPassPdf.service.js');
 
 export async function meta(_req, res, next) {
   try {
@@ -98,7 +103,7 @@ export async function exportPdf(req, res, next) {
       visitors,
     };
     const logo = await loadPdfLogo({ ...(await Setting.getLogos()), name: data.company.name });
-    const stream = await renderVisitorsPdf(data, logo);
+    const stream = await (await pdfModule_renderVisitorsPdf()).renderVisitorsPdf(data, logo);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', 'attachment; filename="visitors.pdf"');
     stream.pipe(res);
@@ -143,7 +148,7 @@ export async function exportPass(req, res, next) {
       visitor: v,
     };
     const logo = await loadPdfLogo({ ...(await Setting.getLogos()), name: data.company.name });
-    const stream = await renderVisitorPassPdf(data, logo);
+    const stream = await (await pdfModule_renderVisitorPassPdf()).renderVisitorPassPdf(data, logo);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="visitor-pass-${passNoFor(v)}.pdf"`);
     stream.pipe(res);

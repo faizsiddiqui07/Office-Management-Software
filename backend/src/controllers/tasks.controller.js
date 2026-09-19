@@ -6,13 +6,17 @@ import { Setting } from '../models/Setting.js';
 import { ymdInTz, formatCompany } from '../lib/time.js';
 import { isOwnerRole } from '../lib/roles.js';
 import { audit } from '../models/AuditLog.js';
-import { renderTasksPdf } from '../services/taskPdf.service.js';
 import { loadPdfLogo } from '../lib/brand.js';
 
 function handleErr(res, err, next) {
   if (err && err.status) return res.status(err.status).json(fail(err.code || 'ERROR', err.message));
   return next(err);
 }
+
+// PDF ki library (react-pdf + pdfkit + fontkit) BHAARI hai — saikdon files. Isliye static
+// import nahi: sirf tab load ho jab koi sach me PDF maange, warna har cold start use
+// bewajah utha leta (naapa gaya: init ka bada hissa yahi tha).
+const pdfModule = () => import('../services/taskPdf.service.js');
 
 export async function summary(req, res, next) {
   try {
@@ -285,7 +289,7 @@ export async function exportPdf(req, res, next) {
       tasks,
     };
     const logo = await loadPdfLogo({ ...(await Setting.getLogos()), name: data.company.name });
-    const stream = await renderTasksPdf(data, logo);
+    const stream = await (await pdfModule()).renderTasksPdf(data, logo);
     res.setHeader('Content-Type', 'application/pdf');
     // The view goes in the filename, or a tagged export would overwrite the "mine" one.
     res.setHeader('Content-Disposition', `attachment; filename="tasks-${view === 'mine' ? '' : `${view}-`}${scope}.pdf"`);

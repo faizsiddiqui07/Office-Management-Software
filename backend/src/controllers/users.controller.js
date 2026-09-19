@@ -10,7 +10,6 @@ import { createEmployee, resetUserCredentials, updateUser as updateUserService, 
 import { getBalanceForUser, setLeaveBalance } from '../services/leave.service.js';
 import { getUserDossier } from '../services/dossier.service.js';
 import { buildSelfReport } from '../services/report.service.js';
-import { renderSelfReportToStream } from '../services/reportPdf.service.js';
 import { loadPdfLogo } from '../lib/brand.js';
 import { audit } from '../models/AuditLog.js';
 
@@ -52,7 +51,7 @@ export async function userReport(req, res, next) {
     const tracks = can({ role: user.role }, 'markAttendance');
     // Attendance + WFH only for self-tracking roles; task stats + leaves for everyone.
     const sections = tracks ? ['attendance', 'tasks', 'leaves', 'wfh'] : ['tasks', 'leaves'];
-    const stream = await renderSelfReportToStream(data, sections, await loadPdfLogo(data.company));
+    const stream = await (await pdfModule()).renderSelfReportToStream(data, sections, await loadPdfLogo(data.company));
     stream.on('error', (err) => next(err));
     stream.pipe(res);
     return undefined;
@@ -60,6 +59,11 @@ export async function userReport(req, res, next) {
     return sendServiceError(res, err, next);
   }
 }
+
+// PDF ki library (react-pdf + pdfkit + fontkit) BHAARI hai — saikdon files. Isliye static
+// import nahi: sirf tab load ho jab koi sach me PDF maange, warna har cold start use
+// bewajah utha leta (naapa gaya: init ka bada hissa yahi tha).
+const pdfModule = () => import('../services/reportPdf.service.js');
 
 export async function listUsers(_req, res, next) {
   try {

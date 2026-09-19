@@ -3,7 +3,6 @@ import { ymdInTz } from '../lib/time.js';
 import { can } from '../lib/permissions.js';
 import { loadPdfLogo } from '../lib/brand.js';
 import { buildReport, buildSelfReport, selfComparison, companyComparison } from '../services/report.service.js';
-import { renderReportToStream, renderSelfReportToStream } from '../services/reportPdf.service.js';
 import { audit } from '../models/AuditLog.js';
 
 const TYPES = ['daily', 'weekly', 'monthly', 'yearly', 'custom'];
@@ -79,6 +78,11 @@ function sectionAccess(user) {
   return { tasks: all, rewards: all, attendance: all, leaves: all, roster: all, expenses: all && can(user, 'viewExpenses') };
 }
 
+// PDF ki library (react-pdf + pdfkit + fontkit) BHAARI hai — saikdon files. Isliye static
+// import nahi: sirf tab load ho jab koi sach me PDF maange, warna har cold start use
+// bewajah utha leta (naapa gaya: init ka bada hissa yahi tha).
+const pdfModule = () => import('../services/reportPdf.service.js');
+
 export function canCompanyReports(user) {
   return Object.values(sectionAccess(user)).some(Boolean);
 }
@@ -149,7 +153,7 @@ export async function download(req, res, next) {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${periodFilename(`${type}-report`, type, data.period)}"`);
 
-    const stream = await renderReportToStream(data, sections, await loadPdfLogo(data.company));
+    const stream = await (await pdfModule()).renderReportToStream(data, sections, await loadPdfLogo(data.company));
     stream.on('error', (err) => next(err));
     stream.pipe(res);
     return undefined;
@@ -195,7 +199,7 @@ export async function selfDownload(req, res, next) {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${periodFilename('my-report', type, data.period)}"`);
 
-    const stream = await renderSelfReportToStream(data, sections, await loadPdfLogo(data.company));
+    const stream = await (await pdfModule()).renderSelfReportToStream(data, sections, await loadPdfLogo(data.company));
     stream.on('error', (err) => next(err));
     stream.pipe(res);
     return undefined;
