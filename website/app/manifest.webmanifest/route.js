@@ -29,13 +29,7 @@ export function GET() {
     scope: '/',
     display: 'standalone',
     orientation: 'portrait',
-    // Chrome (Android) apna splash isi se banata hai: ye rang + upar ka icon + naam. Wo
-    // splash band nahi ho sakta, isliye use hamare launch screen (components/shell/
-    // launch-screen.jsx) ke DARK bg par rakha hai — icon + naam wahin baithte hain jahan
-    // hamare tile + wordmark, to ek hi screen lagti hai. Manifest me light/dark alag rang
-    // nahi ho sakte (Chrome ka `user_preferences` sirf 109–114 ka experiment tha, Android
-    // par kabhi nahi) — light theme wale ko splash dark, phir app light dikhega.
-    background_color: '#0c0e16',
+    background_color: '#ffffff',
     theme_color: '#0b0f1a',
     icons: ICONS,
   };

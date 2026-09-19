@@ -18,11 +18,10 @@ import { PRODUCT_NAME } from './brand';
  * everything here subtracts --OFF.
  * Backgrounds are viewport.themeColor in app/layout.jsx — the colour painted before anything.
  *
- * Shown everywhere. On Android, Chrome draws its own splash first (manifest: icon + name on
- * background_color) and it cannot be turned off — so the manifest's background_color is
- * this screen's dark bg and the icon/name sit roughly where the tile/wordmark do, and the
- * hand-off reads as one screen settling into place. Off iOS, --S is capped at 640px
- * (globals.css) so a desktop window doesn't get a 300px tile.
+ * iOS ONLY (`.ios-only`, switched by `data-ios` on <html> — see layout.jsx/globals.css):
+ * Android's Chrome draws its own splash from the manifest, so there this would be a second
+ * one; Android and desktop keep the plain spinner (app-shell.jsx). Images are CSS
+ * backgrounds so a hidden launch screen fetches nothing.
  *
  * Theme: the PNG follows the SYSTEM appearance (iOS picks it by prefers-color-scheme); this
  * screen follows the app's own `.dark` class like everything else. For the few people who
@@ -37,7 +36,7 @@ export function LaunchScreen() {
     <div
       role="status"
       aria-label={`Loading ${PRODUCT_NAME}`}
-      className="launch-screen fixed inset-0 z-50 bg-[#f7f8fc] dark:bg-[#0c0e16] [--H:var(--ls-h,100dvh)] [--S:var(--ls-s,100vmin)] [--OFF:var(--ls-off,0px)]"
+      className="ios-only fixed inset-0 z-50 bg-[#f7f8fc] dark:bg-[#0c0e16] [--H:var(--ls-h,100dvh)] [--S:var(--ls-s,100vmin)] [--OFF:var(--ls-off,0px)]"
     >
       {/* App-icon tile: the home-screen icon, grown. Corners 22%, like the PNG. */}
       <div

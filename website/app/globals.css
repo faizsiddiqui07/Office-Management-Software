@@ -425,13 +425,19 @@
 }
 
 /* ────────────────────────────────────────────────────────────
-   Launch screen (components/shell/launch-screen.jsx) sizes everything from --S, the
-   shorter screen side, to land on the iOS launch image's pixels. Off iOS there is no image
-   to match, and 28% of a 1080p window is a 302px tile — so cap --S there. `data-ios` is
-   set by the inline script in app/layout.jsx before first paint.
+   iOS-only launch screen. `data-ios` is set on <html> by the inline script in
+   app/layout.jsx before first paint (see there for why). Both the launch screen and the
+   plain spinner are in the HTML; this picks one. Android keeps the spinner — Chrome
+   already showed its own splash from the manifest.
    ──────────────────────────────────────────────────────────── */
-:root:not([data-ios='true']) .launch-screen {
-  --S: min(var(--ls-s, 100vmin), 640px);
+.ios-only {
+  display: none;
+}
+:root[data-ios='true'] .ios-only {
+  display: block;
+}
+:root[data-ios='true'] .not-ios {
+  display: none;
 }
 
 /* ────────────────────────────────────────────────────────────
