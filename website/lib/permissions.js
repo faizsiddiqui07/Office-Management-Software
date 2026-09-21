@@ -105,19 +105,23 @@ export const NAV_ITEMS = [
   { label: 'Announcements', href: '/announcements', icon: Megaphone },
   { label: 'Calendar', href: '/calendar', icon: CalendarRange },
   { label: 'Rewards', href: '/rewards', icon: Award },
+  // People, together: who's here → their accounts → what each role may do. Owner's
+  // ask (21 Sep 2026): these three sit as one block, not scattered down the list.
   { label: 'Team', href: '/team', icon: Users, permission: 'viewEveryone' },
+  { label: 'Users', href: '/users', icon: UserPlus, permission: 'createUsers' },
+  { label: 'Roles', href: '/roles', icon: ShieldCheck, permission: 'manageRoles' },
   { label: 'Expenses', href: '/expenses', icon: Wallet, permission: 'viewExpenses' },
   { label: 'Visitors', href: '/visitors', icon: DoorOpen, permission: 'manageVisitors' },
-  { label: 'Users', href: '/users', icon: UserPlus, permission: 'createUsers' },
   { label: 'Reports', href: '/reports', icon: FileText, permission: 'downloadReports' },
+  // The tail, in the owner's order, bottom-up: Settings last, Chat records above it,
+  // then Rules and Activity.
   { label: 'Activity', href: '/activity', icon: Activity, permission: 'viewAudit' },
-  { label: 'Roles', href: '/roles', icon: ShieldCheck, permission: 'manageRoles' },
   // The office rule book — everyone reads it; CEO & President edit it on the page itself.
   { label: 'Rules', href: '/rules', icon: BookOpen },
-  { label: 'Settings', href: '/settings', icon: Settings, permission: 'manageSettings' },
   // Sirf CEO & President. Kisi permission se nahi juda — ye jaan-bujh kar hai: ye ek
   // role ka haq hai, koi aisa switch nahi jo kisi aur ko de diya jaye.
   { label: 'Chat records', href: '/chat-records', icon: ShieldCheck, ownerOnly: true },
+  { label: 'Settings', href: '/settings', icon: Settings, permission: 'manageSettings' },
 ];
 
 export function navItemsFor(user) {
