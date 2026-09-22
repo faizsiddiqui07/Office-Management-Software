@@ -69,8 +69,9 @@ export function ForcePasswordChange({ user }) {
           <button
             type="button"
             onClick={async () => {
-              await logout();
-              window.location.href = '/login';
+              // Another account may be signed in on this device — land in it if so.
+              const { next } = await logout();
+              window.location.href = next ? '/dashboard' : '/login';
             }}
             className="mt-5 w-full text-center text-xs text-muted-foreground hover:text-foreground"
           >

@@ -2,8 +2,9 @@
 
 import { createContext, useContext, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, ApiError, setAuthToken } from './api';
+import { api, ApiError, setAuthToken, getAuthToken } from './api';
 import { disablePush } from './pwa';
+import { rememberAccount, forgetAccountByToken, forgetAllAccounts, switchAccount, activeToken, storedToken, setCurrentAccountId } from './accounts';
 
 const AuthContext = createContext(null);
 
@@ -54,12 +55,44 @@ export function AuthProvider({ children }) {
   const { data: user, isLoading, isError } = useQuery({
     queryKey: ME_KEY,
     queryFn: async () => {
+      // The token this request goes out with. A sign-in or switch can replace it while
+      // the request is in flight; the answer then belongs to the OLD token and must not
+      // touch the new account's state.
+      const used = getAuthToken();
       try {
         const res = await api.get('/bootstrap');
-        if (res?.user) seedFromBootstrap(queryClient, res);
+        if (res?.user && getAuthToken() === used) {
+          setCurrentAccountId(res.user.id); // this tab's identity, for per-account keys
+          seedFromBootstrap(queryClient, res);
+          // Keep the account switcher's entry for this account current (name, photo, role,
+          // and the token — which a password change replaces). See lib/accounts.js.
+          // Only while this tab's token is still the DEVICE's token: another tab may have
+          // switched or signed this account out meanwhile, and re-persisting it here would
+          // undo that (and flip om_token back under the other tab's feet).
+          if (storedToken() === used) rememberAccount(res.user, used);
+        }
         return res?.user ?? null;
       } catch (err) {
-        if (err instanceof ApiError && err.status === 401) return null;
+        if (err instanceof ApiError && err.status === 401) {
+          // This token is dead (signed out elsewhere, password changed, account
+          // deactivated). Drop THAT account from the switcher so it can't be picked
+          // again. If another account is remembered it is now the active one — reload
+          // into it, exactly as signing out does; otherwise fall through to /login.
+          if (used && getAuthToken() === used) {
+            // The token expired on its own — keep the account's seen-stamps so signing
+            // back in doesn't light every dot; only a chosen Sign out clears them.
+            const next = forgetAccountByToken(used, { keepStamps: true });
+            if (next) {
+              setAuthToken(activeToken());
+              window.location.replace('/dashboard');
+            } else {
+              setAuthToken(null);
+            }
+          } else if (used) {
+            forgetAccountByToken(used, { keepStamps: true });
+          }
+          return null;
+        }
         throw err;
       }
     },
@@ -99,11 +132,28 @@ export function AuthProvider({ children }) {
     refresh: () => queryClient.invalidateQueries({ queryKey: ME_KEY }),
     async login(email, password) {
       const res = await api.post('/auth/login', { email, password });
-      if (res?.token) setAuthToken(res.token); // store for cross-domain (Bearer) auth
+      if (res?.token) {
+        setAuthToken(res.token); // store for cross-domain (Bearer) auth
+        rememberAccount(res.user, res.token); // …and in the switcher, as the active one
+      }
       await queryClient.invalidateQueries({ queryKey: ME_KEY });
       return res.user;
     },
-    async logout() {
+    /**
+     * Make another remembered account the active one. Resolves to true when the caller
+     * should hard-reload (`window.location.href = '/dashboard'`) — a reload is the only
+     * reliable way to drop every cached number of the account being left.
+     */
+    switchTo(id) {
+      return switchAccount(id);
+    },
+    /**
+     * Sign out of the active account only. Its token goes; if another account is
+     * remembered it becomes active and the caller should reload into it — the result
+     * says which: `{ next: '<id>' }` or `{ next: '' }` (nothing left → /login).
+     * `{ all: true }` signs out of every account on this device.
+     */
+    async logout({ all = false } = {}) {
       // Hand back the push subscription BEFORE the token goes, while the request can
       // still be authenticated. A subscription belongs to whoever enabled it, so
       // without this the person who just signed out kept receiving this device's
@@ -120,9 +170,19 @@ export function AuthProvider({ children }) {
         // Ignore network/API errors — we clear local state regardless so the
         // user is always signed out on the client.
       }
-      setAuthToken(null); // drop the Bearer token
+      // Forget the account THIS tab is signed in as (its token), not whatever
+      // om_active_account says — another tab may have switched the device meanwhile.
+      let next = '';
+      if (all) forgetAllAccounts();
+      else next = forgetAccountByToken(getAuthToken());
+      // forgetAccount already put the next account's token in om_token (or cleared it);
+      // the in-memory copy must agree so a stray request before the reload isn't sent
+      // with the dead token.
+      setAuthToken(next ? activeToken() : null);
+      setCurrentAccountId('');
       queryClient.setQueryData(ME_KEY, null);
       queryClient.removeQueries({ queryKey: ME_KEY });
+      return { next };
     },
   };
 

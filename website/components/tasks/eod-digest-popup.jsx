@@ -6,10 +6,11 @@ import { ClipboardCheck, Moon } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { COMPANY_TZ } from '@/lib/time';
+import { scopedKey } from '@/lib/accounts';
 import { Dialog, DialogContent, DialogFooter, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 
-const SEEN_KEY = 'om_eod_seen'; // the YMD this device last closed the round-up on
+const SEEN_BASE = 'om_eod_seen'; // the YMD this device+account last closed the round-up on
 
 /** Today's date (YYYY-MM-DD) in company time. */
 function companyToday() {
@@ -39,7 +40,7 @@ export function EodDigestPopup() {
   const [dismissed, setDismissed] = React.useState(true);
   React.useEffect(() => {
     let seen = null;
-    try { seen = localStorage.getItem(SEEN_KEY); } catch { seen = null; }
+    try { seen = localStorage.getItem(scopedKey(SEEN_BASE)); } catch { seen = null; }
     setDismissed(seen === today);
   }, [today]);
 
@@ -55,7 +56,7 @@ export function EodDigestPopup() {
   });
 
   const close = () => {
-    try { localStorage.setItem(SEEN_KEY, today); } catch { /* ignore storage failures */ }
+    try { localStorage.setItem(scopedKey(SEEN_BASE), today); } catch { /* ignore storage failures */ }
     setDismissed(true);
   };
 

@@ -5,6 +5,7 @@ import { useTheme } from 'next-themes';
 import { toast } from 'sonner';
 import { Camera, CircleUser, Gauge, KeyRound, Loader2, Monitor, Moon, Sun, Trash2, UserCog } from 'lucide-react';
 import { api, ApiError, setAuthToken } from '@/lib/api';
+import { rememberAccount } from '@/lib/accounts';
 import { useAuth } from '@/lib/auth';
 import { useLiteMode } from '@/lib/lite-mode';
 import { roleName } from '@/lib/permissions';
@@ -113,7 +114,13 @@ export default function ProfilePage() {
         currentPassword: pwd.currentPassword,
         newPassword: pwd.newPassword,
       });
-      if (res?.token) setAuthToken(res.token);
+      if (res?.token) {
+        setAuthToken(res.token);
+        // The switcher keeps a copy of this account's token (lib/accounts.js) — the old
+        // one is dead the moment the password changes, so refresh it here or switching
+        // away and back would come back 401 and drop the account.
+        rememberAccount(user, res.token);
+      }
       setPwd({ currentPassword: '', newPassword: '', confirm: '' });
       toast.success('Password changed — you’re signed out on your other devices');
     } catch (err) {

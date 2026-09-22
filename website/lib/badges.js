@@ -4,6 +4,7 @@ import * as React from 'react';
 import { usePathname } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { scopedKey, scopeId } from '@/lib/accounts';
 
 /**
  * Sidebar dots. The server says when something last turned up in each section that
@@ -11,9 +12,12 @@ import { api } from '@/lib/api';
  * → a dot. Opening the section clears it, which is the whole rule: the dot only says
  * "there's something here you haven't looked at", nothing more.
  *
- * "Last opened" is stored per device, so it's a nudge on the phone you actually use.
+ * "Last opened" is stored per device AND per account (lib/accounts.js `scopedKey`), so
+ * it's a nudge on the phone you actually use — and looking at Approvals in one account
+ * doesn't clear the dot in the other.
  */
 const SEEN_PREFIX = 'om_seen_';
+const seenKey = (k) => scopedKey(SEEN_PREFIX + k);
 
 /** Nav href → the key the API reports under. */
 export const BADGE_BY_HREF = {
@@ -33,12 +37,18 @@ const ALL_KEYS = [...Object.values(BADGE_BY_HREF), CORRECTIONS_KEY];
 // state — component-local state would drift between them.
 const listeners = new Set();
 let cache = null;
+let cacheFor = null; // the account the cache was read for — rebuilt when that changes
 
 function snapshot() {
-  if (cache) return cache;
+  // The account can change without a reload (a dead token sends the page to /login and
+  // someone else signs in, all soft navigations) — never hand the new account the old
+  // one's stamps. A new object only when the account differs, so renders stay stable.
+  const id = scopeId();
+  if (cache && cacheFor === id) return cache;
+  cacheFor = id;
   const out = {};
   try {
-    for (const k of ALL_KEYS) out[k] = window.localStorage.getItem(SEEN_PREFIX + k) || '';
+    for (const k of ALL_KEYS) out[k] = window.localStorage.getItem(seenKey(k)) || '';
   } catch {
     // storage blocked — everything reads as "never opened", which is a safe default
   }
@@ -57,7 +67,7 @@ function subscribe(listener) {
 export function markSeen(key) {
   const now = new Date().toISOString();
   try {
-    window.localStorage.setItem(SEEN_PREFIX + key, now);
+    window.localStorage.setItem(seenKey(key), now);
   } catch {
     // ignore — the in-memory copy below still hides the dot for this session
   }
