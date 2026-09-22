@@ -87,6 +87,9 @@ const BASE = new Set(['viewOwn', 'viewAnnouncements', 'viewCalendar']);
 const ALIAS = { viewUserData: 'viewEveryone' };
 
 export const NAV_ITEMS = [
+  // The sidebar's order, exactly as the owner asked for it (22 Sep 2026): the daily work
+  // first, then what you look up, then the people and admin pages, Settings last. Desktop
+  // and mobile sidebars both render this one list, filtered by permission.
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { label: 'To-Do', href: '/todo', icon: ListTodo },
   // Chat har page ke floating button se bhi khulta hai; sidebar ka link laptop par
@@ -97,30 +100,26 @@ export const NAV_ITEMS = [
   // next to the work itself. Without this gate the inbox appeared for nine people
   // who had nothing to decide in it.
   { label: 'Approvals', href: '/approvals', icon: Inbox, anyOf: ['approveLeave', 'approveRegularization'] },
-  // Your own numbers only — no permission needed, and nothing here belongs to anyone else.
-  { label: 'My Summary', href: '/my-summary', icon: UserRound },
   { label: 'Attendance', href: '/attendance', icon: CalendarClock },
   { label: 'Leaves', href: '/leaves', icon: CalendarDays },
-  { label: 'Dues', href: '/dues', icon: HandCoins },
   { label: 'Announcements', href: '/announcements', icon: Megaphone },
   { label: 'Calendar', href: '/calendar', icon: CalendarRange },
   { label: 'Rewards', href: '/rewards', icon: Award },
-  // People, together: who's here → their accounts → what each role may do. Owner's
-  // ask (21 Sep 2026): these three sit as one block, not scattered down the list.
+  // Your own numbers only — no permission needed, and nothing here belongs to anyone else.
+  { label: 'My Summary', href: '/my-summary', icon: UserRound },
+  { label: 'Reports', href: '/reports', icon: FileText, permission: 'downloadReports' },
+  { label: 'Expenses', href: '/expenses', icon: Wallet, permission: 'viewExpenses' },
+  { label: 'Dues', href: '/dues', icon: HandCoins },
+  { label: 'Visitors', href: '/visitors', icon: DoorOpen, permission: 'manageVisitors' },
+  { label: 'Roles', href: '/roles', icon: ShieldCheck, permission: 'manageRoles' },
   { label: 'Team', href: '/team', icon: Users, permission: 'viewEveryone' },
   { label: 'Users', href: '/users', icon: UserPlus, permission: 'createUsers' },
-  { label: 'Roles', href: '/roles', icon: ShieldCheck, permission: 'manageRoles' },
-  { label: 'Expenses', href: '/expenses', icon: Wallet, permission: 'viewExpenses' },
-  { label: 'Visitors', href: '/visitors', icon: DoorOpen, permission: 'manageVisitors' },
-  { label: 'Reports', href: '/reports', icon: FileText, permission: 'downloadReports' },
-  // The tail, in the owner's order, bottom-up: Settings last, Chat records above it,
-  // then Rules and Activity.
   { label: 'Activity', href: '/activity', icon: Activity, permission: 'viewAudit' },
-  // The office rule book — everyone reads it; CEO & President edit it on the page itself.
-  { label: 'Rules', href: '/rules', icon: BookOpen },
   // Sirf CEO & President. Kisi permission se nahi juda — ye jaan-bujh kar hai: ye ek
   // role ka haq hai, koi aisa switch nahi jo kisi aur ko de diya jaye.
   { label: 'Chat records', href: '/chat-records', icon: ShieldCheck, ownerOnly: true },
+  // The office rule book — everyone reads it; CEO & President edit it on the page itself.
+  { label: 'Rules', href: '/rules', icon: BookOpen },
   { label: 'Settings', href: '/settings', icon: Settings, permission: 'manageSettings' },
 ];
 
