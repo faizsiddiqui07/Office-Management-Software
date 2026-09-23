@@ -6,10 +6,12 @@ import { useQuery } from '@tanstack/react-query';
 import {
   Activity as ActivityIcon,
   ArrowLeft,
+  Award,
   CalendarClock,
   CalendarOff,
   CheckCircle2,
   Clock,
+  Coins,
   Download,
   Home,
   ListTodo,
@@ -39,6 +41,8 @@ import { EmptyState } from '@/components/glass/empty-state';
 import { LoadingState } from '@/components/glass/skeletons';
 import { DataTable } from '@/components/glass/data-table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useUserBonus } from '@/lib/bonus';
+import { formatRupees } from '@/lib/expense';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 
@@ -90,6 +94,8 @@ export default function UserDossierPage() {
   const router = useRouter();
   const { user } = useAuth();
   const allowed = !!user && can(user, 'viewEveryone');
+  // /bonus/user/:id is behind manageSettings — see backend/src/routes/bonus.routes.js.
+  const canSeePoints = !!user && can(user, 'manageSettings');
 
   const [preset, setPreset] = React.useState('month');
   const [from, setFrom] = React.useState(monthStart());
@@ -279,30 +285,40 @@ export default function UserDossierPage() {
           ) : null}
 
           {/* Stat cards */}
-          <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4 xl:grid-cols-7">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4 2xl:grid-cols-7">
             {/* WFH days sit inside workingDays, so the hint names them — otherwise the
                 ratio reads short and looks like unexplained absences. */}
             <StatCard
+              compact
               label="Present"
               value={att.presentDays}
               hint={att.wfhDays ? `of ${att.workingDays} · +${att.wfhDays} from home` : `of ${att.workingDays} working days`}
               icon={CheckCircle2}
               tone="success"
             />
-            <StatCard label="Late" value={att.lateDays} hint={att.excusedLateDays ? `${att.excusedLateDays} on-duty` : undefined} icon={TriangleAlert} tone="warning" />
-            <StatCard label="Absent" value={att.tracksAttendance ? att.absentDays : '—'} icon={CalendarOff} tone="destructive" />
-            <StatCard label="From home" value={att.wfhDays ?? 0} icon={Home} tone="default" />
-            <StatCard label="Overtime" value={att.totalOvertimeMinutes ? formatDuration(att.totalOvertimeMinutes) : '0m'} icon={Clock} tone="success" />
-            <StatCard label="Leaves taken" value={leaves.approvedDays} hint={`${leaves.balance.remaining} left`} icon={Plane} />
-            <StatCard label="Tasks done" value={`${tasks.done}/${tasks.total}`} hint={tasks.pending ? `${tasks.pending} pending` : undefined} icon={ListTodo} />
+            <StatCard compact label="Late" value={att.lateDays} hint={att.excusedLateDays ? `${att.excusedLateDays} on-duty` : undefined} icon={TriangleAlert} tone="warning" />
+            <StatCard compact label="Absent" value={att.tracksAttendance ? att.absentDays : '—'} icon={CalendarOff} tone="destructive" />
+            <StatCard compact label="From home" value={att.wfhDays ?? 0} icon={Home} tone="default" />
+            <StatCard compact label="Overtime" value={att.totalOvertimeMinutes ? formatDuration(att.totalOvertimeMinutes) : '0m'} icon={Clock} tone="success" />
+            <StatCard compact label="Leaves taken" value={leaves.approvedDays} hint={`${leaves.balance.remaining} left`} icon={Plane} />
+            <StatCard compact label="Tasks done" value={`${tasks.done}/${tasks.total}`} hint={tasks.pending ? `${tasks.pending} pending` : undefined} icon={ListTodo} />
           </div>
 
           <Tabs defaultValue="attendance" className="space-y-4">
             {/* Full-width equal tabs on a phone (no side-scroll); natural width on desktop. */}
-            <TabsList className="grid w-full grid-cols-4 sm:inline-flex sm:w-fit">
-              <TabsTrigger value="attendance" className="min-w-0 px-1.5 text-xs sm:px-3.5 sm:text-sm">Attendance</TabsTrigger>
+            <TabsList className={cn('grid w-full sm:inline-flex sm:w-fit', canSeePoints ? 'grid-cols-5' : 'grid-cols-4')}>
+              <TabsTrigger value="attendance" className="min-w-0 px-1.5 text-xs sm:px-3.5 sm:text-sm">
+                {/* Five equal tabs on a phone leave ~52px of text: "Attendance" is clipped there. */}
+                <span className="hidden sm:inline">Attendance</span>
+                <span className="sm:hidden">Attend.</span>
+              </TabsTrigger>
               <TabsTrigger value="leaves" className="min-w-0 px-1.5 text-xs sm:px-3.5 sm:text-sm">Leaves</TabsTrigger>
               <TabsTrigger value="tasks" className="min-w-0 px-1.5 text-xs sm:px-3.5 sm:text-sm">To-do</TabsTrigger>
+              {/* Points come from the rewards endpoint, which is leadership-only — so the
+                  tab is there only for someone who may actually load it. */}
+              {canSeePoints ? (
+                <TabsTrigger value="rewards" className="min-w-0 px-1.5 text-xs sm:px-3.5 sm:text-sm">Rewards</TabsTrigger>
+              ) : null}
               <TabsTrigger value="activity" className="min-w-0 px-1.5 text-xs sm:px-3.5 sm:text-sm">Activity</TabsTrigger>
             </TabsList>
 
@@ -379,6 +395,13 @@ export default function UserDossierPage() {
               )}
             </TabsContent>
 
+            {/* Rewards — points for the months this range touches. */}
+            {canSeePoints ? (
+              <TabsContent value="rewards">
+                <RewardsTab userId={id} from={from} to={to} />
+              </TabsContent>
+            ) : null}
+
             {/* Activity */}
             <TabsContent value="activity">
               {activity.length ? (
@@ -405,6 +428,85 @@ export default function UserDossierPage() {
           </Tabs>
         </>
       )}
+    </div>
+  );
+}
+
+/**
+ * Their points for the period — the same figures the Rewards page shows, for one person.
+ *
+ * Points are scored per MONTH, so the window here is the months the chosen range touches;
+ * a range inside one month is that month. The hint under the total says which months are
+ * counted, so the number is never read as "these exact days".
+ */
+function RewardsTab({ userId, from, to }) {
+  const months = { from: String(from).slice(0, 7), to: String(to).slice(0, 7) };
+  const oneMonth = months.from === months.to;
+  const { data, isLoading, isError } = useUserBonus(userId, oneMonth ? { month: months.from } : months);
+
+  const fmtMonth = (m) => {
+    if (!m) return '—';
+    const [y, mo] = m.split('-');
+    return new Date(Number(y), Number(mo) - 1, 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+  };
+  const periodLabel = oneMonth ? fmtMonth(months.from) : `${fmtMonth(months.from)} – ${fmtMonth(months.to)}`;
+
+  if (isError) {
+    return <EmptyState icon={Award} title="Couldn’t load points" description="Please try again in a moment." />;
+  }
+  if (isLoading || !data) return <LoadingState label="Loading points…" />;
+  if (!data.enabled) {
+    return (
+      <EmptyState
+        icon={Award}
+        title="Points are switched off"
+        description="Monthly reward points aren’t running right now. Turn them on in Settings to start scoring."
+      />
+    );
+  }
+
+  const entries = data.entries ?? [];
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        <StatCard compact label="Points" value={data.points ?? 0} hint={periodLabel} icon={Award} tone="success" />
+        <StatCard
+          compact
+          label="Worth"
+          value={formatRupees(data.rupees ?? 0)}
+          hint={data.rupeesPerPoint ? `${formatRupees(data.rupeesPerPoint)} a point` : undefined}
+          icon={Coins}
+        />
+        <StatCard compact label="Entries" value={entries.length} hint="in this period" icon={ListTodo} />
+      </div>
+
+      <GlassPanel className="p-0">
+        {entries.length ? (
+          <ul className="divide-y divide-border/50">
+            {entries.map((e) => (
+              <li key={e.id} className="flex items-center gap-3 px-4 py-3">
+                <div className="min-w-0 flex-1">
+                  <p className="break-words text-sm">{e.reason}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {fmtDate(e.earnedYMD || String(e.createdAt).slice(0, 10))}
+                    {e.source === 'manual' ? ' · awarded' : ' · automatic'}
+                  </p>
+                </div>
+                <span
+                  className={cn(
+                    'shrink-0 text-sm font-semibold tabular-nums',
+                    e.points < 0 ? 'text-destructive' : 'text-success',
+                  )}
+                >
+                  {e.points > 0 ? `+${e.points}` : e.points}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="p-6 text-center text-sm text-muted-foreground">No points in {periodLabel}.</p>
+        )}
+      </GlassPanel>
     </div>
   );
 }
