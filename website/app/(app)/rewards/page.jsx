@@ -22,6 +22,7 @@ import { cn } from '@/lib/utils';
 import { formatRupees } from '@/lib/expense';
 import { monthOptions, fyOptions, paramsForSelection } from '@/lib/reward-periods';
 import { formatYMD } from '@/lib/leave';
+import { EntryDetailDialog } from '@/components/rewards/entry-detail-dialog';
 
 /**
  * Accepts an ISO instant OR a plain 'YYYY-MM-DD' (which is what earnedYMD is). A plain
@@ -40,102 +41,6 @@ function fmtDateFull(v) {
 const money = (n) => formatRupees(n);
 const Pts = ({ n }) => <span className={n < 0 ? 'font-medium text-destructive' : 'font-medium text-emerald-600 dark:text-emerald-300'}>{n > 0 ? `+${n}` : n}</span>;
 
-// What each kind of automatic entry is, in plain words, for the detail view.
-const SOURCE_LABEL = {
-  auto_task: 'Assigned task',
-  auto_forward: 'Forwarded a task',
-  auto_assign: 'Work you assigned',
-  auto_streak: 'Punctual streak',
-  auto_late: 'Late arrival',
-  auto_ot: 'Overtime',
-  auto_absent: 'Absent day',
-  auto_noleave: 'No leave taken',
-  auto_perfect: 'Perfect attendance',
-  manual: 'Awarded by leadership',
-};
-
-/* ── Detail dialogs (Task 4: click any point to see where it came from) ────────── */
-
-function useTaskDetail(id) {
-  return useQuery({
-    queryKey: ['task', id],
-    queryFn: () => api.get(`/tasks/${id}`),
-    enabled: !!id,
-    select: (r) => r.task,
-  });
-}
-
-function Fact({ label, value }) {
-  if (value === null || value === undefined || value === '') return null;
-  return (
-    <div className="flex justify-between gap-3 py-2">
-      <span className="shrink-0 text-muted-foreground">{label}</span>
-      <span className="text-right font-medium">{value}</span>
-    </div>
-  );
-}
-
-/** The full story of a task behind a point entry. */
-function TaskFacts({ task }) {
-  const collabs = (task.collaborators || []).map((c) => c.name).filter(Boolean).join(', ');
-  return (
-    <div className="divide-y divide-border/50 rounded-xl bg-foreground/[0.03] px-3.5 ring-1 ring-border/50">
-      <Fact label="Task" value={task.title} />
-      <Fact label="Assigned by" value={task.assignedBy?.name || task.originalAssignedBy?.name} />
-      <Fact label="Assigned on" value={fmtDateFull(task.createdAt)} />
-      <Fact label="Due date" value={task.dueYMD ? fmtDateFull(task.dueYMD) : 'No deadline'} />
-      {task.requiresApproval ? <Fact label="Submitted" value={fmtDateFull(task.submittedAt)} /> : null}
-      <Fact label="Completed on" value={fmtDateFull(task.completedAt)} />
-      <Fact label="Completed by" value={task.completedBy?.name} />
-      {task.approvedBy?.name ? <Fact label="Approved by" value={task.approvedBy.name} /> : null}
-      <Fact label="Status" value={task.status === 'DONE' ? 'Done' : 'Pending'} />
-      {collabs ? <Fact label="Tagged" value={collabs} /> : null}
-      {task.notes ? <Fact label="Notes" value={task.notes} /> : null}
-    </div>
-  );
-}
-
-/** One point entry, expanded: what it was, what it's worth, and — if it's a task — the task. */
-function EntryDetailDialog({ entry, onOpenChange }) {
-  const isTask = ['auto_task', 'auto_forward', 'auto_assign'].includes(entry?.source) && !!entry?.taskRef;
-  const q = useTaskDetail(isTask ? entry.taskRef : null);
-  return (
-    <Dialog open={!!entry} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="pr-2">{entry?.reason}</DialogTitle>
-          {/* The date is when the POINTS were counted — for a task that's the day it was
-              completed/approved, NOT when it was assigned (the facts below show those).
-              Labelled so "Assigned task · 13 Jul" isn't misread as "assigned on 13 Jul". */}
-          <DialogDescription>
-            {SOURCE_LABEL[entry?.source] || 'Points'} · {(entry?.points ?? 0) < 0 ? 'counted' : 'earned'} {fmtDateFull(entry?.earnedYMD || entry?.createdAt)}
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="flex items-center justify-between rounded-xl bg-foreground/[0.03] px-3.5 py-3 ring-1 ring-border/50">
-          <span className="text-sm text-muted-foreground">Points</span>
-          <span className="text-base"><Pts n={entry?.points ?? 0} /></span>
-        </div>
-
-        {isTask ? (
-          q.isLoading ? (
-            <p className="py-2 text-center text-sm text-muted-foreground">Loading task…</p>
-          ) : q.isError ? (
-            <p className="py-2 text-center text-sm text-muted-foreground">Couldn’t load the task’s details.</p>
-          ) : q.data ? (
-            <TaskFacts task={q.data} />
-          ) : null
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            {entry?.source === 'manual'
-              ? 'Given by leadership.'
-              : 'Earned automatically from your attendance and work records.'}
-          </p>
-        )}
-      </DialogContent>
-    </Dialog>
-  );
-}
 
 /** A single clickable point row — used in both "My points" and a person's drill-down. */
 function EntryRow({ entry, isRange, onOpen, onDelete }) {

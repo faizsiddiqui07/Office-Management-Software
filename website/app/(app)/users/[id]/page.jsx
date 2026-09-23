@@ -10,6 +10,7 @@ import {
   CalendarClock,
   CalendarOff,
   CheckCircle2,
+  ChevronRight,
   Clock,
   Coins,
   Download,
@@ -43,6 +44,7 @@ import { DataTable } from '@/components/glass/data-table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useUserBonus } from '@/lib/bonus';
 import { formatRupees } from '@/lib/expense';
+import { EntryDetailDialog } from '@/components/rewards/entry-detail-dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 
@@ -398,7 +400,7 @@ export default function UserDossierPage() {
             {/* Rewards — points for the months this range touches. */}
             {canSeePoints ? (
               <TabsContent value="rewards">
-                <RewardsTab userId={id} from={from} to={to} />
+                <RewardsTab userId={id} from={from} to={to} whose={u?.name} />
               </TabsContent>
             ) : null}
 
@@ -439,10 +441,12 @@ export default function UserDossierPage() {
  * a range inside one month is that month. The hint under the total says which months are
  * counted, so the number is never read as "these exact days".
  */
-function RewardsTab({ userId, from, to }) {
+function RewardsTab({ userId, from, to, whose }) {
   const months = { from: String(from).slice(0, 7), to: String(to).slice(0, 7) };
   const oneMonth = months.from === months.to;
   const { data, isLoading, isError } = useUserBonus(userId, oneMonth ? { month: months.from } : months);
+  // The entry the person tapped — same detail view as on the Rewards page.
+  const [viewing, setViewing] = React.useState(null);
 
   const fmtMonth = (m) => {
     if (!m) return '—';
@@ -484,22 +488,29 @@ function RewardsTab({ userId, from, to }) {
         {entries.length ? (
           <ul className="divide-y divide-border/50">
             {entries.map((e) => (
-              <li key={e.id} className="flex items-center gap-3 px-4 py-3">
-                <div className="min-w-0 flex-1">
-                  <p className="break-words text-sm">{e.reason}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {fmtDate(e.earnedYMD || String(e.createdAt).slice(0, 10))}
-                    {e.source === 'manual' ? ' · awarded' : ' · automatic'}
-                  </p>
-                </div>
-                <span
-                  className={cn(
-                    'shrink-0 text-sm font-semibold tabular-nums',
-                    e.points < 0 ? 'text-destructive' : 'text-success',
-                  )}
+              <li key={e.id}>
+                <button
+                  type="button"
+                  onClick={() => setViewing(e)}
+                  className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-foreground/[0.04] focus-visible:bg-foreground/[0.04] focus-visible:outline-none"
                 >
-                  {e.points > 0 ? `+${e.points}` : e.points}
-                </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="break-words text-sm">{e.reason}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {fmtDate(e.earnedYMD || String(e.createdAt).slice(0, 10))}
+                      {e.source === 'manual' ? ' · awarded' : ' · automatic'}
+                    </p>
+                  </div>
+                  <span
+                    className={cn(
+                      'shrink-0 text-sm font-semibold tabular-nums',
+                      e.points < 0 ? 'text-destructive' : 'text-success',
+                    )}
+                  >
+                    {e.points > 0 ? `+${e.points}` : e.points}
+                  </span>
+                  <ChevronRight className="size-4 shrink-0 text-muted-foreground/50" />
+                </button>
               </li>
             ))}
           </ul>
@@ -507,6 +518,9 @@ function RewardsTab({ userId, from, to }) {
           <p className="p-6 text-center text-sm text-muted-foreground">No points in {periodLabel}.</p>
         )}
       </GlassPanel>
+
+      {/* Tap a point for where it came from — for a task, the whole task. */}
+      <EntryDetailDialog entry={viewing} onOpenChange={(o) => (!o ? setViewing(null) : null)} whose={whose} />
     </div>
   );
 }
