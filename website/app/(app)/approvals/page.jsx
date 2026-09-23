@@ -15,6 +15,9 @@ import { StatusBadge } from '@/components/glass/status-badge';
 import { Button } from '@/components/ui/button';
 import { DateRange } from '@/components/ui/date-range';
 import { ApprovalCard, waitingFor } from '@/components/approvals/approval-card';
+import { LeaveDetailDialog } from '@/components/leaves/leave-detail-dialog';
+import { RegularizationDetailDialog } from '@/components/attendance/regularization-detail-dialog';
+import { AppDialog } from '@/components/glass/app-dialog';
 import { requestTypeLabel, isWFHType, formatRange, formatYMD } from '@/lib/leave';
 import { APP_LIVE_YMD } from '@/lib/app-live';
 
@@ -76,7 +79,6 @@ export default function ApprovalsPage() {
   const [tab, setTab] = React.useState(null); // null until we know which tabs exist
   const [rangeKey, setRangeKey] = React.useState('this_month');
   const [custom, setCustom] = React.useState({ from: '', to: '' });
-  const [showHistory, setShowHistory] = React.useState(false);
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['approvals', 'pending'],
@@ -110,7 +112,7 @@ export default function ApprovalsPage() {
   const { data: history, isLoading: histLoading } = useQuery({
     queryKey: ['approvals', 'history', tab, range.from, range.to],
     queryFn: () => api.get(`/approvals/history?kind=${tab}&from=${range.from}&to=${range.to}`),
-    enabled: showHistory && !!tab && historyReady,
+    enabled: !!tab && historyReady,
   });
 
   const refreshAll = () => {
@@ -273,52 +275,46 @@ export default function ApprovalsPage() {
             </GlassCard>
           )}
 
-          {/* ── History, same kind, its own window ── */}
+          {/* ── History, same kind, its own window. Always open: what you decided is
+                 part of the page, not something to go looking for. ── */}
           <section className="space-y-2.5">
-            <button
-              type="button"
-              onClick={() => setShowHistory((v) => !v)}
-              className="flex w-full items-center gap-2 rounded-xl border border-border/60 bg-card/60 px-3 py-2.5 text-left transition-colors hover:bg-foreground/5"
-            >
+            <div className="flex items-center gap-2 px-1 pt-1">
               <History className="size-4 shrink-0 text-muted-foreground" />
-              <span className="font-semibold tracking-tight">History</span>
+              <h2 className="font-semibold tracking-tight">History</h2>
               <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
                 {current ? `${current.label.toLowerCase()} you've decided` : ''}
               </span>
-              <span className="shrink-0 text-xs font-medium text-primary">{showHistory ? 'Hide' : 'Show'}</span>
-            </button>
+            </div>
 
-            {showHistory ? (
-              <div className="space-y-2.5">
-                <div className="flex flex-wrap gap-1.5">
-                  {RANGES.map((r) => (
-                    <button
-                      key={r.key}
-                      type="button"
-                      onClick={() => setRangeKey(r.key)}
-                      aria-pressed={rangeKey === r.key}
-                      className={cn(
-                        'rounded-full px-3 py-1.5 text-xs font-medium ring-1 transition-colors',
-                        rangeKey === r.key ? 'bg-primary text-primary-foreground ring-primary' : 'bg-background/40 text-muted-foreground ring-border hover:text-foreground',
-                      )}
-                    >
-                      {r.label}
-                    </button>
-                  ))}
-                </div>
-                {rangeKey === 'custom' ? <DateRange value={custom} onChange={setCustom} min={APP_LIVE_YMD} /> : null}
-
-                <GlassCard className="p-3">
-                  {!historyReady ? (
-                    <p className="p-6 text-center text-sm text-muted-foreground">Pick a start and an end date.</p>
-                  ) : histLoading && !history ? (
-                    <LoadingState label="Loading…" />
-                  ) : (
-                    <HistoryList history={history} kind={tab} />
-                  )}
-                </GlassCard>
+            <div className="space-y-2.5">
+              <div className="flex flex-wrap gap-1.5">
+                {RANGES.map((r) => (
+                  <button
+                    key={r.key}
+                    type="button"
+                    onClick={() => setRangeKey(r.key)}
+                    aria-pressed={rangeKey === r.key}
+                    className={cn(
+                      'rounded-full px-3 py-1.5 text-xs font-medium ring-1 transition-colors',
+                      rangeKey === r.key ? 'bg-primary text-primary-foreground ring-primary' : 'bg-background/40 text-muted-foreground ring-border hover:text-foreground',
+                    )}
+                  >
+                    {r.label}
+                  </button>
+                ))}
               </div>
-            ) : null}
+              {rangeKey === 'custom' ? <DateRange value={custom} onChange={setCustom} min={APP_LIVE_YMD} /> : null}
+
+              <GlassCard className="p-3">
+                {!historyReady ? (
+                  <p className="p-6 text-center text-sm text-muted-foreground">Pick a start and an end date.</p>
+                ) : histLoading && !history ? (
+                  <LoadingState label="Loading…" />
+                ) : (
+                  <HistoryList history={history} kind={tab} />
+                )}
+              </GlassCard>
+            </div>
           </section>
         </>
       )}
@@ -327,6 +323,10 @@ export default function ApprovalsPage() {
 }
 
 function HistoryList({ history, kind }) {
+  // The record behind the row the person tapped — the whole request, so the detail view
+  // shows everything the server sent, not just what fits on one line.
+  const [viewing, setViewing] = React.useState(null);
+
   const rows = React.useMemo(() => {
     if (!history) return [];
     if (kind === 'leaves') {
@@ -334,6 +334,7 @@ function HistoryList({ history, kind }) {
         id: l.id, when: l.decidedAt, who: l.user?.name,
         what: `${requestTypeLabel(l.type)} · ${formatRange(l.startYMD, l.endYMD)}`,
         by: l.decidedBy?.name, status: l.status, verb: l.status, note: l.decisionNote,
+        record: l,
       }));
     }
     if (kind === 'regularizations') {
@@ -341,6 +342,7 @@ function HistoryList({ history, kind }) {
         id: r.id, when: r.decidedAt, who: r.user?.name,
         what: `Correction · ${formatYMD(r.dateYMD)}`,
         by: r.decidedBy?.name, status: r.status, verb: r.status, note: r.decisionNote,
+        record: r,
       }));
     }
     // No `by` here: a task approval is always yours, so naming you on every row is noise.
@@ -349,6 +351,7 @@ function HistoryList({ history, kind }) {
       status: t.status === 'DONE' ? 'APPROVED' : 'REJECTED',
       verb: t.status === 'DONE' ? 'APPROVED' : 'SENT_BACK',
       note: t.rejectionReason,
+      record: t,
     }));
   }, [history, kind]);
 
@@ -363,7 +366,12 @@ function HistoryList({ history, kind }) {
       </p>
       <div className="divide-y divide-border/50">
         {rows.map((r) => (
-          <div key={r.id} className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1.5 py-2.5">
+          <button
+            key={r.id}
+            type="button"
+            onClick={() => setViewing(r.record)}
+            className="-mx-1 flex w-[calc(100%+0.5rem)] flex-wrap items-start justify-between gap-x-3 gap-y-1.5 rounded-lg px-1 py-2.5 text-left transition-colors hover:bg-foreground/5 focus-visible:bg-foreground/5 focus-visible:outline-none"
+          >
             <div className="min-w-0 basis-full sm:flex-1 sm:basis-auto">
               <p className="break-words text-sm font-medium">{r.who || '—'}</p>
               <p className="break-words text-xs text-muted-foreground">
@@ -376,9 +384,61 @@ function HistoryList({ history, kind }) {
               <StatusBadge tone={TONE[r.status] ?? 'neutral'}>{VERB[r.verb] ?? r.status}</StatusBadge>
               <span className="text-xs tabular-nums text-muted-foreground">{formatYMD(decidedOn(r.when))}</span>
             </div>
-          </div>
+          </button>
         ))}
       </div>
+
+      {/* Tap any row for the whole request — the same detail view it has on its own page. */}
+      {kind === 'leaves' ? (
+        <LeaveDetailDialog leave={viewing} open={!!viewing} onOpenChange={(o) => (!o ? setViewing(null) : null)} showApplicant />
+      ) : null}
+      {kind === 'regularizations' ? (
+        <RegularizationDetailDialog request={viewing} open={!!viewing} onOpenChange={(o) => (!o ? setViewing(null) : null)} showApplicant />
+      ) : null}
+      {kind === 'tasks' ? (
+        <TaskDecisionDialog task={viewing} open={!!viewing} onOpenChange={(o) => (!o ? setViewing(null) : null)} />
+      ) : null}
     </>
+  );
+}
+
+/**
+ * What you decided on one piece of delegated work. Tasks have no detail view of their own
+ * (the To-Do dialog is an editor), and this is a decision already made — so it shows the
+ * record as it stands: whose work, what happened, when, and the reason you sent it back.
+ */
+function TaskDecisionDialog({ task, open, onOpenChange }) {
+  const approved = task?.status === 'DONE';
+  return (
+    <AppDialog open={open} onOpenChange={onOpenChange} title="Work approval">
+      {task ? (
+        <div className="space-y-4 py-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusBadge tone={approved ? 'success' : 'warning'}>{approved ? 'Approved' : 'Sent back'}</StatusBadge>
+            <span className="min-w-0 break-words text-sm font-medium">{task.title}</span>
+          </div>
+          <div className="divide-y divide-border/50 rounded-xl bg-foreground/[0.03] px-3 ring-1 ring-border/50">
+            <div className="flex items-start justify-between gap-4 py-2">
+              <span className="shrink-0 text-xs uppercase tracking-wide text-muted-foreground">Done by</span>
+              <span className="min-w-0 break-words text-right text-sm font-medium">{task.owner?.name || '—'}</span>
+            </div>
+            <div className="flex items-start justify-between gap-4 py-2">
+              <span className="shrink-0 text-xs uppercase tracking-wide text-muted-foreground">
+                {approved ? 'Approved on' : 'Sent back on'}
+              </span>
+              <span className="min-w-0 break-words text-right text-sm font-medium">
+                {formatYMD(decidedOn(task.completedAt || task.updatedAt))}
+              </span>
+            </div>
+            <div className="flex items-start justify-between gap-4 py-2">
+              <span className="shrink-0 text-xs uppercase tracking-wide text-muted-foreground">Reason</span>
+              <span className="min-w-0 whitespace-pre-wrap break-words text-right text-sm font-medium">
+                {task.rejectionReason ? task.rejectionReason : <span className="italic text-muted-foreground">None given</span>}
+              </span>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </AppDialog>
   );
 }
