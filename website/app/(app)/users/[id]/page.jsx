@@ -442,18 +442,29 @@ export default function UserDossierPage() {
  * counted, so the number is never read as "these exact days".
  */
 function RewardsTab({ userId, from, to, whose }) {
+  // The points API works in whole MONTHS (that is how points are scored and stored), so
+  // ask it for the months this range touches and then keep only the days actually chosen —
+  // otherwise "Last 7 days" showed the whole month's points next to seven days of
+  // everything else on this page. Each entry carries the day it was earned (earnedYMD),
+  // which is exactly what the filter needs.
   const months = { from: String(from).slice(0, 7), to: String(to).slice(0, 7) };
   const oneMonth = months.from === months.to;
   const { data, isLoading, isError } = useUserBonus(userId, oneMonth ? { month: months.from } : months);
   // The entry the person tapped — same detail view as on the Rewards page.
   const [viewing, setViewing] = React.useState(null);
 
-  const fmtMonth = (m) => {
-    if (!m) return '—';
-    const [y, mo] = m.split('-');
-    return new Date(Number(y), Number(mo) - 1, 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
-  };
-  const periodLabel = oneMonth ? fmtMonth(months.from) : `${fmtMonth(months.from)} – ${fmtMonth(months.to)}`;
+  // Day of an entry: earnedYMD when it is there (the day the late arrival / finished task
+  // actually happened), else the day the row was written.
+  const dayOf = (e) => e.earnedYMD || String(e.createdAt || '').slice(0, 10);
+  const inRange = React.useCallback(
+    (e) => {
+      const d = dayOf(e);
+      return !!d && d >= from && d <= to;
+    },
+    [from, to],
+  );
+
+  const periodLabel = `${fmtDate(from)} – ${fmtDate(to)}`;
 
   if (isError) {
     return <EmptyState icon={Award} title="Couldn’t load points" description="Please try again in a moment." />;
@@ -469,15 +480,20 @@ function RewardsTab({ userId, from, to, whose }) {
     );
   }
 
-  const entries = data.entries ?? [];
+  // Points for THESE days, counted from the entries themselves. Safe to add up:
+  // carry-forward is off, so a period's total is just the sum of what it holds
+  // (see mySummary in backend/src/services/bonus.service.js).
+  const entries = (data.entries ?? []).filter(inRange);
+  const points = entries.reduce((n, e) => n + (e.points || 0), 0);
+  const rupees = data.rupeesPerPoint && points > 0 ? Math.round(points * data.rupeesPerPoint) : 0;
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-        <StatCard compact label="Points" value={data.points ?? 0} hint={periodLabel} icon={Award} tone="success" />
+        <StatCard compact label="Points" value={points} hint={periodLabel} icon={Award} tone="success" />
         <StatCard
           compact
           label="Worth"
-          value={formatRupees(data.rupees ?? 0)}
+          value={formatRupees(rupees)}
           hint={data.rupeesPerPoint ? `${formatRupees(data.rupeesPerPoint)} a point` : undefined}
           icon={Coins}
         />
@@ -515,7 +531,7 @@ function RewardsTab({ userId, from, to, whose }) {
             ))}
           </ul>
         ) : (
-          <p className="p-6 text-center text-sm text-muted-foreground">No points in {periodLabel}.</p>
+          <p className="p-6 text-center text-sm text-muted-foreground">No points between {periodLabel}.</p>
         )}
       </GlassPanel>
 
