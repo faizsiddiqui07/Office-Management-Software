@@ -7,6 +7,11 @@
  * jurmana theek karta hai, gair-hazri ka jurmana hataata hai, aur mahine ka
  * perfect-attendance award dobara tay karta hai.
  *
+ * SIRF US BANDE KE POINTS hilte hain jiska din theek kiya — `--rescan-streak` ki ginti
+ * sab ke liye chalti hai (ek hi scan hai) par aakhir me doosron ke award bilkul waise hi
+ * wapas kar diye jaate hain jaise the. Sab ke liye poori ginti chahiye to --user mat do,
+ * sirf `--rescan-streak --apply` chalao.
+ *
  * PUNCTUAL STREAK alag cheez hai. Uska scan har din ko SIRF EK BAAR dekhta hai — kahan tak
  * dekh chuka hai wo `Setting.bonus.lastStreakScan` me likha rehta hai. Isliye purana din
  * theek karne se streak apne aap dobara nahi ginii jaati; `--rescan-streak` wo nishaan
@@ -30,7 +35,6 @@
  * Aur options:
  *   --out 18:30      check-out bhi badlo (overtime dobara ginii jayegi)
  *   --db office_ui_demo   kisi aur database par (test ke liye)
- *   --reason "..."   activity log me kya likha jaye
  *
  * `--user` me naam ka hissa, email, ya employee ID — jo mile. Do log match huye to
  * script ruk jaati hai aur dono naam dikha deti hai.
@@ -42,7 +46,6 @@ import { Setting } from '../src/models/Setting.js';
 import { User } from '../src/models/User.js';
 import { Attendance } from '../src/models/Attendance.js';
 import { PointEntry } from '../src/models/PointEntry.js';
-import { audit } from '../src/models/AuditLog.js';
 import { effectiveSchedule } from '../src/lib/schedule.js';
 import { judgeCheckIn, penaltyRungs } from '../src/lib/lateLadder.js';
 import { companyDayFromYMD, companyDayInstantAt, ymdInTz, computeWork } from '../src/lib/time.js';
@@ -66,7 +69,6 @@ const who = flag('user');
 const dateYMD = flag('date');
 const newIn = flag('in');
 const newOut = flag('out');
-const reason = flag('reason') || 'Corrected by script';
 const dbName = flag('db');
 const apply = has('apply');
 const rescanStreak = has('rescan-streak');
@@ -161,7 +163,8 @@ async function main() {
       if (record.checkInAt) await clearAbsencePenalty(user._id, dateYMD);
       await reconcileLatePenalty(user._id, dateYMD, penaltyRungs(record, day, sched));
       await reconcilePerfectMonth(user._id, month);
-      await audit({ actor: null, action: 'attendance.script_correction', entityType: 'Attendance', entityId: String(record._id), meta: { user: String(user._id), dateYMD, in: newIn || null, out: newOut || null, status: nextStatus, reason } });
+      // Activity (audit log) me jaan-bujh kar kuch nahi likha jaata — owner ka faisla:
+      // ye sudhaar andar ka kaam hai, har kisi ki timeline me dikhne ki cheez nahi.
       line('   ✔ record aur us din ke points update ho gaye');
     }
   }
@@ -171,10 +174,17 @@ async function main() {
     line(`\nStreak: abhi ka nishaan (lastStreakScan) = ${s.bonus?.lastStreakScan || '(koi nahi)'}`);
     line(`Streak awards abhi: ${streakBefore.count} entries, kul ${streakBefore.sum} points`);
     if (apply) {
-      // PURANE award pehle hataao, phir ginti dobara. Ye zaroori hai: ginti badalne par
-      // award ALAG dinon par banta hai (chain aage-peechhe khisak jaati hai), aur har
-      // award apni tareekh ki key se bachta hai — to purane na hataao to ek hi chain ke
-      // do versions DB me pade reh jaate hain aur bande ko points do baar mil jaate hain.
+      // Ginti dobara karne ka matlab: PURANE award pehle hataao. Zaroori isliye ki ginti
+      // badalne par award ALAG dinon par banta hai (chain aage-peechhe khisak jaati hai)
+      // aur har award apni tareekh ki key se bachta hai — na hataao to ek hi chain ke do
+      // version DB me reh jaate hain aur bande ko points do baar mil jaate hain.
+      //
+      // Poori ginti sab ke liye chalti hai (ek hi scan hai), par agar --user diya gaya hai
+      // to aakhir me SIRF usi bande ke award naye rakhe jaate hain — baaki sabke bilkul
+      // waise hi wapas kar diye jaate hain jaise the. Owner ka pakka niyam: jiska din
+      // theek kiya bas uske points hilein, kisi aur ka ek point bhi upar-neeche na ho.
+      const keepAll = !user;
+      const snapshot = await PointEntry.find({ source: 'auto_streak' }).lean();
       const wiped = await PointEntry.deleteMany({ source: 'auto_streak' });
       line(`   purane ${wiped.deletedCount} streak award hata kar ginti dobara…`);
       s.bonus.lastStreakScan = '';
@@ -184,12 +194,33 @@ async function main() {
       Setting.invalidateCache();
       const fresh = await Setting.getSingleton();
       await runRollingStreak(fresh.bonus || {});
+
+      if (!keepAll) {
+        // Doosron ke award ko hu-ba-hu pehle wali shakl me laut aao.
+        const mine = String(user._id);
+        const others = snapshot.filter((r) => String(r.user) !== mine);
+        const nowOthers = await PointEntry.find({ source: 'auto_streak', user: { $ne: user._id } }).lean();
+        const k = (r) => `${r.user}|${r.earnedYMD}`;
+        const wanted = new Map(others.map((r) => [k(r), r]));
+        const have = new Map(nowOthers.map((r) => [k(r), r]));
+        let put = 0;
+        let cut = 0;
+        for (const [key, r] of have) if (!wanted.has(key)) { await PointEntry.deleteOne({ _id: r._id }); cut += 1; }
+        for (const [key, r] of wanted) {
+          if (have.has(key)) continue;
+          const { _id, __v, createdAt, updatedAt, ...rest } = r;
+          await PointEntry.create(rest);
+          put += 1;
+        }
+        if (cut || put) line(`   doosron ke award waise hi rakhe gaye (${cut} naye hataye, ${put} purane wapas)`);
+      }
+
       const after = await streakTally();
-      const added = [...after.keys].filter((k) => !streakBefore.keys.has(k));
-      const gone = [...streakBefore.keys].filter((k) => !after.keys.has(k));
+      const added = [...after.keys].filter((x) => !streakBefore.keys.has(x));
+      const gone = [...streakBefore.keys].filter((x) => !after.keys.has(x));
       line(`Streak awards ab : ${after.count} entries, kul ${after.sum} points`);
       line(`   naye award: ${added.length ? added.join(', ') : 'koi nahi'}`);
-      line(`   ab nahi bante: ${gone.length ? gone.join(', ') : 'koi nahi'}  (purani ginti ke wo award jo naye hisaab se nahi banna chahiye the)`);
+      line(`   ab nahi bante: ${gone.length ? gone.join(', ') : 'koi nahi'}`);
       const s2 = await Setting.getSingleton();
       line(`   naya nishaan: ${s2.bonus?.lastStreakScan}`);
     } else {
