@@ -48,6 +48,21 @@ export function periodStartFor(user, fromYMD) {
 }
 
 /**
+ * Is `ymd` the very first day this person had access — the day the office went live, or
+ * their own joining day when that is later?
+ *
+ * Nobody is marked absent on it (owner's rule, 1 Oct 2026). An account is created part-way
+ * through a day, usually with the person sitting there while it is set up, so a missing
+ * check-in on it says nothing about whether they came in. Two people were carrying a −10
+ * for exactly this: the office's own first day, 1 July 2026, and a joining day the day
+ * after. Absence only — the day still counts as a working day everywhere else, so it
+ * neither earns a perfect-attendance month nor keeps a punctual run alive.
+ */
+export function isFirstAccessDay(user, ymd) {
+  return !!ymd && ymd === periodStartFor(user, APP_LIVE_YMD);
+}
+
+/**
  * Split a roster into the people who belong in a period and the people who joined after
  * it. The second list is meant to be shown, not silently dropped: the UI says "these
  * names aren't here, and here's the date they joined", so a short list never looks like

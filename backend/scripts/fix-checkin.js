@@ -42,6 +42,7 @@
 import 'dotenv/config';
 import mongoose from 'mongoose';
 import { connectDB } from '../src/config/db.js';
+import { loadRoles } from '../src/lib/roles.js';
 import { Setting } from '../src/models/Setting.js';
 import { User } from '../src/models/User.js';
 import { Attendance } from '../src/models/Attendance.js';
@@ -111,6 +112,9 @@ async function streakTally() {
 async function main() {
   if (dbName) process.env.MONGODB_DB = dbName;
   await connectDB();
+  // Roles DB me rakhe hain. Bina load kiye `can()` apne fallback par chala jaata hai, aur
+  // --rescan-streak ke andar runRollingStreak ka roster filter galat ban jaata hai.
+  await loadRoles();
   line(`\nDatabase: ${mongoose.connection.name}${apply ? '' : '   (DRY RUN — kuch nahi badlega)'}`);
 
   const s = await Setting.getFullSingleton();

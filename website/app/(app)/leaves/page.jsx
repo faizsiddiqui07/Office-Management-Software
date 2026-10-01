@@ -17,6 +17,7 @@ import { ApplyLeaveDialog } from '@/components/leaves/apply-leave-dialog';
 import { LeaveHistory } from '@/components/leaves/leave-history';
 import { RequestsQueue } from '@/components/leaves/requests-queue';
 import { DeclareWfhDialog } from '@/components/leaves/declare-wfh-dialog';
+import { EmergencyHolidayDialog } from '@/components/leaves/emergency-holiday-dialog';
 
 // Leave years run on the fiscal calendar (Apr 1 – Mar 31); the "year" key is the STARTING
 // calendar year. Mirrors backend/src/lib/leaveYear.js so the picker and the PDF agree.
@@ -105,7 +106,12 @@ export default function LeavesPage() {
     <div className="space-y-8">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <PageHeader eyebrow="Leaves" title="Leave management" icon={CalendarDays} description={description} />
-        {isOwner ? <DeclareWfhDialog /> : null}
+        {isOwner ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <DeclareWfhDialog />
+            <EmergencyHolidayDialog />
+          </div>
+        ) : null}
       </div>
 
       {canApply && isApprover ? (

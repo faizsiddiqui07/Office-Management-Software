@@ -22,11 +22,13 @@ import { periodStartFor } from '../src/lib/joining.js';
 import { isBirthdayYMD } from '../src/lib/birthday.js';
 import { ymdInTz, companyDayFromYMD, dayOfWeekInTz } from '../src/lib/time.js';
 import { can } from '../src/lib/permissions.js';
+import { loadRoles } from '../src/lib/roles.js';
 import { APP_LIVE_YMD } from '../src/lib/appLive.js';
 
 const dbFlag = process.argv.indexOf('--db');
 if (dbFlag > -1 && process.argv[dbFlag + 1]) process.env.MONGODB_DB = process.argv[dbFlag + 1];
 await connectDB();
+await loadRoles(); // warna `can()` fallback par chala jaata hai aur roster galat ban'ta hai
 console.log('Database:', mongoose.connection.name);
 const s = await Setting.getFullSingleton();
 const STREAK_LEN = 6;

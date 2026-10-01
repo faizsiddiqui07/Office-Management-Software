@@ -10,7 +10,7 @@ import { ownerRoleKeys } from '../lib/roles.js';
 import { ymdInTz, companyDayFromYMD, dayOfWeekInTz } from '../lib/time.js';
 import { userWeekendDays, effectiveSchedule } from '../lib/schedule.js';
 import { penaltyRungs, lateReasonText } from '../lib/lateLadder.js';
-import { hadAccessOn, splitByJoining, periodStartFor } from '../lib/joining.js';
+import { hadAccessOn, splitByJoining, periodStartFor, isFirstAccessDay } from '../lib/joining.js';
 import { APP_LIVE_YMD } from '../lib/appLive.js';
 import { holidayYMDSet } from './holiday.service.js';
 import { isBirthdayYMD } from '../lib/birthday.js';
@@ -901,7 +901,12 @@ export async function reconcileLatePenalty(userId, dateYMD, late) {
   const b = s.bonus || {};
   const key = `auto_late:${userId}:${dateYMD}`;
   const l = asLate(late);
-  if (b.enabled && l.rungs > 0) {
+  // A day the office declared a holiday costs nobody anything, whatever their record on it
+  // says. penaltyRungs() is a pure function of the record and the shift and has never known
+  // about holidays, so this is the only place that can clear a penalty which was written
+  // BEFORE an emergency holiday was declared over the day.
+  const onHoliday = (await holidayYMDSet(dateYMD, dateYMD)).has(dateYMD);
+  if (b.enabled && !onHoliday && l.rungs > 0) {
     const pts = rulePoints(b, 'lateArrival', dateYMD);
     if (pts) {
       // `replace`: a reconcile follows a real change to the day (a corrected check-in
@@ -1065,6 +1070,7 @@ export async function reconcileAbsence(userId, dateYMD) {
   const rec = await Attendance.findOne({ user: userId, date: companyDayFromYMD(dateYMD) }).select('_id');
   const onLeave = await LeaveRequest.findOne({ user: userId, status: 'APPROVED', type: { $ne: 'WFH' }, startYMD: { $lte: dateYMD }, endYMD: { $gte: dateYMD } }).select('_id');
   const isAbsent = user && can({ role: user.role }, 'markAttendance') && hadAccessOn(user, dateYMD)
+    && !isFirstAccessDay(user, dateYMD)
     && !holidays.has(dateYMD) && !isBirthdayYMD(user, dateYMD)
     && !userWeekendDays(user, s).includes(dow) && !rec && !onLeave;
   if (isAbsent) {
@@ -1394,6 +1400,7 @@ async function scanAbsences(b, since, until = null) {
     const month = ymd.slice(0, 7);
     for (const u of users) {
       if (!hadAccessOn(u, ymd)) continue; // they hadn't joined — not an absence
+      if (isFirstAccessDay(u, ymd)) continue; // their first day — the account was made on it
       if (userWeekendDays(u, s).includes(dow)) continue;
       if (isBirthdayYMD(u, ymd)) continue; // their own birthday is a day off for them alone
       if (present.has(String(u._id)) || onLeave.has(String(u._id))) continue;
@@ -1484,9 +1491,15 @@ export const STREAK_LEN = 6;
  * up on the next run. With no watermark it walks from go-live — which is exactly how
  * the one-time V2 rebuild re-scores the whole history.
  */
-export async function runRollingStreak(b) {
+export async function runRollingStreak(b, { ignoreLock = false } = {}) {
   const pts = rulePoints(b, 'punctualStreak');
   if (!pts) return;
+  // A manual rebuild owns the whole streak history while it runs: it empties auto_streak and
+  // re-walks from go-live. This scan fires on its own scheduled Lambda, so if it carried on
+  // it would lay a second, pre-rebuild chain into the table the rebuild just cleared — and
+  // awardOnce is insert-only, so BOTH chains would survive and everyone whose award dates
+  // moved would be paid twice. That exact accident has happened once already.
+  if (!ignoreLock && await rebuildLockHeld()) return;
   const yesterday = prevDay(ymdInTz(new Date()));
   if (yesterday < APP_LIVE_YMD) return;
   const s = await Setting.getSingleton();
@@ -1498,7 +1511,11 @@ export async function runRollingStreak(b) {
   const holidays = await holidayYMDSet(start, yesterday);
   const roster = (await User.find({ isActive: true }).select('name role employmentType schedule dateOfJoining dateOfBirth')).filter((u) => can({ role: u.role }, 'markAttendance'));
   const { included: users } = splitByJoining(roster, start, yesterday);
-  const recs = await Attendance.find({ date: { $gte: companyDayFromYMD(start), $lte: companyDayFromYMD(yesterday) } }).select('user date status excused');
+  // halfDayLeave is READ three lines into the loop below. Leaving it out of the select
+  // did not make the loop crash — mongoose hands back the schema default (false) for an
+  // unselected path — it made the owner's half-day exemption silently never fire, so a
+  // late arrival on a half-day reset the run exactly like any other late.
+  const recs = await Attendance.find({ date: { $gte: companyDayFromYMD(start), $lte: companyDayFromYMD(yesterday) } }).select('user date status excused halfDayLeave');
   const recByUserDay = new Map(recs.map((r) => [`${r.user}|${ymdInTz(r.date)}`, r]));
   const leaves = await LeaveRequest.find({ status: 'APPROVED', startYMD: { $lte: yesterday }, endYMD: { $gte: start } }).select('user startYMD endYMD');
 
@@ -1534,10 +1551,13 @@ export async function runRollingStreak(b) {
     runs[uid] = count;
   }
 
-  s.bonus.streakRuns = runs;
-  s.bonus.lastStreakScan = yesterday;
-  s.markModified('bonus.streakRuns'); // Mixed — mongoose can't see inside it
-  await s.save();
+  // A TARGETED update, never s.save(). getSingleton() hands back a per-container cached
+  // document: saving it writes that whole stale `bonus` subtree back, which un-sets any
+  // field another container latched in the meantime. The rebuild lock is exactly such a
+  // field — and it is new, so on the first tick after a deploy a document loaded before
+  // it existed carries the schema default and a save here would release somebody else's
+  // running rebuild.
+  await Setting.updateOne({ key: 'global' }, { $set: { 'bonus.streakRuns': runs, 'bonus.lastStreakScan': yesterday } });
   Setting.invalidateCache();
 }
 
@@ -1561,6 +1581,390 @@ async function rebuildStreakV2(b) {
   await runRollingStreak(b || s.bonus);
   await Setting.updateOne({ key: 'global' }, { $set: { 'bonus.streakV2': true } });
   Setting.invalidateCache();
+}
+
+// ── Manual full rebuild — the Rewards page's "Recalculate points" ─────────────
+//
+// WHY THIS EXISTS. Two watermarks make the automatic scans deliberately one-shot:
+// `bonus.lastStreakScan` means a day's punctuality is judged exactly once, ever, and
+// `bonus.lastMonthRollup` means a month's end-of-month awards are decided once. That is
+// correct for the nightly job — re-judging a day would double-count it — but it also means
+// a RETROACTIVE change to attendance never re-earns the award it should have earned. Three
+// ordinary things do that every month:
+//   • excusing a late to on-duty — excuseLate() only reconciles the late penalty,
+//   • approving a backdated leave — the streak had already written the day off as an
+//     unexplained absence and reset the run,
+//   • a regularization — the same gap.
+// The older POST /bonus/recalculate cannot repair any of them: it runs maybeRunDaily(force),
+// which respects both watermarks. This is the deeper operation that can.
+//
+// THE FIVE SOURCES IT OWNS — and nothing else is touched:
+//   auto_streak    rebuilt wholesale; the 6-day chain crosses month ends, so it cannot be
+//                  rebuilt one month at a time
+//   auto_late      re-judged from each attendance record
+//   auto_absent    re-judged per person per day
+//   auto_perfect   re-decided per person per finished month
+//   auto_noleave   re-decided per person per finished month
+// auto_ot, auto_task, auto_overdue, auto_forward and every manually-given award are left
+// exactly as they are.
+//
+// WHAT `verified` ACTUALLY PROVES — and what it does not. The streak is rebuilt by the LIVE
+// scan, runRollingStreak, so the check afterwards genuinely pits two independent
+// implementations against each other: if expectedLedger's own walk and the live scan ever
+// disagreed about a single award, verified would come back false. For the other four
+// sources the apply writes expectedLedger's answer directly, in one bulkWrite, because the
+// per-person-per-day alternative is thousands of round-trips and does not fit a 30-second
+// Lambda — so for those, `verified` proves the write landed as planned, not that two
+// implementations agree. THAT agreement is proved in scripts/test-rebuild-points.js, which
+// runs the live reconcile* helpers over the rebuilt ledger on a throwaway copy of real data
+// and asserts they do not change a single row. Keep that test honest and this stays honest.
+
+const REBUILD_LOCK_MS = 2 * 60 * 1000;
+
+/** A short, stable fingerprint of a string — enough to tell one plan from another. */
+function fingerprint(str) {
+  let h1 = 0x811c9dc5;
+  let h2 = 0x01000193;
+  for (let i = 0; i < str.length; i += 1) {
+    const c = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 0x01000193);
+    h2 = Math.imul(h2 ^ c, 0x85ebca6b);
+  }
+  return ((h1 >>> 0).toString(16).padStart(8, '0') + (h2 >>> 0).toString(16).padStart(8, '0'));
+}
+/** The only sources a rebuild may touch. Everything else in the ledger is left alone. */
+const REBUILD_SOURCES = ['auto_streak', 'auto_late', 'auto_absent', 'auto_perfect', 'auto_noleave'];
+
+/**
+ * Is a rebuild holding the lock right now? Read straight from the database — getSingleton()
+ * is cached per container, and the whole point is to see another container's claim.
+ */
+async function rebuildLockHeld() {
+  const row = await Setting.findOne({ key: 'global' }).select('bonus.rebuildLock bonus.rebuildLockUntil').lean();
+  const until = row?.bonus?.rebuildLockUntil;
+  return !!(row?.bonus?.rebuildLock && until && new Date(until).getTime() > Date.now());
+}
+
+/** Every finished month from go-live up to (not including) the current one. */
+function finishedMonths() {
+  const out = [];
+  const cur = currentMonth();
+  let m = APP_LIVE_YMD.slice(0, 7);
+  while (m < cur) { out.push(m); m = nextMonth(m); }
+  return out;
+}
+
+/**
+ * What the attendance rules say the five owned sources SHOULD contain, from go-live to
+ * yesterday. One read of each collection, then pure computation — this writes nothing.
+ *
+ * Every branch mirrors the live code it stands in for, deliberately line for line:
+ * runRollingStreak for the streak, runMonthRollup / reconcilePerfectMonth for the perfect
+ * month (all THREE blemish branches, including an explicit ABSENT row), reconcileNoLeaveMonth
+ * for no-leave, penaltyRungs for the late ladder, scanAbsences for absences. Rates are
+ * effective-dated, so each award is priced on the day it was earned and a closed month keeps
+ * the rate it closed at.
+ */
+async function expectedLedger(upto = null) {
+  const s = await Setting.getSingleton();
+  const b = s.bonus || {};
+  // The caller pins the window for a whole run. Re-deriving it per call meant a rebuild
+  // started at 23:59:58 could plan against one last day and verify against another.
+  const yesterday = upto || prevDay(ymdInTz(new Date()));
+  const want = new Map(); // dedupeKey → the entry the rules say belongs there
+  if (!b.enabled || yesterday < APP_LIVE_YMD) return { want, months: [], roster: [] };
+
+  const roster = (await User.find({ isActive: true }).select('name role employmentType schedule dateOfJoining dateOfBirth'))
+    .filter((u) => can({ role: u.role }, 'markAttendance'));
+  const recs = await Attendance.find({ date: { $gte: companyDayFromYMD(APP_LIVE_YMD), $lte: companyDayFromYMD(yesterday) } })
+    .select('user date status excused halfDayLeave halfDayPart checkInAt');
+  const byDay = new Map(recs.map((r) => [`${r.user}|${ymdInTz(r.date)}`, r]));
+  const leaves = await LeaveRequest.find({ status: 'APPROVED', startYMD: { $lte: yesterday }, endYMD: { $gte: APP_LIVE_YMD } })
+    .select('user startYMD endYMD type');
+  const holidays = await holidayYMDSet(APP_LIVE_YMD, yesterday);
+  const months = finishedMonths();
+
+  const onLeaveOn = (uid, d) => leaves.some((l) => String(l.user) === uid && l.startYMD <= d && l.endYMD >= d);
+  const add = (key, doc) => { if (doc.points) want.set(key, doc); };
+
+  for (const u of roster) {
+    const uid = String(u._id);
+    const off = userWeekendDays(u, s);
+    const sched = effectiveSchedule(u, s);
+    // Off-day / company holiday / their own birthday: not a day they were due in.
+    const neutralDay = (d) => off.includes(dayOfWeekInTz(companyDayFromYMD(d))) || holidays.has(d) || isBirthdayYMD(u, d);
+
+    // ── auto_late, auto_absent and auto_streak, walking go-live → yesterday once ──
+    let run = 0;
+    for (let d = periodStartFor(u, APP_LIVE_YMD); d <= yesterday; d = addDays(d, 1)) {
+      const rec = byDay.get(`${uid}|${d}`);
+
+      // auto_late — the ladder, against this person's own shift. A holiday costs nobody
+      // anything, however they happen to be recorded on it.
+      if (rec && !holidays.has(d)) {
+        const late = penaltyRungs(rec, companyDayFromYMD(d), sched);
+        if (late.rungs > 0) {
+          add(`auto_late:${uid}:${d}`, { user: u._id, month: d.slice(0, 7), points: -Math.abs(rulePoints(b, 'lateArrival', d)) * late.rungs, reason: lateReasonText(d, late), source: 'auto_late', earnedYMD: d });
+        }
+      }
+
+      if (neutralDay(d)) continue; // neither a streak day nor an absence
+      const onLeave = onLeaveOn(uid, d);
+
+      // auto_absent — a finished working day with no attendance and no approved leave.
+      // Never their first day: the account is created part-way through it (see
+      // isFirstAccessDay), so a missing check-in on it means nothing.
+      if (!rec && !onLeave && hadAccessOn(u, d) && !isFirstAccessDay(u, d)) {
+        add(`auto_absent:${uid}:${d}`, { user: u._id, month: d.slice(0, 7), points: -Math.abs(rulePoints(b, 'absentDay', d)), reason: `Absent · ${d}`, source: 'auto_absent', earnedYMD: d });
+      }
+
+      // auto_streak — runRollingStreak's branches, in its order.
+      if (rec && (rec.status === 'WFH' || rec.status === 'ON_LEAVE')) continue; // neutral
+      if (rec && rec.status === 'LATE' && !rec.excused && !rec.halfDayLeave) { run = 0; continue; } // reset
+      if (!rec || rec.status === 'ABSENT') { if (onLeave) continue; run = 0; continue; }
+      run += 1;
+      if (run >= STREAK_LEN) {
+        add(`auto_streak:${uid}:${d}`, { user: u._id, month: d.slice(0, 7), points: Math.abs(rulePoints(b, 'punctualStreak', d)), reason: `Punctual streak · ${STREAK_LEN} days on time · ${d}`, source: 'auto_streak', earnedYMD: d });
+        run = 0;
+      }
+    }
+
+    // ── auto_perfect and auto_noleave, per finished month ──
+    for (const month of months) {
+      const from = `${month}-01`;
+      const monthEnd = monthEndOf(month);
+      const startedOn = periodStartFor(u, from);
+      if (startedOn > monthEnd) continue; // they had not joined yet
+
+      let absent = 0;
+      let lateBad = 0;
+      let workingDays = 0;
+      for (let d = from; d <= monthEnd; d = addDays(d, 1)) {
+        if (d < startedOn || neutralDay(d)) continue;
+        workingDays += 1;
+        const rec = byDay.get(`${uid}|${d}`);
+        // All three branches, as in runMonthRollup and reconcilePerfectMonth. An explicit
+        // ABSENT row is a real status here (it is the schema default) and has to spoil the
+        // month exactly like a missing row does.
+        if (!rec) absent += 1;
+        else if (rec.status === 'LATE' && !rec.excused) lateBad += 1;
+        else if (rec.status === 'ABSENT') absent += 1;
+      }
+      if (workingDays > 0 && absent === 0 && lateBad === 0) {
+        add(`auto_perfect:${uid}:${month}`, { user: u._id, month, points: Math.abs(rulePoints(b, 'perfectAttendanceMonth', monthEnd)), reason: 'Perfect attendance all month', source: 'auto_perfect', earnedYMD: monthEnd });
+      }
+      // WFH is not leave — it must never cost somebody the "no leave all month" award.
+      const tookLeave = leaves.some((l) => String(l.user) === uid && l.type !== 'WFH' && l.startYMD <= monthEnd && l.endYMD >= from);
+      if (!tookLeave) {
+        add(`auto_noleave:${uid}:${month}`, { user: u._id, month, points: Math.abs(rulePoints(b, 'noLeaveMonth', monthEnd)), reason: 'No leave taken all month', source: 'auto_noleave', earnedYMD: monthEnd });
+      }
+    }
+  }
+  return { want, months, roster };
+}
+
+const REBUILD_LABEL = {
+  auto_streak: 'Punctual streak',
+  auto_late: 'Late arrival',
+  auto_absent: 'Absent day',
+  auto_perfect: 'Perfect attendance',
+  auto_noleave: 'No leave all month',
+};
+
+/** Compare the rules against the ledger. Shared by the preview and by the proof afterwards. */
+async function diffAgainstLedger(upto = null) {
+  const { want, months, roster } = await expectedLedger(upto);
+  // Scoped to the roster, exactly like the apply's delete. Without this, the day somebody
+  // is deactivated (or loses markAttendance) their old rows would show in the preview as
+  // "will be removed" while the apply quite correctly leaves them alone — a diff the owner
+  // approved that then does not happen, and a verify that fails for no visible reason.
+  const rosterIds = roster.map((u) => u._id);
+  const have = await PointEntry.find({ source: { $in: REBUILD_SOURCES }, user: { $in: rosterIds } }).select('user points source earnedYMD month dedupeKey').lean();
+  const haveByKey = new Map(have.map((p) => [p.dedupeKey, p]));
+  const names = new Map((await User.find({}).select('name')).map((u) => [String(u._id), u.name]));
+  const totals = new Map((await PointEntry.aggregate([{ $group: { _id: '$user', n: { $sum: '$points' } } }])).map((r) => [String(r._id), r.n]));
+
+  const rows = new Map();
+  const rowFor = (uid) => {
+    if (!rows.has(uid)) rows.set(uid, { userId: uid, name: names.get(uid) || uid, before: totals.get(uid) ?? 0, delta: 0, changes: [] });
+    return rows.get(uid);
+  };
+
+  for (const [key, doc] of want) {
+    const existing = haveByKey.get(key);
+    if (!existing) {
+      const r = rowFor(String(doc.user));
+      r.delta += doc.points;
+      r.changes.push({ kind: 'add', source: doc.source, what: REBUILD_LABEL[doc.source], on: doc.earnedYMD || doc.month, points: doc.points });
+    } else if (existing.points !== doc.points) {
+      const r = rowFor(String(doc.user));
+      r.delta += doc.points - existing.points;
+      r.changes.push({ kind: 'change', source: doc.source, what: REBUILD_LABEL[doc.source], on: doc.earnedYMD || doc.month, points: doc.points, was: existing.points });
+    }
+  }
+  for (const p of have) {
+    if (want.has(p.dedupeKey)) continue;
+    const r = rowFor(String(p.user));
+    r.delta -= p.points;
+    r.changes.push({ kind: 'remove', source: p.source, what: REBUILD_LABEL[p.source], on: p.earnedYMD || p.month, points: -p.points, was: p.points });
+  }
+
+  const all = [...rows.values()].map((r) => ({ ...r, after: r.before + r.delta })).sort((a, c) => c.delta - a.delta || a.name.localeCompare(c.name));
+  // Somebody whose awards only move to different DAYS nets zero. That is not nothing — the
+  // owner will see different dates on the Rewards page afterwards — so they stay in the
+  // list, below everyone whose total actually moves.
+  const moved = all.filter((r) => r.delta !== 0);
+  const datesOnly = all.filter((r) => r.delta === 0);
+  // A fingerprint of the exact plan. The preview and the apply are two separate requests,
+  // and somebody checking in between them changes the answer — without this the owner can
+  // approve one set of numbers and get another, with nothing on screen to say so.
+  const planHash = fingerprint(all.flatMap((r) => r.changes.map((c) => `${r.userId}:${c.source}:${c.on}:${c.kind}:${c.points}`)).sort().join('|'));
+  return {
+    planHash,
+    rosterCount: roster.length,
+    months,
+    rows: [...moved, ...datesOnly],
+    movedCount: moved.length,
+    datesOnlyCount: datesOnly.length,
+    totalDelta: moved.reduce((n, r) => n + r.delta, 0),
+    clean: all.length === 0,
+  };
+}
+
+/**
+ * What a rebuild WOULD change, per person, writing nothing at all. This is what the dialog
+ * shows the owner before they confirm.
+ */
+export async function previewRebuild(actor) {
+  if (!ownerRoleKeys().includes(actor?.role)) {
+    throw httpError(403, 'FORBIDDEN', 'Only CEO & President can recalculate points');
+  }
+  const s = await Setting.getSingleton();
+  // With the scheme switched off every rule scores zero, so the comparison would read as
+  // "every award you have is about to be deleted" — true in the arithmetic, alarming and
+  // useless on screen. Say the plain thing instead.
+  if (!s.bonus?.enabled) throw httpError(400, 'DISABLED', 'Turn the bonus system on first');
+  const diff = await diffAgainstLedger();
+  return {
+    ...diff,
+    busy: await rebuildLockHeld(),
+    lastRebuildAt: s.bonus?.lastRebuildAt || null,
+    lastRebuildBy: s.bonus?.lastRebuildBy || '',
+  };
+}
+
+/**
+ * Apply it. Only the CEO & President, only one at a time, and every write goes through the
+ * same live function that would have written it in the first place.
+ */
+export async function runRebuild(actor, { planHash = null } = {}) {
+  if (!ownerRoleKeys().includes(actor.role)) {
+    throw httpError(403, 'FORBIDDEN', 'Only CEO & President can recalculate points');
+  }
+  const s0 = await Setting.getSingleton();
+  if (!s0.bonus?.enabled) throw httpError(400, 'DISABLED', 'Turn the bonus system on first');
+
+  // Claim the lock BEFORE touching anything. A read-then-write check is not a lock — two
+  // containers would both pass it. This condition can only match one of them, and the expiry
+  // means a run that dies half way does not lock the feature out for good.
+  const token = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const claim = await Setting.updateOne(
+    {
+      key: 'global',
+      $or: [
+        { 'bonus.rebuildLock': '' },
+        { 'bonus.rebuildLock': { $exists: false } },
+        { 'bonus.rebuildLockUntil': null },
+        { 'bonus.rebuildLockUntil': { $lte: new Date() } },
+      ],
+    },
+    { $set: { 'bonus.rebuildLock': token, 'bonus.rebuildLockUntil': new Date(Date.now() + REBUILD_LOCK_MS) } },
+  );
+  if (!(claim.modifiedCount || claim.nModified)) {
+    throw httpError(409, 'REBUILD_BUSY', 'A recalculation is already running. Try again in a minute.');
+  }
+  Setting.invalidateCache();
+
+  try {
+    // One window for the whole run: planned against it, written against it, verified
+    // against it.
+    const upto = prevDay(ymdInTz(new Date()));
+    const planned = await diffAgainstLedger(upto);
+    if (planHash && planned.planHash !== planHash) {
+      throw httpError(409, 'PLAN_CHANGED', 'Something changed since you checked. Look at the new figures and confirm again.');
+    }
+    const { want, months, roster } = await expectedLedger(upto);
+
+    // 1. Punctual streaks — wholesale. The old awards MUST go first: the chain re-forms on
+    //    different days, awardOnce is insert-only, and leaving them would keep both versions
+    //    in the table and pay everyone on a changed chain twice. rebuildStreakV2 established
+    //    this order; the one time it was not followed, points had to be unwound by hand.
+    await PointEntry.deleteMany({ source: 'auto_streak' });
+    await Setting.updateOne({ key: 'global' }, { $set: { 'bonus.lastStreakScan': '', 'bonus.streakRuns': {} } });
+    Setting.invalidateCache();
+    const fresh = await Setting.getSingleton();
+    await runRollingStreak(fresh.bonus || {}, { ignoreLock: true });
+
+    // 2. The other four sources, settled in ONE write.
+    //
+    //    The obvious shape here is a loop calling reconcileLatePenalty / reconcileAbsence /
+    //    reconcilePerfectMonth / reconcileNoLeaveMonth per person per day and per month. It
+    //    is also unshippable: each of those helpers issues several queries of its own, so
+    //    nine people across three months of days is thousands of round-trips — minutes, and
+    //    this runs in a Lambda with a 30-second ceiling. The rules have already been
+    //    evaluated once, in expectedLedger(); this just makes the table say so.
+    //
+    //    deleteMany is scoped to the roster and to the four sources, so a row belonging to
+    //    somebody no attendance rule covers is left alone — exactly what the per-person path
+    //    would have done by skipping them. $nin keeps the rows that are about to be upserted,
+    //    so the two halves cannot fight whichever order they run in. auto_streak is NOT in
+    //    this list: step 1 already rebuilt it through the live scan.
+    //    BOUNDED BY THE PLAN'S OWN WINDOW. The plan stops at `upto` (yesterday), but
+    //    onCheckIn writes TODAY's late penalty the moment somebody arrives late this
+    //    morning — a key no plan built up to yesterday can contain. An unbounded delete
+    //    would take that row out and nothing would ever put it back, and the verify would
+    //    then call the result clean because the row is absent from both sides.
+    const rosterIds = roster.map((u) => u._id);
+    const dayWindow = { $gte: APP_LIVE_YMD, $lte: upto };
+    const ops = [];
+    for (const source of ['auto_late', 'auto_absent', 'auto_perfect', 'auto_noleave']) {
+      const keep = [...want].filter(([, d]) => d.source === source);
+      const inWindow = source === 'auto_perfect' || source === 'auto_noleave'
+        ? { month: { $in: months } }   // month awards exist only for finished months
+        : { earnedYMD: dayWindow };    // day awards only inside the planned days
+      ops.push({ deleteMany: { filter: { source, user: { $in: rosterIds }, ...inWindow, dedupeKey: { $nin: keep.map(([k]) => k) } } } });
+      for (const [dedupeKey, d] of keep) {
+        ops.push({
+          updateOne: {
+            filter: { dedupeKey },
+            update: { $set: { user: d.user, month: d.month, points: d.points, reason: d.reason, source: d.source, earnedYMD: d.earnedYMD, taskRef: null }, $setOnInsert: { dedupeKey } },
+            upsert: true,
+          },
+        });
+      }
+    }
+    if (ops.length) await PointEntry.bulkWrite(ops, { ordered: true });
+
+    // 3. Prove it. The comparison runs again against the ledger we just wrote — if the rules
+    //    and the ledger still disagree, report that rather than claiming success.
+    const after = await diffAgainstLedger(upto);
+    await Setting.updateOne({ key: 'global' }, { $set: { 'bonus.lastRebuildAt': new Date(), 'bonus.lastRebuildBy': actor.name || '' } });
+    Setting.invalidateCache();
+    return {
+      rosterCount: planned.rosterCount,
+      months,
+      rows: planned.rows,
+      movedCount: planned.movedCount,
+      datesOnlyCount: planned.datesOnlyCount,
+      totalDelta: planned.totalDelta,
+      verified: after.clean,
+      leftover: after.clean ? [] : after.rows,
+    };
+  } finally {
+    // Only our own claim — never stamp over a lock somebody else took after ours expired.
+    await Setting.updateOne({ key: 'global', 'bonus.rebuildLock': token }, { $set: { 'bonus.rebuildLock': '', 'bonus.rebuildLockUntil': null } });
+    Setting.invalidateCache();
+  }
 }
 
 /**
@@ -1614,10 +2018,17 @@ export async function backfillMonth(month) {
     const recFilter = { date: { $gte: companyDayFromYMD(start), $lte: companyDayFromYMD(end) }, status: 'LATE' };
     const recs = await Attendance.find(recFilter).select('user date checkInAt status excused halfDayLeave halfDayPart').lean();
     const owners = new Map((await User.find({ _id: { $in: [...new Set(recs.map((r) => String(r.user)))] } }).select('employmentType schedule').lean()).map((u) => [String(u._id), u]));
+    // Holidays cost nobody anything. This pass re-reads EVERY late record in the month and
+    // re-writes its penalty, and penaltyRungs() cannot see a holiday — so without this an
+    // emergency holiday declared over a past day would have its penalties quietly put back
+    // the next time this ran (it runs off the schedule, so nobody would be watching).
+    const lateHolidays = await holidayYMDSet(start, end);
     for (const r of recs) {
       const ymd = ymdInTz(r.date);
       const key = `auto_late:${r.user}:${ymd}`;
-      const late = penaltyRungs(r, r.date, effectiveSchedule(owners.get(String(r.user)) || {}, s));
+      const late = lateHolidays.has(ymd)
+        ? { rungs: 0, afternoon: false }
+        : penaltyRungs(r, r.date, effectiveSchedule(owners.get(String(r.user)) || {}, s));
       if (!late.rungs) {
         // eslint-disable-next-line no-await-in-loop
         await PointEntry.deleteMany({ dedupeKey: key });

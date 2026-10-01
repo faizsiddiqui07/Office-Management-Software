@@ -4,6 +4,7 @@ import { LeaveBalance } from '../models/LeaveBalance.js';
 import { Attendance } from '../models/Attendance.js';
 import { User } from '../models/User.js';
 import { Setting } from '../models/Setting.js';
+import { PointEntry } from '../models/PointEntry.js';
 import { joinedYMD, hadAccessOn } from '../lib/joining.js';
 import { createAnnouncement, retireAnnouncement } from './announcement.service.js';
 import { notify, clearNotificationsFor } from '../models/Notification.js';
@@ -13,9 +14,9 @@ import { companyDayFromYMD, ymdInTz, dayOfWeekInTz } from '../lib/time.js';
 import { leaveYearOf, currentLeaveYear } from '../lib/leaveYear.js';
 import { APP_LIVE_YMD } from '../lib/appLive.js';
 import { computeWorkingDays } from './workingDays.service.js';
-import { holidayYMDSet } from './holiday.service.js';
+import { holidayYMDSet, createHoliday, deleteHoliday } from './holiday.service.js';
 import { birthdayYMDSet } from '../lib/birthday.js';
-import { reconcileLateFromRecord, clearAbsencePenalty, reconcileNoLeaveMonth, reconcilePerfectMonth, reconcileAbsence } from './bonus.service.js';
+import { reconcileLateFromRecord, clearAbsencePenalty, reconcileNoLeaveMonth, reconcilePerfectMonth, reconcileAbsence, runRebuild } from './bonus.service.js';
 import { userWeekendDays, effectiveSchedule } from '../lib/schedule.js';
 import { judgeCheckIn, LATE_LADDER_FLOOR_YMD } from '../lib/lateLadder.js';
 import { runTransaction } from '../lib/transaction.js';
@@ -1155,6 +1156,151 @@ export async function undoOfficeWideWFH(actor, dateYMD) {
 export async function officeWideWFHDays() {
   const s = await Setting.getSingleton();
   return (s.wfhDays || []).map((d) => d.ymd).sort();
+}
+
+// ── Emergency holiday ─────────────────────────────────────────────────────────
+//
+// A day the office shut at short notice — weather, a power cut, a bandh, a bereavement.
+// Nobody is penalised for it and nobody has to explain it afterwards.
+//
+// It is NOT the same shape as the work-from-home day above, and deliberately so. A WFH day
+// writes an attendance row per person, because people are still working. An emergency
+// holiday writes ONE row: a `type: 'HOLIDAY'` entry in the calendar. That single row is what
+// every rule already reads — holidayYMDSet() is consumed by the punctual-streak scan, the
+// perfect-attendance month, the absence scan, the absence reconcile, the month rollup and
+// the overdue task drip — so the day turns neutral everywhere at once, and the three things
+// the owner asked for fall out of it rather than being patched in one by one:
+//   • a punctual run is neither broken nor advanced by it (the scan skips the day, so a run
+//     of three before and three after still pays out),
+//   • it cannot cost anybody their perfect-attendance month (the day stops being a working
+//     day), and
+//   • no absence penalty, and no daily drip on an overdue task.
+//
+// What the holiday row alone does NOT undo is anything already written for that day, which
+// is the whole difficulty with declaring one for a day that has passed. Two cleanups follow:
+// the task drips, removed here because no rebuild owns them, and the attendance-derived
+// penalties and awards, which runRebuild() settles — it re-reads the calendar, finds the new
+// holiday and re-decides the lot. That is also why this returns the rebuild's own diff: the
+// owner sees exactly whose points moved, in the same dialog, instead of discovering it later.
+
+// How far back a declaration may reach. An emergency is usually declared that evening or the
+// next morning, once everyone is home — so unlike a WFH day this must allow a past date. Not
+// without limit, though: reaching back months would silently re-open closed months.
+const EMERGENCY_BACKDATE_DAYS = 14;
+
+/** Declare one day an emergency holiday for the whole office. CEO & President only. */
+export async function declareEmergencyHoliday(actor, { dateYMD, title, note } = {}) {
+  if (!isOwnerRole(actor.role)) {
+    throw httpError(403, 'FORBIDDEN', 'Only CEO & President can declare an emergency holiday');
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateYMD || '')) throw httpError(400, 'BAD_DATE', 'Pick a valid date');
+  const today = ymdInTz(new Date());
+  if (dateYMD < APP_LIVE_YMD) throw httpError(400, 'BEFORE_GO_LIVE', 'Nothing was recorded before the office started using this system.');
+  if (dateYMD < addDaysYMD(today, -EMERGENCY_BACKDATE_DAYS)) {
+    throw httpError(400, 'TOO_FAR_BACK', `An emergency holiday can be declared up to ${EMERGENCY_BACKDATE_DAYS} days back. For anything older, add it to the calendar and recalculate points.`);
+  }
+  const existing = await holidayYMDSet(dateYMD, dateYMD);
+  if (existing.has(dateYMD)) throw httpError(400, 'IS_HOLIDAY', 'That day is already a holiday — there is nothing to declare.');
+
+  const name = String(title || '').trim() || 'Emergency holiday';
+
+  // Claim the day BEFORE creating anything. The claim only matches while no entry for this
+  // date exists, so a double press — or a Lambda retry on a request that actually succeeded —
+  // cannot create a second calendar entry or post a second announcement.
+  const claim = await Setting.updateOne(
+    { key: 'global', 'emergencyHolidays.ymd': { $ne: dateYMD } },
+    { $push: { emergencyHolidays: { ymd: dateYMD, holidayId: null, announcementId: null } } },
+  );
+  Setting.invalidateCache();
+  if (!(claim.modifiedCount || claim.nModified)) {
+    throw httpError(400, 'ALREADY_DECLARED', 'That day has already been declared an emergency holiday.');
+  }
+
+  let holiday;
+  try {
+    holiday = await createHoliday(actor, {
+      title: name,
+      type: 'HOLIDAY',
+      description: String(note || '').trim(),
+      startYMD: dateYMD,
+      endYMD: dateYMD,
+      repeatsYearly: false, // an emergency is not an annual event
+    });
+    await Setting.updateOne({ key: 'global', 'emergencyHolidays.ymd': dateYMD }, { $set: { 'emergencyHolidays.$.holidayId': holiday.id } });
+    Setting.invalidateCache();
+  } catch (e) {
+    // Give the day back, or a failed attempt would block every later one.
+    await Setting.updateOne({ key: 'global' }, { $pull: { emergencyHolidays: { ymd: dateYMD } } });
+    Setting.invalidateCache();
+    throw e;
+  }
+
+  // The daily "still overdue" marks for that day. No other cleanup owns these — the rebuild
+  // deliberately never touches task points — and the drip itself already skips holidays, so
+  // leaving them would charge people for a day the office was shut.
+  const drips = await PointEntry.deleteMany({ source: 'auto_task', earnedYMD: dateYMD, dedupeKey: { $regex: '^auto_overdue:' } });
+
+  // Everything attendance-derived: absence penalties, late penalties, punctual streaks and
+  // the month's perfect-attendance decision. runRebuild re-reads the calendar, so it sees the
+  // holiday that was created a moment ago and settles all of it in one pass.
+  const points = await runRebuild(actor);
+
+  const announced = await announceEmergencyHoliday(actor, dateYMD, name, note);
+  return { dateYMD, title: name, announced, dripsCleared: drips.deletedCount || 0, points };
+}
+
+/** Post the announcement and remember its id, so undoing the day can retire it. */
+async function announceEmergencyHoliday(actor, dateYMD, name, note) {
+  try {
+    const ann = await createAnnouncement(actor, {
+      title: `${name} — ${dateYMD}`,
+      body: String(note || '').trim() || `The office is closed on ${dateYMD}. No check-in is needed and nobody's attendance, streak or points are affected.`,
+      priority: 'IMPORTANT',
+      audienceRoles: [],
+    });
+    await Setting.updateOne({ key: 'global', 'emergencyHolidays.ymd': dateYMD }, { $set: { 'emergencyHolidays.$.announcementId': ann.id } });
+    Setting.invalidateCache();
+    return true;
+  } catch (e) {
+    // The holiday itself is what matters; a failed announcement must not undo it.
+    console.error('emergency holiday announcement failed', e?.message);
+    return false;
+  }
+}
+
+/** Undo one — removes the calendar entry it created, retires its announcement, re-scores. */
+export async function undoEmergencyHoliday(actor, dateYMD) {
+  if (!isOwnerRole(actor.role)) {
+    throw httpError(403, 'FORBIDDEN', 'Only CEO & President can undo an emergency holiday');
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateYMD || '')) throw httpError(400, 'BAD_DATE', 'Pick a valid date');
+  const s = await Setting.getSingleton();
+  const entry = (s.emergencyHolidays || []).find((d) => d.ymd === dateYMD);
+  if (!entry) throw httpError(404, 'NOT_FOUND', 'No emergency holiday was declared for that day.');
+
+  // Only the entry this declaration created. A holiday somebody added to the calendar by
+  // hand is not ours to delete, which is exactly why the id is remembered rather than the
+  // date being used to look one up.
+  if (entry.holidayId) {
+    try { await deleteHoliday(String(entry.holidayId)); } catch (e) { console.error('removing emergency holiday failed', e?.message); }
+  }
+  if (entry.announcementId) {
+    try { await retireAnnouncement(String(entry.announcementId)); } catch (e) { console.error('retiring emergency holiday announcement failed', e?.message); }
+  }
+  await Setting.updateOne({ key: 'global' }, { $pull: { emergencyHolidays: { ymd: dateYMD } } });
+  Setting.invalidateCache();
+
+  // The day is an ordinary working day again, so the attendance rules have to be re-applied
+  // to it — including the absence penalties the declaration had cleared. The task drips are
+  // NOT put back: a dropped penalty is the safer side of this particular mistake.
+  const points = await runRebuild(actor);
+  return { dateYMD, points };
+}
+
+/** The emergency holidays declared so far (so the UI can list and undo them). */
+export async function emergencyHolidayDays() {
+  const s = await Setting.getSingleton();
+  return (s.emergencyHolidays || []).map((d) => d.ymd).sort();
 }
 
 export async function cancelLeave(viewer, id) {

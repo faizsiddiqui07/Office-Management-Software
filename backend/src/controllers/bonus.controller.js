@@ -120,6 +120,48 @@ export async function recalculate(req, res, next) {
   }
 }
 
+/**
+ * What a full recalculation WOULD change, per person — a pure read, nothing is written.
+ * The owner sees this before they confirm, so the Apply that follows holds no surprises.
+ */
+export async function rebuildPreview(req, res, next) {
+  try {
+    return res.json(ok(await svc.previewRebuild(req.user)));
+  } catch (err) {
+    return handleErr(res, err, next);
+  }
+}
+
+/**
+ * Apply it. `planHash` comes from the preview the owner actually looked at: if anything has
+ * changed since (somebody checked in, a leave was approved), this refuses with 409 rather
+ * than quietly applying a different set of numbers from the ones that were approved.
+ */
+export async function rebuildApply(req, res, next) {
+  try {
+    const result = await svc.runRebuild(req.user, { planHash: req.body?.planHash || null });
+    await audit({
+      actor: req.user._id,
+      action: 'bonus.rebuild',
+      entityType: 'Bonus',
+      entityId: 'rebuild',
+      // The whole diff, so the Activity log answers "who moved whose points, and why"
+      // months later without anyone having to re-derive it.
+      meta: {
+        movedCount: result.movedCount,
+        datesOnlyCount: result.datesOnlyCount,
+        totalDelta: result.totalDelta,
+        verified: result.verified,
+        months: result.months,
+        people: result.rows.map((r) => ({ name: r.name, before: r.before, after: r.after, delta: r.delta, changes: r.changes })),
+      },
+    });
+    return res.json(ok(result));
+  } catch (err) {
+    return handleErr(res, err, next);
+  }
+}
+
 export async function leaderboard(req, res, next) {
   try {
     const { month, from, to } = req.query || {};

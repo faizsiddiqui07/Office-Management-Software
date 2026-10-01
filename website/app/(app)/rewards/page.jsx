@@ -20,9 +20,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { formatRupees } from '@/lib/expense';
-import { monthOptions, fyOptions, paramsForSelection } from '@/lib/reward-periods';
+import { currentMonth, yearOptions, monthsInYear, clampToYear, fyOptions, paramsForSelection } from '@/lib/reward-periods';
 import { formatYMD } from '@/lib/leave';
 import { EntryDetailDialog } from '@/components/rewards/entry-detail-dialog';
+import { RecalculatePointsDialog } from '@/components/rewards/recalculate-points-dialog';
 
 /**
  * Accepts an ISO instant OR a plain 'YYYY-MM-DD' (which is what earnedYMD is). A plain
@@ -319,11 +320,19 @@ export default function RewardsPage() {
   // Period selector — Monthly (Jul 2026, Aug 2026…) or Yearly (FY 2026–27, FY 2027–28…).
   // Monthly starts at go-live (Jul 2026); Yearly is the financial year (Apr–Mar), like
   // the leave module. Default: current month.
-  const months = React.useMemo(() => monthOptions(), []);
+  // Monthly is picked in two steps — a calendar year, then a month inside it. One flat list
+  // of every month since go-live was fine with four entries in it; by 2030 it is fifty-four,
+  // which is what prompted splitting it.
+  const calYears = React.useMemo(() => yearOptions(), []);
   const years = React.useMemo(() => fyOptions(), []);
   const [mode, setMode] = React.useState('monthly');
-  const [monthly, setMonthly] = React.useState(() => months[0]?.value || '');
+  const [monthly, setMonthly] = React.useState(() => currentMonth());
   const [yearly, setYearly] = React.useState(() => years[0]?.value || '');
+  const calYear = Number(monthly.slice(0, 4)) || calYears[0];
+  const monthsOfYear = React.useMemo(() => monthsInYear(calYear), [calYear]);
+  // Changing the year keeps the nearest month that exists in it, so stepping back from
+  // Feb 2027 into 2026 lands on Dec 2026 rather than a month at the far end of the year.
+  const pickYear = (y) => setMonthly(clampToYear(monthly, Number(y)));
   const selection = mode === 'monthly' ? monthly : yearly;
   const { params: mineParams, label: periodLabel } = paramsForSelection(mode, selection);
   const isRange = mode === 'yearly';
@@ -353,8 +362,12 @@ export default function RewardsPage() {
         description="Earn points for good work — leadership sets what each is worth. Positives reset each month; a negative balance carries into the next month until you clear it."
         actions={
           enabled === false ? null : (
-            /* Monthly + Yearly picker. Two selects side-by-side on desktop; on phones they
-               stack, each full-width, because the parent .actions is flex-wrap. */
+            /* Period picker, and — for the CEO & President only — the recalculation.
+               The button sits in its own group, deliberately apart from the picker: it is
+               NOT scoped to the period on screen. A punctual run crosses month ends, so the
+               recalculation always covers everything from the day the office went live, and
+               a label or a position suggesting "recalculate Sep 2026" would be a lie.
+               Everything stacks full-width on phones — the parent .actions is flex-wrap. */
             <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
               <Select value={mode} onValueChange={setMode}>
                 <SelectTrigger className="min-w-[7.5rem] bg-background/50"><SelectValue /></SelectTrigger>
@@ -364,12 +377,20 @@ export default function RewardsPage() {
                 </SelectContent>
               </Select>
               {mode === 'monthly' ? (
-                <Select value={monthly} onValueChange={setMonthly}>
-                  <SelectTrigger className="min-w-[9.5rem] bg-background/50"><SelectValue placeholder="Pick a month" /></SelectTrigger>
-                  <SelectContent>
-                    {months.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <>
+                  <Select value={String(calYear)} onValueChange={pickYear}>
+                    <SelectTrigger className="min-w-[5.5rem] bg-background/50"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {calYears.map((y) => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <Select value={monthly} onValueChange={setMonthly}>
+                    <SelectTrigger className="min-w-[7rem] bg-background/50"><SelectValue placeholder="Pick a month" /></SelectTrigger>
+                    <SelectContent>
+                      {monthsOfYear.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </>
               ) : (
                 <Select value={yearly} onValueChange={setYearly}>
                   <SelectTrigger className="min-w-[9.5rem] bg-background/50"><SelectValue placeholder="Pick a year" /></SelectTrigger>
@@ -378,6 +399,7 @@ export default function RewardsPage() {
                   </SelectContent>
                 </Select>
               )}
+              {isOwner ? <RecalculatePointsDialog /> : null}
             </div>
           )
         }

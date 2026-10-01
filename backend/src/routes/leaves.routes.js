@@ -1,7 +1,7 @@
 import express from 'express';
 import { requireAuth } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/requirePermission.js';
-import { balance, apply, update, record, list, decision, cancel, remove, leaveLedger, declareWfhDay, undoWfhDay, wfhDays, coverage } from '../controllers/leaves.controller.js';
+import { balance, apply, update, record, list, decision, cancel, remove, leaveLedger, declareWfhDay, undoWfhDay, wfhDays, coverage, declareEmergencyHoliday, undoEmergencyHoliday, emergencyHolidays } from '../controllers/leaves.controller.js';
 
 export const leavesRouter = express.Router();
 
@@ -14,6 +14,13 @@ leavesRouter.get('/ledger.pdf', leaveLedger); // own by default; ?userId= for le
 leavesRouter.get('/wfh/days', wfhDays);
 leavesRouter.post('/wfh/declare', declareWfhDay);
 leavesRouter.delete('/wfh/declare', undoWfhDay);
+// Emergency holiday — the office shut at short notice. Same owner-tier-in-the-service rule
+// as the WFH day above. It lives here rather than under /holidays because those routes are
+// gated on `editCalendar`, which is a wider group than the owner tier, and this one moves
+// everybody's points.
+leavesRouter.get('/emergency-holiday', emergencyHolidays);
+leavesRouter.post('/emergency-holiday', declareEmergencyHoliday);
+leavesRouter.delete('/emergency-holiday', undoEmergencyHoliday);
 // Coverage clash warning shown to approvers reviewing a request — approver-gated because
 // only they reach the queue, and it reveals who else is off.
 leavesRouter.get('/coverage', requirePermission('approveLeave'), coverage);

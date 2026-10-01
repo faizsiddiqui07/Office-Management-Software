@@ -73,6 +73,63 @@ export async function wfhDays(_req, res, next) {
   }
 }
 
+/** CEO & President: shut the office for a day at short notice. */
+export async function declareEmergencyHoliday(req, res, next) {
+  try {
+    const { dateYMD, title, note } = req.body || {};
+    const result = await svc.declareEmergencyHoliday(req.user, { dateYMD, title, note });
+    await audit({
+      actor: req.user._id,
+      action: 'holiday.emergency_declare',
+      entityType: 'Holiday',
+      entityId: result.dateYMD,
+      // The points the declaration moved, recorded with it — the two are one decision, and
+      // separating them would leave the Activity log unable to explain either.
+      meta: {
+        title: result.title,
+        announced: result.announced,
+        dripsCleared: result.dripsCleared,
+        pointsMoved: result.points?.movedCount || 0,
+        totalDelta: result.points?.totalDelta || 0,
+        people: (result.points?.rows || []).map((r) => ({ name: r.name, before: r.before, after: r.after, delta: r.delta })),
+      },
+    });
+    return res.json(ok(result));
+  } catch (err) {
+    return handleErr(res, err, next);
+  }
+}
+
+/** CEO & President: undo an emergency holiday (removes only the entry it created). */
+export async function undoEmergencyHoliday(req, res, next) {
+  try {
+    const result = await svc.undoEmergencyHoliday(req.user, req.query.dateYMD || req.body?.dateYMD);
+    await audit({
+      actor: req.user._id,
+      action: 'holiday.emergency_undo',
+      entityType: 'Holiday',
+      entityId: result.dateYMD,
+      meta: {
+        pointsMoved: result.points?.movedCount || 0,
+        totalDelta: result.points?.totalDelta || 0,
+        people: (result.points?.rows || []).map((r) => ({ name: r.name, before: r.before, after: r.after, delta: r.delta })),
+      },
+    });
+    return res.json(ok(result));
+  } catch (err) {
+    return handleErr(res, err, next);
+  }
+}
+
+/** The emergency holidays declared so far. */
+export async function emergencyHolidays(_req, res, next) {
+  try {
+    return res.json(ok({ days: await svc.emergencyHolidayDays() }));
+  } catch (err) {
+    return next(err);
+  }
+}
+
 // PDF ki library (react-pdf + pdfkit + fontkit) BHAARI hai — saikdon files. Isliye static
 // import nahi: sirf tab load ho jab koi sach me PDF maange, warna har cold start use
 // bewajah utha leta (naapa gaya: init ka bada hissa yahi tha).

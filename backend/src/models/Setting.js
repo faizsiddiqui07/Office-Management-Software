@@ -172,6 +172,20 @@ const settingSchema = new mongoose.Schema(
       lastStreakScan: { type: String, default: '' },
       // Per-user rolling streak counters as of lastStreakScan: { userId: daysSoFar }.
       streakRuns: { type: mongoose.Schema.Types.Mixed, default: {} },
+      // A manual "Recalculate points" rebuild in progress. The rebuild deletes the whole
+      // auto_streak history and re-walks it from go-live, so for those few seconds nothing
+      // else may write a streak: the nightly scan runs on its own EventBridge Lambda and
+      // would otherwise lay a second, pre-rebuild chain into the table it just emptied —
+      // insert-only awardOnce keeps BOTH, and everyone on a changed chain is paid twice
+      // (this happened once already, before the lock existed). Claimed with a conditional
+      // updateOne so two containers can never both hold it, and carrying its own expiry so
+      // a run that dies mid-way does not lock the feature out for good.
+      rebuildLock: { type: String, default: '' },
+      rebuildLockUntil: { type: Date, default: null },
+      // When the last manual rebuild finished, and what it moved — shown in the dialog so
+      // the owner can see whether it has already been run today.
+      lastRebuildAt: { type: Date, default: null },
+      lastRebuildBy: { type: String, default: '' },
     },
     // The four national holidays are put in once, on first boot. This flag is what
     // stops them coming back: delete Christmas and it stays deleted, instead of being
@@ -212,6 +226,20 @@ const settingSchema = new mongoose.Schema(
     // day that no longer exists.
     wfhDays: {
       type: [{ _id: false, ymd: String, announcementId: { type: mongoose.Schema.Types.ObjectId, default: null } }],
+      default: [],
+    },
+    // Days declared an emergency holiday, with the Holiday row and the announcement each
+    // one created. Same claim-then-announce trick as wfhDays above: holding the day here
+    // first is what stops a double press posting two announcements, and keeping both ids
+    // means undoing the day can take the holiday and its announcement down together
+    // instead of guessing which calendar entry belonged to it.
+    emergencyHolidays: {
+      type: [{
+        _id: false,
+        ymd: String,
+        holidayId: { type: mongoose.Schema.Types.ObjectId, default: null },
+        announcementId: { type: mongoose.Schema.Types.ObjectId, default: null },
+      }],
       default: [],
     },
   },
