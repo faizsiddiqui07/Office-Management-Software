@@ -42,6 +42,15 @@ export async function create(req, res, next) {
   }
 }
 
+/** The people a poster can address an announcement to — for the audience picker. */
+export async function audiencePeople(_req, res, next) {
+  try {
+    return res.json(ok(await svc.audiencePeople()));
+  } catch (err) {
+    return next(err);
+  }
+}
+
 export async function read(req, res, next) {
   try {
     await svc.markRead(req.user, req.params.id);

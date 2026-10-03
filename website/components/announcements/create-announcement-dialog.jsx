@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useRoleOptions } from '@/lib/use-roles';
+import { AudiencePicker } from '@/components/announcements/audience-picker';
 import { PRIORITY_OPTIONS, RECURRENCE_OPTIONS, WEEKDAYS, MONTHS, describeRecurrence } from '@/lib/announcement';
 
 const EMPTY_RULE = { type: 'NONE', weekday: null, dayOfMonth: null, month: null, time: '09:00' };
@@ -36,7 +37,12 @@ export function CreateAnnouncementDialog({ announcement, open: openProp, onOpenC
   const [title, setTitle] = React.useState('');
   const [body, setBody] = React.useState('');
   const [priority, setPriority] = React.useState('NORMAL');
-  const [audience, setAudience] = React.useState([]); // empty = everyone
+  // The audience is one choice made two ways. Both lists live here side by side and both
+  // survive a switch of the dropdown, so glancing at the other option and coming back does
+  // not throw away what was already picked; only the one the mode points at is sent.
+  const [audienceMode, setAudienceMode] = React.useState('TEAM');
+  const [audience, setAudience] = React.useState([]); // roles — empty = everyone
+  const [audienceUsers, setAudienceUsers] = React.useState([]); // named people
   // Repeats: every week / month / year, at a time (company timezone). The server owns
   // when it actually goes out — this only collects the rule.
   const [recur, setRecur] = React.useState(EMPTY_RULE);
@@ -49,6 +55,10 @@ export function CreateAnnouncementDialog({ announcement, open: openProp, onOpenC
       setBody(announcement.body || '');
       setPriority(announcement.priority || 'NORMAL');
       setAudience(announcement.audienceRoles || []);
+      // Mode is DERIVED, never stored on the post — one less field that could disagree with
+      // the lists it describes.
+      setAudienceUsers((announcement.audienceUsers || []).map(String));
+      setAudienceMode(announcement.audienceUsers?.length ? 'INDIVIDUAL' : 'TEAM');
       // An older post has no recurrence at all — read that as "doesn't repeat".
       setRecur({ ...EMPTY_RULE, ...(announcement.recurrence?.type ? announcement.recurrence : {}) });
     }
@@ -57,6 +67,8 @@ export function CreateAnnouncementDialog({ announcement, open: openProp, onOpenC
       setBody('');
       setPriority('NORMAL');
       setAudience([]);
+      setAudienceUsers([]);
+      setAudienceMode('TEAM');
       setRecur(EMPTY_RULE);
     }
   }, [open, isEdit, announcement]);
@@ -69,7 +81,19 @@ export function CreateAnnouncementDialog({ announcement, open: openProp, onOpenC
       if (recur.type === 'WEEKLY') recurrence.weekday = recur.weekday;
       if (recur.type === 'MONTHLY') recurrence.dayOfMonth = recur.dayOfMonth;
       if (recur.type === 'YEARLY') { recurrence.month = recur.month; recurrence.dayOfMonth = recur.dayOfMonth; }
-      const payload = { title, body, priority, audienceRoles: audience, recurrence };
+      // Only the half the mode points at travels as a selection; the other goes as empty,
+      // which is what tells the server to drop it. Sending both keys is deliberate — the
+      // server treats an ABSENT key as "leave it alone", so a one-word title fix cannot wipe
+      // the audience, and a real switch cannot leave the old list behind.
+      const individual = audienceMode === 'INDIVIDUAL';
+      const payload = {
+        title,
+        body,
+        priority,
+        audienceRoles: individual ? [] : audience,
+        audienceUsers: individual ? audienceUsers : [],
+        recurrence,
+      };
       if (!isEdit) return api.post('/announcements', payload);
       // On edit, send only what actually changed. The activity log records the field
       // names, and "changed title, body, priority, audience, recurrence" on every save
@@ -80,6 +104,7 @@ export function CreateAnnouncementDialog({ announcement, open: openProp, onOpenC
         body: announcement.body || '',
         priority: announcement.priority || 'NORMAL',
         audienceRoles: announcement.audienceRoles || [],
+        audienceUsers: (announcement.audienceUsers || []).map(String),
         recurrence: announcement.recurrence?.type
           ? { type: announcement.recurrence.type, time: announcement.recurrence.time || '09:00',
               ...(announcement.recurrence.type === 'WEEKLY' ? { weekday: announcement.recurrence.weekday } : {}),
@@ -119,9 +144,6 @@ export function CreateAnnouncementDialog({ announcement, open: openProp, onOpenC
     : recur.type === 'YEARLY' && recur.month === 2 && recur.dayOfMonth === 29
       ? 'In a year without a 29 February it goes out on the 28th.'
       : '';
-
-  const toggleRole = (r) =>
-    setAudience((prev) => (prev.includes(r) ? prev.filter((x) => x !== r) : [...prev, r]));
 
   return (
     <AppDialog
@@ -171,27 +193,15 @@ export function CreateAnnouncementDialog({ announcement, open: openProp, onOpenC
             </SelectContent>
           </Select>
         </div>
-        <div className="space-y-1.5">
-          <Label>Audience {audience.length === 0 ? '· Everyone' : ''}</Label>
-          <div className="flex flex-wrap gap-1.5">
-            {roleOptions.map((r) => (
-              <button
-                key={r.key}
-                type="button"
-                onClick={() => toggleRole(r.key)}
-                className={cn(
-                  'rounded-full px-2.5 py-1 text-xs font-medium ring-1 transition-colors',
-                  audience.includes(r.key)
-                    ? 'bg-primary/12 text-primary ring-primary/25'
-                    : 'bg-muted/40 text-muted-foreground ring-border hover:text-foreground',
-                )}
-              >
-                {r.label}
-              </button>
-            ))}
-          </div>
-          <p className="text-xs text-muted-foreground">Leave none selected to notify everyone.</p>
-        </div>
+        <AudiencePicker
+          mode={audienceMode}
+          onModeChange={setAudienceMode}
+          roles={audience}
+          onRolesChange={setAudience}
+          people={audienceUsers}
+          onPeopleChange={setAudienceUsers}
+          roleOptions={roleOptions}
+        />
 
         {/* Repeats — the same post going out again on a schedule: every week on a day,
             every month on a date, or every year on a month-and-date. Each time it goes

@@ -29,6 +29,15 @@ export const createAnnouncementSchema = z.object({
   // list, nothing to check) ever worked. The real check lives in the service, against the
   // live roles.
   audienceRoles: z.array(z.string()).optional().default([]),
+  // Named people instead of roles. Shape only again — whether an id belongs to somebody
+  // still with the office is a question for the database, and the service asks it. The
+  // 24-hex check is here rather than there because a non-id string makes User.find() throw
+  // a CastError, which reaches the browser as a 500 and "Something went wrong".
+  audienceUsers: z
+    .array(z.string().regex(/^[a-f\d]{24}$/i, 'Pick the people from the list'))
+    .max(200)
+    .optional()
+    .default([]),
   publishAt: z.string().optional().nullable(),
   expiresAt: z.string().optional().nullable(),
   recurrence: recurrenceSchema.optional(),

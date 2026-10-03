@@ -6,7 +6,16 @@ const announcementSchema = new mongoose.Schema(
     body: { type: String, default: '' }, // plain/rich text — rendered escaped on the client
     priority: { type: String, enum: ['NORMAL', 'IMPORTANT', 'URGENT'], default: 'NORMAL', index: true },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    audienceRoles: { type: [String], default: [] }, // empty = everyone
+    // Who it is addressed to. Two lists, one rule:
+    //   both empty            → everyone
+    //   audienceUsers filled  → exactly those people
+    //   else audienceRoles    → anybody holding one of those roles
+    // The dialog is a switch, so the service CLEARS one list whenever the other is set —
+    // a post never carries both, and a list left lying around cannot come back to life on
+    // some later edit. The read filters are a union anyway, so a row that somehow carries
+    // both is shown to the union of the two rather than to nobody.
+    audienceRoles: { type: [String], default: [] },
+    audienceUsers: { type: [mongoose.Schema.Types.ObjectId], ref: 'User', default: [] },
     isActive: { type: Boolean, default: true },
     publishAt: { type: Date, default: null },
     expiresAt: { type: Date, default: null },

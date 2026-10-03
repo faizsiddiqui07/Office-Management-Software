@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { Announcement } from '../models/Announcement.js';
 import { AnnouncementRead } from '../models/AnnouncementRead.js';
 import { User } from '../models/User.js';
@@ -25,21 +26,69 @@ function httpError(status, code, message) {
 }
 
 /** Mongo filter for announcements visible to `role` right now. */
-function visibilityFilter(role, now = new Date()) {
+function visibilityFilter(user, now = new Date()) {
+  const viewerId = user?._id || user?.id || null;
+  // The three "addressed to" branches are a UNION on purpose. A row carrying both lists is
+  // only reachable by a hand edit (the service clears one when the other is set), and showing
+  // it to the union is the safe direction to fail in — showing it to nobody is not.
+  const addressed = [
+    {
+      // BOTH halves need $exists as well as $size. Every announcement written before
+      // audienceUsers existed has no such key in Mongo at all, and $size:0 does not match a
+      // missing field — testing only the size would have hidden every old post from everyone,
+      // silently, with an empty feed and nothing in the logs.
+      $and: [
+        { $or: [{ audienceRoles: { $exists: false } }, { audienceRoles: { $size: 0 } }] },
+        { $or: [{ audienceUsers: { $exists: false } }, { audienceUsers: { $size: 0 } }] },
+      ],
+    },
+    { audienceRoles: user?.role },
+  ];
+  // Only when there really is an id: mongoose DROPS `{ audienceUsers: undefined }`, leaving
+  // `{}` — a branch that matches every row, which would hand every individually-addressed
+  // post to whoever reached this without one.
+  if (viewerId) addressed.push({ audienceUsers: viewerId });
   return {
     isActive: true,
     $and: [
-      { $or: [{ audienceRoles: { $size: 0 } }, { audienceRoles: role }] },
+      { $or: addressed },
       { $or: [{ publishAt: null }, { publishAt: { $lte: now } }] },
       { $or: [{ expiresAt: null }, { expiresAt: { $gt: now } }] },
     ],
   };
 }
 
+/**
+ * The query for the live people an announcement is addressed to, with one person (normally
+ * the author) left out. Returns null when that leaves nobody.
+ *
+ * Shared by the bell, the "Seen by" list and the feed's seen-count chip, so those three can
+ * never disagree about who a post was for.
+ *
+ * The author is taken out of the ID LIST, never with a second `_id` condition. An object
+ * holding both `_id: { $in: [...] }` and `_id: { $ne: x }` keeps only the LAST key — and that
+ * one matches every active user, so a post meant for three people would have rung the bell
+ * for the whole office.
+ */
+function audienceUserQuery(doc, excludeUserId) {
+  const ex = excludeUserId ? String(excludeUserId) : null;
+  const picked = doc.audienceUsers || [];
+  if (picked.length) {
+    const ids = picked.filter((u) => String(u) !== ex);
+    if (!ids.length) return null; // addressed to the author alone
+    return { isActive: true, _id: { $in: ids } };
+  }
+  const q = { isActive: true };
+  if (doc.audienceRoles?.length) q.role = { $in: doc.audienceRoles };
+  if (ex) q._id = { $ne: excludeUserId };
+  return q;
+}
+
 /** Bell + push to everyone the announcement is addressed to, except its author. */
 async function notifyAudience(doc, excludeUserId, { repeat = false } = {}) {
-  const roleFilter = doc.audienceRoles?.length ? { role: { $in: doc.audienceRoles } } : {};
-  const recipients = await User.find({ isActive: true, ...roleFilter, ...(excludeUserId ? { _id: { $ne: excludeUserId } } : {}) }).select('_id');
+  const query = audienceUserQuery(doc, excludeUserId);
+  if (!query) return; // nobody but the author — no bell to ring
+  const recipients = await User.find(query).select('_id');
   await Promise.all(
     recipients.map((u) =>
       notify({
@@ -74,12 +123,20 @@ export async function publishDueAnnouncements(now = new Date()) {
     { announcedAt: null },
     [{ $set: { announcedAt: { $ifNull: ['$notifiedAt', '$createdAt'] } } }],
   );
+  // Rows written before audienceUsers existed have no such key. visibilityFilter already
+  // handles that with $exists, so this is belt and braces rather than a dependency — but it
+  // means a hand-written query that forgets the $exists half still behaves, and after one
+  // pass it matches nothing and costs nothing. Same trick as the line above.
+  await Announcement.updateMany({ audienceUsers: { $exists: false } }, { $set: { audienceUsers: [] } });
   const due = await Announcement.find({
     isActive: true,
     notifiedAt: null,
     publishAt: { $ne: null, $lte: now },
     $or: [{ expiresAt: null }, { expiresAt: { $gt: now } }],
-  }).select('_id title priority audienceRoles createdBy').limit(20);
+    // audienceUsers is NOT optional here: leave it out of the projection and mongoose
+    // hands back an empty array, audienceUserQuery reads that as "everyone", and a scheduled
+    // post meant for three people goes to the whole office with nothing in the logs.
+  }).select('_id title priority audienceRoles audienceUsers createdBy').limit(20);
 
   for (const a of due) {
     // Claim it first — only the instance whose update matches gets to send.
@@ -122,7 +179,7 @@ export async function announceRecurring(now = new Date()) {
       { $or: [{ expiresAt: null }, { expiresAt: { $gt: now } }] },
       { $or: [{ publishAt: null }, { publishAt: { $lte: now } }] },
     ],
-  }).select('_id title priority audienceRoles createdBy recurrence lastRecurredYMD');
+  }).select('_id title priority audienceRoles audienceUsers createdBy recurrence lastRecurredYMD');
 
   for (const a of candidates) {
     const rule = ruleOf(a);
@@ -171,8 +228,39 @@ async function assertAudienceRoles(audienceRoles) {
   }
 }
 
+/**
+ * Check the picked people against who is actually here — in the service, for the same reason
+ * the role check is: a schema can see the SHAPE of an id, never whether that person is still
+ * with the office. Returns the ids to store.
+ *
+ * Whoever has gone is named, not listed as an id — an ObjectId in a toast tells nobody which
+ * name to pick again.
+ */
+async function assertAudienceUsers(audienceUsers) {
+  const picked = [...new Set((audienceUsers || []).filter(Boolean).map(String))];
+  if (!picked.length) return [];
+  // A non-id string makes User.find() throw a CastError, which surfaces as a 500 and
+  // "Something went wrong". The validator catches this for HTTP callers; other services call
+  // in here directly.
+  if (picked.some((id) => !mongoose.isValidObjectId(id))) {
+    throw httpError(400, 'UNKNOWN_USER', 'Pick the people from the list again.');
+  }
+  const live = await User.find({ _id: { $in: picked }, isActive: true }).select('_id');
+  if (live.length === picked.length) return live.map((u) => u._id);
+
+  const found = new Set(live.map((u) => String(u._id)));
+  const gone = picked.filter((id) => !found.has(id));
+  // Looked up WITHOUT isActive, so a deactivated colleague is named rather than reported as a
+  // number. Somebody deleted for good has no name left to give, so they are counted instead.
+  const named = (await User.find({ _id: { $in: gone } }).select('name')).map((u) => u.name);
+  const missing = gone.length - named.length;
+  if (missing > 0) named.push(`${missing} removed ${missing === 1 ? 'person' : 'people'}`);
+  throw httpError(400, 'UNKNOWN_USER', `${named.join(', ')} ${named.length === 1 ? 'is' : 'are'} no longer here. Pick the audience again.`);
+}
+
 export async function createAnnouncement(creator, data, now = new Date()) {
   await assertAudienceRoles(data.audienceRoles);
+  const audienceUsers = await assertAudienceUsers(data.audienceUsers);
   const rule = normalizeRule(data.recurrence);
   let publishAt = data.publishAt ? new Date(data.publishAt) : null;
   let lastRecurredYMD = '';
@@ -191,7 +279,11 @@ export async function createAnnouncement(creator, data, now = new Date()) {
     title: data.title,
     body: data.body || '',
     priority: data.priority || 'NORMAL',
-    audienceRoles: data.audienceRoles || [],
+    audienceUsers,
+    // The dropdown is a switch, so only one can be in force. Clearing the other HERE rather
+    // than working out a precedence at read time means a row never carries a stale audience
+    // that some later edit could quietly bring back to life.
+    audienceRoles: audienceUsers.length ? [] : (data.audienceRoles || []),
     createdBy: creator._id,
     publishAt,
     expiresAt: data.expiresAt ? new Date(data.expiresAt) : null,
@@ -234,8 +326,13 @@ export async function listVisible(user, now = new Date()) {
   // it or take it back in between.
   const canPost = can(user, 'postAnnouncements');
   const filter = canPost
-    ? { $or: [visibilityFilter(user.role, now), { isActive: true, createdBy: user._id, publishAt: { $gt: now } }] }
-    : visibilityFilter(user.role, now);
+    // No publishAt condition on the author's own branch. It used to cover only their
+    // SCHEDULED posts, which was enough while every post reached its own author through the
+    // role branch — but a post addressed to named people that do not include them is invisible
+    // to them, and with it go Edit, Delete and the whole "Seen by" list for something they
+    // just wrote.
+    ? { $or: [visibilityFilter(user, now), { isActive: true, createdBy: user._id }] }
+    : visibilityFilter(user, now);
   const anns = await Announcement.find(filter)
     .sort({ announcedAt: -1, createdAt: -1 })
     .limit(100)
@@ -263,10 +360,23 @@ export async function listVisible(user, now = new Date()) {
       if (!readersByAnn.has(k)) readersByAnn.set(k, new Set());
       readersByAnn.get(k).add(String(r.user));
     }
+    // Sets, not list scans: 100 cards x 500 people x 20 ids is a million string compares on
+    // every feed load.
+    const pickedByAnn = new Map();
+    for (const a of anns) {
+      const picked = a.audienceUsers || [];
+      if (picked.length) pickedByAnn.set(String(a._id), new Set(picked.map(String)));
+    }
     anns.forEach((a, i) => {
       const roles = a.audienceRoles || [];
+      const picked = pickedByAnn.get(String(a._id));
       const authorId = String(a.createdBy?._id || a.createdBy);
-      const audience = activeUsers.filter((u) => (roles.length === 0 || roles.includes(u.role)) && String(u._id) !== authorId);
+      // Exactly the rule audienceUserQuery asks Mongo, so this chip and the who-saw-it popup
+      // can never drift apart.
+      const audience = activeUsers.filter(
+        (u) => (picked ? picked.has(String(u._id)) : roles.length === 0 || roles.includes(u.role))
+          && String(u._id) !== authorId,
+      );
       const readers = readersByAnn.get(String(a._id)) || new Set();
       const seenCount = audience.reduce((n, u) => n + (readers.has(String(u._id)) ? 1 : 0), 0);
       out[i].reads = { seenCount, total: audience.length };
@@ -276,7 +386,7 @@ export async function listVisible(user, now = new Date()) {
 }
 
 export async function activeUnseen(user, now = new Date()) {
-  const visible = await Announcement.find(visibilityFilter(user.role, now))
+  const visible = await Announcement.find(visibilityFilter(user, now))
     .sort({ announcedAt: -1, createdAt: -1 })
     .populate('createdBy', 'name role');
 
@@ -297,12 +407,12 @@ export async function activeUnseen(user, now = new Date()) {
  * (written when a person pages through the popup).
  */
 export async function readReceipts(announcementId) {
-  const ann = await Announcement.findById(announcementId).select('audienceRoles createdBy');
+  const ann = await Announcement.findById(announcementId).select('audienceRoles audienceUsers createdBy');
   if (!ann) throw httpError(404, 'NOT_FOUND', 'Announcement not found');
 
-  const roleFilter = ann.audienceRoles?.length ? { role: { $in: ann.audienceRoles } } : {};
+  const query = audienceUserQuery(ann, ann.createdBy);
   const [audience, reads] = await Promise.all([
-    User.find({ isActive: true, ...roleFilter, _id: { $ne: ann.createdBy } }).select('name role').sort({ name: 1 }),
+    query ? User.find(query).select('name role').sort({ name: 1 }) : [],
     AnnouncementRead.find({ announcement: announcementId }).select('user readAt'),
   ]);
 
@@ -319,6 +429,38 @@ export async function readReceipts(announcementId) {
   return { total: audience.length, seenCount: seen.length, seen, unseen };
 }
 
+/**
+ * Everyone an announcement can be addressed to — the people picker's directory.
+ *
+ * Deliberately NOT `GET /users`: that is gated on `viewEveryone`, a different permission from
+ * the `postAnnouncements` this dialog already requires, so a role allowed to post but not to
+ * browse the directory would get a 403 and a blank picker with nothing on screen to explain
+ * it. This route carries the same gate as posting, and shows nothing that `/tasks/assignable`
+ * does not already show every signed-in person.
+ *
+ * NO avatarUrl, and that is load-bearing rather than an opinion: avatars are stored as base64
+ * data URLs (a 384px JPEG, roughly 35 KB each), so a 500-person list carrying them would be a
+ * multi-megabyte response for a dropdown. The picker draws initials instead.
+ *
+ * The caller is included — they may well want to address something to themselves and a few
+ * others. The bell and the "Seen by" count exclude the author on their own.
+ */
+export async function audiencePeople() {
+  const people = await User.find({ isActive: true })
+    .select('name role designation')
+    .sort({ name: 1 })
+    .lean();
+  return {
+    people: people.map((u) => ({
+      id: String(u._id),
+      name: u.name,
+      role: u.role,
+      roleLabel: roleLabel(u.role) || u.role,
+      designation: u.designation || '',
+    })),
+  };
+}
+
 export async function markRead(user, announcementId) {
   await AnnouncementRead.findOneAndUpdate(
     { announcement: announcementId, user: user._id },
@@ -331,8 +473,32 @@ export async function updateAnnouncement(id, data, now = new Date()) {
   if (data.audienceRoles !== undefined) await assertAudienceRoles(data.audienceRoles);
   const ann = await Announcement.findById(id);
   if (!ann) throw httpError(404, 'NOT_FOUND', 'Announcement not found');
-  const fields = ['title', 'body', 'priority', 'audienceRoles'];
+  const fields = ['title', 'body', 'priority'];
   for (const f of fields) if (data[f] !== undefined) ann[f] = data[f];
+
+  // The audience, as two INDEPENDENT blocks. A key the client did not send is a key it did
+  // not mean to change — reading an absent one as "empty" would mean an edit that only
+  // touched the title silently wiped a whole team off the post. Whichever list arrives
+  // non-empty clears the other, which is the same switch the create path applies; sending
+  // both (as the dialog does) lands on the right answer in every combination.
+  if (data.audienceUsers !== undefined) {
+    // Only the NEWLY added names must still be here. Somebody picked months ago who has since
+    // left must not freeze the post: insisting every existing name is still active would make
+    // one departed colleague render it uneditable, with nothing on screen saying who.
+    const already = new Set((ann.audienceUsers || []).map(String));
+    await assertAudienceUsers((data.audienceUsers || []).filter((uid) => !already.has(String(uid))));
+    // Normalised the same way the create path normalises, so a post edited and a post created
+    // hold the same shape — deduped, cast, no stray strings.
+    const ids = [...new Set((data.audienceUsers || []).map(String))]
+      .filter((uid) => mongoose.isValidObjectId(uid))
+      .map((uid) => new mongoose.Types.ObjectId(uid));
+    ann.audienceUsers = ids;
+    if (ids.length) ann.audienceRoles = [];
+  }
+  if (data.audienceRoles !== undefined) {
+    ann.audienceRoles = data.audienceRoles;
+    if (data.audienceRoles.length) ann.audienceUsers = [];
+  }
   if (data.publishAt !== undefined) ann.publishAt = data.publishAt ? new Date(data.publishAt) : null;
   if (data.expiresAt !== undefined) ann.expiresAt = data.expiresAt ? new Date(data.expiresAt) : null;
   let announceNow = false;
