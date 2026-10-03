@@ -3,6 +3,7 @@ import { AnnouncementRead } from '../models/AnnouncementRead.js';
 import { User } from '../models/User.js';
 import { notify } from '../models/Notification.js';
 import { can } from '../lib/permissions.js';
+import { ensureRolesFresh, roleExists, roleLabel } from '../lib/roles.js';
 import { ymdInTz, companyDayFromYMD, companyDayInstantAt } from '../lib/time.js';
 import { matchesYMD, nextOccurrenceYMD, lastOccurrenceOnOrBefore, normalizeRule, prevDay } from '../lib/recurrence.js';
 
@@ -140,7 +141,32 @@ export async function announceRecurring(now = new Date()) {
   }
 }
 
+/**
+ * Check the picked audience against the roles that actually exist — here, not in the
+ * validator, because roles live in the database and the office renames and adds them while
+ * a zod schema is fixed at module load.
+ *
+ * ensureRolesFresh(key) matters on Lambda: a role created a minute ago on one container is
+ * not in THIS container's cache yet, and rejecting a role the person can see on screen is
+ * exactly the bug this replaces. An empty list is "everyone" and needs no check.
+ */
+async function assertAudienceRoles(audienceRoles) {
+  const picked = (audienceRoles || []).filter(Boolean);
+  if (!picked.length) return;
+  const unknown = [];
+  for (const key of picked) {
+    // eslint-disable-next-line no-await-in-loop
+    await ensureRolesFresh(key);
+    if (!roleExists(key)) unknown.push(key);
+  }
+  if (unknown.length) {
+    const named = unknown.map((k) => roleLabel(k) || k).join(', ');
+    throw httpError(400, 'UNKNOWN_ROLE', `${unknown.length === 1 ? 'This role no longer exists' : 'These roles no longer exist'}: ${named}. Pick the audience again.`);
+  }
+}
+
 export async function createAnnouncement(creator, data, now = new Date()) {
+  await assertAudienceRoles(data.audienceRoles);
   const rule = normalizeRule(data.recurrence);
   let publishAt = data.publishAt ? new Date(data.publishAt) : null;
   let lastRecurredYMD = '';
@@ -296,6 +322,7 @@ export async function markRead(user, announcementId) {
 }
 
 export async function updateAnnouncement(id, data, now = new Date()) {
+  if (data.audienceRoles !== undefined) await assertAudienceRoles(data.audienceRoles);
   const ann = await Announcement.findById(id);
   if (!ann) throw httpError(404, 'NOT_FOUND', 'Announcement not found');
   const fields = ['title', 'body', 'priority', 'audienceRoles'];

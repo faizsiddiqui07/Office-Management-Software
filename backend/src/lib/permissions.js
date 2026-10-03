@@ -6,15 +6,14 @@
  */
 import { getRolePermissionSet, getRoleRank } from './roles.js';
 
-export const ROLES = [
-  'CEO',
-  'DIRECTOR',
-  'ADMIN_MANAGER',
-  'MANAGER',
-  'EMPLOYEE',
-  'OFFICE_BOY',
-  'SECURITY',
-];
+// There is deliberately no `ROLES` list here. Roles live in the database and the office
+// renames and adds them; a hardcoded list of "all roles" reads as authoritative and quietly
+// goes stale. One lived here, naming the seven roles the system shipped with, and the only
+// thing that ever used it was the announcement validator — by then eight of the office's
+// nine roles were missing from it, so choosing any audience answered "Invalid request" and
+// the feature had never once worked. Ask roles.js instead: roleExists / roleKeys, after
+// ensureRolesFresh. The groups below are different — they are seed defaults and the
+// fallback used only until the role cache has loaded.
 
 /** Top leadership tier — full access + leadership-only features. */
 export const LEADERSHIP = ['CEO', 'DIRECTOR'];

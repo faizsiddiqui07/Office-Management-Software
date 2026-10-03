@@ -112,6 +112,16 @@ export function getRolePermissionSet(roleKey) {
   return cache.get(roleKey) || null;
 }
 
+/** Does this role exist? Answered from the cache — pair it with ensureRolesFresh(key). */
+export function roleExists(roleKey) {
+  return cache.has(roleKey);
+}
+
+/** Every role key that exists right now, in no particular order. */
+export function roleKeys() {
+  return [...cache.keys()];
+}
+
 /** Rank of a role (lower = more authority), or null if the role isn't cached. */
 export function getRoleRank(roleKey) {
   return ranks.has(roleKey) ? ranks.get(roleKey) : null;

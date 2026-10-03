@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { ROLES } from '../lib/permissions.js';
 
 // A repeat rule. The type says which fields matter; the refine insists they are there,
 // so "WEEKLY with no weekday" is rejected at the door instead of becoming a post that
@@ -22,10 +21,14 @@ export const createAnnouncementSchema = z.object({
   title: z.string().min(1, 'Title is required').max(200),
   body: z.string().max(5000).optional().default(''),
   priority: z.enum(['NORMAL', 'IMPORTANT', 'URGENT']).optional().default('NORMAL'),
-  audienceRoles: z
-    .array(z.string().refine((r) => ROLES.includes(r), { message: 'Invalid role' }))
-    .optional()
-    .default([]),
+  // Shape only. WHICH roles exist is not knowable here: roles live in the database and the
+  // office renames and adds them, while a schema is built once at module load. This used to
+  // check each key against a hardcoded list of the seven roles the system shipped with — by
+  // the time anyone noticed, eight of the office's nine roles were missing from it, so
+  // picking any audience but one answered "Invalid request" and only "Everyone" (an empty
+  // list, nothing to check) ever worked. The real check lives in the service, against the
+  // live roles.
+  audienceRoles: z.array(z.string()).optional().default([]),
   publishAt: z.string().optional().nullable(),
   expiresAt: z.string().optional().nullable(),
   recurrence: recurrenceSchema.optional(),
