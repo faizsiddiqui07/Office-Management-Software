@@ -79,8 +79,16 @@ export async function update(req, res, next) {
 
 export async function retire(req, res, next) {
   try {
-    await svc.retireAnnouncement(req.params.id);
-    await audit({ actor: req.user._id, action: 'announcement.retire', entityType: 'Announcement', entityId: req.params.id });
+    const result = await svc.deleteAnnouncement(req.params.id);
+    // The row is gone for good, so what it was lives here instead — the Activity log is now
+    // the only place that remembers this announcement existed.
+    await audit({
+      actor: req.user._id,
+      action: 'announcement.delete',
+      entityType: 'Announcement',
+      entityId: req.params.id,
+      meta: { title: result.title, readsRemoved: result.readsRemoved },
+    });
     res.json(ok({ success: true }));
   } catch (err) {
     handleErr(res, err, next);

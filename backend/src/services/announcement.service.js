@@ -1,7 +1,8 @@
 import { Announcement } from '../models/Announcement.js';
 import { AnnouncementRead } from '../models/AnnouncementRead.js';
 import { User } from '../models/User.js';
-import { notify } from '../models/Notification.js';
+import { Setting } from '../models/Setting.js';
+import { notify, clearNotificationsFor } from '../models/Notification.js';
 import { can } from '../lib/permissions.js';
 import { ensureRolesFresh, roleExists, roleLabel } from '../lib/roles.js';
 import { ymdInTz, companyDayFromYMD, companyDayInstantAt } from '../lib/time.js';
@@ -49,6 +50,11 @@ async function notifyAudience(doc, excludeUserId, { repeat = false } = {}) {
         title: `${repeat ? 'Announcement' : 'New announcement'}: ${doc.title}`,
         message: doc.priority === 'URGENT' ? 'Marked urgent' : '',
         link: '/announcements',
+        // Stamped so deleting the announcement can take its bells down with it. Without a
+        // handle on the source, deleteAnnouncement had no way to find these and people were
+        // left with a notification pointing at a post that no longer exists.
+        entityType: 'Announcement',
+        entityId: doc._id,
       }),
     ),
   );
@@ -384,8 +390,48 @@ export async function updateAnnouncement(id, data, now = new Date()) {
   return ann.toJSON();
 }
 
-export async function retireAnnouncement(id) {
-  const ann = await Announcement.findByIdAndUpdate(id, { $set: { isActive: false } }, { new: true });
+/**
+ * Delete an announcement for good, and everything that only existed because of it.
+ *
+ * This used to be a retire — `isActive: false`, row kept forever — so the feed looked right
+ * while the collection quietly grew and the owner, seeing four posts, found six rows. An
+ * announcement is a notice, not a record: once it is taken down there is nothing to keep.
+ *
+ * What goes with it:
+ *  • its read receipts (AnnouncementRead), which are meaningless without the post,
+ *  • the bells it rang (notifications stamped Announcement/<id>), which would otherwise sit
+ *    in people's lists linking to a post that is gone — older ones, from before that stamp
+ *    existed, carry no link to find them by and age out on their own 30-day TTL,
+ *  • the pointer any work-from-home day or emergency holiday kept to it, nulled rather than
+ *    left dangling so undoing that day does not go looking for a post that no longer exists.
+ *
+ * The Activity log keeps the title and the counts (see the controller) — the row is gone,
+ * the record of removing it is not.
+ */
+export async function deleteAnnouncement(id) {
+  const ann = await Announcement.findById(id).select('title audienceRoles priority');
   if (!ann) throw httpError(404, 'NOT_FOUND', 'Announcement not found');
-  return ann.toJSON();
+
+  const reads = await AnnouncementRead.deleteMany({ announcement: ann._id });
+  await clearNotificationsFor('Announcement', ann._id);
+  // Only the entries that actually point at THIS announcement; the day itself stays.
+  //
+  // The filter has to name the field as well as the key. An arrayFilters update THROWS with
+  // "the path must exist in the document" when the array is absent, and these arrays only
+  // come into being the first time something is pushed onto them — so on a settings document
+  // that has never had an emergency holiday declared, a bare {key:'global'} filter made every
+  // announcement delete fail. Matching on the field means such a document simply isn't
+  // matched, which is also the right answer: nothing in it points here.
+  for (const field of ['wfhDays', 'emergencyHolidays']) {
+    // eslint-disable-next-line no-await-in-loop
+    await Setting.updateOne(
+      { key: 'global', [`${field}.announcementId`]: ann._id },
+      { $set: { [`${field}.$[e].announcementId`]: null } },
+      { arrayFilters: [{ 'e.announcementId': ann._id }] },
+    );
+  }
+  Setting.invalidateCache();
+  await Announcement.deleteOne({ _id: ann._id });
+
+  return { title: ann.title, readsRemoved: reads.deletedCount || 0 };
 }

@@ -6,7 +6,7 @@ import { User } from '../models/User.js';
 import { Setting } from '../models/Setting.js';
 import { PointEntry } from '../models/PointEntry.js';
 import { joinedYMD, hadAccessOn } from '../lib/joining.js';
-import { createAnnouncement, retireAnnouncement } from './announcement.service.js';
+import { createAnnouncement, deleteAnnouncement } from './announcement.service.js';
 import { notify, clearNotificationsFor } from '../models/Notification.js';
 import { can, canAssignRole } from '../lib/permissions.js';
 import { rolesWithPermission, roleLabel, isOwnerRole, ownerRoleKeys } from '../lib/roles.js';
@@ -1145,7 +1145,7 @@ export async function undoOfficeWideWFH(actor, dateYMD) {
   const s = await Setting.getSingleton();
   const entry = (s.wfhDays || []).find((d) => d.ymd === dateYMD);
   if (entry?.announcementId) {
-    try { await retireAnnouncement(String(entry.announcementId)); } catch (e) { console.error('retiring WFH announcement failed', e?.message); }
+    try { await deleteAnnouncement(String(entry.announcementId)); } catch (e) { console.error('removing WFH announcement failed', e?.message); }
   }
   await Setting.updateOne({ key: 'global' }, { $pull: { wfhDays: { ymd: dateYMD } } });
   Setting.invalidateCache();
@@ -1285,7 +1285,7 @@ export async function undoEmergencyHoliday(actor, dateYMD) {
     try { await deleteHoliday(String(entry.holidayId)); } catch (e) { console.error('removing emergency holiday failed', e?.message); }
   }
   if (entry.announcementId) {
-    try { await retireAnnouncement(String(entry.announcementId)); } catch (e) { console.error('retiring emergency holiday announcement failed', e?.message); }
+    try { await deleteAnnouncement(String(entry.announcementId)); } catch (e) { console.error('removing emergency holiday announcement failed', e?.message); }
   }
   await Setting.updateOne({ key: 'global' }, { $pull: { emergencyHolidays: { ymd: dateYMD } } });
   Setting.invalidateCache();

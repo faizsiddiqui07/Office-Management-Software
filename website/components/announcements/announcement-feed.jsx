@@ -32,16 +32,18 @@ export function AnnouncementFeed() {
   const list = data?.announcements ?? [];
 
   const [editing, setEditing] = React.useState(null);
-  const [retiring, setRetiring] = React.useState(null);
+  const [deleting, setDeleting] = React.useState(null);
 
-  const retireMut = useMutation({
+  const deleteMut = useMutation({
     mutationFn: (id) => api.delete(`/announcements/${id}`),
     onSuccess: () => {
-      toast.success('Announcement retired');
+      toast.success('Announcement deleted');
+      // Its bells go with it, so the notification list is stale too.
       qc.invalidateQueries({ queryKey: ['announcements'] });
-      setRetiring(null);
+      qc.invalidateQueries({ queryKey: ['notifications'] });
+      setDeleting(null);
     },
-    onError: (e) => toast.error(e?.message || 'Could not retire'),
+    onError: (e) => toast.error(e?.message || 'Could not delete'),
   });
 
   return (
@@ -73,8 +75,8 @@ export function AnnouncementFeed() {
                     <DropdownMenuItem onClick={() => setEditing(a)}>
                       <Pencil /> Edit
                     </DropdownMenuItem>
-                    <DropdownMenuItem variant="destructive" onClick={() => setRetiring(a)}>
-                      <Trash2 /> Retire
+                    <DropdownMenuItem variant="destructive" onClick={() => setDeleting(a)}>
+                      <Trash2 /> Delete
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -101,16 +103,20 @@ export function AnnouncementFeed() {
       ) : null}
 
       <ConfirmDialog
-        open={!!retiring}
+        open={!!deleting}
         onOpenChange={(o) => {
-          if (!o) setRetiring(null);
+          if (!o) setDeleting(null);
         }}
-        title="Retire this announcement?"
-        description={retiring ? `"${retiring.title}" will be removed from the feed.` : ''}
+        title="Delete this announcement?"
+        description={
+          deleting
+            ? `"${deleting.title}" will be deleted for good, along with who has read it and the notifications it sent. This can't be undone.`
+            : ''
+        }
         tone="destructive"
-        confirmLabel="Retire"
-        loading={retireMut.isPending}
-        onConfirm={() => retiring && retireMut.mutate(retiring.id)}
+        confirmLabel="Delete"
+        loading={deleteMut.isPending}
+        onConfirm={() => deleting && deleteMut.mutate(deleting.id)}
       />
     </div>
   );
