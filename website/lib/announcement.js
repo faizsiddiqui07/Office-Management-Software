@@ -12,6 +12,33 @@ export const PRIORITY_OPTIONS = [
   { value: 'URGENT', label: 'Urgent' },
 ];
 
+/**
+ * The exact instant that a company-time date and clock-time name — '2026-10-12' at '09:00'
+ * in the office's timezone, as an ISO string the server can store.
+ *
+ * Worked out from COMPANY_TZ rather than by bolting on a fixed +05:30, so the one place this
+ * would ever need changing is that constant. The round trip finds how far the chosen zone sat
+ * from UTC at that moment and shifts by it, which also stays right in a zone that observes DST.
+ */
+export function companyInstant(ymd, hhmm = '09:00') {
+  if (!ymd) return null;
+  const guess = new Date(`${ymd}T${hhmm || '09:00'}:00Z`);
+  if (Number.isNaN(guess.getTime())) return null;
+  const inZone = new Date(guess.toLocaleString('en-US', { timeZone: COMPANY_TZ }));
+  const inUtc = new Date(guess.toLocaleString('en-US', { timeZone: 'UTC' }));
+  return new Date(guess.getTime() - (inZone.getTime() - inUtc.getTime())).toISOString();
+}
+
+/** An ISO instant back into the company-time { ymd, hhmm } a picker shows. */
+export function companyParts(iso) {
+  if (!iso) return { ymd: '', hhmm: '' };
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return { ymd: '', hhmm: '' };
+  const ymd = new Intl.DateTimeFormat('en-CA', { timeZone: COMPANY_TZ }).format(d);
+  const hhmm = new Intl.DateTimeFormat('en-GB', { timeZone: COMPANY_TZ, hour: '2-digit', minute: '2-digit', hour12: false }).format(d);
+  return { ymd, hhmm };
+}
+
 export function formatDateTime(iso) {
   if (!iso) return '';
   const d = new Date(iso);

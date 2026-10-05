@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Plus, Repeat } from 'lucide-react';
+import { CalendarClock, Plus, Repeat } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { AppDialog } from '@/components/glass/app-dialog';
@@ -21,7 +21,9 @@ import {
 } from '@/components/ui/select';
 import { useRoleOptions } from '@/lib/use-roles';
 import { AudiencePicker } from '@/components/announcements/audience-picker';
-import { PRIORITY_OPTIONS, RECURRENCE_OPTIONS, WEEKDAYS, MONTHS, describeRecurrence } from '@/lib/announcement';
+import { PRIORITY_OPTIONS, RECURRENCE_OPTIONS, WEEKDAYS, MONTHS, describeRecurrence, companyInstant, companyParts } from '@/lib/announcement';
+import { DatePicker } from '@/components/ui/date-picker';
+import { todayYMD } from '@/lib/time';
 
 const EMPTY_RULE = { type: 'NONE', weekday: null, dayOfMonth: null, month: null, time: '09:00' };
 const DAYS_1_31 = Array.from({ length: 31 }, (_, i) => i + 1);
@@ -46,6 +48,10 @@ export function CreateAnnouncementDialog({ announcement, open: openProp, onOpenC
   // Repeats: every week / month / year, at a time (company timezone). The server owns
   // when it actually goes out — this only collects the rule.
   const [recur, setRecur] = React.useState(EMPTY_RULE);
+  // Hold back until a chosen moment. Empty date = goes out as soon as it is posted, which is
+  // what every announcement did before this existed.
+  const [schedYMD, setSchedYMD] = React.useState('');
+  const [schedTime, setSchedTime] = React.useState('09:00');
   const { data: roleOptions = [] } = useRoleOptions();
   const setRule = (patch) => setRecur((r) => ({ ...r, ...patch }));
 
@@ -61,6 +67,9 @@ export function CreateAnnouncementDialog({ announcement, open: openProp, onOpenC
       setAudienceMode(announcement.audienceUsers?.length ? 'INDIVIDUAL' : 'TEAM');
       // An older post has no recurrence at all — read that as "doesn't repeat".
       setRecur({ ...EMPTY_RULE, ...(announcement.recurrence?.type ? announcement.recurrence : {}) });
+      const at = companyParts(announcement.publishAt);
+      setSchedYMD(at.ymd);
+      setSchedTime(at.hhmm || '09:00');
     }
     if (open && !isEdit) {
       setTitle('');
@@ -70,6 +79,8 @@ export function CreateAnnouncementDialog({ announcement, open: openProp, onOpenC
       setAudienceUsers([]);
       setAudienceMode('TEAM');
       setRecur(EMPTY_RULE);
+      setSchedYMD('');
+      setSchedTime('09:00');
     }
   }, [open, isEdit, announcement]);
 
@@ -93,6 +104,9 @@ export function CreateAnnouncementDialog({ announcement, open: openProp, onOpenC
         audienceRoles: individual ? [] : audience,
         audienceUsers: individual ? audienceUsers : [],
         recurrence,
+        // A repeating post's first outing comes from its OWN rule, which the server works
+        // out — sending a second time here would just be overwritten, so it is not sent.
+        publishAt: recur.type === 'NONE' && schedYMD ? companyInstant(schedYMD, schedTime) : null,
       };
       if (!isEdit) return api.post('/announcements', payload);
       // On edit, send only what actually changed. The activity log records the field
@@ -105,6 +119,7 @@ export function CreateAnnouncementDialog({ announcement, open: openProp, onOpenC
         priority: announcement.priority || 'NORMAL',
         audienceRoles: announcement.audienceRoles || [],
         audienceUsers: (announcement.audienceUsers || []).map(String),
+        publishAt: announcement.publishAt ? new Date(announcement.publishAt).toISOString() : null,
         recurrence: announcement.recurrence?.type
           ? { type: announcement.recurrence.type, time: announcement.recurrence.time || '09:00',
               ...(announcement.recurrence.type === 'WEEKLY' ? { weekday: announcement.recurrence.weekday } : {}),
@@ -202,6 +217,42 @@ export function CreateAnnouncementDialog({ announcement, open: openProp, onOpenC
           onPeopleChange={setAudienceUsers}
           roleOptions={roleOptions}
         />
+
+        {/* Hold it back until a chosen moment. Hidden for a repeating post on purpose: that
+            post's first outing is worked out from its own rule, which has its own time, and
+            the server overwrites anything set here — two controls for one moment, one of them
+            silently losing. */}
+        {recur.type === 'NONE' ? (
+          <div className="space-y-2 rounded-xl bg-foreground/[0.03] p-3 ring-1 ring-border/50">
+            <Label htmlFor="an-sched-date" className="flex items-center gap-1.5">
+              <CalendarClock className="size-3.5 text-muted-foreground" /> Send later (optional)
+            </Label>
+            <div className="flex flex-wrap gap-2">
+              <DatePicker
+                id="an-sched-date"
+                value={schedYMD}
+                min={todayYMD()}
+                onChange={setSchedYMD}
+                clearable
+                placeholder="Post straight away"
+                className="min-w-[10rem] flex-1 bg-background/50"
+              />
+              {schedYMD ? (
+                <TimePicker
+                  id="an-sched-time"
+                  value={schedTime}
+                  onChange={setSchedTime}
+                  className="min-w-[8rem] bg-background/50"
+                />
+              ) : null}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {schedYMD
+                ? 'Nobody sees it or is notified until then — it waits out of sight and goes out on its own. You can still see and edit it in the meantime.'
+                : 'Leave the date empty and it goes out the moment you post it.'}
+            </p>
+          </div>
+        ) : null}
 
         {/* Repeats — the same post going out again on a schedule: every week on a day,
             every month on a date, or every year on a month-and-date. Each time it goes
