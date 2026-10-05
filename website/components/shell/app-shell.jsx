@@ -64,11 +64,15 @@ export function AppShell({ children }) {
         <Topbar user={user} />
         {/* My tasks / Assigned tasks shortcuts, on every page — see the component. */}
         <QuickTaskActions />
-        <main className="mx-auto w-full max-w-7xl px-4 pb-6 pt-4 sm:px-6 lg:px-8">
+        {/* Same width as the topbar above it, which has never been capped. These two used to
+            disagree: the bar ran edge to edge while the page under it stopped at 1280px, so on
+            anything wider than a laptop the content sat in a narrow column with a bar stretched
+            over it. On a 4K screen that was more than a thousand empty pixels down each side. */}
+        <main className="w-full px-4 pb-6 pt-4 sm:px-6 lg:px-8">
           {children}
         </main>
         {/* Har page ke neeche product ka naam — hardcode, Settings se nahi (owner ka niyam). */}
-        <footer className="mx-auto w-full max-w-7xl px-4 pb-8 pt-2 text-center text-[11px] text-muted-foreground sm:px-6 lg:px-8">
+        <footer className="w-full px-4 pb-8 pt-2 text-center text-[11px] text-muted-foreground sm:px-6 lg:px-8">
           <ProductCredit />
         </footer>
       </div>
