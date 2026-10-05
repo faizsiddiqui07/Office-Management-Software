@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Check, Search, Users, X } from 'lucide-react';
+import { Plus, Search, Users, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -35,8 +35,11 @@ const initials = (name) =>
  *
  * The people list is fetched once and filtered here rather than queried per keystroke: at
  * fifteen people either approach works, and at five hundred one small download beats a
- * request on every letter. Names are never removed from the list as they are picked — a row
- * just grows a tick — so picking several in a row does not make the list jump about.
+ * request on every letter.
+ *
+ * Picking somebody MOVES them out of the list and into the chips above; removing their chip
+ * puts them back. The list is derived from the selection rather than held beside it, so the
+ * two can never disagree, and what is left in it is always exactly who can still be added.
  */
 export function AudiencePicker({ mode, onModeChange, roles, onRolesChange, people, onPeopleChange, roleOptions = [] }) {
   const isIndividual = mode === 'INDIVIDUAL';
@@ -49,16 +52,21 @@ export function AudiencePicker({ mode, onModeChange, roles, onRolesChange, peopl
     [directory, picked],
   );
 
+  // Somebody already picked leaves the list — they are in the chips above instead, so the
+  // list only ever shows who is still available to add. Removing their chip puts them back,
+  // because this is derived from the selection rather than held separately.
   const matches = React.useMemo(() => {
     const needle = q.trim().toLowerCase();
-    if (!needle) return directory;
-    return directory.filter(
+    const left = directory.filter((p) => !picked.has(p.id));
+    if (!needle) return left;
+    return left.filter(
       (p) => p.name.toLowerCase().includes(needle)
         || (p.designation || '').toLowerCase().includes(needle)
         || (p.roleLabel || '').toLowerCase().includes(needle),
     );
-  }, [directory, q]);
+  }, [directory, q, picked]);
   const shown = matches.slice(0, MAX_ROWS);
+  const allPicked = !matches.length && directory.length > 0 && picked.size === directory.length;
 
   const togglePerson = (id) => {
     onPeopleChange(picked.has(id) ? people.filter((x) => x !== id) : [...people, id]);
@@ -158,37 +166,34 @@ export function AudiencePicker({ mode, onModeChange, roles, onRolesChange, peopl
               <p className="px-3 py-6 text-center text-xs text-destructive">Couldn’t load the list. Close and open this again.</p>
             ) : !shown.length ? (
               <p className="px-3 py-6 text-center text-xs text-muted-foreground">
-                {q.trim() ? `No one matches “${q.trim()}”.` : 'No one to show.'}
+                {allPicked
+                  ? 'Everyone is picked.'
+                  : q.trim()
+                    ? `No one left matching “${q.trim()}”.`
+                    : 'No one left to add.'}
               </p>
             ) : (
               <ul className="space-y-0.5">
-                {shown.map((p) => {
-                  const on = picked.has(p.id);
-                  return (
-                    <li key={p.id}>
-                      <button
-                        type="button"
-                        onClick={() => togglePerson(p.id)}
-                        aria-pressed={on}
-                        className={cn(
-                          'flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors',
-                          on ? 'bg-primary/[0.08]' : 'hover:bg-foreground/[0.06]',
-                        )}
-                      >
-                        <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[0.65rem] font-semibold text-primary">
-                          {initials(p.name)}
+                {shown.map((p) => (
+                  <li key={p.id}>
+                    <button
+                      type="button"
+                      onClick={() => togglePerson(p.id)}
+                      className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-foreground/[0.06]"
+                    >
+                      <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[0.65rem] font-semibold text-primary">
+                        {initials(p.name)}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm">{p.name}</span>
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {p.designation || p.roleLabel}
                         </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm">{p.name}</span>
-                          <span className="block truncate text-xs text-muted-foreground">
-                            {p.designation || p.roleLabel}
-                          </span>
-                        </span>
-                        {on ? <Check className="size-4 shrink-0 text-primary" /> : null}
-                      </button>
-                    </li>
-                  );
-                })}
+                      </span>
+                      <Plus className="size-4 shrink-0 text-muted-foreground" />
+                    </button>
+                  </li>
+                ))}
               </ul>
             )}
           </div>
