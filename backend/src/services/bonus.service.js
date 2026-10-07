@@ -1634,6 +1634,32 @@ function fingerprint(str) {
 }
 /** The only sources a rebuild may touch. Everything else in the ledger is left alone. */
 const REBUILD_SOURCES = ['auto_streak', 'auto_late', 'auto_absent', 'auto_perfect', 'auto_noleave'];
+// Split by how each one is dated, because the two halves are windowed differently and BOTH
+// the comparison and the write have to use the same window. A day award lives on its own day;
+// a month award belongs to a finished month.
+const REBUILD_DAY_SOURCES = ['auto_streak', 'auto_late', 'auto_absent'];
+const REBUILD_MONTH_SOURCES = ['auto_perfect', 'auto_noleave'];
+
+/**
+ * The ledger rows a rebuild is allowed to have an opinion about: this roster, these sources,
+ * and nothing dated outside the window the plan was built from.
+ *
+ * The window matters more than it looks. The plan stops at `upto` (yesterday), because today
+ * is not over and cannot be judged — but onCheckIn writes TODAY's late penalty the moment
+ * somebody arrives late this morning. Leave that row in the comparison and it appears in no
+ * plan, so the preview offers to remove it and promises the owner a point back that the apply
+ * — correctly bounded to the same window — never takes. The verify afterwards then fails on
+ * the same phantom. One window, named once, used by both.
+ */
+function rebuildScope(rosterIds, upto, months) {
+  return {
+    user: { $in: rosterIds },
+    $or: [
+      { source: { $in: REBUILD_DAY_SOURCES }, earnedYMD: { $gte: APP_LIVE_YMD, $lte: upto } },
+      { source: { $in: REBUILD_MONTH_SOURCES }, month: { $in: months } },
+    ],
+  };
+}
 
 /**
  * Is a rebuild holding the lock right now? Read straight from the database — getSingleton()
@@ -1779,7 +1805,8 @@ async function diffAgainstLedger(upto = null) {
   // "will be removed" while the apply quite correctly leaves them alone — a diff the owner
   // approved that then does not happen, and a verify that fails for no visible reason.
   const rosterIds = roster.map((u) => u._id);
-  const have = await PointEntry.find({ source: { $in: REBUILD_SOURCES }, user: { $in: rosterIds } }).select('user points source earnedYMD month dedupeKey').lean();
+  const lastDay = upto || prevDay(ymdInTz(new Date()));
+  const have = await PointEntry.find(rebuildScope(rosterIds, lastDay, months)).select('user points source earnedYMD month dedupeKey').lean();
   const haveByKey = new Map(have.map((p) => [p.dedupeKey, p]));
   const names = new Map((await User.find({}).select('name')).map((u) => [String(u._id), u.name]));
   const totals = new Map((await PointEntry.aggregate([{ $group: { _id: '$user', n: { $sum: '$points' } } }])).map((r) => [String(r._id), r.n]));
@@ -1929,7 +1956,7 @@ export async function runRebuild(actor, { planHash = null } = {}) {
     const ops = [];
     for (const source of ['auto_late', 'auto_absent', 'auto_perfect', 'auto_noleave']) {
       const keep = [...want].filter(([, d]) => d.source === source);
-      const inWindow = source === 'auto_perfect' || source === 'auto_noleave'
+      const inWindow = REBUILD_MONTH_SOURCES.includes(source)
         ? { month: { $in: months } }   // month awards exist only for finished months
         : { earnedYMD: dayWindow };    // day awards only inside the planned days
       ops.push({ deleteMany: { filter: { source, user: { $in: rosterIds }, ...inWindow, dedupeKey: { $nin: keep.map(([k]) => k) } } } });

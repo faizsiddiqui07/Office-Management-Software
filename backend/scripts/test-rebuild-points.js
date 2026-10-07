@@ -190,6 +190,31 @@ async function main() {
   try { await runRebuild(other); } catch (e) { denied = e; }
   check(`${other?.role} ko 403 mila`, denied?.status === 403, denied ? `${denied.status} ${denied.code}` : 'mana hi nahi kiya');
 
+  // ── 7. AAJ ki rows ko haath na lage, aur preview unka jhootha wada na kare ──
+  // 7 Oct 2026 ko ye asli dikkat aayi: Ankur aaj late aaye, −1 laga, aur preview ne kaha
+  // "+1, ye penalty hat jayegi". Hatti nahi — apply jaan-boojhkar aaj ko chhodta hai (aaj
+  // khatam hi nahi hua, use judge nahi kiya ja sakta). Ginti kal tak ki thi par ledger me
+  // aaj ki row thi, to wo "extra" lagti thi. Owner ko ek aisa point dikha jo kabhi aata hi
+  // nahi — aur apply ke baad ka verification bhi isi phantom par fail hota.
+  console.log('\n7) Aaj likhi gayi rows — preview jhooth na bole, apply chhue nahi');
+  const todayYMD = ymdInTz(new Date());
+  const victim = rosterUsers[0];
+  await PointEntry.updateOne(
+    { dedupeKey: `auto_late:${victim._id}:${todayYMD}` },
+    { $set: { user: victim._id, month: todayYMD.slice(0, 7), points: -1, reason: `Late arrival · ${todayYMD}`, source: 'auto_late', earnedYMD: todayYMD } },
+    { upsert: true },
+  );
+  const prevToday = await previewRebuild(owner);
+  const liesAboutToday = prevToday.rows.some((r) => r.changes.some((c) => c.on === todayYMD));
+  check('preview aaj ki row ka zikr hi nahi karta', !liesAboutToday,
+    liesAboutToday ? JSON.stringify(prevToday.rows.flatMap((r) => r.changes.filter((c) => c.on === todayYMD))) : 'saaf');
+  const resToday = await runRebuild(owner);
+  const stillThere = await PointEntry.findOne({ dedupeKey: `auto_late:${victim._id}:${todayYMD}` });
+  check('apply ke baad aaj ki row abhi bhi maujood hai', !!stillThere, stillThere ? `${stillThere.points}` : 'MIT GAYI');
+  check('aur rebuild khud ko verified hi batata hai', resToday.verified === true,
+    resToday.verified ? '' : 'phantom par verification fail ho raha hai');
+  await PointEntry.deleteOne({ dedupeKey: `auto_late:${victim._id}:${todayYMD}` });
+
   console.log(`\n${failures ? `❌ ${failures} check fail` : '✅ saare check pass'}\n`);
   await disconnectDB();
   process.exit(failures ? 1 : 0);
