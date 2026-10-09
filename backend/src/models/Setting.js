@@ -172,6 +172,14 @@ const settingSchema = new mongoose.Schema(
       lastStreakScan: { type: String, default: '' },
       // Per-user rolling streak counters as of lastStreakScan: { userId: daysSoFar }.
       streakRuns: { type: mongoose.Schema.Types.Mixed, default: {} },
+      // Set by any path that changes a day the streak scan has ALREADY judged — a late
+      // excused to on-duty, a backdated leave approved, a regularization, a leadership
+      // edit. The scan is one-shot by design (it never re-reads a day), so without this
+      // the award that change should have earned is never paid and only "Recalculate
+      // points" can find it. Holds the marker's own token rather than a boolean, so
+      // clearing it after a re-walk cannot swallow a change that arrived WHILE that
+      // re-walk was running.
+      streaksStale: { type: String, default: '' },
       // A manual "Recalculate points" rebuild in progress. The rebuild deletes the whole
       // auto_streak history and re-walks it from go-live, so for those few seconds nothing
       // else may write a streak: the nightly scan runs on its own EventBridge Lambda and

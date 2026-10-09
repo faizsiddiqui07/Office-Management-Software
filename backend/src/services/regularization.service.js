@@ -7,7 +7,7 @@ import { LEADERSHIP } from '../lib/permissions.js';
 import { companyDayFromYMD, companyDayInstantAt, computeWork } from '../lib/time.js';
 import { effectiveSchedule } from '../lib/schedule.js';
 import { judgeCheckIn, penaltyRungs } from '../lib/lateLadder.js';
-import { onCheckOut, clearAbsencePenalty, reconcileLatePenalty, reconcilePerfectMonth } from './bonus.service.js';
+import { onCheckOut, clearAbsencePenalty, reconcileLatePenalty, reconcilePerfectMonth, markStreaksStale } from './bonus.service.js';
 import { isOffDayFor } from './attendance.service.js';
 
 function httpError(status, code, message) {
@@ -174,6 +174,9 @@ async function applyToAttendance(reg) {
   if (record.checkInAt) {
     try { await clearAbsencePenalty(owner._id, reg.dateYMD); } catch (e) { console.error('bonus hook (correction clear absence) failed', e?.message); }
   }
+  // A correction is the third of the three retroactive changes that silently leave the
+  // punctual-streak chain short (the other two: a late excused, a backdated leave).
+  try { await markStreaksStale(); } catch (e) { console.error('bonus hook (correction streak stale) failed', e?.message); }
   // Keep the late penalty in step with the corrected day: apply it if it's now LATE (and
   // not excused), remove it if the correction made it on-time or absent.
   // owner._id, NOT reg.user: reg.user is populated here (findById.populate), so it

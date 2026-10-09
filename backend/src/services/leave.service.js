@@ -16,7 +16,7 @@ import { APP_LIVE_YMD } from '../lib/appLive.js';
 import { computeWorkingDays } from './workingDays.service.js';
 import { holidayYMDSet, createHoliday, deleteHoliday } from './holiday.service.js';
 import { birthdayYMDSet } from '../lib/birthday.js';
-import { reconcileLateFromRecord, clearAbsencePenalty, reconcileNoLeaveMonth, reconcilePerfectMonth, reconcileAbsence, runRebuild } from './bonus.service.js';
+import { reconcileLateFromRecord, clearAbsencePenalty, reconcileNoLeaveMonth, reconcilePerfectMonth, reconcileAbsence, runRebuild, markStreaksStale } from './bonus.service.js';
 import { userWeekendDays, effectiveSchedule } from '../lib/schedule.js';
 import { judgeCheckIn, LATE_LADDER_FLOOR_YMD } from '../lib/lateLadder.js';
 import { runTransaction } from '../lib/transaction.js';
@@ -992,6 +992,9 @@ export async function decideLeave(approver, id, decision, note, { replaceAttenda
       // eslint-disable-next-line no-await-in-loop
       try { await clearAbsencePenalty(result.user, ymd); } catch (e) { console.error('leave absence-clear failed', e?.message); }
     }
+    // Those days are no longer unexplained absences, so a run the scan had already reset
+    // over them never should have broken. It will not notice on its own — mark it.
+    try { await markStreaksStale(); } catch (e) { console.error('leave streak-stale failed', e?.message); }
     // L2 + perfect-attendance: the month(s) this leave covers may now qualify differently
     // — re-decide the no-leave AND perfect-attendance awards for any rolled-up month (an
     // absent day turned ON_LEAVE can newly EARN perfect attendance). No-op for the current
@@ -1393,6 +1396,9 @@ export async function cancelLeave(viewer, id) {
       // eslint-disable-next-line no-await-in-loop
       try { await reconcileAbsence(result.user, ymd); } catch (e) { console.error('absence reconcile (cancel) failed', e?.message); }
     }
+    // The mirror image of approval: days that were neutral on leave can be absences again,
+    // which should BREAK a run the scan had let through.
+    try { await markStreaksStale(); } catch (e) { console.error('leave streak-stale (cancel) failed', e?.message); }
     // The month(s) may now be leave-free again (no-leave earned) and/or have an absence
     // back (perfect attendance spoiled) — re-decide both for any rolled-up month.
     for (const m of monthsBetween(result.startYMD, result.endYMD)) {

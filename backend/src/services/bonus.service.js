@@ -1621,6 +1621,103 @@ async function rebuildStreakV2(b) {
 
 const REBUILD_LOCK_MS = 2 * 60 * 1000;
 
+/**
+ * Claim the rebuild lock, or hand back null if somebody else holds it. A read-then-write
+ * check is not a lock — two containers would both pass it. This condition can only match
+ * one of them, and the expiry means a run that dies half way does not lock the feature
+ * out for good.
+ */
+async function claimRebuildLock() {
+  const token = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const claim = await Setting.updateOne(
+    {
+      key: 'global',
+      $or: [
+        { 'bonus.rebuildLock': '' },
+        { 'bonus.rebuildLock': { $exists: false } },
+        { 'bonus.rebuildLockUntil': null },
+        { 'bonus.rebuildLockUntil': { $lte: new Date() } },
+      ],
+    },
+    { $set: { 'bonus.rebuildLock': token, 'bonus.rebuildLockUntil': new Date(Date.now() + REBUILD_LOCK_MS) } },
+  );
+  if (!(claim.modifiedCount || claim.nModified)) return null;
+  Setting.invalidateCache();
+  return token;
+}
+
+/** Release OUR claim only — never stamp over a lock somebody else took after ours expired. */
+async function releaseRebuildLock(token) {
+  await Setting.updateOne({ key: 'global', 'bonus.rebuildLock': token }, { $set: { 'bonus.rebuildLock': '', 'bonus.rebuildLockUntil': null } });
+  Setting.invalidateCache();
+}
+
+/**
+ * Flag the punctual-streak history for a full re-walk.
+ *
+ * The rolling scan judges each day EXACTLY ONCE — that is what `lastStreakScan` is for —
+ * and carries only a running count forward. So when a day it has already judged changes,
+ * the chain it computed is wrong and nothing will ever notice: it does not look back, and
+ * the count it is carrying is already short. That is how a genuinely completed 6-day run
+ * shows up in "Recalculate points" and nowhere else. (Seen in the wild: a late excused two
+ * days after the scan had counted it as an unexcused late, plus a backdated record typed
+ * in after the scan had written that day off as an absence — two resets that never
+ * un-happened, and a finished 6-day run stuck at 5.)
+ *
+ * Deliberately only a MARK, never the re-walk itself. The re-walk deletes and rewrites the
+ * whole auto_streak history (~3s on today's data) and must hold the rebuild lock; doing
+ * that inside the request that excused a late would make leadership wait on it, and would
+ * collide with a recalculation the owner might be running at that moment. The scheduler
+ * tick picks it up within minutes.
+ */
+export async function markStreaksStale() {
+  const token = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  await Setting.updateOne({ key: 'global' }, { $set: { 'bonus.streaksStale': token } });
+  Setting.invalidateCache();
+}
+
+/** Clear a stale marker, but ONLY if it is still the one we actually re-walked for. */
+async function clearStreaksStale(token) {
+  if (!token) return;
+  await Setting.updateOne({ key: 'global', 'bonus.streaksStale': token }, { $set: { 'bonus.streaksStale': '' } });
+  Setting.invalidateCache();
+}
+
+/**
+ * Re-walk the punctual-streak history when something marked it stale, so a retroactive
+ * attendance change earns its award within minutes instead of waiting for somebody to
+ * notice and press "Recalculate points".
+ *
+ * The order below is the one rebuildStreakV2 established and runRebuild repeats, and it is
+ * not negotiable: the old awards go FIRST. The chain re-forms on different days, awardOnce
+ * is insert-only, and leaving them would keep both versions in the table and pay everyone
+ * on a changed chain twice. That exact accident has happened once already.
+ */
+async function rescanStaleStreaks() {
+  const s = await Setting.getSingleton();
+  const token = s.bonus?.streaksStale;
+  if (!token) return;
+  // Rule switched off — nothing to re-walk, but the mark must still go or every tick from
+  // here on would retry it.
+  if (!rulePoints(s.bonus, 'punctualStreak')) { await clearStreaksStale(token); return; }
+  // A recalculation does exactly this work and holds the lock while it does. Leave the
+  // mark standing: either that run clears it, or the next tick picks it up.
+  const lock = await claimRebuildLock();
+  if (!lock) return;
+  try {
+    await PointEntry.deleteMany({ source: 'auto_streak' });
+    await Setting.updateOne({ key: 'global' }, { $set: { 'bonus.lastStreakScan': '', 'bonus.streakRuns': {} } });
+    Setting.invalidateCache();
+    const fresh = await Setting.getSingleton();
+    await runRollingStreak(fresh.bonus || {}, { ignoreLock: true });
+    // Only OUR token: a change that landed while this was running left a different one,
+    // and that one deserves its own re-walk.
+    await clearStreaksStale(token);
+  } finally {
+    await releaseRebuildLock(lock);
+  }
+}
+
 /** A short, stable fingerprint of a string — enough to tell one plan from another. */
 function fingerprint(str) {
   let h1 = 0x811c9dc5;
@@ -1891,26 +1988,14 @@ export async function runRebuild(actor, { planHash = null } = {}) {
   const s0 = await Setting.getSingleton();
   if (!s0.bonus?.enabled) throw httpError(400, 'DISABLED', 'Turn the bonus system on first');
 
-  // Claim the lock BEFORE touching anything. A read-then-write check is not a lock — two
-  // containers would both pass it. This condition can only match one of them, and the expiry
-  // means a run that dies half way does not lock the feature out for good.
-  const token = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const claim = await Setting.updateOne(
-    {
-      key: 'global',
-      $or: [
-        { 'bonus.rebuildLock': '' },
-        { 'bonus.rebuildLock': { $exists: false } },
-        { 'bonus.rebuildLockUntil': null },
-        { 'bonus.rebuildLockUntil': { $lte: new Date() } },
-      ],
-    },
-    { $set: { 'bonus.rebuildLock': token, 'bonus.rebuildLockUntil': new Date(Date.now() + REBUILD_LOCK_MS) } },
-  );
-  if (!(claim.modifiedCount || claim.nModified)) {
+  // Claim the lock BEFORE touching anything.
+  const token = await claimRebuildLock();
+  if (!token) {
     throw httpError(409, 'REBUILD_BUSY', 'A recalculation is already running. Try again in a minute.');
   }
-  Setting.invalidateCache();
+  // Whatever marked the streaks stale before this run started is about to be settled by
+  // step 1 below, which is the very re-walk such a mark asks for.
+  const staleToken = s0.bonus?.streaksStale || '';
 
   try {
     // One window for the whole run: planned against it, written against it, verified
@@ -1931,6 +2016,9 @@ export async function runRebuild(actor, { planHash = null } = {}) {
     Setting.invalidateCache();
     const fresh = await Setting.getSingleton();
     await runRollingStreak(fresh.bonus || {}, { ignoreLock: true });
+    // That WAS the full re-walk a stale mark asks for. A mark set while this rebuild was
+    // running carries a different token and is deliberately left standing for the next tick.
+    await clearStreaksStale(staleToken);
 
     // 2. The other four sources, settled in ONE write.
     //
@@ -1988,9 +2076,7 @@ export async function runRebuild(actor, { planHash = null } = {}) {
       leftover: after.clean ? [] : after.rows,
     };
   } finally {
-    // Only our own claim — never stamp over a lock somebody else took after ours expired.
-    await Setting.updateOne({ key: 'global', 'bonus.rebuildLock': token }, { $set: { 'bonus.rebuildLock': '', 'bonus.rebuildLockUntil': null } });
-    Setting.invalidateCache();
+    await releaseRebuildLock(token);
   }
 }
 
@@ -2519,6 +2605,10 @@ export async function maybeRunDaily(force = false) {
   try { await migrateOverdueSkipOffDays(b); } catch (e) { console.error('overdue skip-offday migration failed', e?.message); }
   try { await migrateBirthdayOffDay(); } catch (e) { console.error('birthday off-day migration failed', e?.message); }
   try { await rebuildStreakV2(b); } catch (e) { console.error('streak v2 rebuild failed', e?.message); }
+  // A day the scan had already judged was changed since the last tick. ABOVE the daily
+  // throttle on purpose: the award should land while the person who made the change is
+  // still looking at the screen, not a day later.
+  try { await rescanStaleStreaks(); } catch (e) { console.error('stale streak rescan failed', e?.message); }
   try { await clearExcusedLatePenalties(); } catch (e) { console.error('excused-late sweep failed', e?.message); }
   try { await seedRateHistory(); } catch (e) { console.error('rate-history seed failed', e?.message); }
   const today = ymdInTz(new Date());

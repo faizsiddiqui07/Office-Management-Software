@@ -16,7 +16,7 @@ import {
 import { judgeCheckIn, penaltyRungs, lateMarksAt } from '../lib/lateLadder.js';
 import { effectiveSchedule, userWeekendDays, workWindowClosed } from '../lib/schedule.js';
 import { splitByJoining, periodStartFor, joinedYMD } from '../lib/joining.js';
-import { onCheckIn, onCheckOut, recomputeUserMonthOvertime, reconcileLatePenalty, reconcileLateFromRecord, clearAbsencePenalty } from './bonus.service.js';
+import { onCheckIn, onCheckOut, recomputeUserMonthOvertime, reconcileLatePenalty, reconcileLateFromRecord, clearAbsencePenalty, markStreaksStale } from './bonus.service.js';
 
 function httpError(status, code, message) {
   const e = new Error(message);
@@ -154,6 +154,8 @@ export async function setAttendanceRecord(userId, dateYMD, checkIn, checkOut) {
     if (record) await record.deleteOne();
     // The day earns nothing now, so any overtime points for it go too.
     try { await onCheckOut(user, dateYMD, 0); } catch (e) { console.error('bonus hook (attendance clear) failed', e?.message); }
+    // A cleared day is an unexplained absence again, which BREAKS any run that counted it.
+    try { await markStreaksStale(); } catch (e) { console.error('bonus hook (streak stale, clear) failed', e?.message); }
     return { cleared: true, dateYMD };
   }
 
@@ -197,6 +199,10 @@ export async function setAttendanceRecord(userId, dateYMD, checkIn, checkOut) {
   // penalty a self check-in would (so nobody dodges it by having leadership record it),
   // and a day corrected to on-time / absent loses the old one. Excused days never draw it.
   try { await reconcileLatePenalty(userId, dateYMD, penaltyRungs(record, day, sched)); } catch (e) { console.error('bonus hook (late reconcile) failed', e?.message); }
+  // The punctual-streak chain cannot self-heal either: the scan judged this day once and
+  // will never look at it again, so a day typed in (or corrected) after the fact leaves the
+  // run short for good. Mark it; the scheduler re-walks within minutes.
+  try { await markStreaksStale(); } catch (e) { console.error('bonus hook (streak stale, edit) failed', e?.message); }
   return record.toJSON();
 }
 
@@ -212,6 +218,9 @@ export async function excuseLate(approver, attendanceId, excused) {
   // late-arrival minus back too (and put it back, at its full rung count, if it's being
   // un-excused).
   try { await reconcileLateFromRecord(record.user, ymdInTz(record.date)); } catch (e) { console.error('bonus hook (excuse) failed', e?.message); }
+  // …and the streak too. An unexcused late RESETS the run, so a day excused after the scan
+  // has judged it leaves a chain broken on paper that was never broken in fact.
+  try { await markStreaksStale(); } catch (e) { console.error('bonus hook (streak stale, excuse) failed', e?.message); }
   return record;
 }
 
