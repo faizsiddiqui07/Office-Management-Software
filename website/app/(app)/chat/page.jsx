@@ -18,19 +18,34 @@ import { useViewportFill } from '@/lib/use-viewport-fill';
  * screen se zyada ho jaata tha, to page khud scroll karne lagta tha aur composer neeche
  * kat jaata tha; keyboard khulte hi uske saath footer bhi jhaank aata tha.
  *
- * Ab chhoti screen par: header chhupa hua, card kinare se kinare tak, aur height
- * `useViewportFill` se naapi hui — topbar ke theek neeche se wahan tak jahan asli dikhne
- * wali screen khatam hoti hai. Page ke paas scroll karne ko kuch bachta hi nahi, isliye
- * composer hamesha apni jagah par rehta hai. Shell ka padding aur footer is route par
- * hat jaate hain — dekho app-shell.jsx ka `appPane`.
+ * Ab height HAR size par `useViewportFill` se naapi jaati hai, nap-tol se nahi. Chhoti
+ * screen par iske saath header chhupa hua hai aur card kinare se kinare tak hai, aur
+ * shell ka padding/footer is route par hat jaate hain (dekho app-shell.jsx ka `appPane`) —
+ * to pane topbar ke theek neeche se screen ke ant tak jaata hai.
  *
- * `sm` se upar sab kuch bilkul pehle jaisa hai: hook wahan inline height lagata hi nahi.
+ * `sm` se upar header aur footer jaise the waise hi rehte hain; wahan hook unki jagah
+ * `reserve` se chhod deta hai. Ye wahi cheez thi jo 768px par bhi composer ko 5px kaat
+ * rahi thi — kyunki `100dvh − 16rem` ek anumaan tha, aur anumaan har breakpoint par
+ * galat nikalta hai.
  */
 export default function ChatPage() {
   const conversationId = useSearchParams().get('c');
-  // Hook chalne se pehle ka pehla frame: topbar (pt-4 + h-14 = 4.5rem) ghata hua —
-  // taaki shuru me kuch jhatka na dikhe. Uske baad asli naap isi ko badal deti hai.
-  const paneRef = useViewportFill();
+  const paneRef = useViewportFill({
+    // `sm` se upar footer aur main ka neeche wala padding is pane ke NEECHE rehte hain.
+    // Unki jagah chhodni zaroori hai, warna pane unhe fold ke neeche dhakel deta hai aur
+    // page phir se scroll karne lagta hai — 768px par yahi composer ko 5px kaat raha tha.
+    // Phone par footer `display:none` hai aur padding 0, to yahan apne aap 0 aa jaata hai.
+    reserve: (el) => {
+      let px = 0;
+      const footer = document.querySelector('footer');
+      if (footer && getComputedStyle(footer).display !== 'none') {
+        px += footer.getBoundingClientRect().height;
+      }
+      const main = el.closest('main');
+      if (main) px += parseFloat(getComputedStyle(main).paddingBottom) || 0;
+      return px;
+    },
+  });
 
   return (
     <div className="sm:space-y-6">
@@ -42,7 +57,11 @@ export default function ChatPage() {
           description="Direct messages with your colleagues. Only the two of you can see a chat."
         />
       </div>
-      <div ref={paneRef} className="h-[calc(100dvh-4.5rem)] sm:h-[calc(100dvh-16rem)] sm:min-h-[440px]">
+      {/* Yahan ki height sirf PEHLE frame ke liye hai — hook turant isko naapi hui height
+          se badal deta hai. `min-h` jaan-bujhkar nahi hai: wo inline height ko neeche se
+          dhakel kar page ko dobara scroll karwa deta, jo poora masla hi tha. Chhoti se
+          chhoti height ki hifazat hook ke apne `min` me hai. */}
+      <div ref={paneRef} className="h-[calc(100dvh-4.5rem)] sm:h-[calc(100dvh-16rem)]">
         <GlassCard className="h-full overflow-hidden rounded-none p-0 sm:rounded-2xl">
           <ChatWindow initialConversationId={conversationId} />
         </GlassCard>
