@@ -160,7 +160,13 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
   // saaf karo — warna reply ka quote, khula menu, ya viewer mite hue text/file ko
   // dikhata rehta.
   React.useEffect(() => {
-    const gone = (x) => x && messages.find((m) => m.id === x.id)?.deleted;
+    // `!x.deleted` zaroori hai: ye snapshot ke waqt ka haal hai. Iske bina ye effect us
+    // message par bhi chal jaata tha jo PEHLE SE hatai hui thi — long-press par menu set
+    // hota, `menuFor` badalne se yahi effect chalta, aur usi frame me menu band kar deta.
+    // Natija: hatai hui message par der tak dabane se kuch hota hi nahi tha (desktop par
+    // hover wala Delete bhi). Ab sirf wahi band hota hai jo KHULNE KE BAAD hataai gayi ho,
+    // aur tombstone par menu khul kar "Delete for me" de deta hai.
+    const gone = (x) => x && !x.deleted && messages.find((m) => m.id === x.id)?.deleted;
     if (gone(replyTo)) setReplyTo(null);
     if (gone(menuFor)) setMenuFor(null);
     if (gone(viewing)) setViewing(null);
@@ -487,7 +493,13 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
               if (e.key === 'Enter' && !e.shiftKey) submit(e);
             }}
             placeholder="Type a message…"
-            className="max-h-32 min-h-9 flex-1 resize-none rounded-xl border border-border/60 bg-background/50 px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+            /* `text-base md:text-sm` — phone par 16px, usse upar 14px. Ye sajawat nahi,
+               iOS ki majboori hai: Safari kisi bhi input par tap hote hi page ko ZOOM kar
+               deta hai agar uska font 16px se chhota ho, aur wapas zoom-out nahi karta —
+               uske baad bubbles dono taraf se kate hue dikhte hain. Isi liye is project ke
+               apne ui/input.jsx aur ui/textarea.jsx bhi `text-base md:text-sm` hain; ye
+               composer seedha <textarea> hai, isliye wo niyam yahan chhoot gaya tha. */
+            className="max-h-32 min-h-9 flex-1 resize-none rounded-xl border border-border/60 bg-background/50 px-3 py-2 text-base outline-none focus-visible:ring-2 focus-visible:ring-primary/50 md:text-sm"
           />
           <Button type="submit" size="icon" disabled={!text.trim() || send.isPending} className="size-9 shrink-0 rounded-full">
             <Send className="size-4" />
