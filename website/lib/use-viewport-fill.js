@@ -51,17 +51,27 @@ export function useViewportFill({ min = 260, reserve } = {}) {
 
     const apply = () => {
       raf = 0;
-      // Pehle apni hi height hatao: `reserve` neeche ki cheezon ko naapta hai, aur agar
-      // pichhli baar ki height ne unhe fold ke neeche dhakel rakha hai to wo galat naap
-      // dega. Bina height ke layout apni asli shakal me aa jaata hai.
-      el.style.height = '';
+      // Yahan pehle `el.style.height = ''` tha — "naapne se pehle apni height hata do".
+      // Wo soch galat thi aur iPhone par screen kaanpne lagti thi: `reserve` neeche wali
+      // cheezon ki HEIGHT naapta hai, aur height is baat se nahi badalti ki wo cheez fold
+      // ke neeche chali gayi hai. Clear ki zaroorat thi hi nahi — par usse har naap par
+      // pane ek pal ke liye apni poori CSS height par chala jaata tha. iOS par keyboard
+      // khulte waqt visualViewport ke event darjanon baar chalte hain, to ye upar-neeche
+      // upar-neeche dikhta tha.
       const below = reserveRef.current ? Math.max(0, reserveRef.current(el) || 0) : 0;
-      const top = el.getBoundingClientRect().top;
+      // `Math.max(0, …)`: agar page kisi wajah se scroll ho gaya (iOS keyboard khulte waqt
+      // focus wale input ko dikhane ke liye khud karta hai) to `top` rinaatmak ho jaata hai
+      // aur pane utna hi bada ban jaata — jisse page aur scroll hota aur pane phir bada.
+      // Yahan us chakkar ko kaat diya.
+      const top = Math.max(0, el.getBoundingClientRect().top);
       const vh = vv ? vv.height : window.innerHeight;
       const shift = vv ? vv.offsetTop : 0;
       // floor, round nahi: aadha pixel bhi upar gaya to page scroll karne lagta hai (1280x700
       // par theek yahi 1px ka scroll dikha tha). Neeche ki taraf galti karna bilkul muft hai.
-      el.style.height = `${Math.max(min, Math.floor(vh + shift - top - below))}px`;
+      const next = `${Math.max(min, Math.floor(vh + shift - top - below))}px`;
+      // Wahi value dobara likhne par bhi browser layout dobara banata hai. Keyboard khulte
+      // waqt ye handler bar-bar chalta hai, isliye bina badlav wali likhai yahin rok di.
+      if (el.style.height !== next) el.style.height = next;
     };
 
     // Keyboard ek frame me nahi khulta — rAF par baandhne se har intermediate size par ek
