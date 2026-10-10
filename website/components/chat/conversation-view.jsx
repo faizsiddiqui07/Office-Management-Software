@@ -231,6 +231,20 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
     return () => io.disconnect();
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
+  // Keyboard khulte/band hote hi pane ki height badalti hai. Scroll position wahi ki wahi
+  // rehti hai, isliye jo banda abhi-abhi aakhri message par tha wo keyboard khulte hi usse
+  // upar khisak jaata — aur apne hi bheje message ko dhoondhna padta. Jab tak wo neeche hai,
+  // neeche hi rakho.
+  React.useEffect(() => {
+    const box = scrollRef.current;
+    if (!box || typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(() => {
+      if (atBottom) bottomRef.current?.scrollIntoView({ block: 'end' });
+    });
+    ro.observe(box);
+    return () => ro.disconnect();
+  }, [atBottom]);
+
   const onScroll = (e) => {
     const el = e.currentTarget;
     setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 80);
@@ -394,7 +408,13 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
       ) : null}
 
       {/* Composer */}
-      <form onSubmit={submit} className="shrink-0 border-t border-border/60 p-2.5">
+      {/* pb me safe-area: iPhone ke home-indicator ke neeche composer na chale jaye.
+          Keyboard khulne par ye inset 0 ho jaata hai, to wahan apne aap 10px reh jaata
+          hai — na jagah barbaad, na button chhupa. */}
+      <form
+        onSubmit={submit}
+        className="shrink-0 border-t border-border/60 px-2.5 pt-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))]"
+      >
         {replyTo ? (
           <div className="mb-2 flex items-start gap-2 rounded-lg border-l-2 border-primary bg-foreground/[0.05] px-2.5 py-1.5">
             <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{replyTo.text}</p>
