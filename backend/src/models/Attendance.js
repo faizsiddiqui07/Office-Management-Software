@@ -1,7 +1,25 @@
 import mongoose from 'mongoose';
 
 const metaSchema = new mongoose.Schema(
-  { ip: String, userAgent: String, lat: Number, lng: Number, distance: Number },
+  {
+    ip: String,
+    userAgent: String,
+    lat: Number,
+    lng: Number,
+    distance: Number,
+    // Site par kaam karne walon ke liye "selfie se attendance" — S3 ka key
+    // (attendance/YYYY/MM/<random>.jpg). Photo khud S3 me rehti hai, yahan sirf uska pata.
+    //
+    // ISKA HONA HI NISHAAN HAI ki ye check-in/out selfie se laga tha. Alag se koi
+    // `viaSelfie` flag jaan-bujh kar NAHI rakha — do jagah ek hi sach rakhne se wo ek din
+    // aapas me alag ho jaate hain. Table isi se badge dikhati hai, aur owner ka niyam
+    // yahi hai ki selfie wala check-in saaf dikhna chahiye (us par late nahi lagti, to
+    // nazar bani rehni chahiye).
+    selfieKey: String,
+    // Phone ne location kitni pakki batai (meter me). Kharab reading (jaise 500 m) baad me
+    // pehchani ja sake, isliye jo mila wahi likh rahe hain — iss par abhi koi rok nahi.
+    accuracy: Number,
+  },
   { _id: false },
 );
 

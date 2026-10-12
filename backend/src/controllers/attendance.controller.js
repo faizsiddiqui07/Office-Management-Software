@@ -14,8 +14,16 @@ function reqMeta(req) {
 function reqCoords(req) {
   const lat = Number(req.body?.lat);
   const lng = Number(req.body?.lng);
-  if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng };
-  return null;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  // Phone batata hai ki location kitni pakki hai (meter). Selfie wale raaste me ye saath
+  // me likh li jaati hai, taaki baad me kharab reading pehchani ja sake.
+  const accuracy = Number(req.body?.accuracy);
+  return Number.isFinite(accuracy) ? { lat, lng, accuracy } : { lat, lng };
+}
+
+/** Selfie ki parchi — body me aaye to hi selfie wala raasta chalta hai. */
+function reqSelfie(req) {
+  return { selfieToken: String(req.body?.selfieToken || '') };
 }
 
 function handleErr(res, err, next) {
@@ -25,7 +33,7 @@ function handleErr(res, err, next) {
 
 export async function checkIn(req, res, next) {
   try {
-    const record = await svc.checkIn(req.user, reqMeta(req), reqCoords(req), req.body?.lateReason);
+    const record = await svc.checkIn(req.user, reqMeta(req), reqCoords(req), req.body?.lateReason, reqSelfie(req));
     await audit({ actor: req.user._id, action: 'attendance.check_in', entityType: 'Attendance', entityId: record.id });
     // Alert leadership in-app — fire-and-forget so it never delays/breaks check-in.
     notifyCheckIn(req.user, record).catch(() => {});
@@ -83,9 +91,27 @@ export async function excuse(req, res, next) {
 
 export async function checkOut(req, res, next) {
   try {
-    const record = await svc.checkOut(req.user, reqMeta(req), reqCoords(req));
+    const record = await svc.checkOut(req.user, reqMeta(req), reqCoords(req), reqSelfie(req));
     await audit({ actor: req.user._id, action: 'attendance.check_out', entityType: 'Attendance', entityId: record.id });
     res.json(ok({ record: record.toJSON() }));
+  } catch (err) {
+    handleErr(res, err, next);
+  }
+}
+
+/** Browser ko S3 par seedha photo chadhane ka ek-baar ka permission. */
+export async function selfieSlip(req, res, next) {
+  try {
+    res.json(ok(await svc.selfieUploadSlip(req.user)));
+  } catch (err) {
+    handleErr(res, err, next);
+  }
+}
+
+/** Kisi row ki selfie khole — 5 minute ka signed link. */
+export async function selfieView(req, res, next) {
+  try {
+    res.json(ok(await svc.selfieUrl(req.user, req.params.id, req.params.which)));
   } catch (err) {
     handleErr(res, err, next);
   }

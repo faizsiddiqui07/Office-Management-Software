@@ -19,6 +19,8 @@ import {
 } from '@/components/ui/select';
 import { COMPANY_TZ, formatClock, formatFullDate, formatTime, formatDuration } from '@/lib/time';
 import { effectiveStatus, attendanceStatusLabel } from '@/lib/attendance';
+import { useAuth } from '@/lib/auth';
+import { SelfieAttendance } from './selfie-attendance';
 
 export const LATE_REASONS = [
   'Site / Field visit',
@@ -30,6 +32,7 @@ export const LATE_REASONS = [
 ];
 
 export function CheckInCard() {
+  const { user } = useAuth();
   const {
     data,
     isLoading,
@@ -170,6 +173,17 @@ export function CheckInCard() {
               You&apos;re done for today — checked out at {formatTime(record.checkOutAt)}
             </div>
           )}
+
+          {/* Site par kaam karne walon ke liye. Office ka geo-fence 50 m ka hai, isliye site
+              se upar wala button chalta hi nahi — ye raasta us fence se nahi guzarta aur us
+              par late bhi nahi lagti (owner ka niyam). Ye SIRF Attendance page par hai;
+              homepage wala quick-action jaisa tha waisa hi hai. */}
+          {!checkedOut && !isWFH ? (
+            <div className="space-y-2 border-t border-border/50 pt-3">
+              <p className="text-center text-xs text-muted-foreground">Working at a site today?</p>
+              <SelfieAttendance mode={checkedIn ? 'out' : 'in'} userName={user?.name} disabled={isLoading} />
+            </div>
+          ) : null}
         </div>
       </GlassCard>
 

@@ -6,6 +6,7 @@ import { haversineMeters } from '../lib/geo.js';
 import { holidayYMDSet } from './holiday.service.js';
 import { isBirthdayYMD } from '../lib/birthday.js';
 import { isOffDaySync } from '../lib/offDay.js';
+import { readSelfieToken, selfieExists, signSelfieUpload, signSelfieView, attendanceSelfieConfigured } from '../lib/attendanceMedia.js';
 import {
   companyTzMidnight,
   companyDayFromYMD,
@@ -71,7 +72,43 @@ function cleanLateReason(lateReason) {
   return { category, note };
 }
 
-export async function checkIn(user, meta, coords, lateReason) {
+/**
+ * Selfie ki parchi jaanchо aur photo sach me chadhi hai ya nahi, ye dekho.
+ *
+ * Do alag jaanchein, dono zaroori:
+ *   1. parchi sahi ho AUR ISI bande ki ho — warna koi apni parchi se doosre ke naam par
+ *      photo laga sakta tha
+ *   2. us key par S3 par sach me kuch pada ho — warna token to bana lete par photo chadhai
+ *      hi nahi, aur record me ek aisa pata likh jaata jo kabhi khulta hi nahi
+ *
+ * Selfie na bheji ho to `null` — tab purana (office wala) raasta chalta hai.
+ */
+async function verifySelfie(user, selfieToken) {
+  if (!selfieToken) return null;
+  const parsed = readSelfieToken(selfieToken, user._id);
+  if (!parsed) throw httpError(400, 'SELFIE_INVALID', 'That photo link has expired. Please take the selfie again.');
+  const head = await selfieExists(parsed.key);
+  if (!head) throw httpError(400, 'SELFIE_MISSING', 'The photo did not finish uploading. Please try again.');
+  return parsed;
+}
+
+/**
+ * Selfie wale check-in/out ka geo-meta.
+ *
+ * Office ka geo-fence yahan JAAN-BUJH KAR nahi lagta: iska poora maqsad hi ye hai ki site
+ * par gaya banda — jo office se kai kilometre door hai — attendance laga sake. Jo location
+ * phone ne di wo waise hi likh di jaati hai (accuracy ke saath), taaki baad me dekha ja
+ * sake. Yahan `distance` nahi hota, kyunki kis cheez se doori? Site ki koi list hai hi
+ * nahi — owner ka faisla, jaan-bujh kar saral rakha gaya.
+ */
+function selfieGeoMeta(coords) {
+  if (!coords || !Number.isFinite(coords.lat) || !Number.isFinite(coords.lng)) return {};
+  const out = { lat: coords.lat, lng: coords.lng };
+  if (Number.isFinite(coords.accuracy)) out.accuracy = Math.round(coords.accuracy);
+  return out;
+}
+
+export async function checkIn(user, meta, coords, lateReason, { selfieToken = '' } = {}) {
   const now = new Date();
   const day = companyTzMidnight(now);
   const settings = await Setting.getSingleton();
@@ -94,7 +131,10 @@ export async function checkIn(user, meta, coords, lateReason) {
     throw httpError(409, 'ON_LEAVE', 'You’re on approved leave today. If you actually came in, ask for the leave to be cancelled first.');
   }
 
-  const geoMeta = verifyGeofence(settings.gpsAttendance, coords);
+  const selfie = await verifySelfie(user, selfieToken);
+  // Selfie wala raasta office ke geo-fence se nahi guzarta — banda site par hai, office me
+  // nahi. Baaki sab (record, status, points, overtime) bilkul wahi rehta hai.
+  const geoMeta = selfie ? selfieGeoMeta(coords) : verifyGeofence(settings.gpsAttendance, coords);
   const sched = effectiveSchedule(user, settings); // part-time uses its own hours
   const ymd = ymdInTz(day);
   // A day this person can't be "late" on — company holiday, their own weekend/off-day,
@@ -104,7 +144,10 @@ export async function checkIn(user, meta, coords, lateReason) {
   // judged against the shift midpoint (from the ladder's floor). (findOneAndUpdate's $set
   // does not touch halfDayLeave, so a half-day leave stays flagged and charged 0.5.)
   const offDay = await isOffDayFor(user, ymd, settings);
-  const late = offDay ? { rungs: 0, afternoon: false } : judgeCheckIn(now, day, existing, sched);
+  // Site par late nahi lagti — owner ka niyam. Iska control ye hai ki selfie wala check-in
+  // attendance table me saaf dikhta hai (meta me selfieKey hone se), taaki bina penalty ke
+  // bhi nazar bani rahe.
+  const late = (offDay || selfie) ? { rungs: 0, afternoon: false } : judgeCheckIn(now, day, existing, sched);
   const isLate = late.rungs > 0;
   const status = isLate ? 'LATE' : 'PRESENT';
   const reason = isLate ? cleanLateReason(lateReason) : null; // reason only meaningful when late
@@ -113,7 +156,7 @@ export async function checkIn(user, meta, coords, lateReason) {
   // overtime baad me kitni baar bhi dobara gina jaye, wo aaj ke calendar se nahi, is
   // nishaan se tay hoga — taaki mahino baad kisi ka weekly off badalne par uska guzra
   // hua mahina chupchaap na badal jaye.
-  const set = { checkInAt: now, status, offDayWork: offDay, checkInMeta: { ...meta, ...geoMeta } };
+  const set = { checkInAt: now, status, offDayWork: offDay, checkInMeta: { ...meta, ...geoMeta, ...(selfie ? { selfieKey: selfie.key } : {}) } };
   const update = reason ? { $set: { ...set, lateReason: reason } } : { $set: set, $unset: { lateReason: '' } };
 
   const record = await Attendance.findOneAndUpdate(
@@ -232,7 +275,7 @@ export async function excuseLate(approver, attendanceId, excused) {
   return record;
 }
 
-export async function checkOut(user, meta, coords) {
+export async function checkOut(user, meta, coords, { selfieToken = '' } = {}) {
   const now = new Date();
   const day = companyTzMidnight(now);
 
@@ -263,7 +306,8 @@ export async function checkOut(user, meta, coords) {
     }
   }
 
-  const geoMeta = verifyGeofence(settings.gpsAttendance, coords);
+  const selfie = await verifySelfie(user, selfieToken);
+  const geoMeta = selfie ? selfieGeoMeta(coords) : verifyGeofence(settings.gpsAttendance, coords);
   const sched = effectiveSchedule(user, settings); // part-time overtime counts past its own end
   // Nishaan check-in par lag chuka hota hai; yahan dobara nikaal kar likhte hain taaki jo
   // row is feature se PEHLE bani thi wo bhi theek ho jaye. Check-out usi din hota hai, to
@@ -272,7 +316,7 @@ export async function checkOut(user, meta, coords) {
   const { workedMinutes, overtimeMinutes } = computeWork(record.checkInAt, now, day, sched.workEnd, sched.overtimeAfterMinutes, offDay);
 
   record.checkOutAt = now;
-  record.checkOutMeta = { ...meta, ...geoMeta };
+  record.checkOutMeta = { ...meta, ...geoMeta, ...(selfie ? { selfieKey: selfie.key } : {}) };
   record.offDayWork = offDay;
   record.workedMinutes = workedMinutes;
   record.overtimeMinutes = overtimeMinutes;
@@ -611,4 +655,42 @@ export async function attendanceOverview(ymd) {
   };
 
   return { date: ymdInTz(day), isWeekend, isHoliday, rows, summary, joinedLater };
+}
+
+/**
+ * Kisi attendance row ki selfie dekhne ka 5-minute ka link.
+ *
+ * Niyam wahi jo attendance table ka hai (owner ka faisla): apni row hamesha, aur baaki
+ * sabki tabhi jab `viewEveryone` ho. Bucket private rehta hai — link signature se khulta
+ * hai, aur 5 minute me mar jaata hai.
+ */
+export async function selfieUrl(viewer, attendanceId, which = 'in') {
+  const rec = await Attendance.findById(attendanceId).select('user checkInMeta checkOutMeta');
+  if (!rec) throw httpError(404, 'NOT_FOUND', 'Attendance record not found');
+  const mine = String(rec.user) === String(viewer._id ?? viewer.id);
+  if (!mine && !canViewEveryone(viewer.role)) {
+    throw httpError(403, 'FORBIDDEN', 'You can only open your own attendance photo');
+  }
+  const key = which === 'out' ? rec.checkOutMeta?.selfieKey : rec.checkInMeta?.selfieKey;
+  if (!key) throw httpError(404, 'NO_SELFIE', 'There is no photo on this one');
+  const url = await signSelfieView(key);
+  if (!url) throw httpError(503, 'MEDIA_OFF', 'Photo storage is not configured');
+  return { url };
+}
+
+/** Browser ko ek baar ka upload permission — bytes server se hokar nahi jaate. */
+export async function selfieUploadSlip(user) {
+  if (!attendanceSelfieConfigured()) {
+    throw httpError(503, 'MEDIA_OFF', 'Photo storage is not configured yet');
+  }
+  try {
+    return await signSelfieUpload(user._id);
+  } catch (e) {
+    // AWS ki apni galtiyan (credentials na milna, IAM policy adhoori hona) 500 ban kar
+    // kachche message ke saath user tak pahunch jaati thin — "Could not load credentials
+    // from any providers" jaisi line kisi kaam ki nahi. Asli wajah log me, screen par
+    // saaf baat.
+    console.error('selfie upload slip failed', e?.message);
+    throw httpError(503, 'MEDIA_OFF', 'Photo storage is unavailable right now. Please use the normal check-in, or try again later.');
+  }
 }

@@ -8,6 +8,7 @@ import { DataTable } from '@/components/glass/data-table';
 import { StatCard } from '@/components/glass/stat-card';
 import { Button } from '@/components/ui/button';
 import { AttendanceStatusBadge, attendanceStatusText } from './attendance-status-badge';
+import { SelfieView } from './selfie-view';
 import { RegularizationDialog } from './regularization-dialog';
 import { TableSkeleton } from '@/components/glass/skeletons';
 import {
@@ -39,6 +40,27 @@ const columns = [
     // Sort/search by the text actually shown ("Present (late)" etc.), not the raw enum.
     accessorFn: (r) => attendanceStatusText(r),
     cell: ({ row }) => <AttendanceStatusBadge attendance={row.original} />,
+  },
+  {
+    id: 'selfie',
+    header: 'Selfie',
+    enableSorting: false,
+    // Selfie wale check-in par late nahi lagti, isliye wo saaf dikhna CHAHIYE — chhupa hua
+    // nahi. Yahi iska ikloata control hai (owner ka faisla): penalty nahi, par nazar bani
+    // rahe. Photo kaun dekh sakta hai ye server tay karta hai — apni row hamesha, baaki
+    // tabhi jab viewEveryone ho.
+    cell: ({ row }) => {
+      const r = row.original;
+      const hasIn = !!r.checkInMeta?.selfieKey;
+      const hasOut = !!r.checkOutMeta?.selfieKey;
+      if (!hasIn && !hasOut) return null;
+      return (
+        <span className="flex items-center gap-0.5">
+          {hasIn ? <SelfieView attendanceId={r.id} which="in" /> : null}
+          {hasOut ? <SelfieView attendanceId={r.id} which="out" /> : null}
+        </span>
+      );
+    },
   },
   {
     id: 'fix',
@@ -117,7 +139,7 @@ export function AttendanceHistory() {
       </div>
 
       {isLoading ? (
-        <TableSkeleton rows={6} cols={7} />
+        <TableSkeleton rows={6} cols={8} />
       ) : (
         <DataTable
           columns={columns}
