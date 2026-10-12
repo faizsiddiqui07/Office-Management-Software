@@ -34,7 +34,11 @@ export function SelfieView({ attendanceId, which = 'in', label }) {
         type="button"
         variant="ghost"
         size="sm"
-        onClick={() => setOpen(true)}
+        // stopPropagation ZAROORI hai. Admin wali table (Everyone tab) me poori row par
+        // `onRowClick` laga hota hai jo time-edit wala dialog kholta hai (data-table.jsx).
+        // Ye button usi row ke ANDAR hai, to click neeche se upar chal kar row tak pahunch
+        // jaata tha aur DONO dialog ek saath khul jaate the — peechhe selfie, aage edit.
+        onClick={(e) => { e.stopPropagation(); setOpen(true); }}
         className="h-7 gap-1 px-2 text-xs"
         title={`View the ${which === 'out' ? 'check-out' : 'check-in'} selfie`}
       >
