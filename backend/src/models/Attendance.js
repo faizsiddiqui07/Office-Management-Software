@@ -28,6 +28,25 @@ const attendanceSchema = new mongoose.Schema(
     },
     workedMinutes: { type: Number, default: 0 },
     overtimeMinutes: { type: Number, default: 0 },
+    // Ye din is bande ke liye CHHUTTI ka tha (company holiday / uska weekly off / uska
+    // janamdin) aur phir bhi usne kaam kiya. Aise din ka poora waqt overtime ginta hai —
+    // check-in se check-out tak (owner ka niyam, 1 Oct 2026 se; lib/time.js ka
+    // OFFDAY_FULL_OT_FLOOR_YMD).
+    //
+    // YE CALENDAR SE HAR BAAR DOBARA KYUN NAHI NIKALA JAATA (owner ka faisla, 12 Oct 2026):
+    // overtime ka hisaab khud-ba-khud dobara chalta hai — Settings me shift end badlo, ya
+    // kisi ka schedule edit karo, aur uska POORA itihaas dobara gina jaata hai (koi date
+    // seema nahi). Agar har baar aaj ke calendar se poochha jaata, to teen mahine baad
+    // kisi ka weekly off badalne par uska guzra hua October chupchaap kam ho jaata. Yahan
+    // nishaan lag jaane se wo din patthar par likha rehta hai.
+    //
+    // Nishaan sirf "wo din chhutti ka tha" ka hai — MINUTE ka nahi. Check-out ka waqt
+    // sudhre to overtime badalna hi chahiye; par 11 October Sunday THA, ye baat kabhi
+    // nahi badalni chahiye.
+    //
+    // Lagta hai: check-in, leadership ki attendance edit, aur correction approve hone par.
+    // Holiday calendar badalne par wo raasta un dinon ka nishaan dobara lagata hai.
+    offDayWork: { type: Boolean, default: false },
     // ON_LEAVE for half the day only — the leave that produced it was a half-day, and
     // the balance was charged 0.5. Without this the sheet reported a whole day away
     // against a half-day deduction.

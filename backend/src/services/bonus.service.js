@@ -2020,6 +2020,30 @@ export async function runRebuild(actor, { planHash = null } = {}) {
     // running carries a different token and is deliberately left standing for the next tick.
     await clearStreaksStale(staleToken);
 
+    // 1b. Overtime — minute pehle, phir us mahine ke points.
+    //
+    //     Pehle "Recalculate points" overtime ko CHHUTA HI NAHI THA: auto_ot REBUILD_SOURCES
+    //     me nahi hai, aur backfillMonth ka filter `overtimeMinutes > 0` hai — to jo banda
+    //     sirf ek Sunday aaya tha uska user-month visit hi nahi hota. Owner button daba kar
+    //     maan leta tha ki sab theek ho gaya, aur overtime jaise ka waisa rehta tha.
+    //
+    //     Yahan auto_ot ko expectedLedger me NAHI sikhaya ja raha — wo use step 2 ka doosra
+    //     maalik bana deta, aur "ek hi cheez ke do maalik" se hi pehle log do baar pay ho
+    //     chuke hain. Iski jagah wahi ek maujooda maalik chalaya ja raha hai jo live path
+    //     bhi chalata hai: recomputeAllOvertime → recomputeMonthlyOvertime. Wo khud
+    //     delete-then-insert hai, isliye dobara chalana surakshit hai.
+    //
+    //     Puraane mahine surakshit hain: off-day ka poora-din niyam computeWork ke andar
+    //     OFFDAY_FULL_OT_FLOOR_YMD se gated hai, aur off-day ka faisla row ke apne nishaan
+    //     se aata hai — aaj ke calendar se nahi.
+    //     Import yahan ANDAR hai, upar nahi: attendance.service.js pehle se is file se
+    //     import karta hai, to seedha import dono ko circle me daal deta. Call ke waqt ka
+    //     dynamic import us circle ko tod deta hai.
+    try {
+      const { recomputeAllOvertime } = await import('./attendance.service.js');
+      await recomputeAllOvertime();
+    } catch (e) { console.error('rebuild: overtime recompute failed', e?.message); }
+
     // 2. The other four sources, settled in ONE write.
     //
     //    The obvious shape here is a loop calling reconcileLatePenalty / reconcileAbsence /

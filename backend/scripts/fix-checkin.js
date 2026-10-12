@@ -145,14 +145,29 @@ async function main() {
     // Wahi hisaab jo app ka correction karta hai.
     const inAt = newIn ? companyDayInstantAt(day, newIn) : record.checkInAt;
     const outAt = newOut ? companyDayInstantAt(day, newOut) : record.checkOutAt;
-    const offDay = ['HOLIDAY', 'WEEKEND', 'ON_LEAVE', 'WFH'].includes(record.status);
-    const nextStatus = offDay ? record.status : (judgeCheckIn(inAt, day, record, sched).rungs > 0 ? 'LATE' : 'PRESENT');
+    // DO ALAG CHEEZEIN — pehle ek hi naam me ghuli hui thin:
+    //
+    // 1. `keepStatus` — ON_LEAVE / WFH / HOLIDAY wali row ka status chhedna nahi hai, sirf
+    //    time badalna hai. Ye purana behaviour hai, waisa ka waisa.
+    //    (Ismein 'WEEKEND' bhi likha hua tha — par Attendance ke enum me aisa koi status hai
+    //    hi nahi: PRESENT/LATE/ABSENT/ON_LEAVE/HOLIDAY/WFH. Sunday par check-in PRESENT
+    //    likhta hai, isliye wo shart kabhi sach hoti hi nahi thi. Hata diya.)
+    //
+    // 2. `otOffDay` — "ye din chhutti ka tha" (holiday / weekly off / janamdin), jisse poore
+    //    din ka overtime tay hota hai. Ye row ke apne nishaan se aata hai, aaj ke calendar se
+    //    NAHI — wahi wajah jo Attendance.js ke `offDayWork` par likhi hai. Iske bina ye script
+    //    kisi Sunday ka time "theek" karte hi uska overtime purane niyam par likh deti aur
+    //    neeche recomputeUserMonthOvertime us galat aankde par mahine ke points baandh deta.
+    const keepStatus = ['HOLIDAY', 'ON_LEAVE', 'WFH'].includes(record.status);
+    const otOffDay = !!record.offDayWork;
+    const nextStatus = keepStatus ? record.status : (judgeCheckIn(inAt, day, record, sched).rungs > 0 ? 'LATE' : 'PRESENT');
     let worked = record.workedMinutes || 0;
     let overtime = record.overtimeMinutes || 0;
-    if (inAt && outAt) ({ workedMinutes: worked, overtimeMinutes: overtime } = computeWork(inAt, outAt, day, sched.workEnd, sched.overtimeAfterMinutes));
+    if (inAt && outAt) ({ workedMinutes: worked, overtimeMinutes: overtime } = computeWork(inAt, outAt, day, sched.workEnd, sched.overtimeAfterMinutes, otOffDay));
 
     line(`${dateYMD} naya: ${nextStatus}  in ${hm(inAt)}  out ${hm(outAt)}  overtime ${overtime}m`);
-    if (offDay) line('   (chhutti/leave/WFH wala din hai — status waisa hi rakha jayega, sirf time badlega)');
+    if (keepStatus) line('   (leave/WFH/holiday wala din hai — status waisa hi rakha jayega, sirf time badlega)');
+    if (otOffDay) line('   (is din par off-day ka nishaan hai — poora waqt overtime ginega)');
 
     if (apply) {
       record.checkInAt = inAt;

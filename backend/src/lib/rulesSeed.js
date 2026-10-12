@@ -46,7 +46,10 @@ export const DEFAULT_RULE_SECTIONS = [
     icon: 'Clock',
     rules: [
       { text: 'Overtime means working past your own office end time ({workEnd}). It follows YOUR shift — if your hours differ, overtime counts after YOUR end time, not the office default.' },
-      { text: 'Overtime begins {overtimeAfterNote} — anything before that is not overtime.' },
+      { text: 'On a normal working day overtime begins {overtimeAfterNote} — anything before that is not overtime.' },
+      // Owner ka niyam, 12 Oct 2026 — 1 October se laagu. Tareekh hardcode hai kyunki
+      // ruleTokens me koi date token nahi hai; late ladder ne bhi yahi kiya tha.
+      { text: 'If you come in on a day you were NOT due — a company holiday, your own weekly off, or your birthday — the WHOLE day counts as overtime, from check-in to check-out. Your shift end does not apply on such a day. Applies from 1 October 2026.' },
       { text: 'Every full hour of overtime earns +{overtimeHourPoints} point(s). Overtime is totalled once for the whole month, not day by day.' },
     ],
   },

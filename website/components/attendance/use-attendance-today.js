@@ -109,8 +109,17 @@ export function useAttendanceToday() {
   // Overtime is only credited once you pass shift-end PLUS the buffer (Settings, or this
   // person's own override) — so the live ticker starts from that same instant. Counting
   // from bare workEnd made the card promise minutes the check-out would then score as 0.
+  //
+  // Chhutti ke din (holiday / apna weekly off / apna janamdin) ye hisaab lagta hi nahi:
+  // us din poora waqt overtime hai, check-in se. `isOffDay` server bhejta hai — teen alag
+  // flag jod kar yahan wahi niyam dobara banane ki koshish MAT karna, warna ek din server
+  // aur card alag-alag jawab denge. Bina iske Sunday ko 10 baje aaya banda din bhar
+  // "Overtime 0m" dekhta aur check-out par achanak 8 ghante aa jaate — upar wale comment
+  // wali galti ka theek ulta.
   const overtimeBufferMs = (data?.settings?.overtimeAfterMinutes || 0) * 60000;
-  const overtimeStartAt = workEndAt != null ? workEndAt + overtimeBufferMs : null;
+  const overtimeStartAt = data?.isOffDay
+    ? (record?.checkInAt ? new Date(record.checkInAt).getTime() : null)
+    : (workEndAt != null ? workEndAt + overtimeBufferMs : null);
 
   let elapsedMin = 0;
   let overtimeMin = 0;

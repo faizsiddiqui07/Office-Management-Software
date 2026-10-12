@@ -160,8 +160,11 @@ async function applyToAttendance(reg) {
   if (reg.requestedCheckOut) {
     record.checkOutAt = companyDayInstantAt(day, reg.requestedCheckOut);
   }
+  // Correction kisi purane din ka ho sakta hai — nishaan yahan bhi lagta hai.
+  record.offDayWork = offDay;
+
   if (record.checkInAt && record.checkOutAt) {
-    const { workedMinutes, overtimeMinutes } = computeWork(record.checkInAt, record.checkOutAt, day, sched.workEnd, sched.overtimeAfterMinutes);
+    const { workedMinutes, overtimeMinutes } = computeWork(record.checkInAt, record.checkOutAt, day, sched.workEnd, sched.overtimeAfterMinutes, offDay);
     record.workedMinutes = workedMinutes;
     record.overtimeMinutes = overtimeMinutes;
   }

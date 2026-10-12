@@ -40,8 +40,23 @@ async function ensureSeeded() {
 // page then belongs to the CEO's edits, so later wording fixes can't ride the seed. This
 // applies them by EXACT-matching the old default text — a rule the CEO has since edited (its
 // text differs) is left untouched. Version-gated so it runs once per bump.
-const RULES_TEXT_VERSION = 7;
+const RULES_TEXT_VERSION = 8;
 const RULE_TEXT_UPDATES = [
+  // 2026-10-12: off-day par poora din overtime — to 'anything before that is not overtime'
+  // ab sirf aam kaam ke din ke liye sach hai.
+  {
+    from: 'Overtime begins {overtimeAfterNote} — anything before that is not overtime.',
+    to: 'On a normal working day overtime begins {overtimeAfterNote} — anything before that is not overtime.',
+  },
+  // …aur wahi line jaise wo PROD par abhi hai. Ye updates EXACT text par match karte hain,
+  // aur is office ke CEO ne is rule ko khud edit kar rakha hai ("1 hour AFTER your end
+  // time") — isliye sirf upar wala default-text wala entry yahan chupchaap skip ho jaata
+  // aur page off-day ke liye galat niyam dikhata rehta. Unke apne shabd waise hi rakhe
+  // hain, bas shuruat me "normal working day" ki shart jodi hai.
+  {
+    from: 'Overtime starts counting 1 hour AFTER your end time.',
+    to: 'On a normal working day, overtime starts counting 1 hour AFTER your end time.',
+  },
   {
     from: 'Every assigned task has a due date. Finish the work and submit it on or before that date.',
     to: 'Every assigned task should carry a due date. Finish the work and submit it on or before that date. A task handed out WITHOUT a due date is outside the points system altogether — it earns nothing and costs nothing, because there is no deadline to be on time against.',
@@ -81,6 +96,11 @@ const RULE_TEXT_UPDATES = [
 // a second run. Same version gate as the text updates above. A section the CEO has renamed
 // or removed is simply skipped rather than re-created — the page is theirs.
 const RULE_ADDITIONS = [
+  // 2026-10-12: chhutti ke din aane par poora din overtime (owner ka niyam, 1 Oct se).
+  {
+    section: 'Overtime',
+    text: 'If you come in on a day you were NOT due — a company holiday, your own weekly off, or your birthday — the WHOLE day counts as overtime, from check-in to check-out. Your shift end does not apply on such a day. Applies from 1 October 2026.',
+  },
   {
     section: 'To-Do & Tasks',
     text: 'Hand work to a junior and tag a CEO or President on it: when that task is completed you earn +{assignTaskDonePoints} points — whether it finished on time or late. Handing work out is never penalised. The CEO & President earn this on work they assign too. Applies to work assigned from 1 August 2026.',

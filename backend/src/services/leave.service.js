@@ -17,6 +17,7 @@ import { computeWorkingDays } from './workingDays.service.js';
 import { holidayYMDSet, createHoliday, deleteHoliday } from './holiday.service.js';
 import { birthdayYMDSet } from '../lib/birthday.js';
 import { reconcileLateFromRecord, clearAbsencePenalty, reconcileNoLeaveMonth, reconcilePerfectMonth, reconcileAbsence, runRebuild, markStreaksStale } from './bonus.service.js';
+import { restampOffDay } from './attendance.service.js';
 import { userWeekendDays, effectiveSchedule } from '../lib/schedule.js';
 import { judgeCheckIn, LATE_LADDER_FLOOR_YMD } from '../lib/lateLadder.js';
 import { runTransaction } from '../lib/transaction.js';
@@ -1243,6 +1244,12 @@ export async function declareEmergencyHoliday(actor, { dateYMD, title, note } = 
   // leaving them would charge people for a day the office was shut.
   const drips = await PointEntry.deleteMany({ source: 'auto_task', earnedYMD: dateYMD, dedupeKey: { $regex: '^auto_overdue:' } });
 
+  // Ye din ab chhutti ka hai, to us din ke attendance rows par off-day ka nishaan dobara
+  // lagao — REBUILD SE PEHLE, kyunki overtime ka hisaab calendar se nahi, usi nishaan se
+  // hota hai (Attendance.js ka offDayWork dekho). Bina iske jo log us din aaye the unka
+  // poora-din overtime kabhi nahi banta.
+  try { await restampOffDay(dateYMD); } catch (e) { console.error('off-day restamp (declare) failed', e?.message); }
+
   // Everything attendance-derived: absence penalties, late penalties, punctual streaks and
   // the month's perfect-attendance decision. runRebuild re-reads the calendar, so it sees the
   // holiday that was created a moment ago and settles all of it in one pass.
@@ -1292,6 +1299,10 @@ export async function undoEmergencyHoliday(actor, dateYMD) {
   }
   await Setting.updateOne({ key: 'global' }, { $pull: { emergencyHolidays: { ymd: dateYMD } } });
   Setting.invalidateCache();
+
+  // Declare ka ulta: din phir se aam kaam ka hai, to nishaan bhi wapas lena hai — warna us
+  // din ka poora-din overtime laga hi rehta.
+  try { await restampOffDay(dateYMD); } catch (e) { console.error('off-day restamp (undo) failed', e?.message); }
 
   // The day is an ordinary working day again, so the attendance rules have to be re-applied
   // to it — including the absence penalties the declaration had cleared. The task drips are

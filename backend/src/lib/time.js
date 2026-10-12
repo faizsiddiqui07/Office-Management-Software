@@ -54,16 +54,42 @@ export function isLateCheckIn(checkInAt, dayInstant, workStart, graceMinutes = 0
 }
 
 /**
- * Worked + overtime minutes for a completed day.
- * Overtime = time worked past (workEnd + `overtimeAfterMinutes`). The buffer is the office's
- * "overtime only counts N minutes after your shift ends" setting — e.g. shift ends 6 PM and
- * a 60-minute buffer means overtime is only the time past 7 PM. 0 = counts from the shift
- * end itself. workedMinutes is the full clocked time and never touched by the buffer.
+ * Off-day (chhutti ke din) par poora din overtime — owner ka niyam, 12 Oct 2026.
+ *
+ * Is tareekh se PEHLE ke din purana niyam hi rakhte hain, taaki koi baad ka recalculation
+ * wo na badle jo pichhle mahine already diya ja chuka hai. Wahi vaada jo lateLadder.js
+ * LATE_LADDER_FLOOR_YMD ke saath karta hai.
  */
-export function computeWork(checkInAt, checkOutAt, dayInstant, workEnd, overtimeAfterMinutes = 0) {
+export const OFFDAY_FULL_OT_FLOOR_YMD = '2026-10-01';
+
+/**
+ * Worked + overtime minutes for a completed day.
+ *
+ * Aam din: overtime = (workEnd + `overtimeAfterMinutes`) ke baad ka waqt. Buffer office ki
+ * "shift khatam hone ke N minute baad se overtime ginna" wali setting hai — misaal, shift
+ * 6 PM par khatam aur 60-minute buffer, to overtime sirf 7 PM ke baad ka. 0 = shift end se
+ * hi. workedMinutes poora clocked time hai aur buffer use kabhi nahi chhuta.
+ *
+ * Off-day (`offDay = true`, aur din OFFDAY_FULL_OT_FLOOR_YMD se aage): poora din overtime —
+ * check-in se check-out tak. Us din shift end ka koi matlab hi nahi, banda aane ke liye due
+ * hi nahi tha. Owner ka faisla: hamesha poora span, `max(span, purana)` nahi — niyam Rules
+ * page par ek line me likha ja sake.
+ *
+ * FLOOR KA CHECK YAHIN ANDAR HAI, caller me NAHI — aur ye is poore niyam ki sabse zaroori
+ * baat hai. `recomputeAllOvertime` ka filter sirf "check-in aur check-out dono hain" hai,
+ * usme koi date ki seema nahi, aur wo khud-ba-khud chalta hai: Settings me shift end badlo
+ * ya kisi ka schedule edit karo. Floor bahar hota to deploy ke baad pehla hi Settings-save
+ * July/August/September ke saare Sunday ko poora-din overtime de deta aur un band mahinon
+ * ke points dobara likh deta. Yahan andar hone se har raasta — aur jo kal banega wo bhi —
+ * apne aap surakshit hai, caller bhool bhi jaye to purana din nahi badlega.
+ */
+export function computeWork(checkInAt, checkOutAt, dayInstant, workEnd, overtimeAfterMinutes = 0, offDay = false) {
   const workEndAt = companyDayInstantAt(dayInstant, workEnd);
   const otThreshold = new Date(workEndAt.getTime() + Math.max(0, overtimeAfterMinutes) * 60000);
   const workedMinutes = Math.max(0, Math.round((checkOutAt.getTime() - checkInAt.getTime()) / 60000));
-  const overtimeMinutes = Math.max(0, Math.round((checkOutAt.getTime() - otThreshold.getTime()) / 60000));
+  const fullDay = !!offDay && ymdInTz(dayInstant) >= OFFDAY_FULL_OT_FLOOR_YMD;
+  const overtimeMinutes = fullDay
+    ? workedMinutes
+    : Math.max(0, Math.round((checkOutAt.getTime() - otThreshold.getTime()) / 60000));
   return { workedMinutes, overtimeMinutes };
 }

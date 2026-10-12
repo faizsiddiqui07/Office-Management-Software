@@ -5,6 +5,7 @@ import { canViewEveryone, can } from '../lib/permissions.js';
 import { haversineMeters } from '../lib/geo.js';
 import { holidayYMDSet } from './holiday.service.js';
 import { isBirthdayYMD } from '../lib/birthday.js';
+import { isOffDaySync } from '../lib/offDay.js';
 import {
   companyTzMidnight,
   companyDayFromYMD,
@@ -108,7 +109,11 @@ export async function checkIn(user, meta, coords, lateReason) {
   const status = isLate ? 'LATE' : 'PRESENT';
   const reason = isLate ? cleanLateReason(lateReason) : null; // reason only meaningful when late
 
-  const set = { checkInAt: now, status, checkInMeta: { ...meta, ...geoMeta } };
+  // Nishaan abhi hi lag jaata hai (Attendance.js ka `offDayWork` dekho): is din ka
+  // overtime baad me kitni baar bhi dobara gina jaye, wo aaj ke calendar se nahi, is
+  // nishaan se tay hoga — taaki mahino baad kisi ka weekly off badalne par uska guzra
+  // hua mahina chupchaap na badal jaye.
+  const set = { checkInAt: now, status, offDayWork: offDay, checkInMeta: { ...meta, ...geoMeta } };
   const update = reason ? { $set: { ...set, lateReason: reason } } : { $set: set, $unset: { lateReason: '' } };
 
   const record = await Attendance.findOneAndUpdate(
@@ -175,9 +180,12 @@ export async function setAttendanceRecord(userId, dateYMD, checkIn, checkOut) {
     record.status = 'ABSENT';
   }
   record.checkOutAt = checkOut ? companyDayInstantAt(day, checkOut) : null;
+  // Leadership kisi bhi purane din ki entry bana/badal sakti hai, isliye nishaan yahan bhi
+  // lagta hai — warna us din ka overtime agli hi recompute par purane niyam par chala jata.
+  record.offDayWork = offDay;
 
   if (record.checkInAt && record.checkOutAt) {
-    const { workedMinutes, overtimeMinutes } = computeWork(record.checkInAt, record.checkOutAt, day, sched.workEnd, sched.overtimeAfterMinutes);
+    const { workedMinutes, overtimeMinutes } = computeWork(record.checkInAt, record.checkOutAt, day, sched.workEnd, sched.overtimeAfterMinutes, offDay);
     record.workedMinutes = workedMinutes;
     record.overtimeMinutes = overtimeMinutes;
   } else {
@@ -257,10 +265,15 @@ export async function checkOut(user, meta, coords) {
 
   const geoMeta = verifyGeofence(settings.gpsAttendance, coords);
   const sched = effectiveSchedule(user, settings); // part-time overtime counts past its own end
-  const { workedMinutes, overtimeMinutes } = computeWork(record.checkInAt, now, day, sched.workEnd, sched.overtimeAfterMinutes);
+  // Nishaan check-in par lag chuka hota hai; yahan dobara nikaal kar likhte hain taaki jo
+  // row is feature se PEHLE bani thi wo bhi theek ho jaye. Check-out usi din hota hai, to
+  // calendar wahi hai — dobara poochhne se jawab badalta nahi, bas purani row sudhar jaati hai.
+  const offDay = await isOffDayFor(user, ymdInTz(day), settings);
+  const { workedMinutes, overtimeMinutes } = computeWork(record.checkInAt, now, day, sched.workEnd, sched.overtimeAfterMinutes, offDay);
 
   record.checkOutAt = now;
   record.checkOutMeta = { ...meta, ...geoMeta };
+  record.offDayWork = offDay;
   record.workedMinutes = workedMinutes;
   record.overtimeMinutes = overtimeMinutes;
   await record.save();
@@ -292,16 +305,30 @@ export async function recomputeAllOvertime({ userId = null } = {}) {
   const byUser = new Map(users.map((u) => [String(u._id), u]));
   const recFilter = { checkInAt: { $ne: null }, checkOutAt: { $ne: null } };
   if (userId) recFilter.user = userId;
-  const recs = await Attendance.find(recFilter).select('user date checkInAt checkOutAt overtimeMinutes');
+  const recs = await Attendance.find(recFilter).select('user date checkInAt checkOutAt overtimeMinutes offDayWork');
   const ops = [];
   const months = new Set(); // `${userId}|YYYY-MM`
   for (const r of recs) {
     // Each person's OWN shift end + their OWN overtime buffer (or the office default).
     const sched = effectiveSchedule(byUser.get(String(r.user)) || {}, settings);
-    const { overtimeMinutes } = computeWork(r.checkInAt, r.checkOutAt, r.date, sched.workEnd, sched.overtimeAfterMinutes);
+    // Off-day ka faisla ROW ke nishaan se — aaj ke calendar se NAHI. Ye function khud-ba-khud
+    // chalta hai (Settings me shift end badlo, ya kisi ka schedule edit karo) aur poore
+    // itihaas par loop karta hai; calendar se dobara poochhne par mahino purana mahina
+    // chupchaap badal jata. Faayda ye bhi hai ki yahan na holiday query chahiye na DOB.
+    const { overtimeMinutes } = computeWork(r.checkInAt, r.checkOutAt, r.date, sched.workEnd, sched.overtimeAfterMinutes, r.offDayWork);
+    const key = `${r.user}|${ymdInTz(r.date).slice(0, 7)}`;
     if (overtimeMinutes !== (r.overtimeMinutes || 0)) {
       ops.push({ updateOne: { filter: { _id: r._id }, update: { $set: { overtimeMinutes } } } });
-      months.add(`${r.user}|${ymdInTz(r.date).slice(0, 7)}`);
+      months.add(key);
+    } else if (overtimeMinutes > 0) {
+      // Minute wahi hain, par us mahine ke POINTS phir bhi purane ho sakte hain: agar pichhla
+      // run bulkWrite ke baad aur points wale loop se pehle mar gaya, to minute naye reh gaye
+      // aur auto_ot purana — aur dobara chalane par koi diff na milne ki wajah se wo kabhi
+      // theek hi nahi hota tha. Koi nightly scan bhi use nahi pakadta (runRebuild auto_ot ko
+      // dekhta hi nahi tha, consolidateOvertime monthly key ko skip karta hai). Isliye jis
+      // mahine me overtime hai usko hamesha dobara settle karo — recomputeMonthlyOvertime
+      // delete-then-insert hai, to ye bilkul sasta aur surakshit hai.
+      months.add(key);
     }
   }
   if (ops.length) await Attendance.bulkWrite(ops);
@@ -311,6 +338,38 @@ export async function recomputeAllOvertime({ userId = null } = {}) {
     try { await recomputeUserMonthOvertime(uid, month); } catch (e) { console.error('overtime points recompute failed', uid, month, e?.message); }
   }
   return { records: ops.length, months: months.size };
+}
+
+/**
+ * Ek din ke saare attendance rows par off-day ka nishaan DOBARA lagata hai.
+ *
+ * Nishaan (Attendance.offDayWork) check-in ke waqt lagta hai — us waqt ka calendar dekh kar.
+ * Par ek din BAAD ME bhi chhutti ban sakta hai: emergency holiday 14 din peechhe tak declare
+ * ho sakta hai, aur wapas bhi liya ja sakta hai. Aise waqt us din ke row pehle se bane hote
+ * hain aur unka nishaan purana pad jaata hai — holiday declare hone ke bawajood un logon ko
+ * poore din ka overtime nahi milta (ya undo ke baad galat milta rehta).
+ *
+ * Isliye jab bhi kisi din ka chhutti-pan badle, ye chalao — aur uske BAAD rebuild/recompute,
+ * taaki wo naye nishaan padh sake.
+ */
+export async function restampOffDay(dateYMD) {
+  const settings = await Setting.getSingleton();
+  const day = companyDayFromYMD(dateYMD);
+  const recs = await Attendance.find({ date: day }).select('user offDayWork');
+  if (!recs.length) return { day: dateYMD, changed: 0 };
+  const users = await User.find({ _id: { $in: recs.map((r) => r.user) } }).select('schedule dateOfBirth');
+  const byUser = new Map(users.map((u) => [String(u._id), u]));
+  const holidaySet = await holidayYMDSet(dateYMD, dateYMD);
+  const ops = [];
+  for (const r of recs) {
+    const u = byUser.get(String(r.user));
+    if (!u) continue;
+    const offDay = isOffDaySync(u, dateYMD, settings, holidaySet);
+    if (!!r.offDayWork === offDay) continue;
+    ops.push({ updateOne: { filter: { _id: r._id }, update: { $set: { offDayWork: offDay } } } });
+  }
+  if (ops.length) await Attendance.bulkWrite(ops);
+  return { day: dateYMD, changed: ops.length };
 }
 
 /** Payload for the live check-in/out card (own record + the day's work-window instants). */
@@ -342,6 +401,11 @@ export async function getTodayPayload(user) {
     // Their own birthday: a day off for them alone. Checking in is welcome and is never
     // late; not coming in is never an absence and costs no points.
     isBirthday: isBirthdayYMD(user, dateYMD),
+    // Aaj ka din is bande ke liye chhutti ka hai (holiday / uska weekly off / uska
+    // janamdin) — yaani aaj aane par POORA waqt overtime ginega. Card ko ye seedha bheja
+    // ja raha hai; client `isHoliday` + `isBirthday` + `weekendDays` jod kar wahi niyam
+    // dobara na bana le, warna ek hi rule do jagah ho jayega aur ek din drift karega.
+    isOffDay: offDay,
     // Today is a work-from-home day — the card shows "no check-in needed" instead of the
     // button. Sent explicitly so the client doesn't have to re-derive the rule.
     isWFH: record?.status === 'WFH',
