@@ -28,16 +28,26 @@ export function SelfieView({ attendanceId, which = 'in', label }) {
     retry: false,
   });
 
+  // Admin wali table (Everyone tab) me POORI ROW par `onRowClick` laga hota hai jo time-edit
+  // wala dialog kholta hai (data-table.jsx ka <tr> aur mobile card). Ye component usi row ke
+  // andar baithta hai, to yahan ka har click upar chal kar row tak pahunch jaata hai.
+  //
+  // Sirf button par rokna KAAFI NAHI nikla: React me portal se khula dialog bhi COMPONENT
+  // TREE ke hisaab se isi row ke andar hota hai (DOM me bhale body par ho), isliye dialog
+  // band karne wala click — X ho ya bahar ka — bhi row tak pahunch jaata tha aur selfie band
+  // hote hi edit dialog khul jaata tha.
+  //
+  // Isliye rok poore wrapper par hai: button ka click bhi, aur dialog ke andar ka har click
+  // bhi yahin ruk jaata hai. `pointerdown` bhi isliye ki Radix dialog bahar wale click ko
+  // usi se sunta hai.
+  const stop = (e) => e.stopPropagation();
+
   return (
-    <>
+    <span onClick={stop} onPointerDown={stop} onMouseDown={stop}>
       <Button
         type="button"
         variant="ghost"
         size="sm"
-        // stopPropagation ZAROORI hai. Admin wali table (Everyone tab) me poori row par
-        // `onRowClick` laga hota hai jo time-edit wala dialog kholta hai (data-table.jsx).
-        // Ye button usi row ke ANDAR hai, to click neeche se upar chal kar row tak pahunch
-        // jaata tha aur DONO dialog ek saath khul jaate the — peechhe selfie, aage edit.
         onClick={(e) => { e.stopPropagation(); setOpen(true); }}
         className="h-7 gap-1 px-2 text-xs"
         title={`View the ${which === 'out' ? 'check-out' : 'check-in'} selfie`}
@@ -64,6 +74,6 @@ export function SelfieView({ attendanceId, which = 'in', label }) {
           ) : null}
         </DialogContent>
       </Dialog>
-    </>
+    </span>
   );
 }
