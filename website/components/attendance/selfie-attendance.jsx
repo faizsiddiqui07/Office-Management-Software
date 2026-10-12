@@ -237,8 +237,19 @@ export function SelfieAttendance({ mode, userName, disabled }) {
           {step === 'camera' ? (
             <>
               <div className="relative overflow-hidden rounded-xl bg-black">
-                {/* Preview mirror — apna chehra ulta dekhna ajeeb lagta hai. Save seedha hota hai. */}
-                <video ref={videoRef} playsInline muted className="block max-h-[55vh] w-full -scale-x-100 object-contain" />
+                {/*
+                  MIRROR JAAN-BUJH KAR NAHI HAI.
+
+                  Pehle yahan `-scale-x-100` tha — apna chehra seedha dekhne ke liye, jaise
+                  har selfie camera dikhata hai. Par photo canvas par BINA mirror save hoti
+                  hai, to jo dikh raha tha aur jo save hua wo do alag cheezein thin, aur
+                  photo "ulti" lagti thi.
+
+                  Ab dono ek jaise hain: jo screen par dikh raha hai, bilkul wahi save hoga.
+                  Aur mirror wapas lagana theek bhi nahi — is photo ka poora maqsad
+                  background hai, aur mirror me site ka har sign-board ulta padha jaata.
+                */}
+                <video ref={videoRef} playsInline muted className="block max-h-[55vh] w-full object-contain" />
                 {/* Warning camera par bhi — yahi is poore kaam ka maqsad hai */}
                 <div className="pointer-events-none absolute inset-x-0 top-0 flex gap-2 bg-gradient-to-b from-black/75 to-transparent p-2.5">
                   <TriangleAlert className="mt-0.5 size-4 shrink-0 text-amber-400" />
