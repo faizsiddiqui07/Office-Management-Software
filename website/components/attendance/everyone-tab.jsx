@@ -14,6 +14,7 @@ import { APP_LIVE_YMD } from '@/lib/app-live';
 import { formatYMD } from '@/lib/leave';
 import { AttendanceStatusBadge, attendanceStatusText } from './attendance-status-badge';
 import { DataTable } from '@/components/glass/data-table';
+import { SelfieView } from './selfie-view';
 import { StatTile } from '@/components/glass/stat-tile';
 import { TableSkeleton } from '@/components/glass/skeletons';
 import { QueryError } from '@/components/glass/query-error';
@@ -66,6 +67,26 @@ const columns = [
         <span className="font-medium tabular-nums text-emerald-600 dark:text-emerald-300">+{formatDuration(ot)}</span>
       ) : (
         <span className="text-xs text-muted-foreground">—</span>
+      );
+    },
+  },
+  {
+    id: 'selfie',
+    header: 'Selfie',
+    enableSorting: false,
+    // Site se laga hua check-in. Us par late nahi lagti aur geo-fence bhi nahi lagta,
+    // isliye leadership ko yahan SAAF dikhna chahiye — yahi iska ikloata control hai
+    // (owner ka faisla, 12 Oct 2026). "My attendance" wali table me bhi yahi column hai.
+    cell: ({ row }) => {
+      const a = row.original.attendance;
+      const hasIn = !!a?.checkInMeta?.selfieKey;
+      const hasOut = !!a?.checkOutMeta?.selfieKey;
+      if (!a || (!hasIn && !hasOut)) return <span className="text-xs text-muted-foreground">—</span>;
+      return (
+        <span className="flex items-center gap-0.5">
+          {hasIn ? <SelfieView attendanceId={a.id} which="in" /> : null}
+          {hasOut ? <SelfieView attendanceId={a.id} which="out" /> : null}
+        </span>
       );
     },
   },

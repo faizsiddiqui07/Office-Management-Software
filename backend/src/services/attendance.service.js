@@ -668,13 +668,26 @@ export async function selfieUrl(viewer, attendanceId, which = 'in') {
   const rec = await Attendance.findById(attendanceId).select('user checkInMeta checkOutMeta');
   if (!rec) throw httpError(404, 'NOT_FOUND', 'Attendance record not found');
   const mine = String(rec.user) === String(viewer._id ?? viewer.id);
-  if (!mine && !canViewEveryone(viewer.role)) {
+  // `can(..., 'viewEveryone')`, hardcoded `canViewEveryone(role)` NAHI — ye jaan-bujh kar
+  // hai. Everyone tab bhi isi se khulta hai (route par requirePermission('viewEveryone')),
+  // aur ye configurable role-permissions padhta hai. Hardcoded list use karne par owner
+  // kisi role ko Settings se viewEveryone de deta to use table to dikhti par selfie par
+  // 403 milta — button dikhta aur chalta nahi.
+  if (!mine && !can(viewer, 'viewEveryone')) {
     throw httpError(403, 'FORBIDDEN', 'You can only open your own attendance photo');
   }
   const key = which === 'out' ? rec.checkOutMeta?.selfieKey : rec.checkInMeta?.selfieKey;
   if (!key) throw httpError(404, 'NO_SELFIE', 'There is no photo on this one');
-  const url = await signSelfieView(key);
-  if (!url) throw httpError(503, 'MEDIA_OFF', 'Photo storage is not configured');
+  let url = '';
+  try {
+    url = await signSelfieView(key);
+  } catch (e) {
+    // Wahi wajah jo selfieUploadSlip me likhi hai: AWS ki apni galtiyan (credentials na
+    // milna, IAM adhoora hona) kachche message ke saath 500 ban kar user tak pahunch
+    // jaati thin. Asli wajah log me, screen par saaf baat.
+    console.error('selfie view url failed', e?.message);
+  }
+  if (!url) throw httpError(503, 'MEDIA_OFF', 'Could not open the photo right now. Please try again in a moment.');
   return { url };
 }
 
