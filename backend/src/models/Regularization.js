@@ -14,13 +14,20 @@ const regularizationSchema = new mongoose.Schema(
     reason: { type: String, required: true },
     status: {
       type: String,
-      enum: ['PENDING', 'APPROVED', 'REJECTED'],
+      // CANCELLED = bande ne khud wapas le li, kisi ke decide karne se PEHLE. Ye
+      // "reject" nahi hai: reject ek faisla hai, ye faisle se pehle ki wapsi hai —
+      // dono ko ek hi khaane me daalna galat hota. Leave me bhi yahi naam hai.
+      enum: ['PENDING', 'APPROVED', 'REJECTED', 'CANCELLED'],
       default: 'PENDING',
       index: true,
     },
     decidedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     decidedAt: { type: Date, default: null },
     decisionNote: { type: String, default: '' },
+    // Pending rehte hue banda apni request badal sakta hai. Ye nishaan isliye hai ki
+    // approver ko DIKHE ki badli gayi hai — warna wo jo screen par dekh chuka tha usi
+    // bharose approve kar deta, jabki ab andar kuch aur likha hai.
+    editedAt: { type: Date, default: null },
   },
   { timestamps: true },
 );

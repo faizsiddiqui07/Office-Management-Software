@@ -13,7 +13,8 @@ function Row({ label, children }) {
   );
 }
 
-const STATUS_LABEL = { PENDING: 'Pending', APPROVED: 'Approved', REJECTED: 'Rejected' };
+// 'Cancelled' — wahi shabd jo leave istemal karta hai, taaki poore app me ek jaisa lage.
+const STATUS_LABEL = { PENDING: 'Pending', APPROVED: 'Approved', REJECTED: 'Rejected', CANCELLED: 'Cancelled' };
 
 /**
  * Full details of one attendance correction — the counterpart of LeaveDetailDialog, so a
@@ -46,11 +47,22 @@ export function RegularizationDetailDialog({ request, open, onOpenChange, footer
               {r.requestedCheckOut || <span className="italic text-muted-foreground">No change</span>}
             </Row>
             {r.createdAt ? <Row label="Requested on">{formatYMD(String(r.createdAt).slice(0, 10))}</Row> : null}
+            {/* Pending rehte hue banda apni request badal sakta hai. Approver ko ye DIKHNA
+                chahiye — warna wo jo pehle screen par dekh chuka tha usi bharose approve
+                kar deta, jabki andar ab kuch aur likha hai. */}
+            {r.editedAt ? (
+              <Row label="Edited">
+                {formatYMD(String(r.editedAt).slice(0, 10))}
+                <span className="mt-0.5 block text-xs text-muted-foreground">Changed after it was first raised</span>
+              </Row>
+            ) : null}
             <Row label="Reason">
               {r.reason ? r.reason : <span className="italic text-muted-foreground">No reason given</span>}
             </Row>
             {r.status !== 'PENDING' && (r.decidedBy?.name || r.decisionNote || r.decidedAt) ? (
-              <Row label={r.decidedBy?.name ? (r.status === 'APPROVED' ? 'Approved by' : 'Rejected by') : (r.status === 'APPROVED' ? 'Approved' : 'Rejected')}>
+              // CANCELLED ko 'Rejected by' likh dena jhooth hota — request thukrai nahi
+              // gayi thi, bande ne khud wapas li thi.
+              <Row label={r.status === 'CANCELLED' ? 'Withdrawn' : (r.decidedBy?.name ? (r.status === 'APPROVED' ? 'Approved by' : 'Rejected by') : (r.status === 'APPROVED' ? 'Approved' : 'Rejected'))}>
                 {/* Your own list doesn't carry who decided it — then the date and the note
                     are the whole answer, and a bare dash would read as missing data. */}
                 {r.decidedBy?.name ? <span className="block">{r.decidedBy.name}</span> : null}

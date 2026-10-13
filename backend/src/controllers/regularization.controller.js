@@ -8,6 +8,32 @@ function handleErr(res, err, next) {
   return next(err);
 }
 
+export async function update(req, res, next) {
+  try {
+    const body = req.body || {};
+    const request = await svc.updateRequest(req.user, req.params.id, {
+      dateYMD: body.dateYMD,
+      checkIn: body.checkIn || null,
+      checkOut: body.checkOut || null,
+      reason: body.reason,
+    });
+    await audit({ actor: req.user._id, action: 'regularization.update', entityType: 'Regularization', entityId: req.params.id });
+    res.json(ok({ request }));
+  } catch (err) {
+    handleErr(res, err, next);
+  }
+}
+
+export async function withdraw(req, res, next) {
+  try {
+    const request = await svc.withdraw(req.user, req.params.id);
+    await audit({ actor: req.user._id, action: 'regularization.withdraw', entityType: 'Regularization', entityId: req.params.id });
+    res.json(ok({ request }));
+  } catch (err) {
+    handleErr(res, err, next);
+  }
+}
+
 export async function myRequests(req, res, next) {
   try {
     res.json(ok({ requests: await svc.listForUser(req.user._id) }));

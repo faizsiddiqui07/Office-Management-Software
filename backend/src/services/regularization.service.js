@@ -93,6 +93,80 @@ export async function createRequest(user, { dateYMD, checkIn, checkOut, reason }
   return reg.toJSON();
 }
 
+/**
+ * Apni PENDING request badalna.
+ *
+ * Kyun sirf pending tak: us waqt tak kuch hua hi nahi hota — attendance waisi ki waisi,
+ * points waise ke waise. Request bas kisi ki mez par padi parchi hai. Decide hote hi
+ * `applyToAttendance` chal chuka hota hai (waqt, late ki penalty, absence, overtime,
+ * perfect-month) — uske baad request badalne ka matlab hoga ki approve kiya hua record
+ * aur request do alag baatein kahein. Leave me bhi theek yahi niyam hai
+ * (leave.service.js ka updateLeave).
+ *
+ * Edit na dene ka nuksaan bhi hai: banda doosri request daal deta, aur approver ke saamne
+ * do request hotin bina ye pata ke asli kaun si hai.
+ */
+export async function updateRequest(user, id, { dateYMD, checkIn, checkOut, reason }) {
+  const reg = await Regularization.findById(id);
+  if (!reg) throw httpError(404, 'NOT_FOUND', 'Request not found');
+  if (String(reg.user) !== String(user._id)) {
+    throw httpError(403, 'FORBIDDEN', 'You can only edit your own correction request');
+  }
+  if (reg.status !== 'PENDING') {
+    throw httpError(409, 'NOT_EDITABLE', `This request is already ${reg.status.toLowerCase()} and can no longer be edited`);
+  }
+  if (!checkIn && !checkOut) {
+    throw httpError(400, 'INVALID', 'Provide a check-in time, a check-out time, or both');
+  }
+
+  // Taarikh badli ho to wahi do jaanchein jo nayi request par lagti hain. `_id: $ne`
+  // isliye ki wahi taarikh rakhne wali edit khud se na takra jaye.
+  if (dateYMD && dateYMD !== reg.dateYMD) {
+    const dup = await Regularization.findOne({ user: user._id, dateYMD, status: 'PENDING', _id: { $ne: reg._id } });
+    if (dup) throw httpError(409, 'DUPLICATE', 'You already have a pending correction for this date');
+    const claimedBy = await leaveClaimsDay(user._id, dateYMD);
+    if (claimedBy === 'WFH') {
+      throw httpError(409, 'WFH_DAY', 'That day is recorded as work from home — there are no office hours to correct on it.');
+    }
+    if (claimedBy) {
+      throw httpError(409, 'ON_LEAVE', 'That day is recorded as approved leave. Ask for the leave to be cancelled first, then request the correction.');
+    }
+    reg.dateYMD = dateYMD;
+    reg.date = companyDayFromYMD(dateYMD);
+  }
+
+  reg.requestedCheckIn = checkIn || null;
+  reg.requestedCheckOut = checkOut || null;
+  if (reason !== undefined) reg.reason = reason;
+  reg.editedAt = new Date();
+  await reg.save();
+  return reg.toJSON();
+}
+
+/**
+ * Apni PENDING request khud wapas lena.
+ *
+ * Approver ki bell se "review karo" wali notification bhi hat jaati hai — warna wo ek
+ * aisi queue par point karti rehti jise request chhod chuki hai. Bilkul wahi jo
+ * cancelLeave karta hai.
+ */
+export async function withdraw(user, id) {
+  const reg = await Regularization.findById(id);
+  if (!reg) throw httpError(404, 'NOT_FOUND', 'Request not found');
+  if (String(reg.user) !== String(user._id)) {
+    throw httpError(403, 'FORBIDDEN', 'You can only withdraw your own correction request');
+  }
+  if (reg.status !== 'PENDING') {
+    throw httpError(409, 'ALREADY_DECIDED', `This request is already ${reg.status.toLowerCase()}`);
+  }
+  await clearNotificationsFor('Regularization', id, { types: ['REGULARIZATION'] });
+  reg.status = 'CANCELLED';
+  reg.decidedBy = user._id;
+  reg.decidedAt = new Date();
+  await reg.save();
+  return reg.toJSON();
+}
+
 export async function listForUser(userId) {
   const regs = await Regularization.find({ user: userId }).sort({ createdAt: -1 }).limit(50);
   return regs.map((r) => r.toJSON());

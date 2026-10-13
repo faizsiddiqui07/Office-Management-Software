@@ -15,16 +15,39 @@ import { Textarea } from '@/components/ui/textarea';
 import { todayYMD } from '@/lib/time';
 
 /**
- * Attendance-correction request dialog.
+ * Attendance-correction request dialog — nayi request, aur PENDING request ka edit bhi.
  *
- * With no props it's the plain "Request correction" button. A caller can also seed it
- * from a specific day — e.g. the attendance history offering a one-tap fix for a day
- * where someone forgot to check out — by passing `prefill` (date / times / reason) and
- * its own `trigger`.
+ * Bina props ke ye sirf "Request correction" wala button hai. Teen aur tareeke:
+ *   • `prefill` + `trigger` — kisi khaas din se seed karke (jaise history ka ek-tap "Fix")
+ *   • `editing` — ek maujooda PENDING request; tab form usi se bharta hai aur POST ki
+ *     jagah PUT jaata hai
+ *   • `open` + `onOpenChange` — bahar se khola/band kiya jaye (edit isi se chalta hai,
+ *     kyunki wo detail dialog ke footer se shuru hota hai, kisi trigger se nahi)
+ *
+ * Edit sirf PENDING tak milta hai, aur ye rok SERVER par hai (regularization.service.js) —
+ * yahan ka UI bas use dikhata hai. Decide hote hi attendance, late ki penalty, overtime
+ * sab badal chuke hote hain; uske baad request badalna matlab record aur request ka ek
+ * doosre se alag ho jana.
  */
-export function RegularizationDialog({ prefill = null, trigger = null } = {}) {
+export function RegularizationDialog({
+  prefill = null,
+  trigger = null,
+  editing = null,
+  open: openProp,
+  onOpenChange,
+} = {}) {
   const qc = useQueryClient();
-  const [open, setOpen] = React.useState(false);
+  const [openState, setOpenState] = React.useState(false);
+  // Bahar se chalaya ja raha hai ya apne aap — dono chalte hain.
+  const controlled = openProp !== undefined;
+  const open = controlled ? openProp : openState;
+  const setOpen = React.useCallback(
+    (v) => (controlled ? onOpenChange?.(v) : setOpenState(v)),
+    [controlled, onOpenChange],
+  );
+
+  const isEdit = !!editing?.id;
+
   const [date, setDate] = React.useState(todayYMD());
   const [checkIn, setCheckIn] = React.useState('');
   const [checkOut, setCheckOut] = React.useState('');
@@ -32,24 +55,28 @@ export function RegularizationDialog({ prefill = null, trigger = null } = {}) {
 
   React.useEffect(() => {
     if (!open) return;
-    // Re-seed from the prefill each time it opens, falling back to a blank today form.
-    setDate(prefill?.dateYMD || todayYMD());
-    setCheckIn(prefill?.checkIn || '');
-    setCheckOut(prefill?.checkOut || '');
-    setReason(prefill?.reason || '');
-    // prefill is a plain object rebuilt per render; depend on its fields, not identity.
+    // Khulte hi dobara seed: edit ho to usi request se, warna prefill se, warna khali.
+    setDate(editing?.dateYMD || prefill?.dateYMD || todayYMD());
+    setCheckIn(editing?.requestedCheckIn || prefill?.checkIn || '');
+    setCheckOut(editing?.requestedCheckOut || prefill?.checkOut || '');
+    setReason(editing?.reason || prefill?.reason || '');
+    // prefill/editing har render par naye object hote hain; unki fields par depend karo,
+    // identity par nahi.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, prefill?.dateYMD, prefill?.checkIn, prefill?.checkOut, prefill?.reason]);
+  }, [open, editing?.id, editing?.dateYMD, editing?.requestedCheckIn, editing?.requestedCheckOut, editing?.reason,
+      prefill?.dateYMD, prefill?.checkIn, prefill?.checkOut, prefill?.reason]);
 
   const mut = useMutation({
-    mutationFn: () =>
-      api.post('/regularizations', { dateYMD: date, checkIn: checkIn || null, checkOut: checkOut || null, reason }),
+    mutationFn: () => {
+      const body = { dateYMD: date, checkIn: checkIn || null, checkOut: checkOut || null, reason };
+      return isEdit ? api.put(`/regularizations/${editing.id}`, body) : api.post('/regularizations', body);
+    },
     onSuccess: () => {
-      toast.success('Correction requested — leadership will review it');
+      toast.success(isEdit ? 'Correction updated' : 'Correction requested — leadership will review it');
       qc.invalidateQueries({ queryKey: ['regularizations'] });
       setOpen(false);
     },
-    onError: (e) => toast.error(e?.message || 'Could not submit the request'),
+    onError: (e) => toast.error(e?.message || (isEdit ? 'Could not update the request' : 'Could not submit the request')),
   });
 
   const submit = () => {
@@ -64,21 +91,27 @@ export function RegularizationDialog({ prefill = null, trigger = null } = {}) {
       open={open}
       onOpenChange={setOpen}
       trigger={
-        trigger ?? (
-          <Button variant="outline" size="sm">
-            <Wrench className="size-4" /> Request correction
-          </Button>
-        )
+        controlled
+          ? null
+          : trigger ?? (
+            <Button variant="outline" size="sm">
+              <Wrench className="size-4" /> Request correction
+            </Button>
+          )
       }
-      title="Request attendance correction"
-      description="Forgot to check in/out, or wrong time? Ask leadership to fix it."
+      title={isEdit ? 'Edit correction request' : 'Request attendance correction'}
+      description={
+        isEdit
+          ? 'Still waiting to be reviewed, so you can change it.'
+          : 'Forgot to check in/out, or wrong time? Ask leadership to fix it.'
+      }
       footer={
         <>
           <Button variant="outline" onClick={() => setOpen(false)}>
             Cancel
           </Button>
           <Button onClick={submit} disabled={mut.isPending}>
-            {mut.isPending ? 'Submitting…' : 'Submit'}
+            {mut.isPending ? (isEdit ? 'Saving…' : 'Submitting…') : (isEdit ? 'Save changes' : 'Submit')}
           </Button>
         </>
       }

@@ -1,8 +1,12 @@
 'use client';
 
 import * as React from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Pencil } from 'lucide-react';
+import { toast } from 'sonner';
 import { api } from '@/lib/api';
+import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/glass/confirm-dialog';
 import { GlassCard } from '@/components/glass/glass-card';
 import { StatusBadge, STATUS_TONES } from '@/components/glass/status-badge';
 import { LoadingState } from '@/components/glass/skeletons';
@@ -19,11 +23,30 @@ function label(status) {
 }
 
 export function MyRegularizations() {
+  const qc = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ['regularizations', 'me'], queryFn: () => api.get('/regularizations/me') });
   const requests = data?.requests ?? [];
   // Tap a correction for the whole request — the times asked for, the reason, and who
   // decided it with their note. The row only has room for a line of it.
   const [viewing, setViewing] = React.useState(null);
+  const [editing, setEditing] = React.useState(null);
+  const [withdrawing, setWithdrawing] = React.useState(null);
+
+  // Edit aur withdraw sirf PENDING tak. Ye rok asli taur par SERVER par hai
+  // (regularization.service.js) — yahan ka UI bas wahi baat dikhata hai, taaki banda
+  // aisa button na dabaye jo waise bhi mana ho jata.
+  const isPending = viewing?.status === 'PENDING';
+
+  const withdrawMut = useMutation({
+    mutationFn: (id) => api.post(`/regularizations/${id}/cancel`, {}),
+    onSuccess: () => {
+      toast.success('Request withdrawn');
+      qc.invalidateQueries({ queryKey: ['regularizations'] });
+      setWithdrawing(null);
+      setViewing(null);
+    },
+    onError: (e) => toast.error(e?.message || 'Could not withdraw the request'),
+  });
 
   return (
     <section className="space-y-3">
@@ -61,6 +84,43 @@ export function MyRegularizations() {
         request={viewing}
         open={!!viewing}
         onOpenChange={(o) => (!o ? setViewing(null) : null)}
+        footer={
+          isPending ? (
+            <div className="flex w-full flex-wrap items-center justify-between gap-2">
+              <Button variant="ghost" className="text-destructive" onClick={() => setWithdrawing(viewing)}>
+                Withdraw
+              </Button>
+              <Button
+                onClick={() => {
+                  const r = viewing;
+                  setViewing(null);
+                  setEditing(r);
+                }}
+              >
+                <Pencil className="size-4" /> Edit
+              </Button>
+            </div>
+          ) : null
+        }
+      />
+
+      {/* Edit detail dialog ke footer se khulta hai, kisi trigger se nahi — isliye
+          controlled. Bilkul wahi dhancha jo leave-history.jsx me hai. */}
+      <RegularizationDialog
+        editing={editing}
+        open={!!editing}
+        onOpenChange={(o) => (!o ? setEditing(null) : null)}
+      />
+
+      <ConfirmDialog
+        open={!!withdrawing}
+        onOpenChange={(o) => (!o ? setWithdrawing(null) : null)}
+        title="Withdraw this correction request?"
+        description="It will be taken off leadership's review queue. You can always raise a new one."
+        confirmLabel="Withdraw"
+        tone="destructive"
+        loading={withdrawMut.isPending}
+        onConfirm={() => withdrawMut.mutate(withdrawing.id)}
       />
     </section>
   );
