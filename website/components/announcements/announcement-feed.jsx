@@ -19,6 +19,30 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { SortSelect, sortRows, byText, byTime, thenBy } from '@/components/glass/sort-select';
+
+// Urgent above Important above Normal. Mirrors lib/announcement.js's PRIORITY.
+const PRIORITY_RANK = { URGENT: 3, IMPORTANT: 2, NORMAL: 1 };
+
+/**
+ * The feed's own date is `announcedAt` — when a post LAST went out, which for a
+ * repeating one is nothing like when it was written. Sorting on createdAt would
+ * sink a post that went out this morning below one nobody has seen since August,
+ * so every date option here reads announcedAt first and only falls back.
+ */
+const FEED_SORTS = [
+  { value: 'newest', label: 'Newest first', compare: byTime((a) => a.announcedAt || a.createdAt) },
+  { value: 'oldest', label: 'Oldest first', compare: byTime((a) => a.announcedAt || a.createdAt, 'asc') },
+  {
+    value: 'priority',
+    label: 'Urgent first',
+    compare: thenBy(
+      (a, b) => (PRIORITY_RANK[b.priority] ?? 0) - (PRIORITY_RANK[a.priority] ?? 0),
+      byTime((a) => a.announcedAt || a.createdAt),
+    ),
+  },
+  { value: 'title', label: 'Title A–Z', compare: thenBy(byText((a) => a.title), byTime((a) => a.announcedAt || a.createdAt)) },
+];
 
 export function AnnouncementFeed() {
   const { user } = useAuth();
@@ -33,6 +57,10 @@ export function AnnouncementFeed() {
 
   const [editing, setEditing] = React.useState(null);
   const [deleting, setDeleting] = React.useState(null);
+  // Starts on the server's own order (last announced first), so opening the page
+  // shows exactly what it always did.
+  const [sort, setSort] = React.useState('newest');
+  const rows = sortRows(list, FEED_SORTS, sort);
 
   const deleteMut = useMutation({
     mutationFn: (id) => api.delete(`/announcements/${id}`),
@@ -48,9 +76,16 @@ export function AnnouncementFeed() {
 
   return (
     <div className="space-y-4">
-      {isLeader ? (
-        <div className="flex justify-end">
-          <CreateAnnouncementDialog />
+      {/* One toolbar row: sorting on the left, posting on the right. The sort
+          control stays away until there are two posts to put in an order. */}
+      {list.length > 1 || isLeader ? (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          {list.length > 1 ? (
+            <SortSelect value={sort} onChange={setSort} options={FEED_SORTS} ariaLabel="Sort announcements" />
+          ) : (
+            <span />
+          )}
+          {isLeader ? <CreateAnnouncementDialog /> : null}
         </div>
       ) : null}
 
@@ -59,8 +94,8 @@ export function AnnouncementFeed() {
           <CardSkeleton />
           <CardSkeleton />
         </div>
-      ) : list.length ? (
-        list.map((a) => (
+      ) : rows.length ? (
+        rows.map((a) => (
           <AnnouncementCard
             key={a.id}
             announcement={a}

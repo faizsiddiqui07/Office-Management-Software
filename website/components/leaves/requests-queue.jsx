@@ -141,7 +141,16 @@ export function RequestsQueue() {
       {isLoading ? (
         <TableSkeleton rows={5} cols={6} />
       ) : (
-        <DataTable columns={columns} data={requests} searchPlaceholder="Search requester…" pageSize={10} emptyMessage="Nothing in the queue." onRowClick={open} />
+        <DataTable
+          columns={columns}
+          data={requests}
+          searchPlaceholder="Search requester…"
+          // Same as My leaves: sorting stays visible instead of hiding in the headers.
+          sortControl="always"
+          pageSize={10}
+          emptyMessage="Nothing in the queue."
+          onRowClick={open}
+        />
       )}
 
       {/* Detail — tap any row. Pending requests can be approved/rejected here. */}

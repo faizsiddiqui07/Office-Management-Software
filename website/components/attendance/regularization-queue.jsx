@@ -12,6 +12,7 @@ import { EmptyState } from '@/components/glass/empty-state';
 import { LoadingState } from '@/components/glass/skeletons';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { SortSelect, sortRows, byText, byTime, byYMD, thenBy } from '@/components/glass/sort-select';
 
 function fmtDate(ymd) {
   return new Date(`${ymd}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -114,9 +115,35 @@ function PendingList() {
   );
 }
 
+/**
+ * Two different dates live on one row and people look for both: the day the
+ * correction is ABOUT (dateYMD) and the day somebody decided it (decidedAt).
+ * "Last week's decisions" and "corrections for last week" are different
+ * questions, so each gets its own pair of options.
+ *
+ * Every option ends in a timestamp tie-break, so rows that match on the visible
+ * key still land in a fixed order instead of shuffling between renders.
+ */
+const HISTORY_SORTS = [
+  { value: 'decided_desc', label: 'Decided · newest first', compare: thenBy(byTime((r) => r.decidedAt), byYMD((r) => r.dateYMD)) },
+  { value: 'decided_asc', label: 'Decided · oldest first', compare: thenBy(byTime((r) => r.decidedAt, 'asc'), byYMD((r) => r.dateYMD, 'asc')) },
+  { value: 'date_desc', label: 'Correction date · newest first', compare: thenBy(byYMD((r) => r.dateYMD), byTime((r) => r.decidedAt)) },
+  { value: 'date_asc', label: 'Correction date · oldest first', compare: thenBy(byYMD((r) => r.dateYMD, 'asc'), byTime((r) => r.decidedAt)) },
+  { value: 'name_asc', label: 'Employee A–Z', compare: thenBy(byText((r) => r.user?.name), byTime((r) => r.decidedAt)) },
+  {
+    value: 'approved_first',
+    label: 'Approved first',
+    compare: thenBy((a, b) => (a.status === 'APPROVED' ? 0 : 1) - (b.status === 'APPROVED' ? 0 : 1), byTime((r) => r.decidedAt)),
+  },
+];
+
 function HistoryList() {
   const { data, isLoading } = useQuery({ queryKey: ['regularizations', 'history'], queryFn: () => api.get('/regularizations/history') });
   const requests = data?.requests ?? [];
+  // Starts on the order the server already sends (newest decision first), so the
+  // control begins by describing what is on screen rather than changing it.
+  const [sort, setSort] = React.useState('decided_desc');
+  const rows = sortRows(requests, HISTORY_SORTS, sort);
 
   if (isLoading) return <LoadingState label="Loading history…" />;
   if (!requests.length)
@@ -124,7 +151,13 @@ function HistoryList() {
 
   return (
     <div className="space-y-3">
-      {requests.map((r) => (
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-muted-foreground">
+          {requests.length} decided {requests.length === 1 ? 'correction' : 'corrections'}
+        </p>
+        <SortSelect value={sort} onChange={setSort} options={HISTORY_SORTS} ariaLabel="Sort corrections" />
+      </div>
+      {rows.map((r) => (
         <GlassCard key={r.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0 space-y-1">
             <div className="flex flex-wrap items-center gap-2">

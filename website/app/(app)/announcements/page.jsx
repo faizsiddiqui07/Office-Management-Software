@@ -9,7 +9,9 @@ export default function AnnouncementsPage() {
         eyebrow="Announcements"
         title="Announcements"
         icon={Megaphone}
-        description="Notices from leadership — newest first."
+        // No "newest first" here any more: the feed can be re-sorted now, so a
+        // fixed claim about the order would be wrong half the time.
+        description="Notices from leadership."
       />
       <AnnouncementFeed />
     </div>

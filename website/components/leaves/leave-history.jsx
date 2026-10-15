@@ -108,6 +108,10 @@ export function LeaveHistory() {
         columns={columns}
         data={requests}
         searchable={false}
+        // Shown on desktop as well as on the phone: this table has no search bar,
+        // so without it the only way to sort is to notice the arrows in the
+        // headers — and on a phone there are no headers at all.
+        sortControl="always"
         pageSize={10}
         emptyMessage="No leave requests yet — apply for your first one."
         onRowClick={setViewing}

@@ -9,7 +9,7 @@ import {
   getSortedRowModel,
   useReactTable,
 } from '@tanstack/react-table';
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, ChevronsUpDown, Search } from 'lucide-react';
+import { ArrowDown, ArrowDownUp, ArrowUp, ChevronLeft, ChevronRight, ChevronsUpDown, Search } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -22,6 +22,10 @@ import {
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 
+/* The dropdown's "no sorting" entry. Base UI rejects an empty string as a
+   value, so the absence of a sort needs a name of its own. */
+const SORT_NONE = '__none';
+
 /**
  * Generic, glassy data table: sorting, global filter, and pagination via
  * TanStack Table. Reused by every data view in the app.
@@ -33,6 +37,12 @@ export function DataTable({
   searchPlaceholder = 'Search…',
   pageSize = 8,
   pageSizeOptions = [10, 20, 50, 75, 100],
+  // Where the "Sort by" bar appears. 'mobile' (default) puts it above the phone's
+  // card list, which has no column headers to tap and so had no way to sort at
+  // all; 'always' keeps it on desktop too, for a table where sorting has to be
+  // obvious rather than discovered by noticing the small arrows in the headers;
+  // 'none' hides it.
+  sortControl = 'mobile',
   emptyMessage = 'No results found.',
   className,
   onRowClick,
@@ -70,6 +80,30 @@ export function DataTable({
   // Show the pager/size controls once there's more data than the smallest option.
   const showPager = totalRows > sizeOptions[0] || table.getPageCount() > 1;
 
+  // ── Sort bar ─────────────────────────────────────────────────────────
+  // Same `sorting` state the header arrows write, so the dropdown and the headers
+  // can never claim two different orders. Only columns with a plain-text header
+  // are offered — a header rendered as a component has no name to put in a list.
+  const sortableColumns = table
+    .getAllLeafColumns()
+    .filter((c) => c.getCanSort() && typeof c.columnDef.header === 'string');
+  const activeSort = sorting[0];
+  const showSort = sortControl !== 'none' && sortableColumns.length > 0;
+
+  // Back to page 1 on every change. Re-sorting while parked on page 3 leaves you
+  // staring at the middle of the new order, which reads as "it sorted wrong".
+  const chooseSort = (id) => {
+    table.setPageIndex(0);
+    if (id === SORT_NONE) {
+      setSorting([]);
+      return;
+    }
+    // Whatever direction the header would start this column in (dates and numbers
+    // open newest/largest first, text opens A–Z), so both controls agree.
+    const desc = activeSort?.id === id ? activeSort.desc : table.getColumn(id)?.getAutoSortDir() === 'desc';
+    setSorting([{ id, desc }]);
+  };
+
   return (
     <div className={cn('glass glass-highlight overflow-hidden rounded-2xl', className)}>
       {searchable ? (
@@ -86,6 +120,47 @@ export function DataTable({
           <span className="text-xs text-muted-foreground">
             {totalRows} {totalRows === 1 ? 'record' : 'records'}
           </span>
+        </div>
+      ) : null}
+
+      {showSort ? (
+        <div
+          className={cn(
+            'flex items-center gap-2 border-b border-border/60 p-3',
+            sortControl === 'mobile' && 'sm:hidden',
+          )}
+        >
+          <Select value={activeSort?.id ?? SORT_NONE} onValueChange={chooseSort}>
+            <SelectTrigger aria-label="Sort by" className="h-9 min-w-0 flex-1 bg-background/50 sm:max-w-60">
+              <ArrowDownUp className="size-4 shrink-0 text-muted-foreground" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={SORT_NONE}>Default order</SelectItem>
+              {sortableColumns.map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.columnDef.header}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {/* Direction is a separate control here (unlike the card lists, where the
+              option says "Newest first" outright) because it has to mirror the
+              header arrow, and an arrow only points one way at a time. */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9 shrink-0"
+            disabled={!activeSort}
+            onClick={() => {
+              table.setPageIndex(0);
+              setSorting([{ id: activeSort.id, desc: !activeSort.desc }]);
+            }}
+            title={activeSort?.desc ? 'Highest first — tap for lowest first' : 'Lowest first — tap for highest first'}
+          >
+            {activeSort?.desc ? <ArrowDown className="size-4" /> : <ArrowUp className="size-4" />}
+            {activeSort?.desc ? 'Desc' : 'Asc'}
+          </Button>
         </div>
       ) : null}
 
