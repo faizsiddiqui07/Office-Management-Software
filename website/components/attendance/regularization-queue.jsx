@@ -13,6 +13,8 @@ import { LoadingState } from '@/components/glass/skeletons';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SortSelect, sortRows, byText, byTime, byYMD, thenBy } from '@/components/glass/sort-select';
+import { PeriodFilter } from '@/components/glass/period-filter';
+import { ALL_TIME, describePeriod, inPeriod, isPeriodActive, resolvePeriod } from '@/lib/date-period';
 
 function fmtDate(ymd) {
   return new Date(`${ymd}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -77,6 +79,11 @@ function PendingList() {
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ['regularizations', 'pending'], queryFn: () => api.get('/regularizations') });
   const requests = data?.requests ?? [];
+  // The window is on the day the correction is ABOUT (dateYMD), not the day it was
+  // raised: "last month's corrections" means the days somebody is fixing.
+  const [period, setPeriod] = React.useState(ALL_TIME);
+  const range = resolvePeriod(period);
+  const rows = isPeriodActive(range) ? requests.filter((r) => inPeriod(r.dateYMD, range)) : requests;
 
   const decide = useMutation({
     mutationFn: ({ id, decision }) => api.post(`/regularizations/${id}/decide`, { decision }),
@@ -97,7 +104,20 @@ function PendingList() {
 
   return (
     <div className="space-y-3">
-      {requests.map((r) => (
+      <PeriodFilter value={period} onChange={setPeriod} />
+      {/* "7 of 23" rather than just "7": without the total, a window that hides
+          most of the queue looks like an empty queue. */}
+      <p className="text-xs text-muted-foreground">
+        {isPeriodActive(range)
+          ? `${rows.length} of ${requests.length} pending · ${describePeriod(range)}`
+          : `${requests.length} pending ${requests.length === 1 ? 'request' : 'requests'}`}
+      </p>
+      {!rows.length ? (
+        <GlassCard className="p-6 text-center text-sm text-muted-foreground">
+          No pending correction is dated in this window — try a wider one.
+        </GlassCard>
+      ) : null}
+      {rows.map((r) => (
         <GlassCard key={r.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
           <RequestDetails r={r} />
           <div className="flex shrink-0 flex-wrap items-center gap-3 sm:gap-2">
@@ -143,7 +163,13 @@ function HistoryList() {
   // Starts on the order the server already sends (newest decision first), so the
   // control begins by describing what is on screen rather than changing it.
   const [sort, setSort] = React.useState('decided_desc');
-  const rows = sortRows(requests, HISTORY_SORTS, sort);
+  // Windowed on the correction's own date, exactly like the pending list — one
+  // meaning of "this month" across both tabs. Whoever wants the DECISION date has
+  // it in the sort list.
+  const [period, setPeriod] = React.useState(ALL_TIME);
+  const range = resolvePeriod(period);
+  const inWindow = isPeriodActive(range) ? requests.filter((r) => inPeriod(r.dateYMD, range)) : requests;
+  const rows = sortRows(inWindow, HISTORY_SORTS, sort);
 
   if (isLoading) return <LoadingState label="Loading history…" />;
   if (!requests.length)
@@ -151,12 +177,20 @@ function HistoryList() {
 
   return (
     <div className="space-y-3">
+      <PeriodFilter value={period} onChange={setPeriod} />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground">
-          {requests.length} decided {requests.length === 1 ? 'correction' : 'corrections'}
+          {isPeriodActive(range)
+            ? `${rows.length} of ${requests.length} decided · ${describePeriod(range)}`
+            : `${requests.length} decided ${requests.length === 1 ? 'correction' : 'corrections'}`}
         </p>
         <SortSelect value={sort} onChange={setSort} options={HISTORY_SORTS} ariaLabel="Sort corrections" />
       </div>
+      {!rows.length ? (
+        <GlassCard className="p-6 text-center text-sm text-muted-foreground">
+          No correction is dated in this window — try a wider one.
+        </GlassCard>
+      ) : null}
       {rows.map((r) => (
         <GlassCard key={r.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0 space-y-1">

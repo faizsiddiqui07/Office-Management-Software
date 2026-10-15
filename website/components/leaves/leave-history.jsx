@@ -13,6 +13,8 @@ import { QueryError } from '@/components/glass/query-error';
 import { ConfirmDialog } from '@/components/glass/confirm-dialog';
 import { Button } from '@/components/ui/button';
 import { requestTypeLabel, formatRange } from '@/lib/leave';
+import { PeriodFilter } from '@/components/glass/period-filter';
+import { ALL_TIME, isPeriodActive, overlapsPeriod, resolvePeriod } from '@/lib/date-period';
 import { LeaveDetailDialog } from './leave-detail-dialog';
 import { ApplyLeaveDialog } from './apply-leave-dialog';
 
@@ -60,6 +62,15 @@ export function LeaveHistory() {
   });
   const requests = data?.requests ?? [];
 
+  // A leave counts as "in" the window if ANY of its days are — one running from
+  // 28 Sep to 3 Oct belongs to both months, and filtering on its start date alone
+  // dropped it out of October entirely.
+  const [period, setPeriod] = React.useState(ALL_TIME);
+  const range = resolvePeriod(period);
+  const rows = isPeriodActive(range)
+    ? requests.filter((l) => overlapsPeriod(l.startYMD, l.endYMD, range))
+    : requests;
+
   const [viewing, setViewing] = React.useState(null); // row-click detail
   const [editing, setEditing] = React.useState(null); // pending request being edited
   const [cancelling, setCancelling] = React.useState(null);
@@ -104,18 +115,27 @@ export function LeaveHistory() {
 
   return (
     <>
-      <DataTable
-        columns={columns}
-        data={requests}
-        searchable={false}
-        // Shown on desktop as well as on the phone: this table has no search bar,
-        // so without it the only way to sort is to notice the arrows in the
-        // headers — and on a phone there are no headers at all.
-        sortControl="always"
-        pageSize={10}
-        emptyMessage="No leave requests yet — apply for your first one."
-        onRowClick={setViewing}
-      />
+      <div className="space-y-3">
+        <PeriodFilter value={period} onChange={setPeriod} />
+        <DataTable
+          columns={columns}
+          data={rows}
+          searchable={false}
+          // Shown on desktop as well as on the phone: this table has no search bar,
+          // so without it the only way to sort is to notice the arrows in the
+          // headers — and on a phone there are no headers at all.
+          sortControl="always"
+          pageSize={10}
+          // The empty row has to say WHICH emptiness it is, or a window with nothing
+          // in it reads as "you have never applied for leave".
+          emptyMessage={
+            isPeriodActive(range)
+              ? 'No leave falls in this window — try a wider one.'
+              : 'No leave requests yet — apply for your first one.'
+          }
+          onRowClick={setViewing}
+        />
+      </div>
 
       {/* Detail — tap any row. Pending requests can be edited or cancelled here. */}
       <LeaveDetailDialog

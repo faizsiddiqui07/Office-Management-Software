@@ -12,6 +12,8 @@ import { StatusBadge } from '@/components/glass/status-badge';
 import { TableSkeleton } from '@/components/glass/skeletons';
 import { ConfirmDialog } from '@/components/glass/confirm-dialog';
 import { AppDialog } from '@/components/glass/app-dialog';
+import { PeriodFilter } from '@/components/glass/period-filter';
+import { resolvePeriod } from '@/lib/date-period';
 import { COMPANY_TZ } from '@/lib/time';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -56,6 +58,16 @@ export function VisitorTable({ canManageCategories = false }) {
   const [category, setCategory] = React.useState('ALL');
   const [from, setFrom] = React.useState('');
   const [to, setTo] = React.useState('');
+  // Chips and the two date boxes are ONE filter: the chips fill the boxes in, and
+  // editing a box by hand drops the chips back to Custom.
+  const [preset, setPreset] = React.useState('all');
+  const applyPeriod = (p) => {
+    setPreset(p.preset);
+    if (p.preset === 'custom') return;
+    const r = resolvePeriod(p);
+    setFrom(r.from);
+    setTo(r.to);
+  };
   const [editing, setEditing] = React.useState(null);
   const [deleting, setDeleting] = React.useState(null);
   const [selected, setSelected] = React.useState(null); // row-click detail view
@@ -292,6 +304,7 @@ export function VisitorTable({ canManageCategories = false }) {
 
   return (
     <div className="space-y-3">
+      <PeriodFilter value={{ preset, from, to }} onChange={applyPeriod} showCustomRange={false} />
       <div className="flex flex-wrap items-end gap-2">
         <div className="relative w-full sm:max-w-xs">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -312,11 +325,11 @@ export function VisitorTable({ canManageCategories = false }) {
         </Select>
         <div className="space-y-1">
           <Label className="text-xs text-muted-foreground">From</Label>
-          <DatePicker aria-label="From date" value={from} min={APP_LIVE_YMD} max={to || undefined} onChange={setFrom} clearable className="h-9 w-full bg-background/50 sm:w-40" />
+          <DatePicker aria-label="From date" value={from} min={APP_LIVE_YMD} max={to || undefined} onChange={(v) => { setPreset('custom'); setFrom(v); }} clearable className="h-9 w-full bg-background/50 sm:w-40" />
         </div>
         <div className="space-y-1">
           <Label className="text-xs text-muted-foreground">To</Label>
-          <DatePicker aria-label="To date" value={to} min={from || APP_LIVE_YMD} onChange={setTo} clearable className="h-9 w-full bg-background/50 sm:w-40" />
+          <DatePicker aria-label="To date" value={to} min={from || APP_LIVE_YMD} onChange={(v) => { setPreset('custom'); setTo(v); }} clearable className="h-9 w-full bg-background/50 sm:w-40" />
         </div>
         <div className="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
           <Button variant="outline" onClick={() => download('csv')} disabled={busy === 'csv'} className="flex-1 sm:flex-none">

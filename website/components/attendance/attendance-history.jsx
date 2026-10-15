@@ -11,14 +11,9 @@ import { AttendanceStatusBadge, attendanceStatusText } from './attendance-status
 import { SelfieView } from './selfie-view';
 import { RegularizationDialog } from './regularization-dialog';
 import { TableSkeleton } from '@/components/glass/skeletons';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { formatTime, formatDuration, formatDayLabel, recentMonths, todayYMD } from '@/lib/time';
+import { PeriodFilter } from '@/components/glass/period-filter';
+import { resolvePeriod } from '@/lib/date-period';
+import { formatTime, formatDuration, formatDayLabel, todayYMD } from '@/lib/time';
 
 const columns = [
   { accessorKey: 'date', header: 'Date', cell: ({ row }) => formatDayLabel(row.original.date) },
@@ -89,15 +84,31 @@ const columns = [
 ];
 
 export function AttendanceHistory() {
-  const months = React.useMemo(() => recentMonths(6), []);
-  const [sel, setSel] = React.useState(months[0].key);
-  const month = months.find((m) => m.key === sel) ?? months[0];
+  // This window is a SERVER query, so "All time" is deliberately not on offer: it
+  // would pull every day a long-serving person has ever worked to draw ten rows.
+  // Opens on the current month, exactly where the old month picker opened.
+  const [period, setPeriod] = React.useState({ preset: 'this_month', from: '', to: '' });
+  const range = resolvePeriod(period);
 
   const { data, isLoading } = useQuery({
-    queryKey: ['attendance', 'history', month.from, month.to],
-    queryFn: () => api.get(`/attendance?from=${month.from}&to=${month.to}&limit=100`),
+    queryKey: ['attendance', 'history', range.from, range.to],
+    queryFn: () => {
+      // Both sides optional: a half-filled custom range still returns something
+      // instead of leaving the table stuck on its skeleton.
+      //
+      // 100 is the server's own ceiling (attendance.validators.js caps `limit`),
+      // and asking for more is a 422, not a bigger page — which is exactly how
+      // this table came back empty the first time. Three months is ~92 working
+      // days, so every chip fits; only a long CUSTOM range can hit the ceiling,
+      // and the line under the table says so when it does.
+      const qs = new URLSearchParams({ limit: '100' });
+      if (range.from) qs.set('from', range.from);
+      if (range.to) qs.set('to', range.to);
+      return api.get(`/attendance?${qs.toString()}`);
+    },
   });
   const records = React.useMemo(() => data?.records ?? [], [data]);
+  const clipped = (data?.total ?? 0) > records.length;
 
   const summary = React.useMemo(() => {
     const present = records.filter((r) => r.status === 'PRESENT' || r.status === 'LATE').length;
@@ -124,19 +135,21 @@ export function AttendanceHistory() {
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h3 className="text-sm font-medium text-muted-foreground">History</h3>
-        <Select value={sel} onValueChange={setSel}>
-          <SelectTrigger className="w-full sm:w-48 bg-background/50">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {months.map((m) => (
-              <SelectItem key={m.key} value={m.key}>
-                {m.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <PeriodFilter
+          value={period}
+          onChange={setPeriod}
+          presets={['this_month', 'last_month', 'last_3', 'custom']}
+          max={todayYMD()}
+          className="w-full sm:w-auto"
+        />
       </div>
+
+      {/* Never let a window quietly show less than it holds. */}
+      {clipped ? (
+        <p className="text-xs text-amber-600 dark:text-amber-400">
+          Showing the {records.length} most recent days of {data.total} in this window — pick a shorter one to see the rest.
+        </p>
+      ) : null}
 
       {isLoading ? (
         <TableSkeleton rows={6} cols={8} />

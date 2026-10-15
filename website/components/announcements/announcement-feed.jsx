@@ -20,6 +20,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { SortSelect, sortRows, byText, byTime, thenBy } from '@/components/glass/sort-select';
+import { PeriodFilter } from '@/components/glass/period-filter';
+import { ALL_TIME, describePeriod, instantInPeriod, isPeriodActive, resolvePeriod } from '@/lib/date-period';
 
 // Urgent above Important above Normal. Mirrors lib/announcement.js's PRIORITY.
 const PRIORITY_RANK = { URGENT: 3, IMPORTANT: 2, NORMAL: 1 };
@@ -60,7 +62,15 @@ export function AnnouncementFeed() {
   // Starts on the server's own order (last announced first), so opening the page
   // shows exactly what it always did.
   const [sort, setSort] = React.useState('newest');
-  const rows = sortRows(list, FEED_SORTS, sort);
+  // Windowed on when a post LAST went out — the date the card shows and the feed
+  // sorts on — so a repeating post sits in the month it actually reached people,
+  // not the month somebody first typed it.
+  const [period, setPeriod] = React.useState(ALL_TIME);
+  const range = resolvePeriod(period);
+  const inWindow = isPeriodActive(range)
+    ? list.filter((a) => instantInPeriod(a.announcedAt || a.createdAt, range))
+    : list;
+  const rows = sortRows(inWindow, FEED_SORTS, sort);
 
   const deleteMut = useMutation({
     mutationFn: (id) => api.delete(`/announcements/${id}`),
@@ -76,8 +86,9 @@ export function AnnouncementFeed() {
 
   return (
     <div className="space-y-4">
-      {/* One toolbar row: sorting on the left, posting on the right. The sort
-          control stays away until there are two posts to put in an order. */}
+      {/* Period above, then sorting on the left and posting on the right. Both
+          controls stay away until there are two posts to put in an order. */}
+      {list.length > 1 ? <PeriodFilter value={period} onChange={setPeriod} /> : null}
       {list.length > 1 || isLeader ? (
         <div className="flex flex-wrap items-center justify-between gap-2">
           {list.length > 1 ? (
@@ -119,6 +130,14 @@ export function AnnouncementFeed() {
             }
           />
         ))
+      ) : isPeriodActive(range) && list.length ? (
+        // There ARE announcements — just none in this window. Saying "No
+        // announcements" here would read as the feed being empty.
+        <EmptyState
+          icon={Megaphone}
+          title="Nothing in this window"
+          description={`No announcement went out ${describePeriod(range)}. Try a wider window.`}
+        />
       ) : (
         <EmptyState
           icon={Megaphone}

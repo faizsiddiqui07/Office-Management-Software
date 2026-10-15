@@ -10,6 +10,8 @@ import { DataTable } from '@/components/glass/data-table';
 import { StatusBadge, STATUS_TONES } from '@/components/glass/status-badge';
 import { ConfirmDialog } from '@/components/glass/confirm-dialog';
 import { TableSkeleton } from '@/components/glass/skeletons';
+import { PeriodFilter } from '@/components/glass/period-filter';
+import { ALL_TIME, isPeriodActive, overlapsPeriod, resolvePeriod } from '@/lib/date-period';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
@@ -31,6 +33,9 @@ export function RequestsQueue() {
   const [viewing, setViewing] = React.useState(null); // row-click detail
   const [note, setNote] = React.useState('');
   const [cancelling, setCancelling] = React.useState(null); // approved leave being cancelled
+  // Status comes from the SERVER (it is a query param); the date window is applied
+  // here, on the rows already fetched. Overlap, not start date — see leave-history.
+  const [period, setPeriod] = React.useState(ALL_TIME);
 
   const { data, isLoading } = useQuery({
     queryKey: ['leaves', 'queue', statusFilter],
@@ -38,6 +43,10 @@ export function RequestsQueue() {
       api.get(`/leaves?queue=true${statusFilter !== 'ALL' ? `&status=${statusFilter}` : ''}`),
   });
   const requests = data?.requests ?? [];
+  const range = resolvePeriod(period);
+  const rows = isPeriodActive(range)
+    ? requests.filter((l) => overlapsPeriod(l.startYMD, l.endYMD, range))
+    : requests;
 
   const mut = useMutation({
     mutationFn: ({ id, action, note: n }) => api.post(`/leaves/${id}/decision`, { decision: action, note: n }),
@@ -138,17 +147,23 @@ export function RequestsQueue() {
         </Select>
       </div>
 
+      <PeriodFilter value={period} onChange={setPeriod} />
+
       {isLoading ? (
         <TableSkeleton rows={5} cols={6} />
       ) : (
         <DataTable
           columns={columns}
-          data={requests}
+          data={rows}
           searchPlaceholder="Search requester…"
           // Same as My leaves: sorting stays visible instead of hiding in the headers.
           sortControl="always"
           pageSize={10}
-          emptyMessage="Nothing in the queue."
+          emptyMessage={
+            isPeriodActive(range) && requests.length
+              ? 'Nothing in this window — try a wider one.'
+              : 'Nothing in the queue.'
+          }
           onRowClick={open}
         />
       )}

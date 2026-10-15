@@ -8,6 +8,8 @@ import { useAuth } from '@/lib/auth';
 import { can, prettyRole } from '@/lib/permissions';
 import { detailOf, humanize } from '@/lib/activity-detail';
 import { DatePicker } from '@/components/ui/date-picker';
+import { PeriodFilter } from '@/components/glass/period-filter';
+import { resolvePeriod } from '@/lib/date-period';
 import { APP_LIVE_YMD } from '@/lib/app-live';
 import { useRoleOptions } from '@/lib/use-roles';
 import { PageHeader } from '@/components/glass/page-header';
@@ -40,6 +42,17 @@ export default function ActivityPage() {
   const [action, setAction] = React.useState('');
   const [from, setFrom] = React.useState('');
   const [to, setTo] = React.useState('');
+  // The chips write into the SAME from/to the boxes below use — one filter with two
+  // ways to set it. Typing a date by hand drops the chips back to Custom, so no chip
+  // ever sits lit next to dates it did not choose.
+  const [preset, setPreset] = React.useState('all');
+  const applyPeriod = (p) => {
+    setPreset(p.preset);
+    if (p.preset === 'custom') return;
+    const r = resolvePeriod(p);
+    setFrom(r.from);
+    setTo(r.to);
+  };
   const [page, setPage] = React.useState(1);
   const [limit, setLimit] = React.useState(PAGE_SIZES[0]);
 
@@ -80,7 +93,8 @@ export default function ActivityPage() {
         description="Every meaningful action across the company, newest first."
       />
 
-      <GlassPanel className="p-5">
+      <GlassPanel className="space-y-3 p-5">
+        <PeriodFilter value={{ preset, from, to }} onChange={applyPeriod} showCustomRange={false} />
         <div className="flex flex-wrap items-end gap-4">
           <div className="w-full space-y-1.5 sm:w-auto">
             <Label htmlFor="a-action">Action starts with</Label>
@@ -88,14 +102,14 @@ export default function ActivityPage() {
           </div>
           <div className="w-full space-y-1.5 sm:w-auto">
             <Label htmlFor="a-from">From</Label>
-            <DatePicker id="a-from" value={from} min={APP_LIVE_YMD} max={to || undefined} onChange={setFrom} className="w-full bg-background/50 sm:w-44" />
+            <DatePicker id="a-from" value={from} min={APP_LIVE_YMD} max={to || undefined} onChange={(v) => { setPreset('custom'); setFrom(v); }} className="w-full bg-background/50 sm:w-44" />
           </div>
           <div className="w-full space-y-1.5 sm:w-auto">
             <Label htmlFor="a-to">To</Label>
-            <DatePicker id="a-to" value={to} min={from || APP_LIVE_YMD} onChange={setTo} className="w-full bg-background/50 sm:w-44" />
+            <DatePicker id="a-to" value={to} min={from || APP_LIVE_YMD} onChange={(v) => { setPreset('custom'); setTo(v); }} className="w-full bg-background/50 sm:w-44" />
           </div>
           {(action || from || to) ? (
-            <Button variant="ghost" onClick={() => { setAction(''); setFrom(''); setTo(''); }}>Clear</Button>
+            <Button variant="ghost" onClick={() => { setAction(''); setFrom(''); setTo(''); setPreset('all'); }}>Clear</Button>
           ) : null}
           <span className="ml-auto self-center text-sm text-muted-foreground">{total} event{total === 1 ? '' : 's'}</span>
         </div>
