@@ -5,15 +5,17 @@ import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { GlassCard } from '@/components/glass/glass-card';
 import { StatusBadge } from '@/components/glass/status-badge';
-import { EVENT_TYPES, todayYMDLocal } from '@/lib/calendar';
-import { formatRange } from '@/lib/leave';
+import { EVENT_TYPES, fiscalYearEndYMD, todayYMDLocal } from '@/lib/calendar';
+import { formatRange, formatYMD } from '@/lib/leave';
 
 export function UpcomingHolidays() {
-  // Rolling 90-day window (not calendar-year) so January's holidays show in December.
+  // Everything left in the office's own year, up to 31 March — not a rolling 90 days and
+  // not a fixed six. The card sits beside a full month grid with room to spare, and a
+  // list that stopped at six hid Holi behind nothing at all. The year's holiday list is
+  // drawn up in one go and the next one goes up in April, so 31 March is where "upcoming"
+  // genuinely ends; on 1 April this window rolls forward by itself.
   const today = todayYMDLocal();
-  const horizon = new Date(`${today}T00:00:00`);
-  horizon.setDate(horizon.getDate() + 90);
-  const to = `${horizon.getFullYear()}-${String(horizon.getMonth() + 1).padStart(2, '0')}-${String(horizon.getDate()).padStart(2, '0')}`;
+  const to = fiscalYearEndYMD(today);
 
   const { data } = useQuery({
     queryKey: ['holidays', 'upcoming', today],
@@ -22,12 +24,16 @@ export function UpcomingHolidays() {
 
   const upcoming = (data?.holidays ?? [])
     .filter((h) => h.endYMD >= today)
-    .sort((a, b) => a.startYMD.localeCompare(b.startYMD))
-    .slice(0, 6);
+    .sort((a, b) => a.startYMD.localeCompare(b.startYMD));
 
   return (
     <GlassCard className="p-5">
-      <h3 className="text-sm font-semibold">Upcoming</h3>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-2">
+        <h3 className="text-sm font-semibold">Upcoming</h3>
+        {/* Say where the list stops, so an empty tail reads as "the year is done",
+            not as "something is missing". */}
+        <span className="text-xs text-muted-foreground">till {formatYMD(to)}</span>
+      </div>
       {upcoming.length ? (
         <ul className="mt-3 space-y-3">
           {upcoming.map((h) => {
@@ -47,7 +53,9 @@ export function UpcomingHolidays() {
           })}
         </ul>
       ) : (
-        <p className="mt-3 text-sm text-muted-foreground">Nothing in the next 90 days.</p>
+        <p className="mt-3 text-sm text-muted-foreground">
+          Nothing left before {formatYMD(to)} — next year’s list goes up in April.
+        </p>
       )}
     </GlassCard>
   );

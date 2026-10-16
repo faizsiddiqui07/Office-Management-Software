@@ -21,6 +21,19 @@ export function todayYMDLocal() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
 }
 
+/**
+ * The 31 March that closes the year `ymd` falls in (Apr–Mar, the office's own year).
+ *
+ * The holiday list is drawn up one year at a time and the next one goes up in April, so
+ * "upcoming" has a natural end: there is nothing to show past 31 March, and on 1 April
+ * this rolls forward on its own.
+ */
+export function fiscalYearEndYMD(ymd) {
+  const year = Number(ymd.slice(0, 4));
+  const month = Number(ymd.slice(5, 7));
+  return `${month >= 4 ? year + 1 : year}-03-31`;
+}
+
 export function monthLabel(year, month) {
   return new Date(year, month, 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
 }
