@@ -69,7 +69,13 @@ export function judgeStreakDay(user, ymd, { record = null, onLeave = false, isHo
   if (offDays.includes(dayOfWeekInTz(companyDayFromYMD(ymd))) || isHoliday || isBirthdayYMD(user, ymd)) {
     return STREAK_NEUTRAL;
   }
-  if (record && (record.status === 'WFH' || record.status === 'ON_LEAVE')) return STREAK_NEUTRAL;
+  // HOLIDAY is a real value in the Attendance status enum (models/Attendance.js) and
+  // means the same thing the company holiday set means: nobody was due in. Without it
+  // such a row slipped past every branch below and was quietly counted as an ON-TIME day.
+  // No row in the live data carries it today — this closes the hole before one does.
+  if (record && (record.status === 'WFH' || record.status === 'ON_LEAVE' || record.status === 'HOLIDAY')) {
+    return STREAK_NEUTRAL;
+  }
   if (record && record.status === 'LATE' && !record.excused && !halfDayLateForgiven(record, ymd)) {
     return STREAK_BREAK;
   }

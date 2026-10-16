@@ -168,7 +168,11 @@ export async function checkIn(user, meta, coords, lateReason, { selfieToken = ''
     { upsert: true, new: true, setDefaultsOnInsert: true },
   );
 
-  // Bonus (best-effort): a late arrival is penalised, an on-time one may extend a streak.
+  // Bonus (best-effort): a late arrival is penalised, and that is ALL this writes. The
+  // punctual streak is not touched here — the nightly scan owns the award, and the card
+  // reads today live off this very record (bonus.service.liveStreakFor). The old wording
+  // here ("an on-time one may extend a streak") sent people looking for a write that has
+  // never existed.
   try { await onCheckIn(user, ymdInTz(day), late); } catch (e) { console.error('bonus check-in hook failed', e?.message); }
   return record;
 }

@@ -1153,6 +1153,13 @@ export async function undoOfficeWideWFH(actor, dateYMD) {
   }
   await Setting.updateOne({ key: 'global' }, { $pull: { wfhDays: { ymd: dateYMD } } });
   Setting.invalidateCache();
+  // Those rows were NEUTRAL days for the punctual streak. With them gone the same days are
+  // unexplained absences and must break the runs they were let through — and undo, unlike
+  // declare, is allowed on a day that has already passed and been judged. Only worth the
+  // re-walk when something was actually removed.
+  if (res.deletedCount) {
+    try { await markStreaksStale(); } catch (e) { console.error('WFH undo streak-stale failed', e?.message); }
+  }
   return { dateYMD, removed: res.deletedCount || 0 };
 }
 
@@ -1391,6 +1398,12 @@ export async function cancelLeave(viewer, id) {
     return fresh;
   });
 
+  // Either kind of cancel changes what a day MEANS to the punctual streak: a leave day
+  // that is an absence again, or a WFH day whose row is deleted outright — neutral one
+  // minute, an unexplained absence the next. This used to sit INSIDE the leave-only block
+  // below, so cancelling a WFH day left the streak frozen on a day that no longer existed.
+  try { await markStreaksStale(); } catch (e) { console.error('leave streak-stale (cancel) failed', e?.message); }
+
   // Points reconciliation after a cancel (best-effort, post-commit). WFH was a worked day,
   // never leave — none of this applies to it.
   if (!isWFH(result.type)) {
@@ -1407,9 +1420,6 @@ export async function cancelLeave(viewer, id) {
       // eslint-disable-next-line no-await-in-loop
       try { await reconcileAbsence(result.user, ymd); } catch (e) { console.error('absence reconcile (cancel) failed', e?.message); }
     }
-    // The mirror image of approval: days that were neutral on leave can be absences again,
-    // which should BREAK a run the scan had let through.
-    try { await markStreaksStale(); } catch (e) { console.error('leave streak-stale (cancel) failed', e?.message); }
     // The month(s) may now be leave-free again (no-leave earned) and/or have an absence
     // back (perfect attendance spoiled) — re-decide both for any rolled-up month.
     for (const m of monthsBetween(result.startYMD, result.endYMD)) {

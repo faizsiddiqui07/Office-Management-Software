@@ -368,6 +368,34 @@ export async function backfillBirthdaysToProfiles() {
   Setting.invalidateCache();
 }
 
+/**
+ * Ask the bonus scan to re-judge the punctual streak after a calendar change.
+ *
+ * Imported lazily on purpose: bonus.service already imports THIS file (holidayYMDSet), so
+ * a static import back would be a cycle.
+ *
+ * Only changes that can move a day the scan has ALREADY judged are worth the ~3s re-walk:
+ *   • a company HOLIDAY on today or earlier — those days turn neutral (or stop being
+ *     neutral), which can save or break a run that is already scored;
+ *   • a yearly repeat, whose past occurrences count even when the row's own date is old;
+ *   • any BIRTHDAY change — the month-and-day recurs, so it lands on days behind us too.
+ * Putting up next April's holiday list (a dozen future dates) must trigger nothing, which
+ * is exactly why this is not just "mark on every save".
+ */
+async function restreakForCalendar(h) {
+  if (!h) return;
+  const today = ymdInTz(new Date());
+  const matters = h.type === 'BIRTHDAY'
+    || (h.type === 'HOLIDAY' && (!!h.repeatsYearly || String(h.startYMD || '') <= today));
+  if (!matters) return;
+  try {
+    const { markStreaksStale } = await import('./bonus.service.js');
+    await markStreaksStale();
+  } catch (e) {
+    console.error('calendar streak-stale failed', e?.message);
+  }
+}
+
 export async function createHoliday(creator, data) {
   const type = data.type || 'HOLIDAY';
   const startYMD = data.startYMD;
@@ -407,6 +435,7 @@ export async function createHoliday(creator, data) {
     createdBy: creator._id,
   });
   if (linkedUserId) await User.updateOne({ _id: linkedUserId }, { $set: { dateOfBirth: startYMD } });
+  await restreakForCalendar(holiday);
   await holiday.populate('createdBy', 'name');
   return holiday.toJSON();
 }
@@ -414,6 +443,9 @@ export async function createHoliday(creator, data) {
 export async function updateHoliday(id, data) {
   const holiday = await Holiday.findById(id);
   if (!holiday) throw httpError(404, 'NOT_FOUND', 'Holiday not found');
+  // Both shapes matter: moving a holiday OFF a past day changes that day as much as
+  // moving one ONTO it, and only the before-picture still knows where it was.
+  const before = { type: holiday.type, startYMD: holiday.startYMD, repeatsYearly: holiday.repeatsYearly };
 
   if (data.title !== undefined) holiday.title = data.title;
   if (data.type !== undefined) holiday.type = data.type;
@@ -463,6 +495,8 @@ export async function updateHoliday(id, data) {
   if (holiday.type === 'BIRTHDAY' && holiday.userId) {
     await User.updateOne({ _id: holiday.userId }, { $set: { dateOfBirth: holiday.startYMD } });
   }
+  await restreakForCalendar(before);
+  await restreakForCalendar(holiday);
   await holiday.populate('createdBy', 'name');
   return holiday.toJSON();
 }
@@ -551,11 +585,14 @@ export async function ensureDefaultHolidays() {
 export async function deleteHoliday(id) {
   const holiday = await Holiday.findById(id);
   if (!holiday) throw httpError(404, 'NOT_FOUND', 'Holiday not found');
+  // Read what it WAS before the row is gone — afterwards there is nothing left to judge.
+  const was = { type: holiday.type, startYMD: holiday.startYMD, repeatsYearly: holiday.repeatsYearly };
   await holiday.deleteOne();
   // A linked birthday and the profile date-of-birth are one fact in two places — removing
   // the calendar entry clears the profile date too, so they can never fall out of step.
   if (holiday.type === 'BIRTHDAY' && holiday.userId) {
     await User.updateOne({ _id: holiday.userId }, { $set: { dateOfBirth: '' } });
   }
+  await restreakForCalendar(was);
   return { success: true };
 }

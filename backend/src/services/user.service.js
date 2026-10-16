@@ -16,6 +16,7 @@ import { LedgerEntry } from '../models/LedgerEntry.js';
 import { PointEntry } from '../models/PointEntry.js';
 import { Setting } from '../models/Setting.js';
 import { recomputeAllOvertime } from './attendance.service.js';
+import { markStreaksStale } from './bonus.service.js';
 import { can, canAssignRole } from '../lib/permissions.js';
 import { clearFailures } from '../lib/loginGuard.js';
 import { leaveYearOf } from '../lib/leaveYear.js';
@@ -214,10 +215,12 @@ export async function updateUser(actor, id, data) {
   // The joining date decides which periods this person appears in at all, so it has to
   // be correctable — an account created late for someone who started earlier would
   // otherwise hide their real history for good.
+  let joiningMoved = false;
   if (data.dateOfJoining !== undefined) {
     const wasYMD = ymdInTz(user.dateOfJoining || new Date());
     user.dateOfJoining = companyDayFromYMD(data.dateOfJoining);
     const nowYMD = ymdInTz(user.dateOfJoining);
+    joiningMoved = nowYMD !== wasYMD;
     // Correcting the date should correct the leave it earns, otherwise an account
     // created late leaves the person short for the rest of the year. Only touch a
     // quota that still matches what the old date produced — a figure leadership set by
@@ -268,6 +271,13 @@ export async function updateUser(actor, id, data) {
   // re-derive it (and their bonus overtime points) — every report reads the stored value.
   if (scheduleTouched) {
     try { await recomputeAllOvertime({ userId: user._id }); } catch (e) { console.error('overtime recompute after user edit failed', e?.message); }
+  }
+  // Both of these change WHICH days the punctual streak was ever due to count — a changed
+  // working-day pattern moves their off-days, and a corrected joining date moves the day
+  // their history starts at. Without a re-walk the chain keeps answering with the old
+  // shape of their week.
+  if (scheduleTouched || joiningMoved) {
+    try { await markStreaksStale(); } catch (e) { console.error('streak stale after user edit failed', e?.message); }
   }
   return user.toJSON();
 }

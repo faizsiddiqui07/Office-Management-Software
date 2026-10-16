@@ -6,6 +6,7 @@ import { audit } from '../models/AuditLog.js';
 import { saveCompanyLogo, saveBackground } from '../lib/brand.js';
 import { deleteAsset } from '../lib/s3Assets.js';
 import { recomputeAllOvertime } from '../services/attendance.service.js';
+import { markStreaksStale } from '../services/bonus.service.js';
 import { verifyPassword } from '../lib/password.js';
 import { encryptSecret } from '../lib/secretBox.js';
 import { sendTestEmail } from '../lib/mailer.js';
@@ -76,6 +77,9 @@ export async function updateSettings(req, res, next) {
     // Changing the shift end or the overtime buffer changes every stored day's overtime, so
     // note whether either moved and re-derive all of it after saving.
     const otBefore = { workEnd: s.workEnd, buffer: s.overtimeAfterMinutes || 0 };
+    // The office weekend decides which days the punctual streak treats as "not due in".
+    // Moving it re-shapes every week already scored, so the chain has to be re-walked.
+    const weekendBefore = JSON.stringify(s.weekendDays || []);
     // Only keys the client actually sent — a blank numeric field parses to undefined
     // (see numOpt in the validator), and Object.assign would copy that undefined straight
     // onto the doc and wipe the stored value. Skipping undefined keeps it as it was.
@@ -87,6 +91,9 @@ export async function updateSettings(req, res, next) {
       (body.overtimeAfterMinutes !== undefined && (body.overtimeAfterMinutes || 0) !== otBefore.buffer);
     if (otChanged) {
       try { await recomputeAllOvertime(); } catch (e) { console.error('overtime recompute after settings save failed', e?.message); }
+    }
+    if (body.weekendDays !== undefined && JSON.stringify(body.weekendDays || []) !== weekendBefore) {
+      try { await markStreaksStale(); } catch (e) { console.error('streak stale after settings save failed', e?.message); }
     }
     await audit({ actor: req.user._id, action: 'settings.update', entityType: 'Setting', entityId: 'global', meta: body });
     res.json(ok({ settings: s.toJSON() }));

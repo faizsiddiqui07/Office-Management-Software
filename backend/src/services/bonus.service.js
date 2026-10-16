@@ -1495,6 +1495,24 @@ export { STREAK_LEN };
  * up on the next run. With no watermark it walks from go-live — which is exactly how
  * the one-time V2 rebuild re-scores the whole history.
  */
+/**
+ * Exactly the people runRollingStreak will re-walk: active, and on the attendance roster.
+ *
+ * EVERY wipe-and-rebuild of auto_streak must be scoped to these ids. The delete used to be
+ * unscoped while the re-walk never was, so the day somebody was deactivated — or their
+ * role stopped tracking attendance — every punctual-streak award they had ever earned was
+ * deleted on the next rescan and never written again. Months of a finished employee's
+ * record quietly worth less, and invisible: the preview is roster-scoped too
+ * (diffAgainstLedger), so it never showed those rows going.
+ *
+ * Scoping it the other way — re-walking inactive people as well — would be worse: their
+ * runs would carry on accruing after they left.
+ */
+export async function streakRosterIds() {
+  const users = await User.find({ isActive: true }).select('role');
+  return users.filter((u) => can({ role: u.role }, 'markAttendance')).map((u) => u._id);
+}
+
 export async function runRollingStreak(b, { ignoreLock = false } = {}) {
   const pts = rulePoints(b, 'punctualStreak');
   if (!pts) return;
@@ -1667,7 +1685,9 @@ export async function liveStreakFor(user, s, opts = {}) {
 async function rebuildStreakV2(b) {
   const s = await Setting.getSingleton();
   if (s.bonus?.streakV2) return;
-  await PointEntry.deleteMany({ source: 'auto_streak' });
+  // Roster-scoped like every other wipe: this runs once on a fresh database, and even
+  // there an inactive person's old rows must not vanish with nothing to replace them.
+  await PointEntry.deleteMany({ source: 'auto_streak', user: { $in: await streakRosterIds() } });
   s.bonus.streakRuns = {};
   s.bonus.lastStreakScan = '';
   s.markModified('bonus.streakRuns');
@@ -1802,7 +1822,8 @@ async function rescanStaleStreaks() {
   const lock = await claimRebuildLock();
   if (!lock) return;
   try {
-    await PointEntry.deleteMany({ source: 'auto_streak' });
+    // Only the people this re-walk can write back for — see streakRosterIds.
+    await PointEntry.deleteMany({ source: 'auto_streak', user: { $in: await streakRosterIds() } });
     await Setting.updateOne({ key: 'global' }, { $set: { 'bonus.lastStreakScan': '', 'bonus.streakRuns': {} } });
     Setting.invalidateCache();
     const fresh = await Setting.getSingleton();
@@ -2109,7 +2130,9 @@ export async function runRebuild(actor, { planHash = null } = {}) {
     //    different days, awardOnce is insert-only, and leaving them would keep both versions
     //    in the table and pay everyone on a changed chain twice. rebuildStreakV2 established
     //    this order; the one time it was not followed, points had to be unwound by hand.
-    await PointEntry.deleteMany({ source: 'auto_streak' });
+    //    Scoped to the roster, exactly like step 2's delete and the preview's `have` set:
+    //    an ex-employee's awards are not re-derivable, so they are not deleted either.
+    await PointEntry.deleteMany({ source: 'auto_streak', user: { $in: roster.map((u) => u._id) } });
     await Setting.updateOne({ key: 'global' }, { $set: { 'bonus.lastStreakScan': '', 'bonus.streakRuns': {} } });
     Setting.invalidateCache();
     const fresh = await Setting.getSingleton();

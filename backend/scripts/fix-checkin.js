@@ -56,6 +56,7 @@ import {
   reconcilePerfectMonth,
   recomputeUserMonthOvertime,
   runRollingStreak,
+  streakRosterIds,
 } from '../src/services/bonus.service.js';
 
 // ── hukm padho ───────────────────────────────────────────────────────────────
@@ -204,7 +205,10 @@ async function main() {
       // theek kiya bas uske points hilein, kisi aur ka ek point bhi upar-neeche na ho.
       const keepAll = !user;
       const snapshot = await PointEntry.find({ source: 'auto_streak' }).lean();
-      const wiped = await PointEntry.deleteMany({ source: 'auto_streak' });
+      // Sirf un logon ke award hataye jaate hain jinke dobara ban sakte hain (active +
+      // attendance roster). Deactivate ho chuke bande ke purane award yahan se nahi
+      // mitenge — unhe dobara likhne wala koi hai hi nahi.
+      const wiped = await PointEntry.deleteMany({ source: 'auto_streak', user: { $in: await streakRosterIds() } });
       line(`   purane ${wiped.deletedCount} streak award hata kar ginti dobara…`);
       s.bonus.lastStreakScan = '';
       s.bonus.streakRuns = {};
