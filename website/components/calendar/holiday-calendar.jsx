@@ -59,7 +59,11 @@ export function HolidayCalendar() {
   };
 
   return (
-    <GlassPanel className="p-4 sm:p-5">
+    // lg:self-start — the calendar stays its own height instead of stretching to the row.
+    // The Upcoming card beside it is sized FROM this panel, so if this one stretched the
+    // two would chase each other: a long list makes the row taller, the panel stretches to
+    // match, the card reads that bigger height and fits even more in.
+    <GlassPanel className="p-4 sm:p-5 lg:self-start">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-1">
           <Button variant="ghost" size="icon" onClick={prev} aria-label="Previous month">
