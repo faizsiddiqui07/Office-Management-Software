@@ -186,7 +186,12 @@ export default function MyStandingPage() {
                 <Stat
                   icon={CalendarDays}
                   label="Leave left this year"
-                  value={`${now.leave.remaining} of ${now.leave.total}`}
+                  // `totalQuota` is what a leave balance actually carries
+                  // (models/LeaveBalance.js, and what the Leaves page reads). Asking for
+                  // `total` printed "9.5 of undefined" on everyone's summary. The fallback
+                  // is the same number from the other side — used + left — so a missing
+                  // field can never put the word "undefined" on screen again.
+                  value={`${now.leave.remaining} of ${now.leave.totalQuota ?? (Number(now.leave.remaining) || 0) + (Number(now.leave.used) || 0)}`}
                   hint={`${now.leave.used} used · resets 1 April`}
                   tone={now.leave.remaining <= 2 ? 'warn' : 'default'}
                 />
