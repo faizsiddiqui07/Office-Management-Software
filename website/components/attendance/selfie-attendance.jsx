@@ -184,6 +184,7 @@ export function SelfieAttendance({ mode, userName, disabled }) {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['attendance'] });
+      qc.invalidateQueries({ queryKey: ['my-summary'] }); // the streak card counts today
       toast.success(isOut ? 'Checked out with selfie' : 'Checked in with selfie');
       close();
     },

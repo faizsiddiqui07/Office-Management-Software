@@ -74,6 +74,10 @@ export function useAttendanceToday() {
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['attendance'] });
     qc.invalidateQueries({ queryKey: ['dashboard'] });
+    // The punctual streak moves with this check-in now (it counts today), and the card
+    // that shows it lives on My Summary — a different query, which nothing used to
+    // invalidate, so it sat on a stale number until the page was left and re-opened.
+    qc.invalidateQueries({ queryKey: ['my-summary'] });
   };
 
   const checkInMut = useMutation({

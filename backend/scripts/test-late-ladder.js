@@ -30,7 +30,7 @@ import { LeaveRequest } from '../src/models/LeaveRequest.js';
 import { RuleSection } from '../src/models/RuleSection.js';
 import { loadRoles } from '../src/lib/roles.js';
 import { companyDayFromYMD } from '../src/lib/time.js';
-import { lateMarksHM, judgeCheckIn, penaltyRungs, lateReasonText, shiftMidpoint, LATE_LADDER_FLOOR_YMD } from '../src/lib/lateLadder.js';
+import { lateMarksHM, judgeCheckIn, penaltyRungs, lateReasonText, shiftMidpoint, LATE_LADDER_FLOOR_YMD, MORNING_HALF_LATE_FLOOR_YMD } from '../src/lib/lateLadder.js';
 import * as att from '../src/services/attendance.service.js';
 import * as leave from '../src/services/leave.service.js';
 import * as reg from '../src/services/regularization.service.js';
@@ -118,6 +118,19 @@ async function main() {
   check('MORNING half (second-half leave) → koi mark nahi, 10:40 → 0', lateMarksHM(D, HALF2, S10).length === 0 && j('10:40', HALF2, S10) === 0);
   check(`floor se pehle half-day afternoon (${PRE}) → koi mark nahi, 16:10 → 0`, lateMarksHM(PRE, HALF, S10).length === 0 && j('16:10', HALF, S10, PRE) === 0);
   check('afternoon flag = sirf FIRST-half + floor ke baad', judgeCheckIn(at(D, '14:30'), day, HALF, S10).afternoon === true && judgeCheckIn(at(D, '14:30'), day, HALF2, S10).afternoon === false && judgeCheckIn(at(PRE, '14:30'), companyDayFromYMD(PRE), HALF, S10).afternoon === false);
+
+  console.log(`PART A4 — half-day ka MORNING (second-half leave), naya niyam ${MORNING_HALF_LATE_FLOOR_YMD} se`);
+  const OCT = '2026-10-05'; // Monday, naye floor ke baad
+  check('floor se pehle (30 Sep) morning half → koi mark nahi (purana niyam surakshit)', lateMarksHM('2026-09-30', HALF2, S10).length === 0);
+  check('1 Oct se morning half ke marks = 10:16, 11:00 (aam subah jaise)', lateMarksHM('2026-10-01', HALF2, S10).join(',') === '10:16,11:00', lateMarksHM('2026-10-01', HALF2, S10).join(','));
+  check('morning half: 10:16:00 → 0, 10:17 → 1, 11:01 → 2, 13:00 → 2 (max 2 hi)', j('10:16:00', HALF2, S10, OCT) === 0 && j('10:17', HALF2, S10, OCT) === 1 && j('11:01', HALF2, S10, OCT) === 2 && j('13:00', HALF2, S10, OCT) === 2);
+  check('6–8 PM shift ka morning half → sirf 18:00 (19:00 midpoint hai, usse aage due hi nahi)', lateMarksHM(OCT, HALF2, S18).join(',') === '18:00', lateMarksHM(OCT, HALF2, S18).join(','));
+  check('9:30–6:30 ka morning half → 09:46, 10:30', lateMarksHM(OCT, HALF2, S930).join(',') === '09:46,10:30', lateMarksHM(OCT, HALF2, S930).join(','));
+  check('afternoon (FIRST) half floor ke baad bhi waisa ka waisa', lateMarksHM(OCT, HALF, S10).join(',') === '14:00,15:00,16:00,17:00');
+  check('morning half par afternoon flag false hi rehta hai', judgeCheckIn(at(OCT, '11:30'), companyDayFromYMD(OCT), HALF2, S10).afternoon === false);
+  check('bina part wali half-day row (purani) → ab bhi kabhi late nahi', lateMarksHM(OCT, { halfDayLeave: true }, S10).length === 0);
+  check('stored LATE morning-half (floor ke baad) ab 1 rung owe karta hai', penaltyRungs({ checkInAt: at(OCT, '10:40'), status: 'LATE', excused: false, ...HALF2 }, companyDayFromYMD(OCT), S10).rungs === 1);
+  check('wahi row 30 Sep par → 0', penaltyRungs({ checkInAt: at('2026-09-30', '10:40'), status: 'LATE', excused: false, ...HALF2 }, companyDayFromYMD('2026-09-30'), S10).rungs === 0);
 
   console.log('PART A3 — penaltyRungs (stored record kya owe karta hai) aur reason text');
   const mk = (hms, extra = {}) => ({ checkInAt: at(D, hms), status: 'LATE', excused: false, ...extra });
@@ -247,6 +260,21 @@ async function main() {
     await halfLeave(A, '2026-09-08', 'FIRST'); // floor se pehle
     r = await selfIn(A, '2026-09-08', '16:10');
     check('floor se pehle FIRST-half, 16:10 aaya → PRESENT, koi row nahi', r.status === 'PRESENT' && !(await lateRow(A._id, '2026-09-08')));
+  }
+
+  console.log(`\nPART B5b — morning half ab late ho sakti hai (${MORNING_HALF_LATE_FLOOR_YMD} se), asli raaste par`);
+  {
+    await halfLeave(A, '2026-10-05', 'SECOND');
+    let r = await selfIn(A, '2026-10-05', '10:40');
+    let row = await lateRow(A._id, '2026-10-05');
+    check('SECOND-half leave (subah kaam), 10:40 aaya → ab LATE, −1, aam text', r.status === 'LATE' && row?.points === -1 && !/afternoon/.test(row.reason || ''), `${r.status} ${rowStr(row)}`);
+    await halfLeave(A, '2026-10-08', 'SECOND');
+    r = await selfIn(A, '2026-10-08', '10:10');
+    check('SECOND-half leave, 10:10 (grace ke andar) → PRESENT, koi row nahi', r.status === 'PRESENT' && !(await lateRow(A._id, '2026-10-08')));
+    await halfLeave(A, '2026-10-09', 'SECOND');
+    r = await selfIn(A, '2026-10-09', '12:30');
+    row = await lateRow(A._id, '2026-10-09');
+    check('SECOND-half leave, 12:30 aaya → −2 (yahi ceiling)', r.status === 'LATE' && row?.points === -2, rowStr(row));
   }
 
   console.log('\nPART B6 — half-day: check-in pehle, leave BAAD me approve, phir cancel');

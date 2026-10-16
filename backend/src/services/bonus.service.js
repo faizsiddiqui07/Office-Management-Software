@@ -14,6 +14,7 @@ import { hadAccessOn, splitByJoining, periodStartFor, isFirstAccessDay } from '.
 import { APP_LIVE_YMD } from '../lib/appLive.js';
 import { holidayYMDSet } from './holiday.service.js';
 import { isBirthdayYMD } from '../lib/birthday.js';
+import { judgeStreakDay, STREAK_LEN, STREAK_BREAK, STREAK_NEUTRAL, STREAK_PENDING } from '../lib/streakDay.js';
 
 const toId = (v) => (typeof v === 'string' ? new mongoose.Types.ObjectId(v) : v);
 const rand = () => Math.random().toString(36).slice(2, 10);
@@ -1481,7 +1482,10 @@ async function runMonthRollup(b, forMonth = null) {
 // neither break the run nor count towards the 6. An excused (on-duty) late counts as
 // an on-time day. The award is filed under the 6th day itself, so a run straddling a
 // month boundary simply pays in the month it completes — nothing resets at month end.
-export const STREAK_LEN = 6;
+// The length, the per-day verdict and the half-day floor all live in lib/streakDay.js
+// now — one rule, three readers (this scan, expectedLedger's verifier, and the read-side
+// live preview). Re-exported because snapshot.service.js imports STREAK_LEN from here.
+export { STREAK_LEN };
 
 /**
  * Judge every finished day since the last scan (up to YESTERDAY — today is still in
@@ -1526,21 +1530,18 @@ export async function runRollingStreak(b, { ignoreLock = false } = {}) {
     let count = Number(runs[uid]) || 0;
     for (let d = start; d <= yesterday; d = addDays(d, 1)) {
       if (d < startedOn) continue; // before they had access (joiner / go-live)
-      const dow = dayOfWeekInTz(companyDayFromYMD(d));
-      // Sunday / off-day / company holiday / their own birthday → neutral: neither breaks
-      // the run nor counts towards it, exactly like any other day they weren't due in.
-      if (off.includes(dow) || holidays.has(d) || isBirthdayYMD(u, d)) continue;
-      const rec = recByUserDay.get(`${uid}|${d}`);
-      const onLeave = leaves.some((l) => String(l.user) === uid && l.startYMD <= d && l.endYMD >= d);
-      if (rec && (rec.status === 'WFH' || rec.status === 'ON_LEAVE')) continue; // neutral
-      // A half-day leave never carries a penalty (owner's rule) — a late arrival for the
-      // worked half must not reset the run; it counts as an on-time day.
-      if (rec && rec.status === 'LATE' && !rec.excused && !rec.halfDayLeave) { count = 0; continue; } // reset — next day starts fresh
-      if (!rec || rec.status === 'ABSENT') {
-        if (onLeave) continue; // approved leave → neutral
-        count = 0; continue; // unexplained absence → reset
-      }
-      // PRESENT on time (or an excused, on-duty late) → one more day on the run.
+      // Every branch that used to live here is now judgeStreakDay (lib/streakDay.js), so
+      // this scan, the rebuild's verifier and the live preview can never disagree about
+      // what a day meant. `live` is false: these days are all finished, so a missing
+      // record IS an unexplained absence.
+      const verdict = judgeStreakDay(u, d, {
+        record: recByUserDay.get(`${uid}|${d}`),
+        onLeave: leaves.some((l) => String(l.user) === uid && l.startYMD <= d && l.endYMD >= d),
+        isHoliday: holidays.has(d),
+        offDays: off,
+      });
+      if (verdict === STREAK_NEUTRAL) continue;
+      if (verdict === STREAK_BREAK) { count = 0; continue; } // reset — next day starts fresh
       count += 1;
       if (count >= STREAK_LEN) {
         // eslint-disable-next-line no-await-in-loop
@@ -1559,6 +1560,102 @@ export async function runRollingStreak(b, { ignoreLock = false } = {}) {
   // running rebuild.
   await Setting.updateOne({ key: 'global' }, { $set: { 'bonus.streakRuns': runs, 'bonus.lastStreakScan': yesterday } });
   Setting.invalidateCache();
+}
+
+/**
+ * Jitne din peechhe tak read-path par live overlay chalegi. Scheduler band pada ho aur
+ * watermark hafton peechhe ho to live dikhane ki koshish hi nahi hoti — purana number
+ * aur purani tareekh, taaki ek page load bhaari na ho jaye.
+ */
+const MAX_LIVE_STREAK_DAYS = 14;
+
+const daysBetweenYMD = (a, b) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86400000);
+
+/**
+ * The streak as it stands RIGHT NOW — the stored counter with today (and any day the
+ * scan has not reached yet) layered on top. READ ONLY: it writes no counter, no
+ * watermark and no award, so it cannot race the scheduler, the rebuild lock or itself.
+ *
+ * Why an overlay instead of moving the scan's boundary: the scan judges a day ONCE and
+ * then never looks again. Pointing it at today would judge everyone at 00:0x — before a
+ * single check-in exists — write "absent" for the lot and move the watermark past it, so
+ * nobody's run could ever pass 1. The awards therefore stay exactly where they were:
+ * written overnight, by the one walker, for finished days only (owner's decision,
+ * 16 Oct 2026 — "points jaise hain waise hi").
+ *
+ * Today's verdict comes from the same judgeStreakDay as the scan, with `live: true`, so
+ * the only difference is that "nothing recorded yet" means PENDING instead of absent.
+ *
+ * `todayRecord` / `todayIsOffDay`: when the caller already has today's attendance row and
+ * off-day flag (getTodayPayload does), the common case — watermark = yesterday — costs
+ * ZERO extra queries.
+ */
+export async function liveStreakFor(user, s, opts = {}) {
+  const b = s.bonus || {};
+  const stored = Number((b.streakRuns || {})[String(user._id)]) || 0;
+  const last = b.lastStreakScan || '';
+  const today = ymdInTz(new Date());
+  const asStored = { count: stored, asOfYMD: last || null, live: false, today: null, completedToday: false };
+  if (!b.enabled || !rulePoints(b, 'punctualStreak') || !last) return asStored;
+
+  const start = addDays(last, 1);
+  if (start > today || daysBetweenYMD(start, today) > MAX_LIVE_STREAK_DAYS) return asStored;
+
+  const offDays = userWeekendDays(user, s);
+  // Fast path: only today to judge, and the caller already holds everything about it.
+  const haveToday = start === today && opts.todayIsOffDay !== undefined;
+  let records = new Map();
+  let holidays = new Set();
+  let leaves = [];
+  if (haveToday) {
+    if (opts.todayRecord) records.set(today, opts.todayRecord);
+    // One flag covers holiday + their weekly off + their birthday; judgeStreakDay reads
+    // it as "not a day they were due in", which is exactly what all three mean.
+    if (opts.todayIsOffDay) holidays.add(today);
+  } else {
+    const [recs, hol, lv] = await Promise.all([
+      Attendance.find({ user: user._id, date: { $gte: companyDayFromYMD(start), $lte: companyDayFromYMD(today) } })
+        .select('date status excused halfDayLeave'),
+      holidayYMDSet(start, today),
+      LeaveRequest.find({ user: user._id, status: 'APPROVED', startYMD: { $lte: today }, endYMD: { $gte: start } })
+        .select('startYMD endYMD'),
+    ]);
+    records = new Map(recs.map((r) => [ymdInTz(r.date), r]));
+    holidays = hol;
+    leaves = lv;
+  }
+
+  let count = stored;
+  let completedOn = null;
+  let todayVerdict = null;
+  const startedOn = periodStartFor(user, start);
+  for (let d = start; d <= today; d = addDays(d, 1)) {
+    if (d < startedOn) continue;
+    const verdict = judgeStreakDay(user, d, {
+      record: records.get(d) || null,
+      onLeave: leaves.some((l) => l.startYMD <= d && l.endYMD >= d),
+      isHoliday: holidays.has(d),
+      offDays,
+      live: d === today,
+    });
+    if (d === today) todayVerdict = verdict;
+    if (verdict === STREAK_PENDING || verdict === STREAK_NEUTRAL) continue;
+    if (verdict === STREAK_BREAK) { count = 0; continue; }
+    count += 1;
+    // The scan resets to 0 the moment it pays out. Here nothing is paid, so remember WHICH
+    // day completed the run: if it was today, the card shows a full 6 of 6 and says the
+    // points land tonight — otherwise the run simply carries on from zero.
+    if (count >= STREAK_LEN) { completedOn = d; count = 0; }
+  }
+
+  const completedToday = completedOn === today;
+  return {
+    count: completedToday ? STREAK_LEN : count,
+    asOfYMD: today,
+    live: true,
+    today: todayVerdict, // ON_TIME | BREAK | PENDING | NEUTRAL
+    completedToday,
+  };
 }
 
 /**
@@ -1841,10 +1938,11 @@ async function expectedLedger(upto = null) {
         add(`auto_absent:${uid}:${d}`, { user: u._id, month: d.slice(0, 7), points: -Math.abs(rulePoints(b, 'absentDay', d)), reason: `Absent · ${d}`, source: 'auto_absent', earnedYMD: d });
       }
 
-      // auto_streak — runRollingStreak's branches, in its order.
-      if (rec && (rec.status === 'WFH' || rec.status === 'ON_LEAVE')) continue; // neutral
-      if (rec && rec.status === 'LATE' && !rec.excused && !rec.halfDayLeave) { run = 0; continue; } // reset
-      if (!rec || rec.status === 'ABSENT') { if (onLeave) continue; run = 0; continue; }
+      // auto_streak — the very same function the live scan judges with, so the verifier
+      // can never drift from what runRollingStreak actually wrote.
+      const verdict = judgeStreakDay(u, d, { record: rec, onLeave, isHoliday: holidays.has(d), offDays: off });
+      if (verdict === STREAK_NEUTRAL) continue;
+      if (verdict === STREAK_BREAK) { run = 0; continue; }
       run += 1;
       if (run >= STREAK_LEN) {
         add(`auto_streak:${uid}:${d}`, { user: u._id, month: d.slice(0, 7), points: Math.abs(rulePoints(b, 'punctualStreak', d)), reason: `Punctual streak · ${STREAK_LEN} days on time · ${d}`, source: 'auto_streak', earnedYMD: d });

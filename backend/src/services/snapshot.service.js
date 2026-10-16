@@ -7,7 +7,7 @@ import { joinedYMD } from '../lib/joining.js';
 import { leaveYearOf } from '../lib/leaveYear.js';
 import { userWeekendDays } from '../lib/schedule.js';
 import { buildSelfReport } from './report.service.js';
-import { carryInFor, STREAK_LEN } from './bonus.service.js';
+import { carryInFor, liveStreakFor, STREAK_LEN } from './bonus.service.js';
 import { balanceJSONReadOnly } from './leave.service.js';
 
 // Day-of-week labels for the "your working days" line, Sun-first (0=Sun … 6=Sat) to
@@ -136,28 +136,33 @@ export async function mySnapshot(user, { type = 'monthly', dateYMD, range } = {}
   const workDaysLabel = workDaysOfWeek.map((d) => DOW_LABELS[d]).join(', ');
   const hasCustomWorkDays = Array.isArray(user?.schedule?.workDays) && user.schedule.workDays.length > 0;
 
-  // ── E1: punctual-streak progress (forward-looking, zero extra query) ──
-  // The rolling 6-day counter already lives on the Setting we loaded. Surfacing it lets
-  // someone see "4 of 6 on time, 2 more → +8" instead of only ever reading points AFTER
-  // the fact. The counter is written by the nightly scan, so it is current only up to
-  // `lastStreakScan` (yesterday) — the UI must say so, not imply it counts today.
+  // ── E1: punctual-streak progress (forward-looking) ──
+  // The nightly scan's counter with TODAY laid on top of it (liveStreakFor) — so an
+  // on-time check-in this morning shows here immediately, and a late one resets it the
+  // moment the day is marked LATE. Nothing is written: the award still belongs to the
+  // overnight scan. The card says which of the two it is showing.
   let streak = null;
   if (shows.points && shows.attendance) {
     const b = settings.bonus || {};
     const rule = (b.autoRules || []).find((r) => r.key === 'punctualStreak');
     const perRun = rule ? Math.abs(Number(rule.points) || 0) : 0;
     if (perRun > 0) {
-      const runs = b.streakRuns || {};
-      // Clamp into [0, target-1]: the counter resets to 0 the moment it hits the target
-      // and pays out, so it is never actually AT the target when read.
-      const raw = Number(runs[String(user._id)]) || 0;
-      const count = Math.max(0, Math.min(STREAK_LEN - 1, raw));
+      const now = await liveStreakFor(user, settings);
+      // A LIVE count can legitimately sit at the target — the run completed today and
+      // pays tonight. The stored counter never can (it resets the instant it pays), so
+      // the old clamp still guards the fallback.
+      const count = now.live
+        ? Math.max(0, Math.min(STREAK_LEN, now.count))
+        : Math.max(0, Math.min(STREAK_LEN - 1, now.count));
       streak = {
         count,
         target: STREAK_LEN,
-        remaining: STREAK_LEN - count,
+        remaining: Math.max(0, STREAK_LEN - count),
         points: perRun, // what completing the run pays
-        asOfYMD: b.lastStreakScan || null, // counter is current up to this day
+        asOfYMD: now.asOfYMD, // live → today; otherwise the last day the scan judged
+        live: now.live,
+        today: now.today, // ON_TIME | BREAK | PENDING | NEUTRAL | null
+        completedToday: now.completedToday,
       };
     }
   }

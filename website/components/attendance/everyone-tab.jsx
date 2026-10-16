@@ -176,6 +176,7 @@ export function EveryoneTab() {
       toast.success(vars.excused ? 'Marked as on-duty / excused' : 'Excuse removed');
       setSelected((s) => (s && s.attendance ? { ...s, attendance: { ...s.attendance, excused: vars.excused } } : s));
       qc.invalidateQueries({ queryKey: ['attendance'] });
+      qc.invalidateQueries({ queryKey: ['my-summary'] }); // the streak card counts today
     },
     onError: (e) => toast.error(e?.message || 'Could not update'),
   });
@@ -218,6 +219,7 @@ export function EveryoneTab() {
     onSuccess: () => {
       toast.success(editMode === 'leave' ? 'Marked on leave' : editMode === 'absent' ? 'Marked absent' : 'Attendance updated');
       qc.invalidateQueries({ queryKey: ['attendance'] });
+      qc.invalidateQueries({ queryKey: ['my-summary'] }); // the streak card counts today
       qc.invalidateQueries({ queryKey: ['leaves'] });
       setEditing(false); // reset BEFORE closing so the footer doesn't deref a null row
       setSelected(null);

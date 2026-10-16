@@ -43,6 +43,7 @@ export function DeclareWfhDialog() {
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['leaves'] });
     qc.invalidateQueries({ queryKey: ['attendance'] });
+    qc.invalidateQueries({ queryKey: ['my-summary'] }); // the streak card counts today
     qc.invalidateQueries({ queryKey: ['dashboard'] });
     qc.invalidateQueries({ queryKey: ['announcements'] });
   };

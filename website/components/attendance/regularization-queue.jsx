@@ -91,6 +91,7 @@ function PendingList() {
       toast.success(v.decision === 'APPROVED' ? 'Approved — attendance updated' : 'Request rejected');
       qc.invalidateQueries({ queryKey: ['regularizations'] });
       qc.invalidateQueries({ queryKey: ['attendance'] });
+      qc.invalidateQueries({ queryKey: ['my-summary'] }); // the streak card counts today
       // A decision can turn on whether the day is on leave, so anything showing leave
       // has to re-read rather than keep a copy from before the decision.
       qc.invalidateQueries({ queryKey: ['leaves'] });

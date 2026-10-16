@@ -42,6 +42,23 @@ function Stat({ icon: Icon, label, value, hint, tone = 'default' }) {
   );
 }
 
+/**
+ * The one line that says WHICH day the number above it is true for.
+ *
+ * The count is live now — an on-time check-in this morning is already in it and a late
+ * one has already reset it — so the old "counted up to <yesterday>" would be a lie. It
+ * survives only as the fallback for when the server could not judge today (the nightly
+ * scan is days behind), because then the number really is as old as it says.
+ */
+function streakNote(s) {
+  if (!s.live) return s.asOfYMD ? ` · counted up to ${formatYMD(s.asOfYMD)}` : '';
+  if (s.completedToday) return '';
+  if (s.today === 'ON_TIME') return ' · today counted';
+  if (s.today === 'BREAK') return ' · today’s late arrival reset it';
+  if (s.today === 'PENDING') return ' · today not counted yet';
+  return ' · today doesn’t count'; // off-day, holiday, birthday, leave or WFH
+}
+
 export default function MyStandingPage() {
   const [type, setType] = React.useState('monthly');
   const [range, setRange] = React.useState({ from: '', to: '' });
@@ -154,10 +171,12 @@ export default function MyStandingPage() {
                   ))}
                 </div>
                 <p className="mt-1.5 text-xs text-muted-foreground">
-                  {data.streak.count === 0
-                    ? `Check in on time ${data.streak.target} days running to earn +${data.streak.points} points`
-                    : `${data.streak.remaining} more on-time day${data.streak.remaining === 1 ? '' : 's'} → +${data.streak.points} points`}
-                  {data.streak.asOfYMD ? ` · counted up to ${formatYMD(data.streak.asOfYMD)}` : ''}
+                  {data.streak.completedToday
+                    ? `Run complete — +${data.streak.points} points land tonight, when today is counted`
+                    : data.streak.count === 0
+                      ? `Check in on time ${data.streak.target} days running to earn +${data.streak.points} points`
+                      : `${data.streak.remaining} more on-time day${data.streak.remaining === 1 ? '' : 's'} → +${data.streak.points} points`}
+                  {streakNote(data.streak)}
                 </p>
               </div>
             ) : null}

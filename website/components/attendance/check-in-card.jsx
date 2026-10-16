@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Clock, Home, LogIn, LogOut, MapPin, ShieldCheck } from 'lucide-react';
+import { Clock, Flame, Home, LogIn, LogOut, MapPin, ShieldCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAttendanceToday, fmtCountdown } from './use-attendance-today';
 import { GlassCard } from '@/components/glass/glass-card';
@@ -30,6 +30,16 @@ export const LATE_REASONS = [
   'Personal',
   'Other',
 ];
+
+/** What the streak chip says after the count — today's verdict in the fewest words. */
+function streakLine(s) {
+  if (s.completedToday) return `run complete — +${s.points} tonight`;
+  if (s.today === 'BREAK') return 'today’s late arrival reset it';
+  if (s.today === 'ON_TIME') return 'today counted';
+  if (s.today === 'PENDING') return 'check in on time to count today';
+  const left = Math.max(0, s.target - s.count);
+  return left ? `${left} more → +${s.points}` : `+${s.points}`;
+}
 
 export function CheckInCard() {
   const { user } = useAuth();
@@ -123,6 +133,20 @@ export function CheckInCard() {
             <Stat label={checkedOut ? 'Worked' : 'Elapsed'} value={checkedIn ? formatDuration(elapsedMin) : '—'} />
             <Stat label="Overtime" value={checkedIn ? formatDuration(overtimeMin) : '—'} highlight={overtimeMin > 0} />
           </div>
+
+          {/* The punctual streak, live, right where people check in — until now it existed
+              only on My Summary, so the thing that walking in on time actually DOES was
+              invisible at the moment it happened. The server sends it with this payload,
+              so it moves the instant a check-in lands. */}
+          {data?.streak ? (
+            <div className="-mt-2 flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5 rounded-xl bg-foreground/[0.03] px-3 py-2 text-xs ring-1 ring-border/50">
+              <Flame className={cn('size-3.5 shrink-0', data.streak.count > 0 ? 'text-amber-500' : 'text-muted-foreground')} />
+              <span className="font-medium tabular-nums">
+                {data.streak.count} of {data.streak.target} on time
+              </span>
+              <span className="text-muted-foreground">{streakLine(data.streak)}</span>
+            </div>
+          ) : null}
 
           {data?.gps?.enabled && !checkedOut ? (
             <p className="-mb-1 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">

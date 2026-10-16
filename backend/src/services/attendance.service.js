@@ -18,7 +18,8 @@ import {
 import { judgeCheckIn, penaltyRungs, lateMarksAt } from '../lib/lateLadder.js';
 import { effectiveSchedule, userWeekendDays, workWindowClosed } from '../lib/schedule.js';
 import { splitByJoining, periodStartFor, joinedYMD } from '../lib/joining.js';
-import { onCheckIn, onCheckOut, recomputeUserMonthOvertime, reconcileLatePenalty, reconcileLateFromRecord, clearAbsencePenalty, markStreaksStale } from './bonus.service.js';
+import { onCheckIn, onCheckOut, recomputeUserMonthOvertime, reconcileLatePenalty, reconcileLateFromRecord, clearAbsencePenalty, markStreaksStale, liveStreakFor } from './bonus.service.js';
+import { STREAK_LEN } from '../lib/streakDay.js';
 
 function httpError(status, code, message) {
   const e = new Error(message);
@@ -139,10 +140,12 @@ export async function checkIn(user, meta, coords, lateReason, { selfieToken = ''
   const ymd = ymdInTz(day);
   // A day this person can't be "late" on — company holiday, their own weekend/off-day,
   // their birthday — is recorded PRESENT with no late penalty. Their overtime still
-  // counts on check-out. A half-day leave goes through the ladder, which knows which
-  // half is owed: the worked MORNING of a half-day is never late; the worked AFTERNOON is
-  // judged against the shift midpoint (from the ladder's floor). (findOneAndUpdate's $set
-  // does not touch halfDayLeave, so a half-day leave stays flagged and charged 0.5.)
+  // counts on check-out. A half-day leave goes through the ladder, which knows which half
+  // is owed: the worked AFTERNOON is judged from the shift midpoint (from the ladder's
+  // floor), and the worked MORNING like any other morning (from
+  // MORNING_HALF_LATE_FLOOR_YMD — before that it could never be late).
+  // (findOneAndUpdate's $set does not touch halfDayLeave, so a half-day leave stays
+  // flagged and charged 0.5.)
   const offDay = await isOffDayFor(user, ymd, settings);
   // Site par late nahi lagti — owner ka niyam. Iska control ye hai ki selfie wala check-in
   // attendance table me saaf dikhta hai (meta me selfieKey hone se), taaki bina penalty ke
@@ -435,12 +438,25 @@ export async function getTodayPayload(user) {
     ? Math.abs(Number((settings.bonus.autoRules || []).find((r) => r.key === 'lateArrival')?.points) || 0)
     : 0;
 
+  // The punctual streak as it stands this second — shown under the check-in button so
+  // the effect of walking in on time (or late) is visible WHERE people check in, not
+  // only on My Summary. Costs no extra query: today's record and off-day flag are
+  // already in hand, which is the one case liveStreakFor can answer from memory.
+  const streakRule = settings.bonus?.enabled
+    ? (settings.bonus.autoRules || []).find((r) => r.key === 'punctualStreak')
+    : null;
+  const streakPoints = Math.abs(Number(streakRule?.points) || 0);
+  const streak = streakPoints > 0
+    ? { ...(await liveStreakFor(user, settings, { todayRecord: record, todayIsOffDay: offDay })), target: STREAK_LEN, points: streakPoints }
+    : null;
+
   return {
     record: record ? record.toJSON() : null,
     serverNow: now.toISOString(),
     isHoliday,
     lateMarks,
     lateArrivalPoints,
+    streak,
     afternoonHalf: !!(record?.halfDayLeave && record.halfDayPart === 'FIRST'),
     // Their own birthday: a day off for them alone. Checking in is welcome and is never
     // late; not coming in is never an absence and costs no points.
