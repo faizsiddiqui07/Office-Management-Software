@@ -32,7 +32,10 @@ import {
 import { formatTime, formatDuration, todayYMD } from '@/lib/time';
 import { LEAVE_TYPES } from '@/lib/leave';
 
-const columns = [
+/** Is there a selfie anywhere in this day's roster? */
+const hasSelfie = (r) => !!(r.attendance?.checkInMeta?.selfieKey || r.attendance?.checkOutMeta?.selfieKey);
+
+const ALL_COLUMNS = [
   {
     id: 'employee',
     header: 'Employee',
@@ -83,7 +86,7 @@ const columns = [
       const hasOut = !!a?.checkOutMeta?.selfieKey;
       if (!a || (!hasIn && !hasOut)) return <span className="text-xs text-muted-foreground">—</span>;
       return (
-        <span className="flex items-center gap-0.5">
+        <span className="flex flex-col items-start gap-0.5">
           {hasIn ? <SelfieView attendanceId={a.id} which="in" /> : null}
           {hasOut ? <SelfieView attendanceId={a.id} which="out" /> : null}
         </span>
@@ -236,6 +239,16 @@ export function EveryoneTab() {
   const totalOvertime = React.useMemo(
     () => rows.reduce((sum, r) => sum + (r.attendance?.overtimeMinutes || 0), 0),
     [rows],
+  );
+
+  // Selfie ka column SIRF us din dikhta hai jis din kisi ne selfie se attendance lagayi ho.
+  // Site par jaane wale ginti ke log hain aur ginti ke din — baaki poore mahine ye column
+  // sirf "—" ka ek khaali khamba hota tha. Ginti POORE roster par hai, filter ke baad wali
+  // list par nahi: warna "Absent" chunte hi column gayab ho jata aur table hil jati.
+  const showSelfie = React.useMemo(() => rows.some(hasSelfie), [rows]);
+  const columns = React.useMemo(
+    () => (showSelfie ? ALL_COLUMNS : ALL_COLUMNS.filter((c) => c.id !== 'selfie')),
+    [showSelfie],
   );
 
   const toggleFilter = (key) => setStatusFilter((f) => (f === key ? null : key));
