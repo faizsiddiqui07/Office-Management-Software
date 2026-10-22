@@ -6,7 +6,7 @@ import { notify, clearNotificationsFor } from '../models/Notification.js';
 import { LEADERSHIP } from '../lib/permissions.js';
 import { companyDayFromYMD, companyDayInstantAt, computeWork } from '../lib/time.js';
 import { effectiveSchedule } from '../lib/schedule.js';
-import { judgeCheckIn, penaltyRungs } from '../lib/lateLadder.js';
+import { judgeCheckIn, penaltyRungs, isSelfieCheckIn } from '../lib/lateLadder.js';
 import { onCheckOut, clearAbsencePenalty, reconcileLatePenalty, reconcilePerfectMonth, markStreaksStale } from './bonus.service.js';
 import { isOffDayFor } from './attendance.service.js';
 
@@ -228,8 +228,10 @@ async function applyToAttendance(reg) {
     const inAt = companyDayInstantAt(day, reg.requestedCheckIn);
     record.checkInAt = inAt;
     // The ladder decides late exactly as a self check-in would — a half-day leave's
-    // worked morning is never late, its worked afternoon is due at the shift midpoint.
-    record.status = !offDay && judgeCheckIn(inAt, day, record, sched).rungs > 0 ? 'LATE' : 'PRESENT';
+    // worked morning is never late, its worked afternoon is due at the shift midpoint,
+    // and a selfie check-in is never late at all.
+    const exempt = offDay || isSelfieCheckIn(record);
+    record.status = !exempt && judgeCheckIn(inAt, day, record, sched).rungs > 0 ? 'LATE' : 'PRESENT';
   }
   if (reg.requestedCheckOut) {
     record.checkOutAt = companyDayInstantAt(day, reg.requestedCheckOut);

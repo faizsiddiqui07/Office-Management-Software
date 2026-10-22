@@ -40,7 +40,11 @@ export function halfDayChips(att) {
   if (att.checkInAt) {
     worked = att.status === 'LATE' && att.excused
       ? { label: 'On duty', tone: 'success' }
-      : { label: 'Present', tone: 'success' };
+      // An unexcused late carries the same small "(late)" marker a normal day does.
+      // Without it the row read as a clean "Present" while the Late card upstairs
+      // counted it — the sheet and its own total disagreed on screen, and the half-day
+      // row was the only place that could happen.
+      : { label: 'Present', tone: 'success', late: att.status === 'LATE' };
   } else {
     worked = { label: '—', tone: 'neutral' }; // the working half isn't clocked yet
   }

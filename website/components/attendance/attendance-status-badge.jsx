@@ -14,7 +14,12 @@ export function AttendanceStatusBadge({ attendance, fallback }) {
   if (halves) {
     return (
       <span className="inline-flex flex-wrap items-center gap-1.5">
-        {halves.map((h, i) => <StatusBadge key={i} tone={h.tone}>{h.label}</StatusBadge>)}
+        {halves.map((h, i) => (
+          <span key={i} className="inline-flex items-center gap-1.5">
+            <StatusBadge tone={h.tone}>{h.label}</StatusBadge>
+            {h.late ? <span className="text-[11px] font-medium text-amber-600 dark:text-amber-300">(late)</span> : null}
+          </span>
+        ))}
       </span>
     );
   }
@@ -35,7 +40,7 @@ export function AttendanceStatusBadge({ attendance, fallback }) {
 /** Search/sort text matching what AttendanceStatusBadge displays. */
 export function attendanceStatusText(attendance, fallback) {
   const halves = halfDayChips(attendance);
-  if (halves) return halves.map((h) => h.label).join(' ');
+  if (halves) return halves.map((h) => (h.late ? `${h.label} (late)` : h.label)).join(' ');
   const s = effectiveStatus(attendance, fallback);
   return s === 'LATE' ? 'Present (late)' : attendanceStatusLabel(s);
 }

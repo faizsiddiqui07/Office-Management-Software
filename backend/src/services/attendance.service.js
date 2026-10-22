@@ -15,7 +15,7 @@ import {
   ymdInTz,
   computeWork,
 } from '../lib/time.js';
-import { judgeCheckIn, penaltyRungs, lateMarksAt } from '../lib/lateLadder.js';
+import { judgeCheckIn, penaltyRungs, lateMarksAt, isSelfieCheckIn } from '../lib/lateLadder.js';
 import { effectiveSchedule, userWeekendDays, workWindowClosed } from '../lib/schedule.js';
 import { splitByJoining, periodStartFor, joinedYMD } from '../lib/joining.js';
 import { onCheckIn, onCheckOut, recomputeUserMonthOvertime, reconcileLatePenalty, reconcileLateFromRecord, clearAbsencePenalty, markStreaksStale, liveStreakFor } from './bonus.service.js';
@@ -223,8 +223,11 @@ export async function setAttendanceRecord(userId, dateYMD, checkIn, checkOut) {
     const inAt = companyDayInstantAt(day, checkIn);
     record.checkInAt = inAt;
     // The ladder decides late the same way a self check-in would — including a half-day
-    // leave's worked half (morning: never late; afternoon: due at the midpoint).
-    record.status = !offDay && judgeCheckIn(inAt, day, record, sched).rungs > 0 ? 'LATE' : 'PRESENT';
+    // leave's worked half (morning: never late; afternoon: due at the midpoint), and
+    // including the selfie exemption, so typing a time on a site day doesn't invent a
+    // late the check-in itself would never have written.
+    const exempt = offDay || isSelfieCheckIn(record);
+    record.status = !exempt && judgeCheckIn(inAt, day, record, sched).rungs > 0 ? 'LATE' : 'PRESENT';
   } else {
     record.checkInAt = null;
     record.status = 'ABSENT';

@@ -55,6 +55,18 @@ export function shiftMidpoint(workStart, workEnd) {
   return minToHM(Math.floor((hmToMin(workStart) + hmToMin(workEnd)) / 2));
 }
 
+/**
+ * Selfie se laga hua check-in. Us par late NAHI lagti — owner ka niyam (site par jaane
+ * walon ke liye), aur uska ikloata nishaan `checkInMeta.selfieKey` hai.
+ *
+ * Ye chhoot pehle SIRF check-in ke waqt lagti thi. Uske baad jo bhi raasta us din ko
+ * dobara tolta hai — half-day leave lagna ya hatna, leadership ka time edit, correction
+ * approve — wo ladder se seedha poochta tha aur PRESENT ko chupchaap LATE kar deta tha.
+ * Us din ki selfie wahin padi rehti thi aur niyam aadha hi laagu hota tha. Ab har raasta
+ * yahi ek sawaal poochta hai.
+ */
+export const isSelfieCheckIn = (record) => !!record?.checkInMeta?.selfieKey;
+
 /** True when this day's record makes the person an afternoon-half worker under the rule. */
 export function isAfternoonHalf(ymd, record) {
   return !!record?.halfDayLeave && record.halfDayPart === 'FIRST' && ymd >= LATE_LADDER_FLOOR_YMD;

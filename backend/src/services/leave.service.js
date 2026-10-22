@@ -19,7 +19,7 @@ import { birthdayYMDSet } from '../lib/birthday.js';
 import { reconcileLateFromRecord, clearAbsencePenalty, reconcileNoLeaveMonth, reconcilePerfectMonth, reconcileAbsence, runRebuild, markStreaksStale } from './bonus.service.js';
 import { restampOffDay } from './attendance.service.js';
 import { userWeekendDays, effectiveSchedule } from '../lib/schedule.js';
-import { judgeCheckIn, LATE_LADDER_FLOOR_YMD } from '../lib/lateLadder.js';
+import { judgeCheckIn, LATE_LADDER_FLOOR_YMD, isSelfieCheckIn } from '../lib/lateLadder.js';
 import { runTransaction } from '../lib/transaction.js';
 
 const PAID_TYPES = ['CASUAL', 'SICK', 'PAID'];
@@ -685,8 +685,12 @@ async function markAttendanceOnLeave(userId, fromYMD, toYMD, halfDay, weekendDay
       // midpoint (the ladder, from its floor). A LATE written against 10:00 by a check-in
       // that turns out to be the afternoon half is re-read against 2:00 here. The penalty
       // follows post-commit in decideLeave (reconcileLateFromRecord).
+      // …par selfie wale check-in par ab bhi late nahi lagti: wo chhoot check-in ke waqt
+      // lagi thi aur yahan bhi lagni chahiye, warna leave approve hote hi PRESENT
+      // chupchaap LATE ho jaata tha.
       if (['PRESENT', 'LATE'].includes(existing.status)) {
-        existing.status = sched && judgeCheckIn(existing.checkInAt, day, existing, sched).rungs > 0 ? 'LATE' : 'PRESENT';
+        existing.status = sched && !isSelfieCheckIn(existing)
+          && judgeCheckIn(existing.checkInAt, day, existing, sched).rungs > 0 ? 'LATE' : 'PRESENT';
       }
       // eslint-disable-next-line no-await-in-loop
       await existing.save({ session });
@@ -766,8 +770,10 @@ async function revertAttendanceOnLeave(userId, fromYMD, toYMD, session, type = n
       // morning: somebody who came at 2:40 for an afternoon half that is now cancelled
       // was simply late. Only from the ladder's floor — an old day keeps its old verdict.
       // The penalty follows post-commit in cancelLeave (reconcileLateFromRecord).
+      // Selfie wala din yahan bhi chhoot ke saath hi dobara tola jaata hai.
       if (sched && ymdInTz(rec.date) >= LATE_LADDER_FLOOR_YMD && ['PRESENT', 'LATE'].includes(rec.status)) {
-        rec.status = judgeCheckIn(rec.checkInAt, rec.date, rec, sched).rungs > 0 ? 'LATE' : 'PRESENT';
+        rec.status = !isSelfieCheckIn(rec)
+          && judgeCheckIn(rec.checkInAt, rec.date, rec, sched).rungs > 0 ? 'LATE' : 'PRESENT';
       }
       // eslint-disable-next-line no-await-in-loop
       await rec.save({ session });
