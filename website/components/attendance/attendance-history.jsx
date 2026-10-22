@@ -15,7 +15,10 @@ import { PeriodFilter } from '@/components/glass/period-filter';
 import { resolvePeriod } from '@/lib/date-period';
 import { formatTime, formatDuration, formatDayLabel, todayYMD } from '@/lib/time';
 
-const columns = [
+/** Is din selfie se attendance lagi thi? */
+const hasSelfie = (r) => !!(r.checkInMeta?.selfieKey || r.checkOutMeta?.selfieKey);
+
+const ALL_COLUMNS = [
   { accessorKey: 'date', header: 'Date', cell: ({ row }) => formatDayLabel(row.original.date) },
   { accessorKey: 'checkInAt', header: 'In', cell: ({ row }) => formatTime(row.original.checkInAt) },
   { accessorKey: 'checkOutAt', header: 'Out', cell: ({ row }) => formatTime(row.original.checkOutAt) },
@@ -50,7 +53,7 @@ const columns = [
       const hasOut = !!r.checkOutMeta?.selfieKey;
       if (!hasIn && !hasOut) return null;
       return (
-        <span className="flex items-center gap-0.5">
+        <span className="flex flex-col items-start gap-0.5">
           {hasIn ? <SelfieView attendanceId={r.id} which="in" /> : null}
           {hasOut ? <SelfieView attendanceId={r.id} which="out" /> : null}
         </span>
@@ -109,6 +112,16 @@ export function AttendanceHistory() {
   });
   const records = React.useMemo(() => data?.records ?? [], [data]);
   const clipped = (data?.total ?? 0) > records.length;
+
+  // Selfie ka column SIRF tab dikhta hai jab is window me kam se kam ek din selfie se
+  // attendance lagi ho. Ye site par jaane walon ke liye hai — office me baithne wale
+  // ke liye wo poore mahine ek khaali khamba tha. Ginti POORI window par hai, sirf
+  // is page par nahi: warna agla page kholte hi column gayab ho jata aur table hil jati.
+  const showSelfie = React.useMemo(() => records.some(hasSelfie), [records]);
+  const columns = React.useMemo(
+    () => (showSelfie ? ALL_COLUMNS : ALL_COLUMNS.filter((c) => c.id !== 'selfie')),
+    [showSelfie],
+  );
 
   const summary = React.useMemo(() => {
     const present = records.filter((r) => r.status === 'PRESENT' || r.status === 'LATE').length;
