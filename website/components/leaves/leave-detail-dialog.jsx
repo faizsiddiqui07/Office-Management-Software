@@ -2,7 +2,7 @@
 
 import { AppDialog } from '@/components/glass/app-dialog';
 import { StatusBadge, STATUS_TONES } from '@/components/glass/status-badge';
-import { requestTypeLabel, isWFHType, formatRange, formatYMD } from '@/lib/leave';
+import { requestTypeLabel, isWFHType, formatRange, formatYMD, halfDayNote, halfDayPartFull } from '@/lib/leave';
 
 function Row({ label, children }) {
   return (
@@ -42,7 +42,7 @@ export function LeaveDetailDialog({ leave, open, onOpenChange, footer, showAppli
             ) : (
               <span className="text-xs text-muted-foreground">
                 · {leave.workingDays} day{leave.workingDays === 1 ? '' : 's'}
-                {leave.halfDay ? ' (half day)' : ''}
+                {leave.halfDay ? ` (${halfDayNote(leave)})` : ''}
               </span>
             )}
           </div>
@@ -50,6 +50,10 @@ export function LeaveDetailDialog({ leave, open, onOpenChange, footer, showAppli
           <div className="divide-y divide-border/50 rounded-xl bg-foreground/[0.03] px-3 ring-1 ring-border/50">
             {showApplicant && leave.user?.name ? <Row label="Applicant">{leave.user.name}</Row> : null}
             <Row label={isWFHType(leave.type) ? 'Date' : 'Dates'}>{formatRange(leave.startYMD, leave.endYMD)}</Row>
+            {/* Kaunsa aadha — yahi wo baat thi jo approver ko kahin dikhti hi nahi thi. */}
+            {leave.halfDay ? (
+              <Row label="Half day">{halfDayPartFull(leave.halfDayPart) || 'Not recorded'}</Row>
+            ) : null}
             {isWFHType(leave.type) ? null : <Row label="Working days">{leave.workingDays}</Row>}
             {leave.appliedAt ? <Row label="Applied on">{formatYMD(String(leave.appliedAt).slice(0, 10))}</Row> : null}
             {/* The leave balance is the wrong number to decide a WFH request on — it

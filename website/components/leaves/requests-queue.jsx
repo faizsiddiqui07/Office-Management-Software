@@ -22,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { requestTypeLabel, isWFHType, formatRange } from '@/lib/leave';
+import { requestTypeLabel, isWFHType, formatRange, halfDayPartLabel } from '@/lib/leave';
 import { LeaveDetailDialog } from './leave-detail-dialog';
 import { CoverageWarning } from './coverage-warning';
 
@@ -105,7 +105,20 @@ export function RequestsQueue() {
       },
       { id: 'type', header: 'Type', accessorFn: (r) => requestTypeLabel(r.type), cell: ({ row }) => requestTypeLabel(row.original.type) },
       { id: 'range', header: 'Dates', accessorFn: (r) => r.startYMD, cell: ({ row }) => formatRange(row.original.startYMD, row.original.endYMD) },
-      { id: 'days', header: 'Days', accessorFn: (r) => r.workingDays, cell: ({ row }) => <span className="tabular-nums">{row.original.workingDays}</span> },
+      {
+        id: 'days',
+        header: 'Days',
+        accessorFn: (r) => r.workingDays,
+        // 0.5 ke neeche KAUNSA aadha — approver ke liye yahi faisle ki baat hai.
+        cell: ({ row }) => (
+          <div className="leading-tight">
+            <span className="tabular-nums">{row.original.workingDays}</span>
+            {row.original.halfDay ? (
+              <p className="text-xs text-muted-foreground">{halfDayPartLabel(row.original.halfDayPart) || 'half day'}</p>
+            ) : null}
+          </div>
+        ),
+      },
       {
         id: 'reason',
         header: 'Reason',

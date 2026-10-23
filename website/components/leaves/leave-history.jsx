@@ -12,7 +12,7 @@ import { TableSkeleton } from '@/components/glass/skeletons';
 import { QueryError } from '@/components/glass/query-error';
 import { ConfirmDialog } from '@/components/glass/confirm-dialog';
 import { Button } from '@/components/ui/button';
-import { requestTypeLabel, formatRange } from '@/lib/leave';
+import { requestTypeLabel, formatRange, halfDayPartLabel } from '@/lib/leave';
 import { PeriodFilter } from '@/components/glass/period-filter';
 import { ALL_TIME, isPeriodActive, overlapsPeriod, resolvePeriod } from '@/lib/date-period';
 import { LeaveDetailDialog } from './leave-detail-dialog';
@@ -21,7 +21,20 @@ import { ApplyLeaveDialog } from './apply-leave-dialog';
 const columns = [
   { id: 'type', header: 'Type', accessorFn: (r) => r.type, cell: ({ row }) => requestTypeLabel(row.original.type) },
   { id: 'range', header: 'Dates', accessorFn: (r) => r.startYMD, cell: ({ row }) => formatRange(row.original.startYMD, row.original.endYMD) },
-  { id: 'days', header: 'Days', accessorFn: (r) => r.workingDays, cell: ({ row }) => <span className="tabular-nums">{row.original.workingDays}</span> },
+  {
+    id: 'days',
+    header: 'Days',
+    accessorFn: (r) => r.workingDays,
+    // 0.5 ke neeche KAUNSA aadha — warna apply karne ke baad khud bhi pata nahi chalta.
+    cell: ({ row }) => (
+      <div className="leading-tight">
+        <span className="tabular-nums">{row.original.workingDays}</span>
+        {row.original.halfDay ? (
+          <p className="text-xs text-muted-foreground">{halfDayPartLabel(row.original.halfDayPart) || 'half day'}</p>
+        ) : null}
+      </div>
+    ),
+  },
   {
     id: 'reason',
     header: 'Reason',

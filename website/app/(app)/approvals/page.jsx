@@ -18,7 +18,7 @@ import { ApprovalCard, waitingFor } from '@/components/approvals/approval-card';
 import { LeaveDetailDialog } from '@/components/leaves/leave-detail-dialog';
 import { RegularizationDetailDialog } from '@/components/attendance/regularization-detail-dialog';
 import { AppDialog } from '@/components/glass/app-dialog';
-import { requestTypeLabel, isWFHType, formatRange, formatYMD } from '@/lib/leave';
+import { requestTypeLabel, isWFHType, formatRange, formatYMD, halfDayNote } from '@/lib/leave';
 import { APP_LIVE_YMD } from '@/lib/app-live';
 
 /**
@@ -230,7 +230,7 @@ export default function ApprovalsPage() {
                     // what matters to the decision is their yearly WFH allowance.
                     isWFHType(l.type)
                       ? `Work from home · no leave deducted${l.requesterWfhRemaining != null ? ` · ${l.requesterWfhRemaining} of ${l.requesterWfhCap ?? 2} left` : ''}`
-                      : `${l.workingDays} working day${l.workingDays === 1 ? '' : 's'}${l.halfDay ? ' (half)' : ''}`,
+                      : `${l.workingDays} working day${l.workingDays === 1 ? '' : 's'}${l.halfDay ? ` (${halfDayNote(l)})` : ''}`,
                     l.user?.employeeId,
                   ]}
                   busy={busy}

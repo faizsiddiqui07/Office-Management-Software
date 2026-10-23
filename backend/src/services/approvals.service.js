@@ -23,7 +23,10 @@ import { ymdInTz, companyDayFromYMD } from '../lib/time.js';
  * section and nothing else, which is exactly right.
  */
 
-const LEAVE_FIELDS = 'user type startYMD endYMD workingDays halfDay reason status appliedAt decidedBy decidedAt decisionNote';
+// `halfDayPart` bhi chahiye: aadha din KAUNSA (subah ya dopahar) — approve karne wale
+// ko ye kahin dikhta hi nahi tha, sirf "0.5 days". Maangne wale ne chuna hai, to
+// faisla karne wale tak pahunchna chahiye.
+const LEAVE_FIELDS = 'user type startYMD endYMD workingDays halfDay halfDayPart reason status appliedAt decidedBy decidedAt decisionNote';
 const REG_FIELDS = 'user dateYMD requestedCheckIn requestedCheckOut reason status decidedBy decidedAt decisionNote createdAt';
 
 /**

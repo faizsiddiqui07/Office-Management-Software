@@ -30,7 +30,7 @@ import { DatePicker } from '@/components/ui/date-picker';
 import { APP_LIVE_YMD } from '@/lib/app-live';
 import { AttendanceStatusBadge, attendanceStatusText } from '@/components/attendance/attendance-status-badge';
 import { formatTime, formatDuration, companyYMD } from '@/lib/time';
-import { formatYMD } from '@/lib/leave';
+import { formatYMD, halfDayNote } from '@/lib/leave';
 import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/glass/page-header';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -361,7 +361,7 @@ export default function UserDossierPage() {
                           <span className="text-sm font-medium">{l.type}</span>
                           <span className="text-xs text-muted-foreground">· {l.workingDays} day{l.workingDays === 1 ? '' : 's'}</span>
                         </div>
-                        <p className="mt-1 text-sm">{fmtDate(l.startYMD)}{l.endYMD !== l.startYMD ? ` → ${fmtDate(l.endYMD)}` : ''}{l.halfDay ? ' (half day)' : ''}</p>
+                        <p className="mt-1 text-sm">{fmtDate(l.startYMD)}{l.endYMD !== l.startYMD ? ` → ${fmtDate(l.endYMD)}` : ''}{l.halfDay ? ` (${halfDayNote(l)})` : ''}</p>
                         {l.reason ? <p className="text-xs text-muted-foreground">{l.reason}</p> : null}
                       </div>
                     </GlassCard>

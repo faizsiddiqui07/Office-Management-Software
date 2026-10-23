@@ -27,6 +27,34 @@ export const isWFHType = (t) => t === WFH_TYPE;
 export const REQUEST_TYPE_LABELS = { ...LEAVE_TYPE_LABELS, [WFH_TYPE]: 'Work from home' };
 export const requestTypeLabel = (t) => REQUEST_TYPE_LABELS[t] ?? t;
 
+/**
+ * Aadha din KAUNSA — wahi do shabd jo apply dialog me chune jaate hain.
+ *
+ * Maangne wale ko to pata hota hai ki usne subah ka aadha maanga ya dopahar ka, par
+ * approve karne wale ko sirf "0.5 days" dikhta tha — aur wahi aadmi faisla kar raha hai.
+ *
+ * Purane request jinme half to likha hai par part nahi (field aane se pehle ke), unke
+ * liye khaali lautta hai: 'Morning' ka andaaza lagaa kar dikhana jhoot hoga.
+ */
+export function halfDayPartLabel(part) {
+  if (part === 'FIRST') return 'Morning';
+  if (part === 'SECOND') return 'Afternoon';
+  return '';
+}
+
+/** "half day · Morning" — list aur meta line ke liye. Half-day nahi to khaali. */
+export function halfDayNote(leave) {
+  if (!leave?.halfDay) return '';
+  const part = halfDayPartLabel(leave.halfDayPart);
+  return part ? `half day · ${part}` : 'half day';
+}
+
+/** "Morning · first half" — detail dialog ke liye poora wakya. */
+export function halfDayPartFull(part) {
+  const label = halfDayPartLabel(part);
+  return label ? `${label} · ${part === 'SECOND' ? 'second' : 'first'} half` : '';
+}
+
 const PAID_TYPES = ['CASUAL', 'SICK', 'PAID'];
 export const isPaidType = (t) => PAID_TYPES.includes(t);
 
