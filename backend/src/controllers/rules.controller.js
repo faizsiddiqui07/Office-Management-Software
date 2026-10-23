@@ -235,26 +235,33 @@ function resolveText(text, tokens) {
   return String(text).replace(/\{(\w+)\}/g, (m, k) => (tokens[k] !== undefined ? String(tokens[k]) : m));
 }
 
+/**
+ * The whole rule book for one viewer, placeholders already resolved.
+ *
+ * Alag se nikala gaya taaki AI Buddy ka `office_rules` tool BILKUL yahi padhe jo page
+ * padhti hai. Niyam dobara likhe jaate to ek din dono alag bolne lagte.
+ */
+export async function rulesForViewer(user) {
+  await ensureSeeded();
+  await migrateRuleText();
+  const tokens = await ruleTokens(user);
+  const sections = await RuleSection.find().sort({ order: 1, createdAt: 1 });
+  return {
+    canManage: isOwnerRole(user.role),
+    // The editor shows these live values beside each placeholder; harmless to send to
+    // everyone (they're the same numbers the rules themselves display).
+    tokens,
+    sections: sections.map((sec) => {
+      const j = sec.toJSON();
+      return { ...j, rules: j.rules.map((r) => ({ id: r.id, text: resolveText(r.text, tokens), raw: r.text })) };
+    }),
+  };
+}
+
 /** Everyone: the whole rule book, sections in order, placeholders resolved for THIS viewer. */
 export async function list(req, res, next) {
   try {
-    await ensureSeeded();
-    await migrateRuleText();
-    const tokens = await ruleTokens(req.user);
-    const sections = await RuleSection.find().sort({ order: 1, createdAt: 1 });
-    const canManage = isOwnerRole(req.user.role);
-    res.json(
-      ok({
-        canManage,
-        // The editor shows these live values beside each placeholder; harmless to send to
-        // everyone (they're the same numbers the rules themselves display).
-        tokens,
-        sections: sections.map((sec) => {
-          const j = sec.toJSON();
-          return { ...j, rules: j.rules.map((r) => ({ id: r.id, text: resolveText(r.text, tokens), raw: r.text })) };
-        }),
-      }),
-    );
+    res.json(ok(await rulesForViewer(req.user)));
   } catch (err) {
     next(err);
   }

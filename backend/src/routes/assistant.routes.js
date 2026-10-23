@@ -3,12 +3,13 @@ import { requireAuth } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/requirePermission.js';
 import { ok } from '../lib/apiResponse.js';
 import { claudePing, CLAUDE_MODEL, claudeConfigured } from '../lib/claude.js';
+import { ask } from '../services/assistant/index.js';
 
 /**
  * AI Buddy (plan: audits/15-ai-buddy-plan.md).
  *
- * Phase 0 me yahan sirf EK raasta hai — ye jaanchne ka ki key lagi hai aur model jawab
- * de raha hai. Buddy ka asli `/ask` Phase 1 me aayega, apne tools ke saath.
+ * `/ask` buddy ka asli darwaza hai. `/ping` aur `/status` uske aas-paas ka intezaam —
+ * ek jaanch ke liye, doosra ye batane ke liye ki buddy chaalu hai ya nahi.
  */
 export const assistantRouter = express.Router();
 
@@ -33,4 +34,19 @@ assistantRouter.get('/ping', requirePermission('manageSettings'), async (_req, r
  */
 assistantRouter.get('/status', (_req, res) => {
   res.json(ok({ enabled: claudeConfigured(), model: CLAUDE_MODEL }));
+});
+
+/**
+ * Buddy se ek sawaal.
+ *
+ * Koi permission gate NAHI — har signed-in banda poochh sakta hai. Rok tools me hai:
+ * is bande ko sirf wahi tools bheje jaate hain jo `can()` ijaazat deta hai, aur jo tool
+ * nahi bheja gaya wo bulaya hi nahi ja sakta. Ghanta-bhar ki ginti `ask()` ke andar.
+ */
+assistantRouter.post('/ask', async (req, res, next) => {
+  try {
+    res.json(ok(await ask(req.user, req.body?.question)));
+  } catch (err) {
+    next(err);
+  }
 });
