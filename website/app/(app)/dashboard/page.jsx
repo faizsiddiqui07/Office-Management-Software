@@ -26,6 +26,7 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can, roleName } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
+import { firstName } from '@/lib/name';
 import { formatMoney, categoryLabel } from '@/lib/expense';
 import { formatDuration } from '@/lib/time';
 import { requestTypeLabel } from '@/lib/leave';
@@ -60,10 +61,6 @@ function greeting() {
   if (h < 12) return 'Good morning';
   if (h < 17) return 'Good afternoon';
   return 'Good evening';
-}
-
-function firstName(name = '') {
-  return name.split(' ')[0] || name;
 }
 
 function fmtDate(iso) {
