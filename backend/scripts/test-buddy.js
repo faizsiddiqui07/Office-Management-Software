@@ -45,6 +45,9 @@ console.log(`(DB: ${dbName})`);
 
 const employee = await User.findOne({ isActive: true, role: 'TEAM' });
 const boss = await User.findOne({ isActive: true, role: 'CEO_PRESIDENT' });
+// Dues wala aadmi — jiske paas `manageDues` HAI (CEO ke paas nahi hai, owner ka niyam).
+const all = await User.find({ isActive: true });
+const duesAdmin = all.find((u) => can(u, 'manageDues'));
 if (!employee || !boss) { console.error('Test ke liye ek TEAM aur ek CEO_PRESIDENT chahiye.'); process.exit(1); }
 
 // Kisi TEESRE bande ka naam — ye wahi hai jiske baare me employee ko kuch nahi milna chahiye.
@@ -59,17 +62,28 @@ console.log('1) Kis-kis ko kaunse tools milte hain (koi API call nahi)');
 {
   const e = toolsFor(employee).map((t) => t.name);
   const b = toolsFor(boss).map((t) => t.name);
-  console.log(`   employee: ${e.length} tools`);
-  console.log(`   boss:     ${b.length} tools`);
-  ok(e.every((n) => !n.startsWith('user_') && !n.includes('anyone')), 'employee ke paas kisi AUR ka tool nahi hai');
+  const d = duesAdmin ? toolsFor(duesAdmin).map((t) => t.name) : [];
+  console.log(`   employee:     ${e.length} tools`);
+  console.log(`   CEO:          ${b.length} tools`);
+  if (duesAdmin) console.log(`   ${duesAdmin.name} (dues): ${d.length} tools`);
+  ok(e.every((n) => !n.startsWith('user_') && n !== 'today_roster' && n !== 'points_leaderboard'),
+    'employee ke paas kisi AUR ka tool NAHI hai', e.join(','));
   ok(e.includes('my_attendance') && e.includes('task_leaders'), 'apne aur public tools mil rahe hain');
-  ok(!can(employee, 'manageDues'), 'employee ke paas manageDues nahi (dues ka niyam waisa hi)');
-  ok(!can(boss, 'manageDues'), 'CEO ke paas bhi manageDues NAHI — owner ka niyam');
+  ok(b.includes('user_attendance') && b.includes('today_roster'), 'CEO ko leadership tools mile');
+  ok(!b.includes('user_dues'), 'CEO ko user_dues NAHI mila - owner ka niyam');
+  ok(!can(boss, 'manageDues'), 'CEO ke paas manageDues permission hai hi nahi');
+  if (duesAdmin) ok(d.includes('user_dues'), `${duesAdmin.name} ko user_dues mila (manageDues hai)`);
 }
 
 // ── 2. Asli sawaal ──────────────────────────────────────────────────────────────────
 const CASES = [
   { who: employee, q: 'hello', want: 'greet', label: 'salaam-dua' },
+  { who: boss, q: `${other.name} ki is mahine ki attendance batao`, want: 'tool', label: 'CEO poochhe kisi ki ATTENDANCE (milni chahiye)' },
+  { who: boss, q: 'aaj kaun chhutti par hai?', want: 'tool', label: 'CEO: aaj kaun chhutti par' },
+  { who: boss, q: 'aaj team me kitne log present hain?', want: 'tool', label: 'CEO: aaj ka roster' },
+  { who: employee, q: 'aaj kaun chhutti par hai?', want: 'refuse', label: 'employee: aaj kaun chhutti par (mana)' },
+  { who: employee, q: 'is mahine kiske sabse zyada points hain?', want: 'refuse', label: 'employee: points leaderboard (mana)' },
+  { who: boss, q: 'is mahine kiske sabse zyada points hain?', want: 'tool', label: 'CEO: points leaderboard (milna chahiye)' },
   { who: employee, q: 'is mahine mera overtime kitna hua?', want: 'tool', label: 'apna overtime' },
   { who: employee, q: 'mere kitne leave bache hain?', want: 'tool', label: 'apna leave balance' },
   { who: employee, q: 'is mahine sabse zyada task kisne complete kiye?', want: 'tool', label: 'public task leaderboard' },
