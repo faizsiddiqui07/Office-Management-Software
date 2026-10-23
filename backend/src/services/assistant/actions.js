@@ -13,15 +13,20 @@
  * se juda hota hai. Isliye model ko likhne ka haq diya hi nahi gaya: wo sirf tajweez de
  * sakta hai, aur beech me ek insaan khada hai.
  *
- * Jo v1 me JAAN-BUJH KAR nahi hai: kisi AUR ko task dena, kisi ki chhutti approve karna,
- * attendance badalna, paise se juda kuch bhi. Pehla tabka galat ho to apna nuksaan; wo
- * wala galat ho to doosre ka record. Unke liye owner ka alag faisla chahiye.
+ * Jo ab bhi JAAN-BUJH KAR nahi hai: kisi ki chhutti approve karna, attendance badalna,
+ * paise se juda kuch bhi. Un sab ke liye owner ka alag faisla chahiye.
+ *
+ * "Kisi aur ko task dena" owner ki ijaazat se juda (24 Oct 2026). Wo doosre ke account
+ * par record banata hai, isliye uske niyam yahan BANAYE NAHI GAYE — app ke apne
+ * `canAssignTo` / `assignableUsers` hi lage hain. Jisko aap app me kaam nahi de sakte,
+ * usko buddy se bhi nahi de sakte.
  */
 import { AssistantAction } from '../../models/AssistantAction.js';
 import { Task } from '../../models/Task.js';
 import { can } from '../../lib/permissions.js';
 import { ymdInTz } from '../../lib/time.js';
-import { createTask, setStatus } from '../task.service.js';
+import { createTask, setStatus, canAssignAny, canAssignTo, assignableUsers } from '../task.service.js';
+import { User } from '../../models/User.js';
 import { applyLeave } from '../leave.service.js';
 
 const YMD = /^\d{4}-\d{2}-\d{2}$/;
@@ -45,6 +50,65 @@ const nice = (ymd) =>
  * agar haan hui to EXACTLY kya hoga, aur wahi `payload` me jama kar deta hai.
  */
 export const ACTIONS = {
+  assign_task: {
+    // Yahan permission nahi, ek SAWAAL hai. Delegation `can()` se nahi chalti — har
+    // bande ke apne `taskAssign` field se chalti hai (mode ALL, ya chuni hui list).
+    // Isliye gate wahi function hai jo app ka assign-button dikhata hai.
+    gate: canAssignAny,
+    label: 'Give someone a task',
+    async propose(user, input) {
+      const title = String(input.title || '').trim().slice(0, 200);
+      if (title.length < 2) return { error: 'NEED_TITLE', message: 'What is the task?' };
+      const q = String(input.person || '').trim().toLowerCase();
+      if (q.length < 2) return { error: 'NEED_PERSON', message: 'Who should it go to?' };
+
+      // SIRF un logon me se jinhe ye banda kaam de sakta hai — poore roster me se nahi.
+      // Jo list me hai hi nahi, uska naam AI ke haath me aata hi nahi.
+      const allowed = await assignableUsers(user);
+      const words = q.split(/\s+/).filter(Boolean);
+      const hits = allowed.filter((u) => {
+        const n = u.name.toLowerCase();
+        return n === q || words.every((w) => n.includes(w));
+      });
+
+      if (hits.length === 0) {
+        // Naam roster me to hai par is bande ki pahunch me nahi — ye saaf kehna behtar
+        // hai, warna lagta hai aadmi hi nahi hai aur banda naam dobara likhta rehta hai.
+        const exists = await User.exists({ isActive: true, name: new RegExp(words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*'), 'i') });
+        return exists
+          ? { error: 'NOT_ALLOWED', message: 'You cannot assign work to that person.' }
+          : { error: 'NO_SUCH_PERSON', message: `No active employee matches "${input.person}".` };
+      }
+      if (hits.length > 1) {
+        return {
+          error: 'AMBIGUOUS',
+          message: `More than one person matches "${input.person}" — ask which one.`,
+          candidates: hits.slice(0, 6).map((u) => u.name),
+        };
+      }
+
+      const due = YMD.test(input.due || '') ? input.due : '';
+      if (due && due < today()) {
+        return { error: 'PAST_DATE', message: 'That due date is already past — pick today or later.' };
+      }
+      const to = hits[0];
+      return {
+        payload: { assignTo: String(to.id), personName: to.name, title, dueYMD: due },
+        summary: `Give ${to.name} a task: “${title}”${due ? `, due ${nice(due)}` : ' (no due date)'}`,
+      };
+    },
+    async run(user, payload) {
+      // Dobara jaanch: tajweez banne aur Confirm dabne ke beech me kisi ki pahunch badal
+      // sakti hai, ya banda deactivate ho sakta hai.
+      const target = await User.findOne({ _id: payload.assignTo, isActive: true });
+      if (!target) throw httpError(404, 'NOT_FOUND', 'That person is no longer active.');
+      if (!canAssignTo(user, target)) throw httpError(403, 'FORBIDDEN', 'You cannot assign work to that person.');
+      // createTask apne andar bhi yahi jaanch dobara karti hai — teesra taala.
+      const { tasks } = await createTask(user, { title: payload.title, dueYMD: payload.dueYMD || '', assignTo: [payload.assignTo] });
+      return { assigned: payload.personName, task: tasks?.[0]?.title ?? payload.title };
+    },
+  },
+
   create_task: {
     gate: null, // to-do sabke paas hai
     label: 'Create a to-do',
@@ -133,8 +197,17 @@ export const ACTIONS = {
 };
 
 /** Jo kaam is bande ko diye ja sakte hain. */
+/**
+ * Jo kaam is bande ko diye ja sakte hain.
+ *
+ * `gate` ya to ek permission ka naam hai, ya ek SAWAAL (function). Delegation ke liye
+ * sawaal chahiye tha: wo `can()` se nahi, har bande ke apne `taskAssign` se chalti hai.
+ */
 export const actionsFor = (user) =>
-  Object.entries(ACTIONS).filter(([, a]) => !a.gate || can(user, a.gate));
+  Object.entries(ACTIONS).filter(([, a]) => {
+    if (!a.gate) return true;
+    return typeof a.gate === 'function' ? a.gate(user) : can(user, a.gate);
+  });
 
 /** AI ko dikhne wale "propose" tools. */
 export function actionTools(user) {
@@ -164,6 +237,23 @@ export function actionTools(user) {
         type: 'object',
         properties: { title: { type: 'string', description: 'A few words from the to-do’s title.' } },
         required: ['title'],
+        additionalProperties: false,
+      },
+    });
+  }
+  if (has('assign_task')) {
+    out.push({
+      name: 'propose_assign_task',
+      description:
+        'Prepare a task for SOMEONE ELSE. This does NOT create it — it returns something for the signed-in person to confirm. Only people they are allowed to delegate to; if the tool says they cannot, tell them so and stop.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          person: { type: 'string', description: "The colleague's name as the user said it." },
+          title: { type: 'string', description: 'What the task says.' },
+          due: { type: 'string', description: 'Due date YYYY-MM-DD. Omit if they did not give one.' },
+        },
+        required: ['person', 'title'],
         additionalProperties: false,
       },
     });
@@ -203,9 +293,8 @@ export async function proposeAction(user, toolName, input) {
   const kind = toolName.replace(/^propose_/, '');
   const action = ACTIONS[kind];
   if (!action) return { error: 'UNKNOWN', message: 'That is not something I can do.' };
-  if (action.gate && !can(user, action.gate)) {
-    return { error: 'NOT_ALLOWED', message: 'You do not have access to that.' };
-  }
+  const allowed = actionsFor(user).some(([key]) => key === kind);
+  if (!allowed) return { error: 'NOT_ALLOWED', message: 'You do not have access to that.' };
   const made = await action.propose(user, input || {});
   if (made.error) return made;
 
@@ -242,7 +331,8 @@ export async function confirmAction(user, proposalId) {
   }
   const action = ACTIONS[doc.kind];
   if (!action) throw httpError(400, 'UNKNOWN', 'That is not something I can do.');
-  if (action.gate && !can(user, action.gate)) {
+  // Dobara — tajweez banne aur Confirm dabne ke beech me role ya pahunch badal sakti hai.
+  if (!actionsFor(user).some(([key]) => key === doc.kind)) {
     throw httpError(403, 'FORBIDDEN', 'You do not have access to that.');
   }
 

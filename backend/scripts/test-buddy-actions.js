@@ -24,6 +24,8 @@ import { AssistantAction } from '../src/models/AssistantAction.js';
 import { AuditLog } from '../src/models/AuditLog.js';
 import { loadRoles } from '../src/lib/roles.js';
 import { ask, confirm } from '../src/services/assistant/index.js';
+import { actionsFor } from '../src/services/assistant/actions.js';
+import { canAssignAny, assignableUsers } from '../src/services/task.service.js';
 import { claudeConfigured } from '../src/lib/claude.js';
 
 let pass = 0; let fail = 0;
@@ -125,14 +127,62 @@ console.log('\n6) Chhutti ki arzi');
   }
 }
 
-// ── 7. Jo v1 me nahi hai ────────────────────────────────────────────────────────
-console.log('\n7) Jo kaam v1 me NAHI hai');
+// ── 7. Kisi AUR ko task dena ────────────────────────────────────────────────────
+console.log('\n7) Kisi AUR ko task dena');
 {
-  const before = await Task.countDocuments({ owner: other._id });
-  const r = await ask(me, `${other.name} ko ek task do: report bhejni hai`);
-  console.log(`   A: ${r.answer}`);
-  ok(await Task.countDocuments({ owner: other._id }) === before, `${other.name} ko koi task NAHI mila`);
-  ok(!r.pending || r.pending.kind === 'create_task', 'kisi aur ko dene wali tajweez bani hi nahi', JSON.stringify(r.pending));
+  // Do tarah ke bande: jo de sakta hai, aur jo nahi de sakta.
+  const all = await User.find({ isActive: true });
+  const giver = all.find((u) => canAssignAny(u));
+  const nonGiver = all.find((u) => !canAssignAny(u));
+
+  ok(!!giver, 'ek aisa banda mila jo kaam de sakta hai');
+  ok(!!nonGiver, 'aur ek jo nahi de sakta');
+
+  // (a) jo nahi de sakta — use tool milna hi nahi chahiye
+  if (nonGiver) {
+    const names = actionsFor(nonGiver).map(([k]) => k);
+    ok(!names.includes('assign_task'), `${nonGiver.name} ko assign_task tool mila hi nahi`, names.join(','));
+  }
+
+  // (b) jo de sakta hai — uski apni list me se kisi ko
+  if (giver) {
+    const can2 = await assignableUsers(giver);
+    ok(can2.length > 0, `${giver.name} kam se kam ek bande ko kaam de sakta hai`);
+    const target = can2[0];
+    const TITLE2 = `UI-TEST assign ${Date.now()}`;
+    const before = await Task.countDocuments({ title: TITLE2 });
+
+    const r = await ask(giver, `${target.name} ko ek task do: "${TITLE2}"`);
+    console.log(`   A: ${r.answer}`);
+    ok(await Task.countDocuments({ title: TITLE2 }) === before, 'Confirm se pehle task BANA NAHI');
+    ok(r.pending?.kind === 'assign_task', 'assign wali tajweez bani', JSON.stringify(r.pending));
+    ok((r.pending?.summary || '').includes(target.name), 'tajweez me SAAF likha hai kiske liye hai', r.pending?.summary);
+
+    if (r.pending) {
+      await confirm(giver, r.pending.id);
+      const made = await Task.findOne({ title: TITLE2 });
+      ok(!!made, 'Confirm ke baad task bana');
+      ok(String(made?.owner) === String(target.id), `owner ${target.name} hai, dene wala nahi`);
+      ok(String(made?.assignedBy) === String(giver._id), 'assignedBy dene wale par hai');
+      await Task.deleteMany({ title: TITLE2 });
+    }
+  }
+
+  // (c) jisko ye banda kaam nahi de sakta, usko dene ki koshish
+  if (giver) {
+    const can2 = await assignableUsers(giver);
+    const okIds = new Set(can2.map((u) => String(u.id)));
+    const forbidden = all.find((u) => String(u._id) !== String(giver._id) && !okIds.has(String(u._id)));
+    if (forbidden) {
+      const before = await Task.countDocuments({ owner: forbidden._id });
+      const r = await ask(giver, `${forbidden.name} ko ek task do: UI-TEST forbidden`);
+      console.log(`   A: ${r.answer}`);
+      ok(await Task.countDocuments({ owner: forbidden._id }) === before, `${forbidden.name} ko koi task NAHI mila`);
+      ok(r.pending?.kind !== 'assign_task', 'uske liye tajweez bani hi nahi', JSON.stringify(r.pending));
+    } else {
+      console.log('   (is DB me aisa koi nahi jisko giver kaam na de sake — ye hissa chhoda)');
+    }
+  }
 }
 
 // ── Safai ───────────────────────────────────────────────────────────────────────

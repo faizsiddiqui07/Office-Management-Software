@@ -159,9 +159,27 @@ Inme employee ka id **token se** aata hai, AI ke batane se nahi. AI chaahe bhi t
 
 **Naam se aadmi pehchanna:** "Faiz" → kaunsa user, ye **server** tay karega (roster se), AI nahi. Do log mil gaye to buddy wapas poochhega *"Mohd Faiz ya Faiz Ahmad?"* — apne se andaza nahi lagayega.
 
-### 4d. v1 me AI kuch **karega nahi**, sirf batayega
+### 4d. AI khud kuch nahi karta — tajweez deta hai (Phase 3, `8077492`)
 
-Task dena, leave lagana, attendance badalna — ye sab **v1 me nahi**. Padhne me galti ka matlab galat jawab hai; likhne me galti ka matlab **galat record**. Pehle padhna sahi chale, phir §7 me likhne wala phase.
+Padhne me galti ka matlab galat jawab hai; likhne me galti ka matlab **galat record**.
+Isliye model ko likhne ka haq diya hi nahi gaya: har `propose_*` tool sirf tajweez banata
+hai, aur asli kaam `POST /assistant/confirm` se hota hai — yaani user ke Confirm dabane
+par. Tajweez **server par** rakhi jaati hai (`AssistantAction`), client ko sirf uska `id`
+milta hai, to beech me taarikh/aadmi/raqam badalne ka raasta hi nahi bachta.
+
+| Kaam | Gate |
+|---|---|
+| Apna to-do banana | sabko |
+| Apna to-do done karna | sabko |
+| Chhutti ki arzi | `applyLeave` — aur arzi PENDING banti hai, approver ab bhi ek rok hai |
+| **Kisi aur ko task dena** (owner ki ijaazat, 24 Oct) | `canAssignAny` — `can()` nahi, kyunki delegation har bande ke apne `taskAssign` se chalti hai |
+
+Ab bhi **nahi**: kuch approve karna, attendance badalna, paise se juda kuch bhi.
+
+Assign wale par teen taale, teeno naape gaye: naam sirf `assignableUsers()` me se chunta
+hai (band bande ka naam AI ke haath me aata hi nahi), `run()` par `canAssignTo` dobara
+chalta hai, aur `createTask` apne andar teesri baar. Tajweez banne ke **baad** ijaazat
+chhin jaye to Confirm bhi ruk jaata hai.
 
 ---
 
