@@ -119,14 +119,17 @@ export function Buddy() {
         className={cn(
           'fixed right-7 z-50 grid size-12 place-items-center rounded-full',
           onChatPage ? 'bottom-7' : 'bottom-24',
-          'bg-background/80 shadow-lg shadow-black/15 ring-1 ring-border',
+          // Ghera patla rakha hai: blob 44px aur button 48px, yaani har taraf sirf 2px.
+          // Pehle blob 34px ka tha aur 7px ka gehra ghera use dabaa deta tha — icon
+          // chhota lagta tha aur button ek kaala gola.
+          'bg-background/60 shadow-lg shadow-black/15 ring-1 ring-border/70',
           'supports-backdrop-filter:backdrop-blur-sm',
           'transition-transform hover:scale-105 active:scale-95',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50',
           'motion-reduce:transition-none motion-reduce:hover:scale-100',
         )}
       >
-        <BuddyBlob size={34} playing={!open} />
+        <BuddyBlob size={44} playing={!open} />
       </button>
 
       <Sheet open={open} onOpenChange={setOpen}>
