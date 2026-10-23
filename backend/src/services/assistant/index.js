@@ -51,16 +51,16 @@ async function askedLastHour(userId) {
  */
 export async function ask(user, question) {
   const q = String(question || '').trim();
-  if (!q) throw httpError(400, 'EMPTY', 'Kuch poochhiye to sahi.');
+  if (!q) throw httpError(400, 'EMPTY', 'Ask me something first.');
   if (q.length > MAX_QUESTION) {
-    throw httpError(400, 'TOO_LONG', `Sawaal thoda chhota kijiye (${MAX_QUESTION} akshar tak).`);
+    throw httpError(400, 'TOO_LONG', `That is a bit long — keep it under ${MAX_QUESTION} characters.`);
   }
 
   const client = claudeClient();
-  if (!client) throw httpError(503, 'AI_OFF', 'Assistant abhi band hai.');
+  if (!client) throw httpError(503, 'AI_OFF', 'The assistant is switched off right now.');
 
   if ((await askedLastHour(user._id)) >= PER_HOUR) {
-    throw httpError(429, 'TOO_MANY', 'Is ghante ke sawaal poore ho gaye — thodi der baad.');
+    throw httpError(429, 'TOO_MANY', 'That is all the questions for this hour — please come back in a little while.');
   }
 
   // Isi bande ke tools. Jo is list me nahi hai, Claude use bula hi nahi sakta.
@@ -112,7 +112,7 @@ export async function ask(user, question) {
       messages.push({ role: 'user', content: results });
 
       // Aakhri chakkar me bhi tool maanga — ab aur nahi. Jo text mila wahi jawab hai.
-      if (i === MAX_ROUNDS - 1) answer = text || 'Itna hi nikal paya — thoda alag tarike se poochhiye.';
+      if (i === MAX_ROUNDS - 1) answer = text || 'That is as far as I got — try asking it a different way.';
     }
   } catch (err) {
     await audit({

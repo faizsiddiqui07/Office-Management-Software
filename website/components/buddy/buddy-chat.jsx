@@ -17,11 +17,13 @@ import { BuddyBlob } from './buddy-blob';
  * page me rakh dena das line ka kaam hai — baatcheet dobara nahi likhni padegi.
  */
 
+// English me — app ka baaki UI bhi English me hai (owner, 24 Oct). Jawab ki bhasha
+// alag baat hai: wo sawaal ki bhasha se tay hoti hai, chip ki bhasha se nahi.
 const CHIPS = [
-  'Mera overtime kitna hua?',
-  'Kitne leave bache hain?',
-  'Meri pending tasks',
-  'Agli chhutti kab hai?',
+  'My overtime this month',
+  'How much leave is left?',
+  'My pending tasks',
+  'When is the next holiday?',
 ];
 
 function Bubble({ role, text }) {
@@ -56,7 +58,7 @@ export function BuddyChat({ userName }) {
         ...t,
         // Rate limit ka message backend se aata hai aur saaf hota hai ("is ghante ke
         // sawaal poore ho gaye") — use chhupa kar "kuch galat ho gaya" likhna bekaar hai.
-        { role: 'buddy', text: e?.message || 'Abhi jawab nahi de paya. Thodi der baad poochhiye.', failed: true },
+        { role: 'buddy', text: e?.message || 'Could not answer just now. Please try again in a moment.', failed: true },
       ]),
   });
 
@@ -82,11 +84,11 @@ export function BuddyChat({ userName }) {
           <div className="flex flex-col items-center px-2 py-6 text-center">
             <BuddyBlob size={72} eager />
             <p className="mt-3 text-sm font-medium">
-              {userName ? `Namaste ${userName.split(' ')[0]}!` : 'Namaste!'}
+              {userName ? `Hi ${userName.split(' ')[0]}!` : 'Hi there!'}
             </p>
             <p className="mt-1 max-w-xs text-xs leading-relaxed text-muted-foreground">
-              Apni attendance, chhutti, points, tasks ya office ke niyam — kuch bhi poochhiye.
-              Jis bhasha me poochhenge, usi me jawab milega.
+              Ask about your attendance, leave, points, tasks or the office rules.
+              Ask in any language — the answer comes back in the same one.
             </p>
             <div className="mt-5 flex w-full flex-wrap justify-center gap-2">
               {CHIPS.map((c) => (
@@ -112,7 +114,7 @@ export function BuddyChat({ userName }) {
             {/* Jawab me 2–4 second lagte hain, isliye kuch na kuch hilta rehna chahiye —
                 warna lagta hai app atak gayi. */}
             <BuddyBlob size={26} eager />
-            <span className="text-xs text-muted-foreground">soch raha hoon…</span>
+            <span className="text-xs text-muted-foreground">thinking…</span>
           </div>
         ) : null}
 
@@ -138,16 +140,16 @@ export function BuddyChat({ userName }) {
               send();
             }
           }}
-          placeholder="Kuch poochhiye…"
+          placeholder="Ask something…"
           maxLength={500}
           className="max-h-28 min-h-10 flex-1 resize-none rounded-xl bg-muted/50 px-3 py-2 text-sm outline-none ring-1 ring-border focus:ring-2 focus:ring-primary/40"
         />
         {turns.length ? (
-          <Button type="button" variant="ghost" size="icon" title="Nayi baat shuru karein" onClick={() => setTurns([])}>
+          <Button type="button" variant="ghost" size="icon" title="Start again" onClick={() => setTurns([])}>
             <RotateCcw className="size-4" />
           </Button>
         ) : null}
-        <Button type="submit" size="icon" disabled={!draft.trim() || askIt.isPending} aria-label="Bhejein">
+        <Button type="submit" size="icon" disabled={!draft.trim() || askIt.isPending} aria-label="Send">
           <Send className="size-4" />
         </Button>
       </form>

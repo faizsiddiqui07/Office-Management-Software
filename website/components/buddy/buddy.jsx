@@ -49,7 +49,7 @@ export function Buddy() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        aria-label="Buddy se poochhein"
+        aria-label="Ask ManagiBot AI"
         className={cn(
           'fixed right-7 z-50 grid size-12 place-items-center rounded-full',
           onChatPage ? 'bottom-7' : 'bottom-24',
@@ -77,15 +77,15 @@ export function Buddy() {
           <div className="flex items-center gap-2.5 border-b border-border/60 px-4 py-3">
             <BuddyBlob size={30} playing={open} eager />
             <div className="min-w-0 flex-1">
-              <SheetTitle className="text-sm">Buddy</SheetTitle>
-              <SheetDescription className="text-xs">Office ke sawaalon ka jawab</SheetDescription>
+              <SheetTitle className="text-sm">ManagiBot AI</SheetTitle>
+              <SheetDescription className="text-xs">Answers about your office</SheetDescription>
             </div>
             <button
               type="button"
               onClick={() => setOpen(false)}
               className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
             >
-              Band karein
+              Close
             </button>
           </div>
           <BuddyChat userName={user.name} />

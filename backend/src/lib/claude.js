@@ -50,24 +50,24 @@ export function claudeClient() {
  */
 export function describeClaudeError(err) {
   if (err instanceof Anthropic.AuthenticationError) {
-    return 'API key galat hai ya laga hi nahi — Lambda ke ANTHROPIC_API_KEY ko dekho.';
+    return 'The API key is wrong or missing — check ANTHROPIC_API_KEY on the Lambda.';
   }
   if (err instanceof Anthropic.PermissionDeniedError) {
-    return 'Is key ko is model ki ijaazat nahi hai (workspace/scope dekho).';
+    return 'This key is not allowed to use this model (check the workspace and scope).';
   }
   if (err instanceof Anthropic.RateLimitError) {
-    return 'Abhi bahut saare sawaal ja rahe hain — thodi der baad.';
+    return 'Too many questions going out right now — please try again shortly.';
   }
   if (err instanceof Anthropic.BadRequestError) {
-    return `Request hi galat bani: ${err.message}`;
+    return `The request itself was malformed: ${err.message}`;
   }
   if (err instanceof Anthropic.APIConnectionError) {
-    return 'Anthropic tak pahunch nahi paaye (network ya timeout).';
+    return 'Could not reach Anthropic (network or timeout).';
   }
   if (err instanceof Anthropic.APIError) {
-    return `Anthropic se ${err.status}: ${err.message}`;
+    return `Anthropic returned ${err.status}: ${err.message}`;
   }
-  return err?.message || 'Pata nahi kya hua.';
+  return err?.message || 'Something went wrong.';
 }
 
 /**
