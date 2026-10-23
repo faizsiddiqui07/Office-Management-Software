@@ -336,9 +336,19 @@ const PUBLIC_TOOLS = [
     run: async (_user, input) => {
       const { from, to } = range(input, 90);
       const rows = await listHolidays({ from, to });
+      // Field ke naam Holiday model se hain: `title`, `startYMD`, `endYMD`. Pehle yahan
+      // `name` aur `dateYMD` padhe ja rahe the — dono maujood hi nahi, to buddy ko
+      // sirf `{type:'HOLIDAY'}` milta tha aur wo seedha keh deta tha ki "ginti to hai
+      // par naam-tareekh nahi dikh rahe". Jawab galat nahi tha, data hi khaali tha.
       return {
         from, to,
-        holidays: rows.slice(0, 40).map((h) => ({ date: h.dateYMD || h.date, name: h.name, type: h.type, optional: !!h.optional })),
+        holidays: rows.slice(0, 40).map((h) => ({
+          name: h.title,
+          date: h.startYMD,
+          ...(h.endYMD && h.endYMD !== h.startYMD ? { until: h.endYMD } : {}),
+          type: h.type, // HOLIDAY ya BIRTHDAY
+          ...(h.description ? { note: h.description } : {}),
+        })),
       };
     },
   },
@@ -479,12 +489,21 @@ const LEAD_TOOLS = [
       const to = today();
       const from = `${to.slice(0, 4)}-01-01`;
       const d = await getUserDossier(who.user._id, { from, to });
-      let rows = d.tasks?.tasks ?? (Array.isArray(d.tasks) ? d.tasks : []);
-      if (['PENDING', 'DONE'].includes(input.status)) rows = rows.filter((t) => t.status === input.status);
+      // Dossier `{ total, pending, done, overdue, items }` lautata hai. Pehle yahan
+      // `d.tasks.tasks` padha ja raha tha — jo hai hi nahi — to HAR bande ke 0 task
+      // dikhte the. Ye khaali jawab error se bura hai: dikhta sahi hai, hota galat.
+      const t = d.tasks || {};
+      let rows = Array.isArray(t.items) ? t.items : [];
+      if (['PENDING', 'DONE'].includes(input.status)) rows = rows.filter((x) => x.status === input.status);
       return {
         person: who.user.name,
-        count: rows.length,
-        tasks: rows.slice(0, 15).map((t) => ({ title: t.title, status: t.status, due: t.dueYMD || null })),
+        since: from,
+        total: t.total ?? rows.length,
+        pending: t.pending ?? null,
+        done: t.done ?? null,
+        overdue: t.overdue ?? null,
+        showing: Math.min(rows.length, 15),
+        tasks: rows.slice(0, 15).map((x) => ({ title: x.title, status: x.status, due: x.dueYMD || null })),
       };
     },
   },

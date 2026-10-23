@@ -59,6 +59,24 @@ const SECRET = 'mere kitne leave bache hain -- SECRET-MARKER-42';
   ok(back.turns.at(-1)?.text === SECRET, 'par history() use poora khol deti hai');
 }
 
+// ── 1b. Ek hi waqt par do baatein — YAHI bug ki jad thi ─────────────────────────
+// Sawaal aur jawab ek saath insert hote hain, to `createdAt` ek hi millisecond ka ban
+// sakta hai. Us haalat me sirf waqt se sort karne par kram tay NAHI hota — aur screen
+// par jawab sawaal se PEHLE aa jaata tha. Tiebreaker ObjectId hai.
+console.log('\n1b) Ek hi millisecond par sawaal aur jawab');
+{
+  await AssistantMessage.deleteMany({ user: me._id });
+  const same = new Date();
+  await AssistantMessage.insertMany([
+    { user: me._id, role: 'user', body: sealBytes('SAWAAL-EK'), createdAt: same },
+    { user: me._id, role: 'buddy', body: sealBytes('JAWAB-EK'), createdAt: same },
+  ]);
+  const h = await history(me, { limit: 10 });
+  ok(h.turns[0]?.text === 'SAWAAL-EK', 'sawaal PEHLE aaya', h.turns.map((t) => t.text).join(' | '));
+  ok(h.turns[1]?.text === 'JAWAB-EK', 'jawab uske BAAD');
+  ok(h.turns[0]?.role === 'user' && h.turns[1]?.role === 'buddy', 'role bhi sahi kram me');
+}
+
 // ── 2. Paging ───────────────────────────────────────────────────────────────────
 console.log('\n2) Page-dar-page (upar scroll wala raasta)');
 {
@@ -122,6 +140,15 @@ if (!claudeConfigured()) {
   ok(/wfh|work from home|ghar/i.test(r2.answer), 'adhoore sawaal "aur WFH?" ka matlab samajh gaya', r2.answer);
   const saved = await history(me, { limit: 10 });
   ok(saved.turns.length === 4, 'dono sawaal aur dono jawab save hue', `${saved.turns.length} mile`);
+  // Ginti kaafi nahi thi — pehle isi wajah se ulta kram pakda nahi gaya.
+  ok(
+    saved.turns.map((t) => t.role).join(',') === 'user,buddy,user,buddy',
+    'kram theek: sawaal, jawab, sawaal, jawab',
+    saved.turns.map((t) => t.role).join(','),
+  );
+  ok(saved.turns[0].text === 'mere kitne leave bache hain?', 'pehli line pehla SAWAAL hai', saved.turns[0].text.slice(0, 40));
+  ok(saved.turns[2].text === 'aur WFH?', 'teesri line doosra sawaal hai', saved.turns[2].text.slice(0, 40));
+  ok(!saved.turns[3].text.includes(saved.turns[1].text), 'doosre jawab me pehla jawab dobara nahi chipka', saved.turns[3].text.slice(0, 80));
 
   const logs = await AuditLog.find({ action: 'assistant.ask' });
   ok(logs.length === 2, 'dono sawaal log me ginti ke liye darj hue');

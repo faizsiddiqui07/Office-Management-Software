@@ -70,14 +70,33 @@ const readBody = (buf) => {
  * Pichhli baatein — AI ko dene ke liye, nayi se purani uthaa kar seedhi kar di gayi.
  */
 async function recentTurns(userId) {
+  // `_id` ka tiebreaker ZAROORI hai: sawaal aur jawab ek hi insert me jaate hain, to
+  // `createdAt` ek jaisa ho sakta hai aur akele usse kram tay nahi hota. ObjectId
+  // insert ke kram me banti hai, isliye wo sach batati hai.
   const rows = await AssistantMessage.find({ user: userId })
-    .sort({ createdAt: -1 })
+    .sort({ createdAt: -1, _id: -1 })
     .limit(MEMORY_TURNS)
     .select('role body');
-  return rows
+
+  const turns = rows
     .reverse()
     .map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: readBody(m.body) }))
     .filter((m) => m.content);
+
+  // API ka niyam: pehla message `user` ka hona chahiye aur role badal-badal kar aane
+  // chahiye. Purani kharab-kram wali rows (jab tiebreaker nahi tha) aise list bana
+  // sakti hain jo ye niyam tode. Bhejne se pehle saaf kar lo — warna ya to request
+  // hi 400 khaati hai, ya model ko jawab apne AGLE sawaal se juda dikhta hai aur wo
+  // har baar purana jawab dohraane lagta hai (yahi wo bug tha).
+  while (turns.length && turns[0].role !== 'user') turns.shift();
+  const clean = [];
+  for (const t of turns) {
+    if (clean.length && clean[clean.length - 1].role === t.role) clean[clean.length - 1] = t;
+    else clean.push(t);
+  }
+  // Aakhir me `assistant` hona chahiye — uske baad hi naya sawaal judega.
+  if (clean.length && clean[clean.length - 1].role === 'user') clean.pop();
+  return clean;
 }
 
 /**
@@ -93,7 +112,9 @@ export async function history(user, { before, limit = HISTORY_PAGE } = {}) {
     const d = new Date(before);
     if (!Number.isNaN(d.getTime())) filter.createdAt = { $lt: d };
   }
-  const rows = await AssistantMessage.find(filter).sort({ createdAt: -1 }).limit(n + 1).select('role body createdAt');
+  // Wahi `_id` tiebreaker — warna ek hi insert ke do messages ulte kram me aa jaate
+  // hain aur screen par jawab sawaal se PEHLE dikhta hai.
+  const rows = await AssistantMessage.find(filter).sort({ createdAt: -1, _id: -1 }).limit(n + 1).select('role body createdAt');
   const page = rows.slice(0, n);
   return {
     // Client ko seedha kram chahiye — purani upar, nayi neeche.
@@ -233,9 +254,13 @@ export async function ask(user, question) {
   // Baatcheet apni jagah, encrypted (dekho models/AssistantMessage.js). Ye wahi
   // jagah hai jahan se panel history padhta hai aur jahan se AI ko yaad aati hai.
   try {
+    // Waqt JAAN-BUJH KAR alag diya ja raha hai. Ek hi insert me dono ka `createdAt`
+    // ek hi millisecond ka ban jata tha, aur phir kram sirf `_id` ke bharose rehta.
+    // Dono taale lage rehne chahiye — paging `createdAt` par chalti hai.
+    const at = new Date();
     await AssistantMessage.insertMany([
-      { user: user._id, role: 'user', body: sealBytes(q) },
-      { user: user._id, role: 'buddy', body: sealBytes(answer || '') },
+      { user: user._id, role: 'user', body: sealBytes(q), createdAt: at },
+      { user: user._id, role: 'buddy', body: sealBytes(answer || ''), createdAt: new Date(at.getTime() + 1) },
     ]);
   } catch (err) {
     // Baat na save ho payi to jawab phir bhi dena hai — user ko uska kaam mila,

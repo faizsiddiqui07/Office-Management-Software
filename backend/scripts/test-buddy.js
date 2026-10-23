@@ -19,7 +19,12 @@ import { User } from '../src/models/User.js';
 import { loadRoles } from '../src/lib/roles.js';
 import { can } from '../src/lib/permissions.js';
 import { ask } from '../src/services/assistant/index.js';
-import { toolsFor } from '../src/services/assistant/tools.js';
+import { toolsFor, runTool } from '../src/services/assistant/tools.js';
+import { Task } from '../src/models/Task.js';
+import { listHolidays } from '../src/services/holiday.service.js';
+import { ymdInTz } from '../src/lib/time.js';
+
+const todayYMD = () => ymdInTz(new Date());
 import { claudeConfigured } from '../src/lib/claude.js';
 import { AuditLog } from '../src/models/AuditLog.js';
 
@@ -79,6 +84,65 @@ console.log('1) Kis-kis ko kaunse tools milte hain (koi API call nahi)');
   ok(!b.includes('user_dues'), 'CEO ko user_dues NAHI mila - owner ka niyam');
   ok(!can(boss, 'manageDues'), 'CEO ke paas manageDues permission hai hi nahi');
   if (duesAdmin) ok(d.includes('user_dues'), `${duesAdmin.name} ko user_dues mila (manageDues hai)`);
+}
+
+// ── 1c. Har tool asli data par — bina kisi API call ke ─────────────────────────────
+//
+// Ye hissa do bug ke baad joda gaya (24 Oct). Dono ek hi kism ke the: tool aise field
+// padh raha tha jo us document me the hi nahi.
+//   - `holidays` ne `name`/`dateYMD` padha, jabki model me `title`/`startYMD` hai —
+//     buddy ko sirf {type:'HOLIDAY'} milta tha aur wo saaf keh deta tha ki naam-tareekh
+//     nahi dikh rahe (jawab imaandar tha, data khaali tha).
+//   - `user_tasks` ne dossier ka `tasks.tasks` padha, jabki wo `tasks.items` hai — HAR
+//     bande ke 0 task dikhte the. Ye zyada khatarnak hai: khaali jawab galat nahi
+//     LAGTA.
+//
+// Isliye ab do taraf se jaancha jaata hai: kahin `undefined` to nahi, aur jahan mumkin
+// ho wahan jawab ko DB ke sach se milaya jaata hai.
+console.log('\n1c) Har tool asli data par (koi API call nahi)');
+{
+  const INPUTS = {
+    my_day: { date: todayYMD() },
+    holidays: { from: `${todayYMD().slice(0, 4)}-01-01`, to: `${todayYMD().slice(0, 4)}-12-31` },
+    announcements: { limit: 2 },
+    office_rules: { topic: 'leave' },
+    user_attendance: { person: other.name },
+    user_leaves: { person: other.name },
+    user_tasks: { person: other.name },
+    user_dues: { person: other.name },
+  };
+
+  /** Jawab me kahin `undefined` to nahi — wahi us bug ka nishaan hai. */
+  const sniff = (o, path = '') => {
+    if (o === undefined) return [path || '(root)'];
+    if (o === null || typeof o !== 'object') return [];
+    if (Array.isArray(o)) return o.slice(0, 3).flatMap((v, i) => sniff(v, `${path}[${i}]`));
+    return Object.entries(o).flatMap(([k, v]) => {
+      const at = `${path}${path ? '.' : ''}${k}`;
+      return v === undefined ? [at] : sniff(v, at);
+    });
+  };
+
+  for (const who of [employee, boss]) {
+    for (const t of toolsFor(who)) {
+      // eslint-disable-next-line no-await-in-loop
+      const out = await runTool(who, t.name, INPUTS[t.name] ?? {});
+      const missing = sniff(out);
+      ok(missing.length === 0, `${t.name} (${who.role}) me koi undefined field nahi`, missing.slice(0, 3).join(', '));
+    }
+  }
+
+  // DB ke sach se milao — "undefined nahi hai" kaafi nahi, khaali array bhi saaf dikhta hai.
+  const year = todayYMD().slice(0, 4);
+  const hol = await runTool(boss, 'holidays', { from: `${year}-01-01`, to: `${year}-12-31` });
+  const dbHol = await listHolidays({ from: `${year}-01-01`, to: `${year}-12-31` });
+  ok(hol.holidays.length === Math.min(dbHol.length, 40), `holidays ki ginti DB se mili (${hol.holidays.length})`);
+  ok(hol.holidays.every((h) => h.name && h.date), 'har holiday ka NAAM aur TAREEKH maujood');
+  ok(hol.holidays.some((h) => dbHol.some((d) => d.title === h.name)), 'naam asli hain, bane hue nahi');
+
+  const ut = await runTool(boss, 'user_tasks', { person: other.name });
+  const dbTotal = await Task.countDocuments({ owner: other._id });
+  ok(ut.total === dbTotal, `user_tasks ka total DB se mila (${ut.total} vs ${dbTotal})`);
 }
 
 // ── 2. Asli sawaal ──────────────────────────────────────────────────────────────────
