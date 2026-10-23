@@ -53,20 +53,68 @@ export function BuddyChat({ userName }) {
   const [pending, setPending] = React.useState(null);
   const endRef = React.useRef(null);
   const inputRef = React.useRef(null);
+  const listRef = React.useRef(null);
+  // Purani baatein ek saath nahi aatin — upar scroll karne par page-dar-page.
+  const [older, setOlder] = React.useState({ hasMore: false, oldest: null, loading: false });
+  const [booted, setBooted] = React.useState(false);
+  // Neeche chipke raho ya nahi. Naya jawab aaye to haan; purani baatein upar judein
+  // to NAHI — warna padhte-padhte screen neeche kood jaati hai.
+  const stick = React.useRef(true);
+  // Pichhli scroll position. Purani baatein SIRF tab aati hain jab user KHUD upar ki
+  // taraf scroll kare. Bina iske panel khulte hi sab aa jaata tha: khulne par jo
+  // auto-scroll neeche jaata hai wo bhi scroll event chalata hai, aur us waqt scrollTop
+  // 0 ke paas hota hai — handler ko lagta hai user upar pahunch gaya.
+  const lastTop = React.useRef(0);
+
+  // Panel khulte hi aakhri kuch baatein. 90 din ki poori history kabhi nahi.
+  React.useEffect(() => {
+    let dead = false;
+    api.get('/assistant/history')
+      .then((r) => {
+        if (dead) return;
+        setTurns((r.turns || []).map((t) => ({ role: t.role, text: t.text })));
+        setOlder({ hasMore: !!r.hasMore, oldest: r.oldest, loading: false });
+      })
+      .catch(() => {})
+      .finally(() => { if (!dead) setBooted(true); });
+    return () => { dead = true; };
+  }, []);
+
+  const loadOlder = React.useCallback(async () => {
+    const box = listRef.current;
+    if (!box || older.loading || !older.hasMore || !older.oldest) return;
+    setOlder((o) => ({ ...o, loading: true }));
+    try {
+      const r = await api.get(`/assistant/history?before=${encodeURIComponent(older.oldest)}`);
+      const before = box.scrollHeight;
+      stick.current = false;
+      setTurns((t) => [...(r.turns || []).map((x) => ({ role: x.role, text: x.text })), ...t]);
+      setOlder({ hasMore: !!r.hasMore, oldest: r.oldest, loading: false });
+      // Jahan padh rahe the wahin raho: upar jitna juda, utna neeche khisak jao.
+      requestAnimationFrame(() => {
+        if (listRef.current) listRef.current.scrollTop += listRef.current.scrollHeight - before;
+      });
+    } catch {
+      setOlder((o) => ({ ...o, loading: false }));
+    }
+  }, [older]);
 
   const askIt = useMutation({
     mutationFn: (question) => api.post('/assistant/ask', { question }),
     onSuccess: (res) => {
+      stick.current = true;
       setTurns((t) => [...t, { role: 'buddy', text: res.answer }]);
       setPending(res.pending || null);
     },
-    onError: (e) =>
+    onError: (e) => {
+      stick.current = true;
       setTurns((t) => [
         ...t,
         // Rate limit ka message backend se aata hai aur saaf hota hai ("is ghante ke
         // sawaal poore ho gaye") — use chhupa kar "kuch galat ho gaya" likhna bekaar hai.
         { role: 'buddy', text: e?.message || 'Could not answer just now. Please try again in a moment.', failed: true },
-      ]),
+      ]);
+    },
   });
 
   // Confirm — server ko sirf `id` jaata hai.
@@ -88,6 +136,7 @@ export function BuddyChat({ userName }) {
     // Naya sawaal poochha, matlab purani tajweez chhodi — wo server par apne aap
     // 15 minute me mit jaati hai, par button turant hat jaana chahiye.
     setPending(null);
+    stick.current = true;
     setTurns((t) => [...t, { role: 'user', text }]);
     setDraft('');
     askIt.mutate(text);
@@ -95,14 +144,29 @@ export function BuddyChat({ userName }) {
 
   // Naya jawab aate hi neeche — warna lamba jawab aadha kat kar dikhta hai.
   React.useEffect(() => {
+    if (!stick.current) return;
     endRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
   }, [turns.length, askIt.isPending, pending]);
 
-  const first = turns.length === 0;
+  // Khaali screen sirf tab jab history aa chuki ho aur sach me kuch na ho — warna
+  // purani baatein aane se theek pehle "Hi!" jhalak jaata hai.
+  const first = booted && turns.length === 0;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-4 py-3">
+      <div
+        ref={listRef}
+        onScroll={(e) => {
+          const top = e.currentTarget.scrollTop;
+          const goingUp = top < lastTop.current;
+          lastTop.current = top;
+          if (goingUp && top < 60) loadOlder();
+        }}
+        className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-4 py-3"
+      >
+        {older.loading ? (
+          <p className="py-2 text-center text-xs text-muted-foreground">loading older…</p>
+        ) : null}
         {first ? (
           <div className="flex flex-col items-center px-2 py-6 text-center">
             <BuddyBlob size={72} eager />
@@ -159,6 +223,11 @@ export function BuddyChat({ userName }) {
 
         <div ref={endRef} />
       </div>
+
+      {/* Logon ko pata hona chahiye ki baat kahan ja rahi hai aur kab tak rahegi. */}
+      <p className="px-4 pb-1 text-center text-[11px] leading-tight text-muted-foreground">
+        Chats are saved securely and removed after 90 days.
+      </p>
 
       <form
         className="flex items-end gap-2 border-t border-border/60 px-3 py-2.5"

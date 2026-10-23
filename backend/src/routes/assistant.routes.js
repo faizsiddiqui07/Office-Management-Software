@@ -3,7 +3,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/requirePermission.js';
 import { ok } from '../lib/apiResponse.js';
 import { claudePing, CLAUDE_MODEL, claudeConfigured } from '../lib/claude.js';
-import { ask, confirm } from '../services/assistant/index.js';
+import { ask, confirm, history } from '../services/assistant/index.js';
 
 /**
  * AI Buddy (plan: audits/15-ai-buddy-plan.md).
@@ -60,6 +60,20 @@ assistantRouter.post('/ask', async (req, res, next) => {
 assistantRouter.post('/confirm', async (req, res, next) => {
   try {
     res.json(ok(await confirm(req.user, req.body?.id)));
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Apni purani baatein — nayi se purani, page-dar-page.
+ *
+ * Sirf APNI: filter token wale user par hai, query se nahi aata. 90 din baad DB khud
+ * mita deta hai (models/AssistantMessage.js).
+ */
+assistantRouter.get('/history', async (req, res, next) => {
+  try {
+    res.json(ok(await history(req.user, { before: req.query.before, limit: req.query.limit })));
   } catch (err) {
     next(err);
   }

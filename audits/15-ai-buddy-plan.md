@@ -321,7 +321,8 @@ Components ke liye pehle **VengeanceUI** dekha jayega.
 | **0** | API key → Lambda env → ek chhota check ki key chal rahi hai. Koi UI nahi. | ghante bhar |
 | **1** | 6 "apne" tools + 3 public tools + buddy UI. Sirf padhna. **Yahi asli cheez hai.** | 3–4 din |
 | **2** | Leadership wale tools (§4c) | 2 din |
-| **3** | AI se kaam karwana (task dena, leave lagana) — har kaam se pehle "Confirm" button | baad me, alag faisla |
+| **3** | AI se kaam karwana — har kaam se pehle "Confirm" | ✅ `8077492` |
+| **4** | Baatcheet save (encrypted, 90 din), scroll-upar paging, Activity log se sawaal hataya | ✅ 24 Oct |
 
 Phase 1 ke baad hafta bhar asli istemal dekhenge: kaunse sawaal aate hain, kharcha kitna, jawab kitne sahi. Us naap ke baad hi phase 2.
 
@@ -332,7 +333,17 @@ Phase 1 ke baad hafta bhar asli istemal dekhenge: kaunse sawaal aate hain, kharc
 - **Koi bahar ka data nahi.** Web search nahi, koi doosra system nahi. Sirf aapka database.
 - **AI poore database par "sawaal" nahi chalayega.** Koi free SQL nahi — sirf ginti ke tay-shuda tools. Isi se security bhi aati hai aur kharcha bhi kaabu me rehta hai.
 - **Purana data AI ko nahi bhejenge.** Har sawaal us waqt ka taaza data uthayega.
-- **Chat history AI ko yaad nahi rahegi** (v1) — har sawaal apne me poora. Baad me chaahein to ek baithak ke andar yaad rakhna jod denge.
+- ~~Chat history AI ko yaad nahi rahegi~~ — **Phase 4 me jud gaya** (24 Oct, owner ka
+  faisla). Baatcheet `AssistantMessage` me **encrypted** rehti hai (wahi `secretBox` jo
+  chat ke messages par laga hai), **90 din** baad apne aap mitti hai, panel khulte hi
+  aakhri 20 aati hain aur upar scroll par 20-20 aur. AI ko pichhle **6 turn** yaad
+  rehte hain — poori history kabhi nahi, warna har sawaal mehenga hota jaata.
+  - **Chaabi kabhi mat badalna:** `APP_ENC_KEY` / `JWT_SECRET` badla to 90 din ki saari
+    baatein hamesha ke liye band. Yahi khatra SMTP password aur chat par pehle se hai.
+  - **Encrypted matn me search nahi ho sakta** — ye keemat jaan-bujh kar di gayi.
+  - **Activity log me ab sawaal ka MATN nahi jaata** (owner ka faisla): sirf kisne, kab,
+    kaunse tool, kitna kharcha. Baatcheet ek taraf encrypted rakhna aur doosri taraf
+    wahi matn khule log me chhodna taala lagane ka natak hota.
 
 ---
 

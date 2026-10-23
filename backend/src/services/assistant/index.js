@@ -7,6 +7,8 @@
  * Gateway 29 second par request kaat deta hai — usse pehle humein khud rukna hai.
  */
 import { AuditLog, audit } from '../../models/AuditLog.js';
+import { AssistantMessage } from '../../models/AssistantMessage.js';
+import { sealBytes, openBytes } from '../../lib/secretBox.js';
 import { claudeClient, CLAUDE_DEFAULTS, describeClaudeError } from '../../lib/claude.js';
 import { systemFor } from './prompt.js';
 import { toolsFor, toolDefs, runTool } from './tools.js';
@@ -28,6 +30,17 @@ const MAX_TOKENS = 500;
 const PER_HOUR = 30;
 /** Itne akshar se bada sawaal lena hi nahi — wo sawaal nahi, kuch aur hai. */
 const MAX_QUESTION = 500;
+/**
+ * Pichhli kitni baatein AI ko yaad rahengi.
+ *
+ * Saari 90 din ki history bhejna do wajah se galat hota: har sawaal ka kharcha badhta
+ * jaata (purani baatein bar-bar padhni padtin), aur purani baat naye sawaal ka matlab
+ * bigaad deti. Chhe se "uska matlab?" jaise sawaal chal jaate hain, aur usse zyada ki
+ * zaroorat shayad hi padti ho.
+ */
+const MEMORY_TURNS = 6;
+/** Ek baar me kitni purani baatein (scroll-upar wala page). */
+export const HISTORY_PAGE = 20;
 /** Devanagari ki range. Sirf ye dekhne ko ki jawab kis lipi me aaya. */
 const DEVANAGARI = /[\u0900-\u097F]/;
 
@@ -44,6 +57,52 @@ const DEVANAGARI = /[\u0900-\u097F]/;
 async function askedLastHour(userId) {
   const since = new Date(Date.now() - 60 * 60 * 1000);
   return AuditLog.countDocuments({ actor: userId, action: 'assistant.ask', createdAt: { $gte: since } });
+}
+
+/** Ciphertext → text. `null` matlab "rakha to hai par khulta nahi" — chhupana galat. */
+const readBody = (buf) => {
+  if (!buf || !buf.length) return '';
+  const out = openBytes(buf);
+  return out === null ? '⚠️ This message could not be opened' : out;
+};
+
+/**
+ * Pichhli baatein — AI ko dene ke liye, nayi se purani uthaa kar seedhi kar di gayi.
+ */
+async function recentTurns(userId) {
+  const rows = await AssistantMessage.find({ user: userId })
+    .sort({ createdAt: -1 })
+    .limit(MEMORY_TURNS)
+    .select('role body');
+  return rows
+    .reverse()
+    .map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: readBody(m.body) }))
+    .filter((m) => m.content);
+}
+
+/**
+ * Purani baatein — screen ke liye. `before` se pehle wali, nayi se purani.
+ *
+ * Ek saath sab nahi bhejte: 90 din ki baatein ek page par laadna dheema bhi hai aur
+ * bekaar bhi. Panel khulte hi aakhri ${HISTORY_PAGE}, aur upar scroll karne par utni aur.
+ */
+export async function history(user, { before, limit = HISTORY_PAGE } = {}) {
+  const n = Math.min(Math.max(Number(limit) || HISTORY_PAGE, 1), 50);
+  const filter = { user: user._id };
+  if (before) {
+    const d = new Date(before);
+    if (!Number.isNaN(d.getTime())) filter.createdAt = { $lt: d };
+  }
+  const rows = await AssistantMessage.find(filter).sort({ createdAt: -1 }).limit(n + 1).select('role body createdAt');
+  const page = rows.slice(0, n);
+  return {
+    // Client ko seedha kram chahiye — purani upar, nayi neeche.
+    turns: page.reverse().map((m) => ({ role: m.role, text: readBody(m.body), at: m.createdAt })),
+    // `hasMore` ek extra row maang kar tay hota hai, ginti karke nahi — 90 din ki
+    // countDocuments har baar chalana bekaar hai.
+    hasMore: rows.length > n,
+    oldest: page.length ? page[0].createdAt : null,
+  };
 }
 
 /**
@@ -72,7 +131,8 @@ export async function ask(user, question) {
   // /assistant/confirm se hota hai, yaani user ke Confirm dabane par.
   const tools = [...toolDefs(readTools), ...actionTools(user)];
   const system = systemFor(user);
-  const messages = [{ role: 'user', content: q }];
+  // Pichhli chand baatein saath me — taaki "uska matlab?" jaisa sawaal chal sake.
+  const messages = [...(await recentTurns(user._id)), { role: 'user', content: q }];
 
   const used = [];
   let pending = null;
@@ -130,7 +190,7 @@ export async function ask(user, question) {
     await audit({
       actor: user._id,
       action: 'assistant.ask',
-      meta: { q: q.slice(0, 200), failed: true, error: describeClaudeError(err), ms: Date.now() - startedAt },
+      meta: { failed: true, error: describeClaudeError(err), ms: Date.now() - startedAt },
     });
     throw httpError(502, 'AI_FAILED', describeClaudeError(err));
   }
@@ -170,15 +230,33 @@ export async function ask(user, question) {
 
   const ms = Date.now() - startedAt;
 
-  // Har sawaal log hota hai — kisne, kya, kaunse tool chale, kitna laga.
+  // Baatcheet apni jagah, encrypted (dekho models/AssistantMessage.js). Ye wahi
+  // jagah hai jahan se panel history padhta hai aur jahan se AI ko yaad aati hai.
+  try {
+    await AssistantMessage.insertMany([
+      { user: user._id, role: 'user', body: sealBytes(q) },
+      { user: user._id, role: 'buddy', body: sealBytes(answer || '') },
+    ]);
+  } catch (err) {
+    // Baat na save ho payi to jawab phir bhi dena hai — user ko uska kaam mila,
+    // history ka chhutna usse rokne ki wajah nahi.
+    console.error('buddy history save failed:', err?.message);
+  }
+
+  // Har sawaal log hota hai — kisne, kab, kaunse tool chale, kitna laga.
   // `noTool` wo sawaal hain jinme ek bhi tool nahi chala: aam taur par salaam-dua, ya
   // wo baatein jo app se bahar ki thi. Hafte bhar baad isi se pata chalega ki log kitna
   // bhatak rahe hain, aur prompt kasni hai ya nahi.
   await audit({
     actor: user._id,
     action: 'assistant.ask',
+    // SAWAAL KA MATN YAHAN JAAN-BUJH KAR NAHI HAI (owner ka faisla, 24 Oct 2026).
+    // Activity page leadership ko dikhta hai aur wahan poora meta khulta hai. Baatcheet
+    // ek taraf encrypted rakhein aur doosri taraf wahi matn khule log me chhod dein —
+    // wo taala lagane ka natak hota. Kharche aur durupyog ke liye ginti aur tool kaafi
+    // hain; KYA poocha, wo jaanne ki zaroorat nahi.
     meta: {
-      q: q.slice(0, 200), tools: used, noTool: used.length === 0, rounds, ms, usage,
+      tools: used, noTool: used.length === 0, rounds, ms, usage,
       ...(scriptFixed ? { scriptFixed: true } : {}),
       ...(pending ? { proposed: pending.kind, proposalId: pending.id } : {}),
     },
