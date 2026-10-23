@@ -6,6 +6,7 @@ import { Send, RotateCcw } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { firstName } from '@/lib/name';
 import { BuddyBlob } from './buddy-blob';
 
 /**
@@ -84,7 +85,7 @@ export function BuddyChat({ userName }) {
           <div className="flex flex-col items-center px-2 py-6 text-center">
             <BuddyBlob size={72} eager />
             <p className="mt-3 text-sm font-medium">
-              {userName ? `Hi ${userName.split(' ')[0]}!` : 'Hi there!'}
+              {firstName(userName) ? `Hi ${firstName(userName)}!` : 'Hi there!'}
             </p>
             <p className="mt-1 max-w-xs text-xs leading-relaxed text-muted-foreground">
               Ask about your attendance, leave, points, tasks or the office rules.
