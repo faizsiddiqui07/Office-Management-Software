@@ -27,6 +27,7 @@ import { rulesRouter } from './rules.routes.js';
 import { tasksRouter } from './tasks.routes.js';
 import { bonusRouter } from './bonus.routes.js';
 import { chatRouter } from './chat.routes.js';
+import { assistantRouter } from './assistant.routes.js';
 import { requireAuth } from '../middleware/auth.js';
 import { bootstrap } from '../controllers/bootstrap.controller.js';
 
@@ -93,6 +94,7 @@ apiRouter.use('/rules', rulesRouter);
 apiRouter.use('/tasks', tasksRouter);
 apiRouter.use('/bonus', bonusRouter);
 apiRouter.use('/chat', chatRouter);
+apiRouter.use('/assistant', assistantRouter);
 
 // ── Feature routers (added in later phases) ───────────────
 // apiRouter.use('/leaves', leavesRouter);
