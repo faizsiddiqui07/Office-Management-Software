@@ -14,11 +14,24 @@
 Owner ke apne shabd: *"jo leaderboard sabko dikhte hai wo sabko dikhe, jo nahi dikhte wo na
 dikhe"*. Ye poore plan ka niyam hai, sirf leaderboard ka nahi.
 
-**Isse ek baat badalti hai.** Leaderboard aaj **sabko dikhta hi nahi** —
-`bonus.routes.js:19` par wo `manageSettings` ke peeche hai, yaani sirf leadership ke paas.
-To owner ka apna udaharan ("employee poochh sake ki sabse zyada task kiske complete hue")
-is niyam se **nahi chalega**. Niyam jeeta, udaharan nahi. Chahein to badal sakte hain, par
-tab wo ek **naya** faisla hoga — "jo pehle se dikhta hai" wala nahi.
+### Leaderboard — teen hain, do khule aur ek band (24 Oct, code padh kar theek kiya)
+
+Pehle maine likha tha ki "leaderboard sabko dikhta hi nahi" — **wo galat tha**. Maine
+sirf points wala dekha tha. Asliyat:
+
+| Leaderboard | Kisko | Kahan se |
+|---|---|---|
+| **Task leaders** — on-time khatam hue delegated task ki ginti | **sabko** | `GET /dashboard/leaders` — sirf `requireAuth`, koi gate nahi |
+| **Overtime leaders** — kisne kitna overtime kiya | **sabko** | wahi |
+| **Points leaderboard** — kiske kitne points | **leadership** | `GET /bonus/leaderboard` → `manageSettings` |
+
+`components/dashboard/leaderboards.jsx` me khud likha hai: *"The two public leaderboards,
+shown to everyone."* Owner ne yahi kaha tha, aur code bhi yahi kehta hai.
+
+**Ek baareeki jo buddy me rakhni hai:** task leaderboard **har** task nahi ginta — sirf wo
+delegated kaam jo **on-time** khatam hua **aur jisme CEO & President shaamil** hai (card
+par bhi yahi likha hai). Buddy ko wahi ginti bolni hai jo dashboard bolta hai, isliye wo
+`leadersForPeriod()` ko hi bulayega — apna hisaab nahi karega.
 
 ---
 
@@ -118,10 +131,16 @@ Inme employee ka id **token se** aata hai, AI ke batane se nahi. AI chaahe bhi t
 | `chhuttiyan(from, to)` | `viewCalendar` (sabke paas) | holiday + birthday |
 | `announcements(limit)` | `viewAnnouncements` (sabke paas) | |
 | `niyam(topic)` | sabko | Rules page ka content |
+| `task_leaders(period)` | sabko — `GET /dashboard/leaders` par koi gate nahi | on-time delegated task ki ginti |
+| `overtime_leaders(period)` | wahi | kisne kitna overtime kiya |
 
-> Is tabke me **leaderboard nahi hai aur "aaj kaun chhutti par hai" bhi nahi** — dono aaj
-> sabko dikhte hi nahi (`bonus.routes.js:19` → `manageSettings`;
-> `dashboard.service.js:282` → `viewEveryone`). §0 ke niyam se dono §4c me gaye.
+> `period` wahi teen roop jo dashboard ke MonthPicker me hain: **is mahine / koi purana
+> mahina / all time**. Dono tools `leadersForPeriod()` hi bulate hain — wahi function jo
+> dashboard ka card bharta hai. Isliye buddy ka number aur card ka number kabhi alag nahi
+> honge.
+>
+> **Points wala leaderboard yahan NAHI hai** — wo `manageSettings` ke peeche hai, to wo
+> §4c me gaya. "Aaj kaun chhutti par hai" bhi wahin (`viewEveryone`).
 
 ### 4c. Doosron ki cheezein — sirf jab `can()` haan kahe
 
@@ -132,7 +151,7 @@ Inme employee ka id **token se** aata hai, AI ke batane se nahi. AI chaahe bhi t
 | `aaj_ka_roster(date)` | `viewEveryone` | wahi |
 | `kisi_ke_tasks(naam, status)` | `viewEveryone` ya `manageSettings` | task.service.js ka hi niyam |
 | `team_points(month)` | `viewEveryone` | wahi |
-| `leaderboard(month)` | `manageSettings` | aaj ka hi gate — leadership |
+| `points_leaderboard(month)` | `manageSettings` | aaj ka hi gate — leadership |
 | `aaj_kaun_chhutti_par(date)` | `viewEveryone` | aaj ka hi gate (owner: "leadership ko hi dikhe") |
 | `pending_approvals()` | `approveLeave` / `approveRegularization` | approvers |
 | `kharche(from, to)` | `viewExpenses` | CEO, Director, Admin Manager, Manager |
@@ -163,6 +182,60 @@ Task dena, leave lagana, attendance badalna — ye sab **v1 me nahi**. Padhne me
 - **Jawab me zyada bata dena.** Tool ne sahi data diya par AI ne jodte waqt kuch aur jod diya. Isliye tool utna hi lautaayega jitna chahiye — "poora record" kabhi nahi.
 - **Naam ki ulajhan.** Do "Saini" hain. Isliye server match karega aur ulajhan par wapas poochhega.
 - **Galat hisaab.** AI ginti khud na kare — joad-ghataav **tool** karega (wahi service jo page par dikhta hai), AI sirf use padh kar likhega. Warna buddy ka number page ke number se alag ho jayega, aur wo sabse bura hoga.
+
+---
+
+## 5b. Buddy kis cheez ka jawab dega (owner, 24 Oct)
+
+**Niyam:** buddy sirf **salaam-dua** karega aur **app se judi** baatein batayega. Office ke
+bahar ka kuch bhi — general knowledge, homework, ghar ki baat, "ye email likh do", cricket
+ka score — par wo **majakiya andaz me taal dega**, lambi bahas nahi karega.
+
+Udaharan jo system prompt me jayenge:
+
+| Sawaal | Buddy |
+|---|---|
+| "Hi / Good morning" | jawab de, aur ek-do kaam ke sujhav de |
+| "Mera overtime kitna hua?" | tool se jawab |
+| "Chhutti kaise apply karein?" | app ka tareeka bataye |
+| "Aaj ka cricket score?" | hans kar taal de |
+| "Mere liye ek shayari likh do" | wahi |
+| "Mera beta beemar hai, kya karun" | narmi se taal de, aur HR/leadership se baat karne ko kahe |
+
+Wo aakhri line jaan-bujh kar hai — mazak har baat par theek nahi hota. Jahan koi sach me
+pareshaani me ho, buddy ka mazak karna galat hoga; wahan wo narmi se insaan ki taraf
+bhejega.
+
+### Ye rok KITNI pakki hai — saaf baat
+
+Do alag cheezein hain, aur inki taakat alag hai:
+
+| | Kaise ruka hai | Kitna pakka |
+|---|---|---|
+| **Kisi aur ka data** | tool hi nahi diya jata | **pakka.** Jo cheez maujood nahi, wo nikaali nahi ja sakti — chahe kuch bhi likh kar poochho |
+| **Bahar ki baatein** | system prompt + chhota `max_tokens` | **pakka nahi.** Koi zidd kare to shayad ek-do line nikaal le |
+
+Ye farak chhupana nahi chahta. Scope ko tool se nahi roka ja sakta — "ye sawaal app ka hai
+ya nahi" koi permission check nahi hai, wo samajh ki baat hai. **Par nuksaan bhi alag hai:**
+kisi ka data lik jana **gambhir** hai; buddy ka kisi ko joke suna dena **sirf bekaar** hai.
+Isliye yahan prompt-level rok kaafi hai, aur data par kabhi nahi hogi.
+
+Saath me teen sahare:
+
+1. **`max_tokens` chhota** (~500) — drift bhi ho jaye to nibandh nahi likh sakta
+2. **Per-user rate limit** — bahar ki baaton me paisa na bahe
+3. **Log** — jab buddy ne bina kisi tool ke jawab diya ho, wo nishaan lag jayega. Hafte baad
+   saaf dikhega ki log kitna bhatak rahe hain; zyada ho to prompt kasa jayega
+
+### Bhasha — ek faisla chahiye
+
+App ka UI **English** me hai, par log aapas me **Hinglish** bolte hain. Buddy kis bhasha me
+jawab de?
+
+Mera sujhav: **jis bhasha me sawaal aaya, usi me jawab** — "mera overtime?" ka jawab
+Hinglish me, "my overtime?" ka English me. Sabse swabhavik lagta hai. Par agar aap chaahte
+hain ki hamesha English hi bole (app ke baaki hisse jaisa), wo bhi theek hai — ek line ka
+farak hai.
 
 ---
 
@@ -226,14 +299,18 @@ Components ke liye pehle **VengeanceUI** dekha jayega.
 
 | # | Sawaal | Owner ka faisla |
 |---|---|---|
-| 1 | Leaderboard sabko? | **Nahi.** "Jo sabko dikhte hain wo sabko, jo nahi dikhte wo na dikhein" → §0 ka niyam. Leaderboard aaj `manageSettings` ke peeche hai, to buddy me bhi wahin rahega |
+| 1 | Leaderboard sabko? | **Niyam:** jo aaj sabko dikhte hain wo sabko, jo nahi dikhte wo nahi. Code padhne par: **task leaders aur overtime leaders sabko** (`/dashboard/leaders`, koi gate nahi), **points wala leadership ko** (`manageSettings`). Teeno waise hi rahenge |
 | 2 | Apne dues? | **Haan** — `GET /dues/me` pehle se sabke liye khula hai (check kiya) |
 | 3 | "Aaj kaun chhutti par hai" sabko? | **Nahi — leadership ko hi** (aaj ka `viewEveryone` gate waisa hi) |
 | 4 | Chat ka bubble? | **Dono rahenge** — buddy chat ke bubble se thoda upar, chhota |
 | 5 | Icon? | Owner ka **Lottie "Ai Blob"** — §7 ki paanch shart ke saath |
 
-**Abhi bhi khula:** buddy ka **naam**. Bina naam ke bhi shuru ho sakta hai (abhi "Buddy"),
-baad me badalna ek line ka kaam hai.
+| 6 | Buddy kis cheez ka jawab de? | Sirf **greet + app ki baatein**. Bahar ka kuch bhi → majakiya andaz me taal de. Poora §5b |
+
+**Abhi bhi khula (dono rokne wale nahi):**
+
+- Buddy ka **naam** — abhi "Buddy" se shuru, badalna ek line ka kaam
+- **Bhasha** — sawaal ki bhasha me jawab (mera sujhav), ya hamesha English? (§5b)
 
 ---
 
