@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { Send, RotateCcw } from 'lucide-react';
+import { Send, RotateCcw, Check, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -48,12 +48,18 @@ function Bubble({ role, text }) {
 export function BuddyChat({ userName }) {
   const [turns, setTurns] = React.useState([]);
   const [draft, setDraft] = React.useState('');
+  // Ek waqt me ek hi tajweez. Yahan sirf `id` aur dikhane wali line rehti hai — kya
+  // hoga wo server ke paas likha hai, client ke paas kabhi nahi aata.
+  const [pending, setPending] = React.useState(null);
   const endRef = React.useRef(null);
   const inputRef = React.useRef(null);
 
   const askIt = useMutation({
     mutationFn: (question) => api.post('/assistant/ask', { question }),
-    onSuccess: (res) => setTurns((t) => [...t, { role: 'buddy', text: res.answer }]),
+    onSuccess: (res) => {
+      setTurns((t) => [...t, { role: 'buddy', text: res.answer }]);
+      setPending(res.pending || null);
+    },
     onError: (e) =>
       setTurns((t) => [
         ...t,
@@ -63,9 +69,25 @@ export function BuddyChat({ userName }) {
       ]),
   });
 
+  // Confirm — server ko sirf `id` jaata hai.
+  const doIt = useMutation({
+    mutationFn: (id) => api.post('/assistant/confirm', { id }),
+    onSuccess: (res) => {
+      setPending(null);
+      setTurns((t) => [...t, { role: 'buddy', text: `Done — ${res.summary}` }]);
+    },
+    onError: (e) => {
+      setPending(null);
+      setTurns((t) => [...t, { role: 'buddy', text: e?.message || 'That could not be done.' }]);
+    },
+  });
+
   const send = (q) => {
     const text = String(q ?? draft).trim();
     if (!text || askIt.isPending) return;
+    // Naya sawaal poochha, matlab purani tajweez chhodi — wo server par apne aap
+    // 15 minute me mit jaati hai, par button turant hat jaana chahiye.
+    setPending(null);
     setTurns((t) => [...t, { role: 'user', text }]);
     setDraft('');
     askIt.mutate(text);
@@ -74,7 +96,7 @@ export function BuddyChat({ userName }) {
   // Naya jawab aate hi neeche — warna lamba jawab aadha kat kar dikhta hai.
   React.useEffect(() => {
     endRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
-  }, [turns.length, askIt.isPending]);
+  }, [turns.length, askIt.isPending, pending]);
 
   const first = turns.length === 0;
 
@@ -109,6 +131,22 @@ export function BuddyChat({ userName }) {
         {turns.map((t, i) => (
           <Bubble key={i} role={t.role} text={t.text} />
         ))}
+
+        {/* Tajweez — jab tak Confirm na ho, kuch hua nahi hai. Isliye yahan wahi line
+            dikhti hai jo server ne banayi, aur wahi line Activity log me bhi jaati hai. */}
+        {pending && !askIt.isPending ? (
+          <div className="rounded-2xl bg-muted/60 p-3 ring-1 ring-border">
+            <p className="text-sm leading-relaxed">{pending.summary}</p>
+            <div className="mt-2.5 flex gap-2">
+              <Button size="sm" onClick={() => doIt.mutate(pending.id)} disabled={doIt.isPending} className="gap-1.5">
+                <Check className="size-3.5" /> {doIt.isPending ? 'Doing…' : 'Confirm'}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setPending(null)} disabled={doIt.isPending} className="gap-1.5">
+                <X className="size-3.5" /> Cancel
+              </Button>
+            </div>
+          </div>
+        ) : null}
 
         {askIt.isPending ? (
           <div className="flex items-center gap-2 px-1">

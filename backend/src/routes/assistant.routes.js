@@ -3,7 +3,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/requirePermission.js';
 import { ok } from '../lib/apiResponse.js';
 import { claudePing, CLAUDE_MODEL, claudeConfigured } from '../lib/claude.js';
-import { ask } from '../services/assistant/index.js';
+import { ask, confirm } from '../services/assistant/index.js';
 
 /**
  * AI Buddy (plan: audits/15-ai-buddy-plan.md).
@@ -46,6 +46,20 @@ assistantRouter.get('/status', (_req, res) => {
 assistantRouter.post('/ask', async (req, res, next) => {
   try {
     res.json(ok(await ask(req.user, req.body?.question)));
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Tajweez par haan.
+ *
+ * Body me sirf `id` — "kya karna hai" client se kabhi nahi aata. Wo server ke paas
+ * pehle se likha hai, aur wahi uthaya jaata hai (dekho services/assistant/actions.js).
+ */
+assistantRouter.post('/confirm', async (req, res, next) => {
+  try {
+    res.json(ok(await confirm(req.user, req.body?.id)));
   } catch (err) {
     next(err);
   }

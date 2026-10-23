@@ -10,6 +10,7 @@ import { AuditLog, audit } from '../../models/AuditLog.js';
 import { claudeClient, CLAUDE_DEFAULTS, describeClaudeError } from '../../lib/claude.js';
 import { systemFor } from './prompt.js';
 import { toolsFor, toolDefs, runTool } from './tools.js';
+import { actionTools, isActionTool, proposeAction, confirmAction } from './actions.js';
 
 // Baaki services jaisa hi — is codebase me httpError har service apna rakhti hai.
 function httpError(status, code, message) {
@@ -66,11 +67,15 @@ export async function ask(user, question) {
   }
 
   // Isi bande ke tools. Jo is list me nahi hai, Claude use bula hi nahi sakta.
-  const tools = toolsFor(user);
+  const readTools = toolsFor(user);
+  // "propose_*" wale tools KUCH KARTE NAHI — sirf tajweez banate hain. Asli kaam
+  // /assistant/confirm se hota hai, yaani user ke Confirm dabane par.
+  const tools = [...toolDefs(readTools), ...actionTools(user)];
   const system = systemFor(user);
   const messages = [{ role: 'user', content: q }];
 
   const used = [];
+  let pending = null;
   const usage = { input: 0, output: 0, cacheRead: 0 };
   const startedAt = Date.now();
   let answer = '';
@@ -84,7 +89,7 @@ export async function ask(user, question) {
         ...CLAUDE_DEFAULTS,
         max_tokens: MAX_TOKENS,
         system,
-        tools: toolDefs(tools),
+        tools,
         messages,
       });
 
@@ -107,7 +112,12 @@ export async function ask(user, question) {
       const results = await Promise.all(
         calls.map(async (c) => {
           used.push(c.name);
-          const out = await runTool(user, c.name, c.input);
+          const out = isActionTool(c.name)
+            ? await proposeAction(user, c.name, c.input)
+            : await runTool(user, c.name, c.input);
+          // Tajweez bani to use jawab ke saath bahar bhejna hai, taaki UI Confirm ka
+          // button dikha sake. Aakhri wali hi rakhte hain — ek sawaal, ek kaam.
+          if (out?.needsConfirm) pending = { id: out.proposalId, summary: out.summary, kind: c.name.replace(/^propose_/, '') };
           return { type: 'tool_result', tool_use_id: c.id, content: JSON.stringify(out) };
         }),
       );
@@ -167,8 +177,33 @@ export async function ask(user, question) {
   await audit({
     actor: user._id,
     action: 'assistant.ask',
-    meta: { q: q.slice(0, 200), tools: used, noTool: used.length === 0, rounds, ms, usage, ...(scriptFixed ? { scriptFixed: true } : {}) },
+    meta: {
+      q: q.slice(0, 200), tools: used, noTool: used.length === 0, rounds, ms, usage,
+      ...(scriptFixed ? { scriptFixed: true } : {}),
+      ...(pending ? { proposed: pending.kind, proposalId: pending.id } : {}),
+    },
   });
 
-  return { answer, tools: used, rounds, ms, usage, scriptFixed };
+  return { answer, tools: used, rounds, ms, usage, scriptFixed, pending };
+}
+
+/**
+ * User ne Confirm dabaya — ab kaam hoga.
+ *
+ * Yahan AI ka koi dakhal nahi: wo tajweez de kar apna kaam khatam kar chuka. Kya hoga,
+ * ye server ki apni likhi hui tajweez se uthta hai, aur permission dobara jaanchi jaati
+ * hai. Dono — tajweez aur uska anjaam — Activity log me jaate hain, taaki baad me pata
+ * chale ki bande ne haan KIS baat par kahi thi.
+ */
+export async function confirm(user, proposalId) {
+  if (!proposalId) throw httpError(400, 'EMPTY', 'Nothing to confirm.');
+  const done = await confirmAction(user, proposalId);
+  await audit({
+    actor: user._id,
+    action: 'assistant.confirm',
+    entityType: 'AssistantAction',
+    entityId: String(proposalId),
+    meta: { kind: done.kind, summary: done.summary, result: done.result },
+  });
+  return done;
 }
