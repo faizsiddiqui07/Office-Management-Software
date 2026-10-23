@@ -7,8 +7,52 @@ import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/auth';
 import { api } from '@/lib/api';
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/components/ui/sheet';
+import { useViewportFill } from '@/lib/use-viewport-fill';
 import { BuddyBlob } from './buddy-blob';
 import { BuddyChat } from './buddy-chat';
+
+/**
+ * Panel ke andar ka hissa — header aur baatcheet, keyboard ke hisaab se naapa hua.
+ *
+ * Ye ALAG component isliye hai, Buddy ke andar inline nahi: `useViewportFill` ka effect
+ * apne component ke MOUNT par chalta hai, aur Buddy to hamesha mounted rehta hai. Panel
+ * band hone par element hota hi nahi, to hook pehli baar null dekh kar chup baith jaata
+ * tha aur dobara chalta hi nahi — height kabhi lagti hi nahi thi. Yahan component panel
+ * ke saath hi janamta hai, to naap sahi waqt par hoti hai.
+ *
+ * Hook PANEL par nahi, uske ANDAR wale column par hai: `SheetContent` `forwardRef` nahi
+ * hai (React 18 me `ref` props me jaata hi nahi, wo chupchaap gir jaata hai), aur panel
+ * ko poora rehne dena behtar bhi hai — uska opaque background keyboard ke peechhe bhi
+ * faila rehta hai, to wahan safed kuch jhalak hi nahi sakta.
+ */
+function PanelBody({ user, onClose }) {
+  // Phone par keyboard khulne se layout viewport BADALTA HI NAHI — sirf wo hissa chhota
+  // hota hai jo sach me dikhta hai. Isliye composer keyboard ke peechhe chala jaata tha,
+  // browser use dikhane ko poora page khiskaata tha, aur us jhatke me neeche safed patti
+  // jhalak jaati thi. `useViewportFill` `visualViewport` se naapta hai — wahi ek jagah
+  // jahan keyboard dikhta hai. Yahi hook chat page par bhi yahi dard theek karta hai.
+  const colRef = useViewportFill({ min: 320 });
+
+  return (
+    <div ref={colRef} className="flex min-h-0 flex-col">
+      <div className="flex items-center gap-2.5 border-b border-border/60 px-4 py-3">
+        <BuddyBlob size={30} playing eager />
+        <div className="min-w-0 flex-1">
+          <SheetTitle className="text-sm">ManagiBot AI</SheetTitle>
+          <SheetDescription className="text-xs">Answers about your office</SheetDescription>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+        >
+          Close
+        </button>
+      </div>
+      <BuddyChat userName={user.name} />
+    </div>
+  );
+}
 
 /**
  * Buddy ka floating button + uska panel.
@@ -29,6 +73,28 @@ export function Buddy() {
   const { user } = useAuth();
   const pathname = usePathname();
   const [open, setOpen] = React.useState(false);
+
+  /**
+   * Phone ka Back button pehle PANEL band kare, app nahi.
+   *
+   * Panel khulte hi history me ek khaali entry daal dete hain. Back dabane par wahi
+   * entry hatti hai — page wahin ka wahin rehta hai, bas panel band ho jaata hai. Isi
+   * wajah se "dashboard se khola to dashboard par, kisi aur page se khola to usi page
+   * par" apne aap sahi rehta hai: hum kabhi kahin gaye hi nahi.
+   */
+  React.useEffect(() => {
+    if (!open) return undefined;
+    window.history.pushState({ buddy: true }, '');
+    const onPop = () => setOpen(false);
+    window.addEventListener('popstate', onPop);
+    return () => {
+      window.removeEventListener('popstate', onPop);
+      // Panel kisi aur tarah se band hua (Close, Escape, bahar tap) — to hamari daali
+      // hui entry abhi bhi history me hai. Use hata do, warna agli baar Back dabane
+      // par kuch nahi hoga aur user ko lagega button kharab hai.
+      if (window.history.state?.buddy) window.history.back();
+    };
+  }, [open]);
 
   const { data } = useQuery({
     queryKey: ['assistant', 'status'],
@@ -74,21 +140,7 @@ export function Buddy() {
           // panel 281px ka reh jaata tha — baayein 94px ki bekaar patti ke saath.
           className="gap-0 overflow-hidden p-0 data-[side=right]:w-full sm:data-[side=right]:w-3/4 sm:max-w-md"
         >
-          <div className="flex items-center gap-2.5 border-b border-border/60 px-4 py-3">
-            <BuddyBlob size={30} playing={open} eager />
-            <div className="min-w-0 flex-1">
-              <SheetTitle className="text-sm">ManagiBot AI</SheetTitle>
-              <SheetDescription className="text-xs">Answers about your office</SheetDescription>
-            </div>
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-            >
-              Close
-            </button>
-          </div>
-          <BuddyChat userName={user.name} />
+          <PanelBody user={user} onClose={() => setOpen(false)} />
         </SheetContent>
       </Sheet>
     </>
