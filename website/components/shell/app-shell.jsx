@@ -12,6 +12,7 @@ import { LaunchScreen } from './launch-screen';
 import { AnnouncementPopup } from '@/components/announcements/announcement-popup';
 import { BirthdayPopup } from '@/components/calendar/birthday-popup';
 import { ChatFab } from '@/components/chat/chat-fab';
+import { Buddy } from '@/components/buddy/buddy';
 import { ProductCredit } from '@/components/shell/brand';
 import { ChatRealtimeProvider } from '@/components/chat/chat-realtime';
 import { EodDigestPopup } from '@/components/tasks/eod-digest-popup';
@@ -107,6 +108,9 @@ export function AppShell({ children }) {
       {/* Chat ka floating button — shell me, kisi page ke andar NAHI: page template ka
           framer-motion wrapper `position: fixed` ko todta hai (dekho chat-fab.jsx). */}
       <ChatFab />
+      {/* AI Buddy — chat ke button se thoda upar. Ye bhi shell me hi hai, usi wajah se
+          jo ChatFab par likhi hai (page template ka framer-motion `fixed` ko todta hai). */}
+      <Buddy />
       <BirthdayPopup />
       {/* Owners only, after the office cut-off, once a day — see the component. */}
       <EodDigestPopup />
