@@ -27,6 +27,8 @@ const MAX_TOKENS = 500;
 const PER_HOUR = 30;
 /** Itne akshar se bada sawaal lena hi nahi — wo sawaal nahi, kuch aur hai. */
 const MAX_QUESTION = 500;
+/** Devanagari ki range. Sirf ye dekhne ko ki jawab kis lipi me aaya. */
+const DEVANAGARI = /[\u0900-\u097F]/;
 
 /**
  * Pichhle ek ghante me isne kitne sawaal poochhe.
@@ -123,6 +125,39 @@ export async function ask(user, question) {
     throw httpError(502, 'AI_FAILED', describeClaudeError(err));
   }
 
+  // ── Lipi ki jaanch ────────────────────────────────────────────────────────────
+  // Sawaal Roman me tha par jawab Devanagari me aa gaya — aisa kabhi-kabhi hota hai.
+  // Prompt me saaf likha hai, phir bhi model das me se ek baar phisal jaata hai.
+  //
+  // Jahan jaanch itni aasan ho, wahan sirf prompt par bharosa karna galat hai: dekh lo,
+  // aur ek baar sudharne ko kaho. Ye sirf PHISALNE par chalta hai, har sawaal par nahi,
+  // isliye kharcha na ke barabar badhta hai. Ek hi mauka — doosri baar bhi Devanagari
+  // aaye to jo mila wahi rakh lo, warna ye loop ban jayega.
+  let scriptFixed = false;
+  if (answer && DEVANAGARI.test(answer) && !DEVANAGARI.test(q)) {
+    try {
+      const again = await client.messages.create({
+        ...CLAUDE_DEFAULTS,
+        max_tokens: MAX_TOKENS,
+        system,
+        messages: [
+          { role: 'user', content: q },
+          { role: 'assistant', content: answer },
+          { role: 'user', content: 'Write that again in Roman letters only — same words, same meaning, same length. No Devanagari.' },
+        ],
+      });
+      usage.input += again.usage?.input_tokens || 0;
+      usage.output += again.usage?.output_tokens || 0;
+      usage.cacheRead += again.usage?.cache_read_input_tokens || 0;
+      const redone = again.content.filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
+      if (redone && !DEVANAGARI.test(redone)) { answer = redone; scriptFixed = true; }
+    } catch (err) {
+      // Sudhaar na ho paye to jo jawab hai wahi do — Devanagari me sahi jawab,
+      // "kuch gadbad ho gayi" se behtar hai.
+      console.error('buddy script retry failed:', describeClaudeError(err));
+    }
+  }
+
   const ms = Date.now() - startedAt;
 
   // Har sawaal log hota hai — kisne, kya, kaunse tool chale, kitna laga.
@@ -132,8 +167,8 @@ export async function ask(user, question) {
   await audit({
     actor: user._id,
     action: 'assistant.ask',
-    meta: { q: q.slice(0, 200), tools: used, noTool: used.length === 0, rounds, ms, usage },
+    meta: { q: q.slice(0, 200), tools: used, noTool: used.length === 0, rounds, ms, usage, ...(scriptFixed ? { scriptFixed: true } : {}) },
   });
 
-  return { answer, tools: used, rounds, ms, usage };
+  return { answer, tools: used, rounds, ms, usage, scriptFixed };
 }

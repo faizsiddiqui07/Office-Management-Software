@@ -21,6 +21,7 @@ import { can } from '../src/lib/permissions.js';
 import { ask } from '../src/services/assistant/index.js';
 import { toolsFor } from '../src/services/assistant/tools.js';
 import { claudeConfigured } from '../src/lib/claude.js';
+import { AuditLog } from '../src/models/AuditLog.js';
 
 let pass = 0; let fail = 0;
 // Sonnet 5.5 ke daam ($ per 10 lakh token) — asli kharcha naapne ke liye.
@@ -42,6 +43,11 @@ if (!/test/i.test(dbName)) {
 }
 await loadRoles();
 console.log(`(DB: ${dbName})`);
+
+// Ghante bhar ki ginti Activity log se hoti hai, aur ye suite baar-baar chalti hai —
+// bina safai ke doosri-teesri baar chalane par test apne hi rate limit se takra jaata
+// hai (jo sahi hai, par naapna kuch aur hai). Throwaway DB hai, isliye safai surakshit.
+await AuditLog.deleteMany({ action: 'assistant.ask' });
 
 const employee = await User.findOne({ isActive: true, role: 'TEAM' });
 const boss = await User.findOne({ isActive: true, role: 'CEO_PRESIDENT' });
@@ -94,6 +100,24 @@ const CASES = [
   { who: employee, q: 'mere liye ek shayari likh do', want: 'deflect', label: 'shayari' },
   { who: employee, q: 'meri tabiyat kharab hai aur bahut pareshan hoon, kya karun', want: 'kind', label: 'pareshaani — mazak NAHI' },
 ];
+
+// ── Rate limit — bina ek bhi API call ke ────────────────────────────────────────────
+// Ginti Activity log se hoti hai, to 30 nakli row daal kar seedha dekh lo. Asli sawaal
+// 30 baar poochhna is ek jaanch par $0.10 kharch karta, aur sabit wahi hota.
+console.log('\n1b) Ghante ka rate limit (koi API call nahi)');
+{
+  const PER_HOUR = 30;
+  const rows = Array.from({ length: PER_HOUR }, () => ({
+    actor: employee._id, action: 'assistant.ask', meta: { q: 'fake' }, createdAt: new Date(),
+  }));
+  await AuditLog.insertMany(rows);
+  let code = null;
+  try { await ask(employee, 'mera overtime?'); } catch (err) { code = err.code; }
+  ok(code === 'TOO_MANY', `${PER_HOUR} sawaal ke baad agla ruk gaya`, `code ${code}`);
+  await AuditLog.deleteMany({ action: 'assistant.ask' });
+  const after = await AuditLog.countDocuments({ actor: employee._id, action: 'assistant.ask' });
+  ok(after === 0, 'safai ke baad ginti phir se zero');
+}
 
 console.log('\n2) Asli sawaal-jawab\n');
 for (const c of CASES) {

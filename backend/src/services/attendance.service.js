@@ -1,7 +1,7 @@
 import { Attendance } from '../models/Attendance.js';
 import { Setting } from '../models/Setting.js';
 import { User } from '../models/User.js';
-import { canViewEveryone, can } from '../lib/permissions.js';
+import { can } from '../lib/permissions.js';
 import { haversineMeters } from '../lib/geo.js';
 import { holidayYMDSet } from './holiday.service.js';
 import { isBirthdayYMD } from '../lib/birthday.js';
@@ -507,7 +507,14 @@ export async function getTodayPayload(user) {
 }
 
 export async function listAttendance(viewer, { userId, all, from, to, page = 1, limit = 31 }) {
-  const everyone = canViewEveryone(viewer.role);
+  // `can(..., 'viewEveryone')`, hardcoded `canViewEveryone(role)` NAHI — wahi wajah jo
+  // selfieUrl par likhi hai. Wo list purane role-naamon par bani thi (CEO, DIRECTOR,
+  // ADMIN_MANAGER, MANAGER); is office ke role ab CEO_PRESIDENT / ADMIN_MANAGER_OFFICE /
+  // EXECUTIVE_MANAGER hain, to wo HAR bande ke liye false lautati thi — chupchaap, bina
+  // error ke. Nateeja: `all=true` wala CSV export giri hui shart ki wajah se sirf
+  // maangne wale ki apni rows deta tha, aur leadership roster me hoti hi nahi, to file
+  // KHAALI aati thi (naapa: 163 rows ki jagah 0).
+  const everyone = can(viewer, 'viewEveryone');
   const filter = {};
 
   if (all && everyone) {
