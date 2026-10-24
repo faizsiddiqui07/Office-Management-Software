@@ -2,7 +2,9 @@
 
 import * as React from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { api } from '@/lib/api';
+import { settleSentMessage } from '@/lib/chat-cache';
 import { useChatRealtime } from '@/components/chat/chat-realtime';
 import { shrinkImage, makeImageThumb, makeVideoThumb, uploadToS3, isImage, isVideo } from '@/lib/chat-media';
 
@@ -137,6 +139,17 @@ export function useSendMessage(conversationId) {
     },
     onError: (_e, _v, ctx) => {
       if (ctx?.prev) qc.setQueryData(msgKey(conversationId), ctx.prev);
+    },
+    // Server ka jawab aa gaya — temporary bubble ko asli se badlo. Do raaste hain aur
+    // jo bhi PEHLE pahunche wahi kaam karta hai:
+    //   - socket echo pehle aaya (aam baat): chat-realtime.jsx ne temporary ko badal
+    //     diya hoga, ya — agar matn se nahi mila — asli ko alag jod diya hoga. Dono haalat
+    //     me asli `seq` list me hai, to bacha hua temporary bas hata do.
+    //   - jawab pehle aaya (socket band ya dheema): temporary ki jagah asli rakh do. Baad
+    //     me echo aayega to `seq` se pehchan kar chhod diya jaayega.
+    // Pehle yahan sirf refetch tha, to tab tak do bubble dikhte rehte the.
+    onSuccess: (msg, _v, ctx) => {
+      qc.setQueryData(msgKey(conversationId), (old) => settleSentMessage(old, msg, ctx?.tempId));
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: msgKey(conversationId) });
@@ -306,14 +319,55 @@ export function useMediaUrl(messageId, { thumb = false, enabled = true, download
  * badi file "atki hui" lagti hai, aur cancel isliye ki bada video bhejte waqt uska na
  * hona sabse zyada chidhata hai.
  */
+/**
+ * Chal rahe file uploads ki haalat — CONVERSATION ke hisaab se, component ke bahar.
+ *
+ * Pehle `progress` aur `abort` ConversationView ke andar ke useState/useRef me the. 24 Oct
+ * 2026 ko desktop par har chat ki apni ConversationView banne lagi (chat-window.jsx me
+ * `key`, taaki pichhli chat ka adhoora message agli chat me na jaaye). Uske baad upload ke
+ * beech chat badalne par component hat jaata, upload peeche chalta rehta, par wapas aane
+ * par na progress bar, na Cancel, paperclip dobara chalu — aur fail hone par error
+ * chupchaap kho jaata. Review ne pakda.
+ *
+ * Ab haalat yahan rehti hai, `conversationId` ki chaabi se: wapas aao to bar aur Cancel
+ * wahin. Aur agar upload tab fail ho jab us chat ki koi screen khuli hi na ho, to toast.
+ */
+const uploadStore = new Map(); // conversationId -> { progress, abort }
+const uploadListeners = new Set();
+const openViews = new Map(); // conversationId -> kitni khuli screens is chat ki
+const NO_UPLOAD = Object.freeze({ progress: null, abort: null });
+
+function setUpload(id, patch) {
+  if (patch === null) uploadStore.delete(id);
+  else uploadStore.set(id, { ...(uploadStore.get(id) || NO_UPLOAD), ...patch });
+  uploadListeners.forEach((l) => l());
+}
+function subscribeUploads(l) {
+  uploadListeners.add(l);
+  return () => uploadListeners.delete(l);
+}
+
 export function useSendFile(conversationId) {
   const qc = useQueryClient();
-  const [progress, setProgress] = React.useState(null); // null | 0..100
-  const abortRef = React.useRef(null);
+  const state = React.useSyncExternalStore(
+    subscribeUploads,
+    () => uploadStore.get(conversationId) || NO_UPLOAD,
+    () => NO_UPLOAD,
+  );
+
+  // Is chat ki screen khuli hai — fail hone par toast ki zaroorat isi se tay hoti hai.
+  React.useEffect(() => {
+    openViews.set(conversationId, (openViews.get(conversationId) || 0) + 1);
+    return () => {
+      const n = (openViews.get(conversationId) || 1) - 1;
+      if (n > 0) openViews.set(conversationId, n);
+      else openViews.delete(conversationId);
+    };
+  }, [conversationId]);
 
   const send = React.useCallback(
     async (file, { caption = '' } = {}) => {
-      setProgress(0);
+      setUpload(conversationId, { progress: 0, abort: null });
       try {
         const mime = file.type || 'application/octet-stream';
         let blob = file;
@@ -335,8 +389,8 @@ export function useSendFile(conversationId) {
           withThumb: !!thumbBlob,
         });
 
-        const up = uploadToS3(signed.file, blob, { onProgress: setProgress });
-        abortRef.current = up.abort;
+        const up = uploadToS3(signed.file, blob, { onProgress: (p) => setUpload(conversationId, { progress: p }) });
+        setUpload(conversationId, { abort: up.abort });
         await up.promise;
 
         // Thumbnail ka fail hona poore bhejne ko nahi rokta — jhalak na ho to icon chalega.
@@ -358,15 +412,21 @@ export function useSendFile(conversationId) {
 
         qc.invalidateQueries({ queryKey: msgKey(conversationId) });
         qc.invalidateQueries({ queryKey: LIST_KEY });
+      } catch (err) {
+        // Is chat ki koi screen khuli nahi (banda doosri chat me chala gaya) — to error ko
+        // dikhane wala koi nahi. Toast se batao, warna file na jaane ki khabar hi na milti.
+        if (!err?.cancelled && !openViews.get(conversationId)) {
+          toast.error(`${file?.name || 'File'} could not be sent`, { description: err?.message || undefined });
+        }
+        throw err;
       } finally {
-        abortRef.current = null;
-        setProgress(null);
+        setUpload(conversationId, null);
       }
     },
     [conversationId, qc],
   );
 
-  return { send, progress, cancel: () => abortRef.current?.() };
+  return { send, progress: state.progress, cancel: () => uploadStore.get(conversationId)?.abort?.() };
 }
 
 

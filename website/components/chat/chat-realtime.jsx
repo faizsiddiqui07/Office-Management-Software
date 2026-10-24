@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useChatSocket } from '@/lib/chat-socket';
 import { markDeletedInCache } from '@/lib/chat';
 import { useAuth } from '@/lib/auth';
+import { mergeIncomingMessage } from '@/lib/chat-cache';
 
 /**
  * Live chat ka ek hi connection, poore app ke liye.
@@ -38,38 +39,9 @@ export function ChatRealtimeProvider({ children }) {
 
       if (ev.type === 'chat:message') {
         const key = ['chat', 'messages', ev.conversationId];
-        qc.setQueryData(key, (old) => {
-          if (!old?.pages?.length) return old; // ye chat abhi kholi hi nahi — list refresh kaafi hai
-          const m = ev.message;
-          // Ho sakta hai ye message pehle se ho: apna hi bheja hua (server ka jawab pehle
-          // aa gaya), ya reconnect ki bharpai ise la chuki ho. seq se pehchano.
-          if (old.pages.some((p) => p.messages?.some((x) => x.seq === m.seq))) return old;
-          const pages = [...old.pages];
-          // Server dono taraf ek hi event bhejta hai, isliye "mera hai ya nahi" client
-          // hi tay karta hai — apne id se milaa kar.
-          const mine = !!myId && String(m.sender) === myId;
-          pages[0] = {
-            ...pages[0],
-            messages: [
-              ...pages[0].messages,
-              {
-                id: m.id,
-                seq: m.seq,
-                mine,
-                sender: m.sender,
-                kind: m.kind,
-                text: m.text,
-                // Server file bhejta hai; ise chhod dene par live aayi photo/PDF bina
-                // attachment ke dikhti thi jab tak refetch na ho.
-                file: m.file ?? null,
-                deleted: false,
-                replyTo: m.replyTo ? { seq: m.replyTo.seq, mine: false, text: m.replyTo.text } : null,
-                createdAt: m.createdAt,
-              },
-            ],
-          };
-          return { ...old, pages };
-        });
+        // Apna bheja message ho to uske temporary bubble ko usi jagah badla jaata hai — dekho
+        // lib/chat-cache.js (pehle yahan sirf `seq` se milaan tha, aur do bubble dikhte the).
+        qc.setQueryData(key, (old) => mergeIncomingMessage(old, ev.message, myId));
         qc.invalidateQueries({ queryKey: ['chat', 'conversations'] });
         qc.invalidateQueries({ queryKey: ['chat', 'unread'] });
         return;

@@ -51,7 +51,13 @@ export function ChatWindow({ initialConversationId = null, onOpenedConversation 
 
       <div className={`min-w-0 flex-1 ${active ? 'block' : 'hidden md:block'}`}>
         {active ? (
+          // `key` = har chat apni nayi ConversationView. Bina iske desktop par ek chat se
+          // doosri me jaane par wahi component naya `conversationId` pakad leta tha aur
+          // pichhli chat ki HAALAT saath le aata: reply wala hissa, "neeche hai ya nahi",
+          // aur sabse khatarnak — composer me likha adhoora message, jo Send dabate hi
+          // GALAT bande ko chala jaata (owner ne theek karne ko kaha, 24 Oct 2026).
           <ConversationView
+            key={active.id}
             conversationId={active.id}
             peer={active.peer}
             showBack
