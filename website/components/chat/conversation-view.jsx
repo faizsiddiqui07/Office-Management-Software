@@ -10,6 +10,7 @@ import {
   useMessages, useSendMessage, useMarkRead, useDeleteMessage, chatInitials, dayLabel,
 } from '@/lib/chat';
 import { useChatRealtime } from './chat-realtime';
+import { lastRealSeq } from '@/lib/chat-cache';
 import { useMediaConfig, useSendFile, useSetMuted } from '@/lib/chat';
 import { FileBubble, MediaViewer } from './file-bubble';
 import { MessageActions } from './message-actions';
@@ -222,7 +223,10 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
   const who = conversation?.peer ?? peer;
   const peerDelivered = conversation?.peerDeliveredUpToSeq ?? 0;
   const peerRead = conversation?.peerReadUpToSeq ?? 0;
-  const lastSeq = messages.length ? messages[messages.length - 1].seq : 0;
+  // Sirf ASLI message ka seq. Bhejte waqt list ke ant me temporary bubble hota hai jiska
+  // seq 9007199254740991 hai; pehle wahi "padh liya" me server ko chala jaata tha aur us
+  // chat ka unread hamesha ke liye atak jaata (dekho lib/chat-cache.js lastRealSeq).
+  const lastSeq = React.useMemo(() => lastRealSeq(messages), [messages]);
 
   // Neeche hone par hi apne aap scroll karo — warna koi purana message padh raha ho aur
   // naya aa jaye to screen uske neeche khisak jaayegi.

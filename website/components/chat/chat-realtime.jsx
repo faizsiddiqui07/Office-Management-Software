@@ -5,7 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useChatSocket } from '@/lib/chat-socket';
 import { markDeletedInCache } from '@/lib/chat';
 import { useAuth } from '@/lib/auth';
-import { mergeIncomingMessage } from '@/lib/chat-cache';
+import { mergeIncomingMessage, applyPeerRead } from '@/lib/chat-cache';
 
 /**
  * Live chat ka ek hi connection, poore app ke liye.
@@ -48,23 +48,14 @@ export function ChatRealtimeProvider({ children }) {
       }
 
       if (ev.type === 'chat:read') {
-        // Saamne wale ne padh liya → mere bubbles ke tick neele.
-        qc.setQueryData(['chat', 'messages', ev.conversationId], (old) => {
-          if (!old?.pages?.length) return old;
-          const pages = old.pages.map((p, i) =>
-            i === 0 && p.conversation
-              ? {
-                  ...p,
-                  conversation: {
-                    ...p.conversation,
-                    peerReadUpToSeq: Math.max(p.conversation.peerReadUpToSeq || 0, ev.upToSeq || 0),
-                    peerDeliveredUpToSeq: Math.max(p.conversation.peerDeliveredUpToSeq || 0, ev.upToSeq || 0),
-                  },
-                }
-              : p,
-          );
-          return { ...old, pages };
-        });
+        // Saamne wale ne padh liya → mere bubbles ke tick neele. Naamumkin number (jaise
+        // temporary bubble ka MAX) chhod diya jaata hai, dekho lib/chat-cache.js applyPeerRead.
+        const key = ['chat', 'messages', ev.conversationId];
+        const { data, backward } = applyPeerRead(qc.getQueryData(key), ev.upToSeq);
+        if (data !== qc.getQueryData(key)) qc.setQueryData(key, data);
+        // Cache me purane bug ka MAX pada tha aur server ne theek number bheja. Cache wala
+        // number hi jhootha hai (jhoothe neele tick), to server se taaza mangao.
+        if (backward) qc.invalidateQueries({ queryKey: key });
         qc.invalidateQueries({ queryKey: ['chat', 'conversations'] });
         return;
       }

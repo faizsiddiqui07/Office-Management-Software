@@ -103,3 +103,67 @@ export function settleSentMessage(old, msg, tempId) {
   });
   return changed ? { ...old, pages } : old;
 }
+
+/**
+ * List ka sabse bada ASLI seq — "main yahan tak padh chuka" isi se bataya jaata hai.
+ *
+ * Temporary bubble (pending) ko chhodna hi iska kaam hai. Pehle yahan seedha list ka
+ * aakhri message liya jaata tha. Bhejte waqt wo temporary hota hai, jiska seq
+ * MAX_SAFE_INTEGER (9007199254740991) hai, aur wahi number server ko "padh liya" me chala
+ * jaata tha. Server use save kar leta, aur us chat ka unread phir kabhi saaf na hota.
+ * Saamne wale ko har aane wale message par jhoothe neele tick dikhte. Review ne pakda
+ * (24 Oct 2026). Server bhi ab aisa number kaat deta hai (chat.service.js markRead); ye
+ * client ki taraf ka bachaav hai.
+ *
+ * Aakhri ki jagah sabse bada: kram kabhi bigde tab bhi number sahi rahe.
+ *
+ * @param {Array<{seq:number, pending?:boolean}>} messages
+ * @returns {number} 0 agar koi asli message nahi
+ */
+export function lastRealSeq(messages) {
+  let top = 0;
+  for (const m of messages || []) {
+    if (!m.pending && m.seq < Number.MAX_SAFE_INTEGER && m.seq > top) top = m.seq;
+  }
+  return top;
+}
+
+/**
+ * Saamne wale ne padha (`chat:read`) — mere bubbles ke tick neele karo.
+ *
+ * Naamumkin number (temporary bubble wala MAX_SAFE_INTEGER, ulta, ya bakwaas) chhod diya
+ * jaata hai. Server ab number `lastSeq` par kaatta hai, to ye sirf purane server ke liye
+ * bachaav hai.
+ *
+ * Cache ke sabse bade seq par JAAN-BOOJHKAR nahi kaata (review, 24 Oct 2026). Maine phone
+ * se #41 bheja, laptop par chat khuli hai. Saamne wale ka "padh liya 41" laptop par #41 ke
+ * echo se pehle pahunch sakta hai (dono alag-alag bheje jaate hain). Kaatne par laptop 40
+ * yaad rakhta, aur #41 aane par bhi akela grey tick dikhata, refetch tak.
+ *
+ * Nishaan sirf aage badhta hai. `backward: true` sirf tab, jab cache me wahi KHARAB MAX
+ * pada ho (purane bug ka nishaan) aur server ne theek number bheja. Tab cache ka number hi
+ * jhootha hai, isliye bulane wala refetch kare. Ulte kram me aaye aam events (41 ke baad 40)
+ * par refetch NAHI (review, 24 Oct): server ka write ek saath aaye do "padh liya" me kabhi
+ * chhota number bhi chhod deta hai, aur refetch wahi utha kar sahi neela tick grey kar deta.
+ *
+ * @param {object} old       messages cache
+ * @param {number} upToSeq   event ka number
+ * @returns {{ data: object, backward: boolean }}
+ */
+export function applyPeerRead(old, upToSeq) {
+  const conv = old?.pages?.[0]?.conversation;
+  const upto = Number(upToSeq);
+  if (!conv || !Number.isFinite(upto) || upto <= 0 || upto >= Number.MAX_SAFE_INTEGER) {
+    return { data: old, backward: false };
+  }
+  const read = conv.peerReadUpToSeq || 0;
+  const delivered = conv.peerDeliveredUpToSeq || 0;
+  const backward = upto < read && read >= Number.MAX_SAFE_INTEGER;
+  if (upto <= read && upto <= delivered) return { data: old, backward };
+  const pages = [...old.pages];
+  pages[0] = {
+    ...pages[0],
+    conversation: { ...conv, peerReadUpToSeq: Math.max(read, upto), peerDeliveredUpToSeq: Math.max(delivered, upto) },
+  };
+  return { data: { ...old, pages }, backward };
+}

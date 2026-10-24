@@ -431,20 +431,39 @@ export async function sendMessage(user, conversationId, { text, replyToSeq, uplo
  * Resets MY unread and moves MY read watermark — which is what puts blue ticks on the
  * other person's bubbles. Watermarks only ever move forward: an old screen that reports
  * a stale number must not un-read newer messages.
+ *
+ * CHAT KE AAKHRI NUMBER SE UPAR KUCH NAHI (24 Oct 2026). Jo message bana hi nahi, wo padha
+ * nahi ja sakta. Pehle yahan client ka number bina jaanche save hota tha, aur client
+ * galti se bhejte waqt ke temporary bubble ka seq (9007199254740991) bhej deta tha. Wo
+ * ek baar save hua to:
+ *   - neeche wala "pehle se padha" check har agli baar laut jaata — unread kabhi saaf nahi
+ *   - saamne wale ko mere har AANE WALE message par neele tick, bina padhe
+ *   - "X new messages" wali line phir kabhi nahi
+ * Ab maanga hua number `lastSeq` par kaata jaata hai. Aur jo nishaan PEHLE SE `lastSeq` se
+ * upar pada hai (kharab), use 0 maana jaata hai, taaki chat kholte hi wo theek ho jaaye.
+ * Sahi nishaan par iska koi asar nahi: wo hamesha `lastSeq` ke andar hi hota hai. Bachi hui
+ * kharab rows ke liye: scripts/repair-chat-watermarks.js.
  */
 export async function markRead(user, conversationId, upToSeq) {
   const conv = await mine(conversationId, user._id);
-  const upto = Number.isFinite(Number(upToSeq)) ? Number(upToSeq) : conv.lastSeq;
+  const last = conv.lastSeq || 0;
+  const asked = Number.isFinite(Number(upToSeq)) ? Math.floor(Number(upToSeq)) : last;
+  const upto = Math.min(asked, last);
   const me = memberOf(conv, user._id);
   if (!me) throw httpError(404, 'NOT_FOUND', 'Chat not found');
-  if (upto <= (me.readUpToSeq || 0)) return { readUpToSeq: me.readUpToSeq || 0, unread: me.unread || 0 };
+  const sane = (n) => (n > last ? 0 : n || 0);
+  const read = sane(me.readUpToSeq);
+  const broken = (me.readUpToSeq || 0) > last || (me.deliveredUpToSeq || 0) > last;
+  if (upto <= read && !broken) return { readUpToSeq: read, unread: me.unread || 0 };
+  // `Math.max(…, read)`: kharab nishaan theek karte waqt bhi sahi nishaan peeche nahi jaata.
+  const newRead = Math.max(upto, read);
 
   const updated = await Conversation.findOneAndUpdate(
     { _id: conv._id, participants: user._id },
     {
       $set: {
-        'members.$[me].readUpToSeq': upto,
-        'members.$[me].deliveredUpToSeq': Math.max(upto, me.deliveredUpToSeq || 0),
+        'members.$[me].readUpToSeq': newRead,
+        'members.$[me].deliveredUpToSeq': Math.max(newRead, sane(me.deliveredUpToSeq)),
         'members.$[me].unread': 0,
         'members.$[me].lastReadAt': new Date(),
       },
@@ -463,7 +482,7 @@ export async function markRead(user, conversationId, upToSeq) {
     type: 'chat:read',
     conversationId: String(conv._id),
     by: String(user._id),
-    upToSeq: upto,
+    upToSeq: newRead,
   }).catch(() => {});
 
   return { readUpToSeq: m?.readUpToSeq || 0, unread: 0 };
