@@ -13,6 +13,7 @@ import * as announcements from '../services/announcement.service.js';
 import { listHolidaysQuerySchema } from '../validators/holidays.validators.js';
 import { ymdInTz } from '../lib/time.js';
 import { isOwnerRole } from '../lib/roles.js';
+import { claudeConfigured, CLAUDE_MODEL } from '../lib/claude.js';
 
 /**
  * GET /api/bootstrap — app khulte hi jo 11 alag-alag requests jaati thiN, wo sab EK me.
@@ -73,6 +74,12 @@ export async function bootstrap(req, res, next) {
       isOwnerRole(user.role) ? part('eodDigest', () => eodDigestPayload()) : Promise.resolve(undefined),
     ]);
 
+    // Buddy chaalu hai ya nahi. Sasta hai — sirf env padhta hai, koi DB nahi — isliye
+    // Promise.all ke bahar. Ye YAHAN isliye hai aur apni alag request me nahi: upar
+    // likha hua pura dard (har alag request ek thanda container) buddy par bhi lagta
+    // hai, aur `/assistant/status` har page load par ek aur round-trip bana raha tha.
+    const assistant = { enabled: claudeConfigured(), model: CLAUDE_MODEL };
+
     // Ticket sasta hai (HMAC, koi DB nahi) — sync, Promise.all ke bahar.
     const wsTicket = {
       ticket: issueTicket(user._id),
@@ -91,6 +98,7 @@ export async function bootstrap(req, res, next) {
         notifications,
         chatUnread,
         wsTicket,
+        assistant,
         bonusMe,
         holidaysToday,
         announcementsUnseen,

@@ -40,6 +40,10 @@ function seedFromBootstrap(queryClient, b) {
   seed(['chat', 'unread'], b.chatUnread);
   seed(['bonus', 'me', ''], b.bonusMe);
   seed(['announcements', 'active-unseen'], b.announcementsUnseen);
+  // Buddy chaalu hai ya nahi — components/buddy/buddy.jsx isi key se padhta hai.
+  // Pehle wo apni alag request bhejta tha, yaani har page open par ek aur thanda
+  // container — theek wahi cheez jiske liye ye bootstrap banaya gaya tha.
+  seed(['assistant', 'status'], b.assistant);
   // Day-keyed queries use the SERVER's date so a device whose clock disagrees just
   // fetches on its own rather than showing the wrong day's data.
   if (b.today) {

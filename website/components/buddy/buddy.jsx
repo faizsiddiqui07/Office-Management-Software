@@ -106,9 +106,18 @@ export function Buddy() {
 
   if (!user || !data?.enabled) return null;
 
-  // Chat page par chat ka button chhup jaata hai (dekho chat-fab.jsx), to buddy akela
-  // upar tairta rehta — neeche aa jaata hai taaki wahan bhi theek baithe.
-  const onChatPage = pathname === '/chat' || pathname?.startsWith('/chat/');
+  // CHAT PAGE PAR BUDDY BILKUL NAHI.
+  //
+  // Pehle yahan buddy ko sirf neeche khiska diya tha (chat ka apna button wahan chhup
+  // jaata hai, dekho chat-fab.jsx). Wo galat tha: chat page ka apna composer aur send
+  // button theek wahin hote hain, to blob unke UPAR baith gaya — iPhone par wo send
+  // button dhak raha tha, aur uska backdrop-blur composer ke glass ke saath milkar
+  // text ko dhundhla kar raha tha.
+  //
+  // Chat ek poori screen hai jiska apna neecha pehle se bhara hua hai. Wahan koi bhi
+  // tairta button takrayega hi, isliye chat ke button ki tarah buddy bhi chhup jaata
+  // hai — ek tap me wapas aa kar poochha ja sakta hai.
+  if (pathname === '/chat' || pathname?.startsWith('/chat/')) return null;
 
   return (
     <>
@@ -117,13 +126,14 @@ export function Buddy() {
         onClick={() => setOpen(true)}
         aria-label="Ask ManagiBot AI"
         className={cn(
-          'fixed right-7 z-50 grid size-12 place-items-center rounded-full',
-          onChatPage ? 'bottom-7' : 'bottom-24',
+          'fixed bottom-24 right-7 z-50 grid size-12 place-items-center rounded-full',
           // Ghera patla rakha hai: blob 44px aur button 48px, yaani har taraf sirf 2px.
           // Pehle blob 34px ka tha aur 7px ka gehra ghera use dabaa deta tha — icon
           // chhota lagta tha aur button ek kaala gola.
-          'bg-background/60 shadow-lg shadow-black/15 ring-1 ring-border/70',
-          'supports-backdrop-filter:backdrop-blur-sm',
+          // Koi backdrop-blur NAHI. 48px ke button par wo dikhta kuch nahi, aur iOS par
+          // page ke glass cards ke saath milkar wahi compositing gadbad karta hai jo
+          // chat ke slide-over ko tod chuki hai (dekho chat-fab.jsx). Opaque hi theek.
+          'bg-background shadow-lg shadow-black/15 ring-1 ring-border/70',
           'transition-transform hover:scale-105 active:scale-95',
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50',
           'motion-reduce:transition-none motion-reduce:hover:scale-100',

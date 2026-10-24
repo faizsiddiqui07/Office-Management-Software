@@ -11,10 +11,12 @@ import * as React from 'react';
  *    deta hai aur blob chapte, kade kinaaron wale shapes ban jaata hai — bilkul bura.
  * 2. **JSON `/public` se**, `import` se nahi — warna 27 KB main bundle me ghus jaata.
  * 3. **lottie-web alag chunk me** (~70 KB gzip), `import()` se.
- * 4. **Button par wo chunk IDLE me aata hai, turant nahi.** Button har page par dikhta
- *    hai, to pehle ye har page load par 70 KB maang raha tha — aur iPhone ki slow-open
- *    wali samasya pehle se chal rahi hai (audits/15). Ab page ke theek hone ke baad,
- *    farsat me aata hai. Panel ke andar `eager` hai: wahan user ne khud khola hai.
+ * 4. **Lottie SIRF panel ke andar** (`eager`), button par bilkul nahi. Pehle button
+ *    wala blob use idle me le aata tha — yaani HAR page par 70 KB, jabki button par
+ *    wo 44px ka gola hai jisme animation mushkil se dikhti hai. Owner ne 24 Oct ko
+ *    phone par load dheema hone ki shikayat ki, aur iPhone ki slow-open wali samasya
+ *    pehle se chal rahi hai (audits/15). Ab lottie-web tabhi aata hai jab koi sach me
+ *    buddy khole.
  * 5. **Neeche hamesha ek CSS wala orb.** Lottie aane se pehle, Lite mode me, aur load
  *    fail hone par bhi button khaali nahi dikhta — wahi gulabi-neela gola, bina kisi
  *    kharche ke.
@@ -38,23 +40,20 @@ import * as React from 'react';
  */
 const liteOn = () => typeof document !== 'undefined' && document.documentElement.dataset.lite === 'true';
 
-/** Jab browser farsat me ho. Safari me `requestIdleCallback` nahi hai — wahan timeout. */
-function whenIdle(fn) {
-  if (typeof window === 'undefined') return () => {};
-  if (typeof window.requestIdleCallback === 'function') {
-    const id = window.requestIdleCallback(fn, { timeout: 4000 });
-    return () => window.cancelIdleCallback(id);
-  }
-  const id = window.setTimeout(fn, 1200);
-  return () => window.clearTimeout(id);
-}
-
 export function BuddyBlob({ size = 44, playing = true, eager = false, className }) {
   const box = React.useRef(null);
   const anim = React.useRef(null);
   const [ready, setReady] = React.useState(false);
 
   React.useEffect(() => {
+    // Lottie SIRF wahan jahan maanga gaya ho (`eager`) — yaani panel ke andar.
+    //
+    // Pehle button wala blob bhi use idle me le aata tha, yaani HAR page par ~70 KB.
+    // Button par wo 44px ka gola hai jisme animation mushkil se dikhti hai, aur neeche
+    // ka CSS orb bilkul wahi gulabi-neela gola banata hai — bina kisi kharche ke. Owner
+    // ne phone par load dheema hone ki shikayat ki, to ye bojh hata diya: ab lottie-web
+    // tabhi aata hai jab koi sach me buddy khole.
+    if (!eager) return undefined;
     // Lite mode me Lottie laane ka koi matlab hi nahi — CSS wala orb hi dikhega.
     if (liteOn()) return undefined;
     let dead = false;
@@ -74,10 +73,9 @@ export function BuddyBlob({ size = 44, playing = true, eager = false, className 
       made.addEventListener('DOMLoaded', () => { if (!dead) setReady(true); });
     };
 
-    const cancel = eager ? (load(), () => {}) : whenIdle(load);
+    load();
     return () => {
       dead = true;
-      cancel();
       made?.destroy();
       anim.current = null;
       setReady(false);
