@@ -1,12 +1,13 @@
 'use client';
 
 import * as React from 'react';
-import { Download, FileText, File as FileIcon, Play, X, Loader2, ExternalLink } from 'lucide-react';
+import { Download, FileText, File as FileIcon, Play, X, Loader2, ExternalLink, ZoomIn, ZoomOut } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useMediaUrl } from '@/lib/chat';
 import { api } from '@/lib/api';
 import { prettyBytes, isImage, isVideo, isPdf } from '@/lib/chat-media';
 import { PdfPages } from './pdf-pages';
+import { ZoomableImage } from '@/components/ui/zoomable-image';
 
 /**
  * Bubble ke andar ka attachment, aur use kholne wala full-screen viewer.
@@ -127,10 +128,23 @@ function DocFile({ file, mine, onOpen }) {
  * Overlay: phone par backdrop-blur nahi (Android compositing bug — dekho ui/dialog.jsx),
  * `isolate` + apni layer.
  */
+/** PDF ke zoom ke padaav. 3x se upar iOS ka canvas dhakkan (16M pixel) aadhe page par hi
+ *  lag jaata — aur itna padhne ke liye kaafi hai. */
+const PDF_ZOOMS = [1, 1.5, 2, 3];
+
 export function MediaViewer({ message, onClose }) {
   const file = message?.file;
   const kind = !file ? 'none' : isImage(file.mime) ? 'image' : isVideo(file.mime) ? 'video' : isPdf(file.mime) ? 'pdf' : 'other';
   const url = useMediaUrl(message?.id, { fresh: true, enabled: !!file });
+
+  // PDF ka zoom. Phone par page ka do-ungli zoom band hai (app/layout.jsx), aur log PDF
+  // ka chhota text usi se padhte the — isliye header me apne buttons. Har nayi file 1x se.
+  const [pdfZoom, setPdfZoom] = React.useState(1);
+  React.useEffect(() => { setPdfZoom(1); }, [message?.id]);
+  const zoomStep = (dir) => setPdfZoom((z) => {
+    const i = PDF_ZOOMS.indexOf(z);
+    return PDF_ZOOMS[Math.min(PDF_ZOOMS.length - 1, Math.max(0, i + dir))];
+  });
 
   // Download/Open ka link CLICK par mint hota hai, kholte waqt nahi: link 5 minute me mar
   // jaata hai, aur viewer usse zyada khula rah sakta hai — purana link S3 ka AccessDenied
@@ -176,6 +190,31 @@ export function MediaViewer({ message, onClose }) {
           <p className="text-[11px] text-white/60">{prettyBytes(file.size)}</p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
+          {kind === 'pdf' && url ? (
+            <>
+              <button
+                type="button"
+                onClick={() => zoomStep(-1)}
+                disabled={pdfZoom === PDF_ZOOMS[0]}
+                className="rounded-full p-2 hover:bg-white/15 disabled:opacity-40"
+                aria-label="Zoom out"
+                title="Zoom out"
+              >
+                <ZoomOut className="size-5" />
+              </button>
+              <span className="min-w-10 text-center text-xs tabular-nums text-white/80">{Math.round(pdfZoom * 100)}%</span>
+              <button
+                type="button"
+                onClick={() => zoomStep(1)}
+                disabled={pdfZoom === PDF_ZOOMS[PDF_ZOOMS.length - 1]}
+                className="rounded-full p-2 hover:bg-white/15 disabled:opacity-40"
+                aria-label="Zoom in"
+                title="Zoom in"
+              >
+                <ZoomIn className="size-5" />
+              </button>
+            </>
+          ) : null}
           <button
             type="button"
             onClick={() => mintAndGo(true)}
@@ -198,10 +237,12 @@ export function MediaViewer({ message, onClose }) {
             <Loader2 className="size-6 animate-spin text-white" />
           </div>
         ) : kind === 'image' ? (
-          <button type="button" onClick={onClose} className="flex min-h-full w-full items-center justify-center p-3" aria-label="Close">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={url} alt={file.name} className="max-h-[calc(100dvh-5rem)] max-w-full object-contain" />
-          </button>
+          // App ke andar ka zoom (pinch, double-tap, kheenchna) — phone par page ka zoom band
+          // hai, aur log photo ka chhota text (bill, screenshot) isi se padhte hain. Ek tap
+          // 1x par viewer band karta hai, jaise pehle karta tha.
+          <div className="h-full w-full p-3">
+            <ZoomableImage src={url} alt={file.name} onTap={onClose} />
+          </div>
         ) : kind === 'video' ? (
           <div className="flex min-h-full items-center justify-center p-2">
             {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
@@ -209,7 +250,7 @@ export function MediaViewer({ message, onClose }) {
           </div>
         ) : kind === 'pdf' ? (
           <div className="px-2 py-3 sm:px-4">
-            <PdfPages url={url} />
+            <PdfPages url={url} zoom={pdfZoom} />
           </div>
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-4 px-6 text-center text-white">

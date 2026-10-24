@@ -6,6 +6,7 @@ import { Camera, Loader2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { ZoomableImage } from '@/components/ui/zoomable-image';
 
 /**
  * Attendance table se selfie dekhna.
@@ -69,8 +70,12 @@ export function SelfieView({ attendanceId, which = 'in', label }) {
               {error?.message || 'Could not open the photo'}
             </p>
           ) : data?.url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={data.url} alt="Attendance selfie" className="max-h-[70vh] w-full rounded-xl object-contain" />
+            // Zoom yahan zaroori hai: admin phone par chehra aur jagah verify karta hai (sahi
+            // banda hai ya proxy), aur 24 Oct 2026 se phone par page ka zoom band hai.
+            // Pinch / double-tap se badi karke dekh sakte hain. Tap par kuch band nahi hota.
+            <div className="h-[60vh] w-full overflow-hidden rounded-xl bg-black/5">
+              <ZoomableImage src={data.url} alt="Attendance selfie" />
+            </div>
           ) : null}
         </DialogContent>
       </Dialog>

@@ -243,6 +243,28 @@
     -webkit-text-size-adjust: 100%;
     scroll-behavior: smooth;
   }
+  /* Phone/tablet par do-ungli zoom BAND — WhatsApp jaisa (owner, 24 Oct 2026).
+     Ye iPhone par ASLI rok hai: iOS 13+ touch-action ko JS chalne se pehle, ungli rakhte
+     hi browser ke andar laagu karta hai. Viewport meta Safari tab me pinch ke liye
+     nazarandaz hota hai (dekho app/layout.jsx).
+     - `*` ZAROORI hai, sirf html/body nahi: WebKit har overflow:auto/scroll dabbe par
+       touch-action ko wapas `auto` kar deta hai. html/body wala rule chat list, Buddy,
+       dialog aur sidebar ke andar ke pinch tak pahunchta hi nahi.
+     - `pan-x pan-y`, `manipulation` NAHI — manipulation pinch ko chalne deta hai (wo
+       `pan-x pan-y pinch-zoom` ka hi doosra naam hai).
+     - Media-gate: sirf touch wali screen. Desktop aur touchscreen laptop (hover:hover)
+       ka zoom chalta rahe.
+     - `data-zoomed`: chook se zoom ho gaya to rule hat jaata hai, taaki banda wapas 1x
+       par aa sake (layout.jsx ki script lagati hai).
+     - @layer base me hai, yaani sabse kamzor: jinka apna touch-action hai (avatar
+       cropper ka `none`, sonner toast, photo viewer ka `touch-none`) wo jeet jaate hain.
+     - -webkit- prefix mat jodna (Lightning CSS standard prop gira deta hai). */
+  @media (hover: none) and (pointer: coarse) {
+    html:not([data-zoomed]),
+    html:not([data-zoomed]) * {
+      touch-action: pan-x pan-y;
+    }
+  }
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);

@@ -45,7 +45,28 @@ export const metadata = {
   },
 };
 
+/**
+ * Phone par do-ungli zoom BAND (owner, 24 Oct 2026 — "WhatsApp/Instagram jaisa").
+ *
+ * Ye meta teen me se pehli parat hai, akeli kaafi nahi:
+ *  - Android Chrome (tab aur installed PWA) ise maanta hai — wahan pinch yahin rukta hai.
+ *  - iPhone ka Safari TAB pinch ke liye ise iOS 10 se NAZARANDAZ karta hai (WebKit ka
+ *    apna design, `ignoresViewportScaleLimits`). Wahan asli rok globals.css ka
+ *    `touch-action: pan-x pan-y` hai, aur neeche body me gesture wali script.
+ *  - Home-screen app me iOS ise maanta hai ya nahi, iska koi pakka source nahi —
+ *    isliye baaki do parat iske bina bhi kaam karti hain.
+ * Ek kaam ye iPhone par BHI karta hai: `maximumScale: 1` input par tap karte hi hone
+ * wala auto-zoom rokta hai — Safari tab me bhi (WebKit jaan-boojhkar page ki apni
+ * seema maanta hai us zoom ke liye).
+ *
+ * Desktop par koi asar nahi — desktop browser viewport meta maante hi nahi.
+ * Lighthouse ka `meta-viewport` audit ab fail dikhayega; ye owner ka faisla hai.
+ */
 export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
   themeColor: [
     { media: '(prefers-color-scheme: light)', color: '#f7f8fc' },
     { media: '(prefers-color-scheme: dark)', color: '#0c0e16' },
@@ -87,6 +108,28 @@ export default function RootLayout({ children }) {
         <script
           dangerouslySetInnerHTML={{
             __html: "try{var d=document.documentElement,n=navigator;if(/iPhone|iPad|iPod/.test(n.userAgent)||(n.platform==='MacIntel'&&n.maxTouchPoints>1)){d.dataset.ios='true';if(matchMedia('(display-mode: standalone)').matches||n.standalone){var p=innerWidth<=innerHeight,a=screen.width,b=screen.height,h=p?Math.max(a,b):Math.min(a,b),w=p?Math.min(a,b):Math.max(a,b),s=d.style;s.setProperty('--ls-h',h+'px');s.setProperty('--ls-s',Math.min(w,h)+'px');s.setProperty('--ls-off',Math.max(0,h-innerHeight)+'px')}}}catch(e){}",
+          }}
+        />
+        {/* Do-ungli zoom ka iOS backup (asli rok globals.css ka touch-action hai).
+            - Sirf (hover: none) and (pointer: coarse) — BILKUL wahi shart jo globals.css ke
+              touch-action rule ki hai, taaki teeno parat ek hi device-niyam maanein. Mac ka
+              trackpad (gesture events deta hai), touchscreen laptop aur trackpad wale iPad
+              (hover: hover) — sabka zoom chalta rahega.
+            - "Zoom hua" ka matlab: aaram ke scale se upar. Safari ka aA Page Zoom aaraam ka
+              scale hi 1 se upar kar sakta hai; 1 ko bina naape maan lete to rok wahan
+              apne aap band ho jaati.
+            - Sirf preventDefault, stopPropagation KABHI nahi: profile photo ka cropper
+              aur photo viewer apne events khud sunte hain.
+            - Nikalne ka raasta: agar kisi chook se page zoom ho hi gaya (scale > 1), to
+              rok hat jaati hai aur <html> par `data-zoomed` lagta hai jo CSS wala rule
+              bhi hata deta hai — taaki banda pinch ya double-tap se wapas 1x par aa sake,
+              warna wo zoomed page me phans jaata. `ok` ek gesture ki shuruaat par hi tay
+              hota hai, isliye zoom-out ke beech 1.01 ke paas atakta nahi.
+            Inline isliye (client component nahi): hydration se pehle chalti hai, kabhi
+            unmount nahi hoti, aur bundle par koi bojh nahi — data-ios/data-lite jaisa. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: "try{if(window.matchMedia&&matchMedia('(hover: none) and (pointer: coarse)').matches){var d=document.documentElement,v=window.visualViewport,b=v?v.scale:1,z=function(){return !!v&&v.scale>b*1.01},ok=false,o={passive:false};document.addEventListener('gesturestart',function(e){ok=z();if(!ok)e.preventDefault()},o);document.addEventListener('gesturechange',function(e){if(!ok)e.preventDefault()},o);if(v){v.addEventListener('resize',function(){if(z())d.setAttribute('data-zoomed','');else d.removeAttribute('data-zoomed')});addEventListener('orientationchange',function(){setTimeout(function(){if(!z())b=v.scale},400)})}}}catch(e){}",
           }}
         />
         {/* Catch the browser's install offer the instant it arrives.
