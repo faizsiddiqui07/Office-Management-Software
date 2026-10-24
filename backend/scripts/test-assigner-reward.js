@@ -204,39 +204,53 @@ async function main() {
   await onAssignedTaskUndone(t1._id);
   check('assigner reward hat gaya', (await entryFor(mgr._id, t1._id, 'auto_assign')) === null);
 
-  // ═══ TEST 8 — DUE DATE LOCK ═══
-  console.log('\nTEST 8 — due-date lock');
+  // \u2550\u2550\u2550 TEST 8 \u2014 DUE DATE KAUN BADAL SAKTA HAI \u2550\u2550\u2550
+  //
+  // 24 Aug 2026 ka niyam yahan ulta tha: kaam baanTne ke baad deadline pakki, assigner bhi
+  // nahi badal sakta. Owner ne 25 Oct 2026 ko wo wapas le liya \u2014 assigner badal sakta hai,
+  // aur tag kiya hua CEO & President bhi (par sirf date). Poora niyam aur uske saare kinare
+  // scripts/test-due-date-edit.js me hain; yahan bas itna ki ye suite purana lock na maange.
+  console.log('\nTEST 8 \u2014 due date kaun badal sakta hai');
   const lockT = await Task.create({
     title: 'Locked job', owner: emp._id, assignedBy: mgr._id, collaborators: [ceo._id],
     dueYMD: '2026-08-28', status: 'PENDING', createdAt: D('2026-08-10'),
   });
-  // (a) normal assigner aage nahi badha sakta
+  // (a) assigner ab aage badha sakta hai
   let err = null;
   try { await updateTask(mgr, String(lockT._id), { dueYMD: '2026-09-05' }); } catch (e) { err = e; }
-  check('assigner date AAGE nahi badha saka (403)', err?.status === 403 && err?.code === 'DUE_DATE_LOCKED', `got ${err?.code || 'no error'}`);
-  // (b) peeche bhi nahi
+  check('assigner date AAGE badha saka', err === null, `got ${err?.code || 'ok'}`);
+  check('date sach me 2026-09-05', (await Task.findById(lockT._id))?.dueYMD === '2026-09-05');
+  // (b) aur peeche bhi
   err = null;
   try { await updateTask(mgr, String(lockT._id), { dueYMD: '2026-08-25' }); } catch (e) { err = e; }
-  check('assigner date PEECHE bhi nahi kar saka (403)', err?.status === 403, `got ${err?.code || 'no error'}`);
-  // (c) date wahi bhejna allowed (koi change nahi)
+  check('assigner date PEECHE bhi kar saka', err === null, `got ${err?.code || 'ok'}`);
+  // (c) date wahi bhejna + title edit
   err = null;
-  try { await updateTask(mgr, String(lockT._id), { dueYMD: '2026-08-28', title: 'Locked job v2' }); } catch (e) { err = e; }
+  try { await updateTask(mgr, String(lockT._id), { dueYMD: '2026-08-25', title: 'Locked job v2' }); } catch (e) { err = e; }
   check('wahi date + title edit allowed', err === null, `got ${err?.code || 'ok'}`);
   check('title update hua', (await Task.findById(lockT._id))?.title === 'Locked job v2');
-  // (d) CEO KISI AUR ke assign kiye task ko edit hi nahi kar sakta — ye app ka PURANA rule
-  //     hai (delegated task sirf assigner edit karta hai), mere lock se pehle lagta hai.
+  // (d) tagged CEO doosre ke assign kiye task ki DATE badal sakta hai\u2026
   err = null;
   try { await updateTask(ceo, String(lockT._id), { dueYMD: '2026-09-05' }); } catch (e) { err = e; }
-  check('CEO doosre ke task ko edit nahi kar sakta (purana rule)', err?.code === 'ASSIGNED_TASK', `got ${err?.code || 'no error'}`);
+  check('tagged CEO ne doosre ke task ki date badli', err === null, `got ${err?.code || 'ok'}`);
+  check('date sach me badli', (await Task.findById(lockT._id))?.dueYMD === '2026-09-05');
+  // (d1) \u2026par baaki kuch nahi
+  err = null;
+  try { await updateTask(ceo, String(lockT._id), { title: 'CEO ka title' }); } catch (e) { err = e; }
+  check('tagged CEO title nahi badal saka', err?.code === 'DUE_DATE_ONLY', `got ${err?.code || 'no error'}`);
+  // (d2) bina tag wala banda (jisko kaam mila hai) phir bhi nahi
+  err = null;
+  try { await updateTask(emp, String(lockT._id), { dueYMD: '2026-10-01' }); } catch (e) { err = e; }
+  check('jisko kaam mila wo phir bhi nahi badal sakta', err?.code === 'ASSIGNED_TASK', `got ${err?.code || 'no error'}`);
 
-  // (d2) CEO APNE assign kiye task ki date badal sakta hai — yahi owner's rule hai.
+  // (d3) CEO APNE assign kiye task ki date badal sakta hai \u2014 pehle se chalta tha.
   const ceoTask = await Task.create({
     title: 'CEO owned job', owner: emp._id, assignedBy: ceo._id, collaborators: [],
     dueYMD: '2026-08-28', status: 'PENDING', createdAt: D('2026-08-10'),
   });
   err = null;
   try { await updateTask(ceo, String(ceoTask._id), { dueYMD: '2026-09-05' }); } catch (e) { err = e; }
-  check('CEO ne APNE task ki date aage badhai — allowed', err === null, `got ${err?.code || 'ok'}`);
+  check('CEO ne APNE task ki date aage badhai \u2014 allowed', err === null, `got ${err?.code || 'ok'}`);
   check('date sach me badli', (await Task.findById(ceoTask._id))?.dueYMD === '2026-09-05');
 
   // (e) July wala task (grandfathered) — assigner badal sakta hai

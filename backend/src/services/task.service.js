@@ -7,7 +7,7 @@ import { roleLabel, isOwnerRole } from '../lib/roles.js';
 import { approverIdsFor, canReviewTask, chainOwnersOf, chainOwnersByRoot } from '../lib/taskApprovers.js';
 import { can } from '../lib/permissions.js';
 import { companyDayFromYMD, ymdInTz, COMPANY_TZ } from '../lib/time.js';
-import { onAssignedTaskDone, onAssignedTaskUndone, rebuildOverdueForTask, ASSIGNER_FLOOR_YMD } from './bonus.service.js';
+import { onAssignedTaskDone, onAssignedTaskUndone, rebuildOverdueForTask } from './bonus.service.js';
 
 function httpError(status, code, message) {
   const e = new Error(message);
@@ -737,10 +737,24 @@ export async function updateTask(actor, id, data) {
   if (!task) throw httpError(404, 'NOT_FOUND', 'Task not found');
   const isOwner = String(task.owner) === String(actor._id);
   const isAssigner = task.assignedBy && String(task.assignedBy) === String(actor._id);
-  // A delegated task can only be edited by the person who assigned it — the
-  // assignee completes it (or asks), but can't change what was asked of them.
+  /**
+   * A TAGGED CEO & President, on work somebody ELSE handed out (owner's rule, 25 Oct 2026).
+   *
+   * They may move the DEADLINE and nothing else. The wording, who it sits with, the
+   * approval gate and deleting it all stay with the person who handed the work out. That
+   * narrow door is the whole point: tagging the top boss is how a deadline gets moved when
+   * the assigner can't or won't, not a way to hand over the task.
+   *
+   * Resolved by ROLE (top rank, see lib/roles.js isOwnerRole), never by name, so renaming
+   * the role or promoting somebody carries it along. They must be tagged on THIS task —
+   * being a CEO is not on its own a key to every task in the company.
+   */
+  const isTaggedBoss = !!task.assignedBy && !isAssigner && isOwnerRole(actor.role)
+    && (task.collaborators || []).some((c) => String(c) === String(actor._id));
+  // A delegated task can only be edited by the person who assigned it (plus the tagged
+  // boss above) — the assignee completes it (or asks), but can't change what was asked.
   if (task.assignedBy) {
-    if (!isAssigner) throw httpError(403, 'ASSIGNED_TASK', 'This task was assigned to you — only the person who assigned it can edit it');
+    if (!isAssigner && !isTaggedBoss) throw httpError(403, 'ASSIGNED_TASK', 'This task was assigned to you — only the person who assigned it can edit it');
   } else if (!isOwner) {
     throw httpError(403, 'FORBIDDEN', 'You cannot edit this task');
   }
@@ -749,37 +763,44 @@ export async function updateTask(actor, id, data) {
   const patch = {};
   for (const f of contentFields) if (data[f] !== undefined) patch[f] = data[f];
 
-  // ── The deadline is final once the work is handed out (owner's rule, 2026-08-24) ──
-  // Moving a due date re-prices the whole task: pushing it forward wipes the overdue
-  // penalty the assignee has already earned, and clearing it takes the task out of the
-  // points system entirely. So the date set at assign time stands — in EITHER direction,
-  // since making it stricter after the fact is just as unfair as relaxing it.
-  //
-  // The owner tier (CEO & President) is exempt, so they can still move the deadline on work
-  // THEY handed out. Note the gate above already limits editing a delegated task to the
-  // person who assigned it, so this exemption reaches their own assignments only — which is
-  // exactly the rule as stated. Resolved by ROLE, never by name, so a role change carries
-  // the exemption with it.
-  //
-  // Only for work assigned on/after the floor — a task handed out before this rule existed
-  // stays editable, exactly like the no-due-date rule's grandfathering.
-  if (patch.dueYMD !== undefined && patch.dueYMD !== task.dueYMD && task.assignedBy && !isOwnerRole(actor.role)) {
-    const assignedOn = task.createdAt ? ymdInTz(task.createdAt) : '';
-    if (assignedOn && assignedOn >= ASSIGNER_FLOOR_YMD) {
-      throw httpError(403, 'DUE_DATE_LOCKED', 'The deadline is fixed once the work is assigned — it can’t be moved afterwards');
+  // Tagged boss: the deadline, and strictly nothing else. Compares VALUES rather than just
+  // looking for the key, because the edit form posts the whole task back — a save would
+  // otherwise bounce on its own untouched title.
+  if (isTaggedBoss) {
+    const idKey = (list) => [...new Set((list || []).map((v) => String(v?._id ?? v?.id ?? v)))].sort().join(',');
+    const wouldChange = (patch.title !== undefined && patch.title !== task.title)
+      || (patch.notes !== undefined && patch.notes !== task.notes)
+      || data.assignTo !== undefined
+      || (data.requiresApproval !== undefined && !!data.requiresApproval !== !!task.requiresApproval)
+      || (data.collaborators !== undefined && idKey(data.collaborators) !== idKey(task.collaborators));
+    if (wouldChange) {
+      throw httpError(403, 'DUE_DATE_ONLY', 'You were tagged on this — you can move the deadline, but the rest belongs to whoever assigned it');
     }
+    delete patch.title;
+    delete patch.notes;
   }
 
-  // ── Assigner editing a delegated task: may re-assign it, toggle approval, and edit
-  //    the content of one copy or every copy of a multi-assign batch. ──────────────
-  if (isAssigner) {
-    const batchQuery = task.assignBatch ? { assignBatch: task.assignBatch, assignedBy: actor._id } : { _id: task._id };
+  // ── Assigner (or tagged boss) editing a delegated task: may re-assign it, toggle
+  //    approval, and edit the content of one copy or every copy of a multi-assign
+  //    batch. A tagged boss reaches only the due-date parts — see isTaggedBoss. ─────
+  //
+  // The deadline USED to be frozen here once the work was handed out (rule of 2026-08-24),
+  // because moving it re-prices the task. The owner withdrew that on 25 Oct 2026: the
+  // assigner may move it again. The re-pricing it was protecting against is handled
+  // properly further down — a changed due date re-scores a finished task and rebuilds the
+  // overdue charges — so a wrong deadline is now correctable instead of permanent.
+  if (isAssigner || isTaggedBoss) {
+    // Scoped by the task's OWN assigner, not the actor: the tagged boss did not hand this
+    // work out, and `assignedBy: actor._id` would match none of the copies for them.
+    const batchQuery = task.assignBatch ? { assignBatch: task.assignBatch, assignedBy: task.assignedBy } : { _id: task._id };
     let members = await Task.find(batchQuery);
 
     // Resolved up front because a reassignment creates fresh copies below, and those need
     // the tag list too — they used to be created with `collaborators: []`, quietly
     // dropping everyone who was tagged the moment the work was reassigned.
-    const nextCollabs = data.collaborators !== undefined
+    // `isAssigner` only: a tagged boss can't reach here (the guard above throws if their
+    // list differs), and resolving an identical list would still rewrite every copy.
+    const nextCollabs = data.collaborators !== undefined && isAssigner
       ? await resolveCollaborators(actor, data.collaborators, task.collaborators || [])
       : null;
 
@@ -883,6 +904,7 @@ export async function updateTask(actor, id, data) {
     const applyAll = !!data.applyToAll || data.assignTo !== undefined;
     const editSet = applyAll ? members : members.filter((mm) => String(mm._id) === String(id));
     let changedCount = 0;
+    let dueMoved = false; // for the "your deadline was moved" note to the assigner, below
     const cascadeRoots = []; // copies whose CONTENT changed → push the same content down their forward chains
     for (const mm of editSet) {
       let changed = false;
@@ -894,7 +916,10 @@ export async function updateTask(actor, id, data) {
       // fresh receipt the next time the assignee's list loads.
       if (contentChanged && mm.assignedBy && mm.seenAt) mm.seenAt = null;
       if (contentChanged) cascadeRoots.push(mm._id);
-      if (data.requiresApproval !== undefined && mm.requiresApproval !== !!data.requiresApproval) {
+      // `isAssigner` only. The guard above checks the tagged boss's flag against the copy
+      // they OPENED; a batch sibling the assigner had edited on its own could still differ,
+      // and an applyToAll save would then silently flip that sibling's approval gate.
+      if (isAssigner && data.requiresApproval !== undefined && mm.requiresApproval !== !!data.requiresApproval) {
         mm.requiresApproval = !!data.requiresApproval;
         // Turning the gate OFF: drop any pending submission trail so no orphaned
         // submittedAt survives to mis-score bonus or hide the task from the overdue scan.
@@ -904,6 +929,7 @@ export async function updateTask(actor, id, data) {
       if (changed) {
         await mm.save();
         changedCount += 1;
+        if (dueChanged) dueMoved = true;
         // Moving the due date must re-price the bonus for THIS copy. A finished task is
         // re-scored against its new deadline (a due date pushed past the completion day
         // turns a late −score into an on-time +score, and vice-versa); an unfinished one
@@ -952,6 +978,20 @@ export async function updateTask(actor, id, data) {
           }
         }
       }
+    }
+
+    // Somebody else moved the deadline on work I handed out — I have to hear about it.
+    // The loop above only tells the people DOING the task; for them the assigner is the
+    // one who set the date, and nothing would otherwise reach them. Once per save, not
+    // once per copy, and never when the boss is also the assignee's own notification.
+    if (isTaggedBoss && dueMoved && task.assignedBy) {
+      await notify({
+        user: task.assignedBy,
+        type: 'TASK_ASSIGNED',
+        title: `${actor.name} moved a deadline`,
+        message: patch.dueYMD ? `${task.title} — now due ${patch.dueYMD}` : `${task.title} — deadline removed`,
+        link: todoLink(id),
+      });
     }
 
     const rep = (await Task.findById(id)) || members[0];

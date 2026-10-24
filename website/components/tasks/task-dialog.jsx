@@ -11,7 +11,6 @@ import { AppDialog } from '@/components/glass/app-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { DatePicker } from '@/components/ui/date-picker';
-import { companyYMD } from '@/lib/time';
 import { APP_LIVE_YMD } from '@/lib/app-live';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -47,14 +46,16 @@ export function TaskDialog({ task, open: openProp, onOpenChange, batchCount = 0 
   const [assignees, setAssignees] = React.useState([]); // who a delegated task is assigned to
   const [requiresApproval, setRequiresApproval] = React.useState(false);
   const [applyToAll, setApplyToAll] = React.useState(true); // batch content edit: push to every copy
-  // Once work has been handed out its deadline is final — moving it would re-price the
-  // points, so only the CEO & President may change it. The SERVER is the real gate (it
-  // rejects the patch); this just stops someone typing a date the save would refuse.
-  // Work assigned before the rule existed stays editable, exactly as the server allows.
-  const DUE_LOCK_FLOOR_YMD = '2026-08-01';
-  const assignedOn = task?.createdAt ? companyYMD(task.createdAt) : '';
-  const dueLocked = isEdit && !!task?.assignedBy && !user?.isOwner
-    && !!assignedOn && assignedOn >= DUE_LOCK_FLOOR_YMD;
+  // A tagged CEO & President, on work somebody ELSE handed out: the DEADLINE only
+  // (owner's rule, 25 Oct 2026). Everything else on this form is theirs to read, not to
+  // change — the SERVER is the real gate (it refuses the patch); this stops them typing
+  // into a field the save would bounce.
+  //
+  // Until 25 Oct the opposite rule lived here: once work was handed out the deadline was
+  // frozen for everyone below the owner tier. The owner withdrew that, so the assigner
+  // may move it again and nothing is disabled for them.
+  const dueOnly = isEdit && !!task?.assignedBy && !isAssignedByMe && !!user?.isOwner
+    && (task?.collaborators || []).some((c) => String(c.id ?? c) === String(user?.id));
 
   React.useEffect(() => {
     if (!open) return;
@@ -91,11 +92,16 @@ export function TaskDialog({ task, open: openProp, onOpenChange, batchCount = 0 
   // Did the assigner change who it's assigned to? (drives whether we reconcile the batch)
   const reassigned = isAssignedByMe && (assignees.length !== currentAssignees.length || assignees.some((id) => !currentAssignees.includes(id)));
   // The "edit every copy vs just this one" switch — only when 2+ copies and not reassigning
-  // (a reassignment always applies the content to everyone).
-  const showBatchSwitch = isAssignedByMe && !!task?.assignBatch && batchCount > 1 && !reassigned;
+  // (a reassignment always applies the content to everyone). The tagged boss gets it too:
+  // one job handed to three people usually has one deadline, but not always.
+  const showBatchSwitch = (isAssignedByMe || dueOnly) && !!task?.assignBatch && batchCount > 1 && !reassigned;
 
   const mut = useMutation({
     mutationFn: () => {
+      // Tagged boss: send the deadline alone. Posting the whole task back would be
+      // refused the moment anything else drifted (e.g. somebody edited the title while
+      // this dialog sat open).
+      if (dueOnly) return api.patch(`/tasks/${task.id}`, showBatchSwitch ? { dueYMD, applyToAll } : { dueYMD });
       const body = { title, notes, dueYMD };
       if (isAssignedByMe) {
         body.requiresApproval = requiresApproval;
@@ -213,35 +219,34 @@ export function TaskDialog({ task, open: openProp, onOpenChange, batchCount = 0 
           </div>
         ) : null}
 
+        {dueOnly ? (
+          <p className="rounded-xl bg-primary/[0.06] p-3 text-xs text-muted-foreground ring-1 ring-primary/15">
+            You’re tagged on this. You can move the deadline — the rest belongs to{' '}
+            {task?.assignedBy?.name || 'whoever assigned it'}.
+          </p>
+        ) : null}
         <div className="space-y-1.5">
           <Label htmlFor="t-title">Work</Label>
-          <Input id="t-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What needs to be done?" className="bg-background/50" />
+          <Input id="t-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What needs to be done?" disabled={dueOnly} className="bg-background/50" />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="t-due">Due date {dueLocked ? '(locked)' : '(optional)'}</Label>
+          <Label htmlFor="t-due">Due date (optional)</Label>
           {/* Creating: can't set a deadline in the past. EDITING: any date back to
               go-live is allowed — correcting a wrong due date (even to an earlier day)
-              is exactly what re-prices the task's points. Once the work is ASSIGNED the
-              date is frozen for everyone but the owner tier (see dueLocked). Any calendar
-              day may be a deadline — Sundays and holidays included (owner's call). */}
+              is exactly what re-prices the task's points. Any calendar day may be a
+              deadline — Sundays and holidays included (owner's call). */}
           <DatePicker
             id="t-due"
             value={dueYMD}
             min={task ? APP_LIVE_YMD : new Date().toISOString().slice(0, 10)}
             onChange={setDueYMD}
-            disabled={dueLocked}
             clearable
             className="bg-background/50"
           />
-          {dueLocked ? (
-            <p className="text-xs text-muted-foreground">
-              The deadline is fixed once work is assigned. Only a CEO or President can change it.
-            </p>
-          ) : null}
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="t-notes">Notes (optional)</Label>
-          <Textarea id="t-notes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Details…" className="bg-background/50" />
+          <Textarea id="t-notes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Details…" disabled={dueOnly} className="bg-background/50" />
         </div>
 
         {/* Approval gate for a delegated task. */}
@@ -260,8 +265,10 @@ export function TaskDialog({ task, open: openProp, onOpenChange, batchCount = 0 
         {/* Tagging. On a personal task it means "also working on this" — whoever finishes
             it finishes it for everyone. On delegated work it means "keep them in the
             loop": the assignee does the job, the tagged people just see it.
-            The person it is ASSIGNED to is never offered here — they already have it. */}
-        <div className="space-y-1.5">
+            The person it is ASSIGNED to is never offered here — they already have it.
+            Hidden from a tagged boss: the tag list is the assigner's, and the detail
+            screen already shows them who else is on it. */}
+        <div className={cn('space-y-1.5', dueOnly && 'hidden')}>
           <Label className="flex items-center gap-1.5">
             <Users className="size-3.5" />
             {isAssignedByMe ? 'Tag people (optional)' : 'Also working on this (optional)'}

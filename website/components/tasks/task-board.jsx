@@ -304,7 +304,7 @@ function ForwardTrail({ task, myId }) {
  * `assignerView` flips it round for "Assigned by me": the interesting person is who the
  * work went TO, not who it came from (which is me), and I may edit or withdraw it.
  */
-function TaskRow({ task, myId, canToggle, onToggle, onEdit, onDelete, onOpen, assignerView = false }) {
+function TaskRow({ task, myId, canToggle, onToggle, onEdit, onDelete, onOpen, assignerView = false, allowEdit }) {
   const done = task.status === 'DONE';
   const awaiting = task.awaitingApproval;
   const overdue = !done && !awaiting && isOverdue(task.dueYMD);
@@ -318,6 +318,10 @@ function TaskRow({ task, myId, canToggle, onToggle, onEdit, onDelete, onOpen, as
   // shared-with-me task: I can complete it, but not change or remove it. Work I handed
   // out is mine to change, so the assigner's view keeps both.
   const canManage = assignerView || (task.owner?.id === myId && !task.assignedBy);
+  // Edit can be opened WITHOUT delete: a tagged CEO & President may move the deadline on
+  // somebody else's assigned work, but never remove it. Left undefined, it follows
+  // canManage exactly as before.
+  const mayEdit = allowEdit === undefined ? canManage : allowEdit;
   const sharedWith = canManage && task.collaborators?.length ? task.collaborators : [];
   // Never offer a button the server will refuse.
   const mayToggle = canToggle && canCompleteTask(task, myId);
@@ -402,16 +406,17 @@ function TaskRow({ task, myId, canToggle, onToggle, onEdit, onDelete, onOpen, as
       </div>
       <div className="flex shrink-0 items-center">
         {/* Edit/Delete only on my OWN task. A delegated or shared-with-me task can be
-            completed but not changed or removed by me. */}
+            completed but not changed or removed by me — except a tagged CEO & President,
+            who gets Edit (deadline only) and still no Delete. */}
+        {mayEdit ? (
+          <Button variant="ghost" size="icon" className="size-10 sm:size-8" onClick={(e) => { e.stopPropagation(); onEdit(task); }} aria-label="Edit">
+            <Pencil className="size-4" />
+          </Button>
+        ) : null}
         {canManage ? (
-          <>
-            <Button variant="ghost" size="icon" className="size-10 sm:size-8" onClick={(e) => { e.stopPropagation(); onEdit(task); }} aria-label="Edit">
-              <Pencil className="size-4" />
-            </Button>
-            <Button variant="ghost" size="icon" className="size-10 text-destructive sm:size-8" onClick={(e) => { e.stopPropagation(); onDelete(task); }} aria-label="Delete">
-              <Trash2 className="size-4" />
-            </Button>
-          </>
+          <Button variant="ghost" size="icon" className="size-10 text-destructive sm:size-8" onClick={(e) => { e.stopPropagation(); onDelete(task); }} aria-label="Delete">
+            <Trash2 className="size-4" />
+          </Button>
         ) : null}
       </div>
     </div>
@@ -1180,6 +1185,15 @@ export function TaskBoard() {
   // My OWN task (not delegated to me, not just shared with me) → I can edit/delete it.
   const canMgr = (t) => t.owner?.id === user?.id && !t.assignedBy;
 
+  /**
+   * Work somebody ELSE handed out that I'm tagged on, and I'm a CEO & President: I may
+   * move the DEADLINE (owner's rule, 25 Oct 2026). Nothing else, and never delete.
+   * Mirrors isTaggedBoss in the server's updateTask, which 403s anything wider.
+   */
+  const canSetDue = (t) => !!user?.isOwner && !!t?.assignedBy
+    && String(t.assignedBy?.id ?? t.assignedBy) !== String(user?.id)
+    && (t.collaborators || []).some((c) => String(c.id ?? c) === String(user?.id));
+
   // How many live copies each multi-assign batch has (for the "N people" badge and
   // the batch-edit switch). Computed from the loaded list of the current tab.
   const batchCounts = React.useMemo(() => {
@@ -1377,7 +1391,9 @@ export function TaskBoard() {
     openTask({
       task: t,
       canToggle: assignerView ? false : canCompleteTask(t, user?.id),
-      allowEdit: assignerView ? true : canMgr(t),
+      // Deadline-only Edit for a tagged CEO & President, same as tapping the row in the
+      // Tagged tab — a notification about tagged work lands here, not on a row.
+      allowEdit: assignerView ? true : canMgr(t) || canSetDue(t),
       allowDelete: assignerView ? true : canMgr(t),
       assignerView,
       canForward: assignerView ? false : canForwardTask(t),
@@ -1577,9 +1593,10 @@ export function TaskBoard() {
                     myId={user?.id}
                     canToggle
                     onToggle={handleToggle}
+                    allowEdit={canSetDue(t)}
                     onEdit={(x) => setEditing(x)}
                     onDelete={(x) => setDeleting(x)}
-                    onOpen={(x) => openTask({ task: x, canToggle: canCompleteTask(x, user?.id), allowEdit: false, allowDelete: false, assignerView: false })}
+                    onOpen={(x) => openTask({ task: x, canToggle: canCompleteTask(x, user?.id), allowEdit: canSetDue(x), allowDelete: false, assignerView: false })}
                   />
                 ))}
                 {(data?.total ?? 0) > tasks.length ? (
