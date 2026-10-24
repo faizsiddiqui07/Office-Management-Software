@@ -252,7 +252,17 @@ export function BuddyChat({ userName }) {
           maxLength={500}
           className="max-h-28 min-h-10 flex-1 resize-none rounded-xl bg-muted/50 px-3 py-2 text-sm outline-none ring-1 ring-border focus:ring-2 focus:ring-primary/40"
         />
-        <Button type="submit" size="icon" disabled={!draft.trim() || askIt.isPending} aria-label="Send">
+        <Button
+          type="submit"
+          size="icon"
+          disabled={!draft.trim() || askIt.isPending}
+          aria-label="Send"
+          /* Wahi ek-tap wali wajah jo chat ke composer par likhi hai
+             (components/chat/conversation-view.jsx) — yahan bhi keyboard khula hota hai
+             aur panel ki height visualViewport se bandhi hai, to bina iske pehla tap
+             sirf keyboard band karta. */
+          onMouseDown={(e) => e.preventDefault()}
+        >
           <Send className="size-4" />
         </Button>
       </form>

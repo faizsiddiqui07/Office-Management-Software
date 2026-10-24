@@ -473,6 +473,8 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
               <button
                 type="button"
                 onClick={() => fileRef.current?.click()}
+                /* Send button wali hi wajah — dekho uska comment neeche. */
+                onMouseDown={(e) => e.preventDefault()}
                 disabled={upload.progress !== null}
                 className="grid size-9 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-foreground/10 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
                 aria-label="Attach a file"
@@ -501,7 +503,22 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
                composer seedha <textarea> hai, isliye wo niyam yahan chhoot gaya tha. */
             className="max-h-32 min-h-9 flex-1 resize-none rounded-xl border border-border/60 bg-background/50 px-3 py-2 text-base outline-none focus-visible:ring-2 focus-visible:ring-primary/50 md:text-sm"
           />
-          <Button type="submit" size="icon" disabled={!text.trim() || send.isPending} className="size-9 shrink-0 rounded-full">
+          <Button
+            type="submit"
+            size="icon"
+            disabled={!text.trim() || send.isPending}
+            /* iPhone par ek-tap me bhejne ke liye.
+               Bina iske do tap lagte the: pehla tap textarea ka focus hatata tha, keyboard
+               band hota tha, aur keyboard band hote hi pane wapas poori height par aa jaata
+               hai (useViewportFill) — yaani button ungli ke NEECHE se khisak jaata tha aur
+               click kahin nahi girta. Isliye log pehle keyboard ka tick dabate, phir send.
+               `mousedown` ka default kaam hi focus badalna hai; use rok do to focus textarea
+               me rehta hai, keyboard khula rehta hai, layout hilta hi nahi, aur click seedha
+               button par girta hai. Desktop par koi farak nahi — click waise hi chalta hai,
+               bas focus composer me bana rehta hai, jo wahan behtar hi hai. */
+            onMouseDown={(e) => e.preventDefault()}
+            className="size-9 shrink-0 rounded-full"
+          >
             <Send className="size-4" />
           </Button>
         </div>
