@@ -31,6 +31,10 @@ import { useViewportFill } from '@/lib/use-viewport-fill';
 export default function ChatPage() {
   const conversationId = useSearchParams().get('c');
   const paneRef = useViewportFill({
+    // Sirf `sm` aur usse upar. Phone par pane AppShell ke dikhne-wale-hisse se bandhe
+    // dabbe (lib/use-visual-viewport-frame.js) me CSS flex se bharta hai — wahan ye hook
+    // iOS ke keyboard-pan ke peechhe bhaagta tha aur topbar ko nazar se bahar dhakel deta.
+    media: '(min-width: 640px)',
     // `sm` se upar footer aur main ka neeche wala padding is pane ke NEECHE rehte hain.
     // Unki jagah chhodni zaroori hai, warna pane unhe fold ke neeche dhakel deta hai aur
     // page phir se scroll karne lagta hai — 768px par yahi composer ko 5px kaat raha tha.
@@ -48,7 +52,7 @@ export default function ChatPage() {
   });
 
   return (
-    <div className="sm:space-y-6">
+    <div className="max-sm:flex max-sm:min-h-0 max-sm:flex-1 max-sm:flex-col sm:space-y-6">
       <div className="hidden sm:block">
         <PageHeader
           eyebrow="Chat"
@@ -57,11 +61,13 @@ export default function ChatPage() {
           description="Direct messages with your colleagues. Only the two of you can see a chat."
         />
       </div>
-      {/* Yahan ki height sirf PEHLE frame ke liye hai — hook turant isko naapi hui height
-          se badal deta hai. `min-h` jaan-bujhkar nahi hai: wo inline height ko neeche se
-          dhakel kar page ko dobara scroll karwa deta, jo poora masla hi tha. Chhoti se
-          chhoti height ki hifazat hook ke apne `min` me hai. */}
-      <div ref={paneRef} className="h-[calc(100dvh-4.5rem)] sm:h-[calc(100dvh-16rem)]">
+      {/* PHONE: `flex-1` — AppShell ka dabba (lib/use-visual-viewport-frame.js) khud
+          dikhne wale hisse jitna hai, to pane bas topbar ke baad ki bachi jagah bharta hai.
+          Koi naap-tol nahi, isliye iOS ke pan ke peechhe bhaagne ki gunjaish hi nahi.
+          `sm`+: class wali height sirf PEHLE frame ke liye — hook turant use naapi hui
+          height se badal deta hai. `min-h` jaan-bujhkar nahi: wo inline height ko neeche
+          se dhakel kar page ko scroll karwa deta. Chhoti height ki hifazat hook ke `min` me. */}
+      <div ref={paneRef} className="max-sm:min-h-0 max-sm:flex-1 sm:h-[calc(100dvh-16rem)]">
         <GlassCard className="h-full overflow-hidden rounded-none p-0 sm:rounded-2xl">
           <ChatWindow initialConversationId={conversationId} />
         </GlassCard>

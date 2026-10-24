@@ -175,9 +175,31 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
   const fileRef = React.useRef(null);
 
   const scrollRef = React.useRef(null);
-  const bottomRef = React.useRef(null);
+  const contentRef = React.useRef(null);
   const topRef = React.useRef(null);
   const inputRef = React.useRef(null);
+  // ResizeObserver jaise lambe chalne wale callback taaza `atBottom` yahin se padhte hain —
+  // state ko effect ki dep banane se observer har baar toot kar dobara banta tha.
+  const atBottomRef = React.useRef(atBottom);
+  atBottomRef.current = atBottom;
+
+  /**
+   * List ko neeche tak le jaana — SIRF list ko.
+   *
+   * Pehle yahan `bottomRef.scrollIntoView()` tha. scrollIntoView sirf list nahi, uske HAR
+   * scroll ho sakne wale parent ko bhi khiskaata hai — document aur iPhone ka dikhne wala
+   * hissa (visual viewport) bhi. iPhone par keyboard khule hone par document ke paas
+   * hilne ki jagah hoti hai, to har naya message, har send, har keyboard ki harkat par
+   * POORA page khisakta tha — owner ki shikayat "chat karte waqt page neeche aane lagta
+   * hai" (24 Oct 2026). `scrollTop` likhna kisi parent ko chhoo hi nahi sakta.
+   */
+  const stickToBottom = React.useCallback((smooth = false) => {
+    const box = scrollRef.current;
+    if (!box) return;
+    const top = box.scrollHeight - box.clientHeight;
+    if (smooth) box.scrollTo({ top, behavior: 'smooth' });
+    else box.scrollTop = top;
+  }, []);
 
   /**
    * "X naye message" wali line kahan lagegi — chat kholte waqt ka nishaan, JAMA HUA.
@@ -204,9 +226,12 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
 
   // Neeche hone par hi apne aap scroll karo — warna koi purana message padh raha ho aur
   // naya aa jaye to screen uske neeche khisak jaayegi.
-  React.useEffect(() => {
-    if (atBottom) bottomRef.current?.scrollIntoView({ block: 'end' });
-  }, [messages.length, atBottom]);
+  // - Layout effect: paint se PEHLE neeche pahunche, ek frame ka jhatka na dikhe.
+  // - Dep sirf `messages.length`: banda khud scroll karke neeche aaye (atBottom true ho)
+  //   to wo pehle se wahin hai — tab dobara scroll karna iOS ka momentum kaat deta tha.
+  React.useLayoutEffect(() => {
+    if (atBottomRef.current) stickToBottom();
+  }, [messages.length, stickToBottom]);
 
   // Chat khuli hai aur neeche tak dikh rahi hai → padha hua maano.
   React.useEffect(() => {
@@ -241,15 +266,23 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
   // rehti hai, isliye jo banda abhi-abhi aakhri message par tha wo keyboard khulte hi usse
   // upar khisak jaata — aur apne hi bheje message ko dhoondhna padta. Jab tak wo neeche hai,
   // neeche hi rakho.
+  //
+  // Ek hi observer, poori zindagi ke liye. Pehle iski dep `atBottom` thi, to har flip par
+  // observer toot kar naya banta aur naya observer turant ek "pehli khabar" deta — yaani
+  // ek aur scroll. Aur andar scrollIntoView tha, jo page ko bhi hilata; page hilne se
+  // pane ki height badalti, observer phir chalta... ek keyboard ki harkat se kai jhatke.
+  // Ab sirf list ka scrollTop, aur andar wali content bhi dekhi jaati hai — photo baad me
+  // load hokar badi ho to bhi list neeche bani rahe.
   React.useEffect(() => {
     const box = scrollRef.current;
     if (!box || typeof ResizeObserver === 'undefined') return undefined;
     const ro = new ResizeObserver(() => {
-      if (atBottom) bottomRef.current?.scrollIntoView({ block: 'end' });
+      if (atBottomRef.current) stickToBottom();
     });
     ro.observe(box);
+    if (contentRef.current) ro.observe(contentRef.current);
     return () => ro.disconnect();
-  }, [atBottom]);
+  }, [stickToBottom]);
 
   const onScroll = (e) => {
     const el = e.currentTarget;
@@ -264,7 +297,15 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
     setText('');
     setReplyTo(null);
     setAtBottom(true);
-    inputRef.current?.focus();
+    // Phone par focus dobara NAHI karte. Agar keyboard khula hai to send button ka
+    // onMouseDown focus waise hi composer me rakhta hai. Aur agar banda ne pehle keyboard
+    // band kiya tha, to yahan focus() keyboard ko zabardasti dobara khol deta — saath me
+    // iOS ka pan aur poore page ka jhatka. Desktop par composer me wapas laana kaam ka hai;
+    // `preventScroll` taaki focus ke saath koi parent na khiske.
+    const el = inputRef.current;
+    if (el && document.activeElement !== el && window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
+      el.focus({ preventScroll: true });
+    }
   };
 
   const copyText = async (msg) => {
@@ -339,7 +380,9 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
       </div>
 
       {/* Messages */}
-      <div ref={scrollRef} onScroll={onScroll} className="relative min-h-0 flex-1 overflow-y-auto px-3 py-3">
+      {/* `overscroll-contain`: list ke ant par kheencho to wo kheench page tak na pahunche.
+          Bina iske iPhone par poora page (topbar samet) khinch jaata tha. */}
+      <div ref={scrollRef} onScroll={onScroll} className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3">
         <div ref={topRef} />
         {isFetchingNextPage ? (
           <p className="py-2 text-center text-xs text-muted-foreground">Loading older messages…</p>
@@ -356,7 +399,7 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
           </div>
         ) : null}
 
-        <div className="flex flex-col gap-1.5">
+        <div ref={contentRef} className="flex flex-col gap-1.5">
           {messages.map((m, i) => {
             const prev = messages[i - 1];
             const newDay = !prev || new Date(prev.createdAt).toDateString() !== new Date(m.createdAt).toDateString();
@@ -395,7 +438,6 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
             );
           })}
         </div>
-        <div ref={bottomRef} />
       </div>
 
       {/* Scroll-to-bottom */}
@@ -404,7 +446,10 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
           type="button"
           onClick={() => {
             setAtBottom(true);
-            bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+            // Turant, smooth nahi: smooth scroll ke dauraan onScroll beech ki jagah par
+            // atBottom ko false kar deta tha — button pal bhar ke liye wapas aata, aur us
+            // beech aaya naya message neeche chipakta nahi tha.
+            stickToBottom();
           }}
           className="absolute bottom-20 right-4 grid size-9 place-items-center rounded-full border border-border/60 bg-background/90 shadow-md backdrop-blur hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
           aria-label="Jump to latest"
@@ -531,7 +576,9 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
       <MessageActions
         target={menuFor}
         onClose={() => setMenuFor(null)}
-        onReply={(m) => { setReplyTo(m); inputRef.current?.focus(); }}
+        // Reply ka matlab hi likhna hai, isliye yahan keyboard khulna theek hai — par
+        // `preventScroll`, taaki focus apne saath koi parent na khiskaaye.
+        onReply={(m) => { setReplyTo(m); inputRef.current?.focus({ preventScroll: true }); }}
         onCopy={copyText}
         onDelete={(m, scope) => del.mutate({ id: m.id, scope })}
       />

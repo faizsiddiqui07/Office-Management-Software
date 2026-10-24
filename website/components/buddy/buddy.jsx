@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/auth';
 import { api } from '@/lib/api';
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/components/ui/sheet';
-import { useViewportFill } from '@/lib/use-viewport-fill';
+import { useVisualViewportFrame } from '@/lib/use-visual-viewport-frame';
 import { BuddyBlob } from './buddy-blob';
 import { BuddyChat } from './buddy-chat';
 
@@ -26,12 +26,14 @@ import { BuddyChat } from './buddy-chat';
  * faila rehta hai, to wahan safed kuch jhalak hi nahi sakta.
  */
 function PanelBody({ user, onClose }) {
-  // Phone par keyboard khulne se layout viewport BADALTA HI NAHI — sirf wo hissa chhota
-  // hota hai jo sach me dikhta hai. Isliye composer keyboard ke peechhe chala jaata tha,
-  // browser use dikhane ko poora page khiskaata tha, aur us jhatke me neeche safed patti
-  // jhalak jaati thi. `useViewportFill` `visualViewport` se naapta hai — wahi ek jagah
-  // jahan keyboard dikhta hai. Yahi hook chat page par bhi yahi dard theek karta hai.
-  const colRef = useViewportFill({ min: 320 });
+  // Column dikhne wale hisse jitna (`vv.height`) aur utna hi neeche khiska jitna iOS ne
+  // keyboard ke liye pan kiya (`vv.offsetTop`). Pehle yahan useViewportFill tha: wo sirf
+  // NEECHE ka hissa pakadta — composer keyboard ke upar rehta, par pan ke saath header
+  // ("ManagiBot AI" + Close) nazar se upar nikal jaata. Chat page wali hi dikkat aur wahi
+  // ilaaj (lib/use-visual-viewport-frame.js); Sheet pehle se `fixed inset-y-0` hai, isliye
+  // yahan `relative` mode — column bas usi ke andar khiskta hai. Har screen par chalta hai:
+  // desktop par pan hota hi nahi, to wahan ye bas poori height hai.
+  const colRef = useVisualViewportFrame(true, { position: 'relative', media: null, lockClass: null });
 
   return (
     <div ref={colRef} className="flex min-h-0 flex-col">

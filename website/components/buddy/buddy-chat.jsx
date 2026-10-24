@@ -51,7 +51,6 @@ export function BuddyChat({ userName }) {
   // Ek waqt me ek hi tajweez. Yahan sirf `id` aur dikhane wali line rehti hai — kya
   // hoga wo server ke paas likha hai, client ke paas kabhi nahi aata.
   const [pending, setPending] = React.useState(null);
-  const endRef = React.useRef(null);
   const inputRef = React.useRef(null);
   const listRef = React.useRef(null);
   // Purani baatein ek saath nahi aatin — upar scroll karne par page-dar-page.
@@ -145,7 +144,12 @@ export function BuddyChat({ userName }) {
   // Naya jawab aate hi neeche — warna lamba jawab aadha kat kar dikhta hai.
   React.useEffect(() => {
     if (!stick.current) return;
-    endRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
+    // SIRF list ko — scrollIntoView NAHI. Wo list ke har scroll ho sakne wale parent ko
+    // bhi khiskaata hai: Sheet (overflow-hidden hone par bhi programmatic scroll hota hai,
+    // aur user use wapas nahi kar sakta) aur iPhone ka dikhne wala hissa. Chat page par
+    // isi se poora page khisakta tha (dekho components/chat/conversation-view.jsx).
+    const box = listRef.current;
+    if (box) box.scrollTo({ top: box.scrollHeight, behavior: 'smooth' });
   }, [turns.length, askIt.isPending, pending]);
 
   // Khaali screen sirf tab jab history aa chuki ho aur sach me kuch na ho — warna
@@ -221,7 +225,6 @@ export function BuddyChat({ userName }) {
           </div>
         ) : null}
 
-        <div ref={endRef} />
       </div>
 
       {/* Logon ko pata hona chahiye ki baat kahan ja rahi hai aur kab tak rahegi. */}
@@ -250,7 +253,9 @@ export function BuddyChat({ userName }) {
           }}
           placeholder="Ask something…"
           maxLength={500}
-          className="max-h-28 min-h-10 flex-1 resize-none rounded-xl bg-muted/50 px-3 py-2 text-sm outline-none ring-1 ring-border focus:ring-2 focus:ring-primary/40"
+          // `text-base md:text-sm`: phone par 16px. iOS 16px se chhote input par tap hote hi
+          // page zoom kar deta hai — chat composer par yahi niyam pehle se hai.
+          className="max-h-28 min-h-10 flex-1 resize-none rounded-xl bg-muted/50 px-3 py-2 text-base outline-none ring-1 ring-border focus:ring-2 focus:ring-primary/40 md:text-sm"
         />
         <Button
           type="submit"

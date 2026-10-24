@@ -35,8 +35,13 @@ import * as React from 'react';
  * @param {number}   opts.min      Isse chhoti height kabhi nahi di jaayegi.
  * @param {Function} opts.reserve  (el) => px — pane ke NEECHE kitni jagah chhodni hai.
  *                                 Layout ki jaankari page ki hai, hook ki nahi.
+ * @param {string}   opts.media    Sirf jab ye media query sach ho tab naapo; warna inline
+ *                                 height hata kar CSS ko chalne do. Chat page phone par
+ *                                 `useVisualViewportFrame` ke flex dabbe me bharta hai
+ *                                 (wahan ye hook iOS ke pan ke peechhe bhaagta tha — dekho
+ *                                 lib/use-visual-viewport-frame.js), isliye wahan ye band.
  */
-export function useViewportFill({ min = 260, reserve } = {}) {
+export function useViewportFill({ min = 260, reserve, media } = {}) {
   const ref = React.useRef(null);
   // Har render par naya function aata hai; effect ko usse dobara nahi chalna chahiye.
   const reserveRef = React.useRef(reserve);
@@ -47,10 +52,15 @@ export function useViewportFill({ min = 260, reserve } = {}) {
     if (!el) return undefined;
 
     const vv = window.visualViewport;
+    const mq = media ? window.matchMedia(media) : null;
     let raf = 0;
 
     const apply = () => {
       raf = 0;
+      if (mq && !mq.matches) {
+        if (el.style.height) el.style.height = '';
+        return;
+      }
       // Yahan pehle `el.style.height = ''` tha — "naapne se pehle apni height hata do".
       // Wo soch galat thi aur iPhone par screen kaanpne lagti thi: `reserve` neeche wali
       // cheezon ki HEIGHT naapta hai, aur height is baat se nahi badalti ki wo cheez fold
@@ -83,6 +93,7 @@ export function useViewportFill({ min = 260, reserve } = {}) {
     vv?.addEventListener('scroll', schedule);
     window.addEventListener('resize', schedule);
     window.addEventListener('orientationchange', schedule);
+    mq?.addEventListener?.('change', schedule);
 
     return () => {
       if (raf) window.cancelAnimationFrame(raf);
@@ -90,9 +101,10 @@ export function useViewportFill({ min = 260, reserve } = {}) {
       vv?.removeEventListener('scroll', schedule);
       window.removeEventListener('resize', schedule);
       window.removeEventListener('orientationchange', schedule);
+      mq?.removeEventListener?.('change', schedule);
       el.style.height = '';
     };
-  }, [min]);
+  }, [min, media]);
 
   return ref;
 }

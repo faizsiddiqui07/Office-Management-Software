@@ -98,7 +98,9 @@ export function ChatList({ activeId, onOpenConversation, onOpenPeer }) {
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+      {/* `overscroll-contain`: list ke ant par kheench page tak na jaaye (message list wali
+          hi wajah — dekho conversation-view.jsx). */}
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-3">
         <IosPushHint />
 
         {isLoading ? (

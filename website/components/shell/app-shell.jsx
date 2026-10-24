@@ -13,6 +13,7 @@ import { AnnouncementPopup } from '@/components/announcements/announcement-popup
 import { BirthdayPopup } from '@/components/calendar/birthday-popup';
 import { ChatFab } from '@/components/chat/chat-fab';
 import { Buddy } from '@/components/buddy/buddy';
+import { useVisualViewportFrame } from '@/lib/use-visual-viewport-frame';
 import { ProductCredit } from '@/components/shell/brand';
 import { ChatRealtimeProvider } from '@/components/chat/chat-realtime';
 import { EodDigestPopup } from '@/components/tasks/eod-digest-popup';
@@ -42,6 +43,12 @@ export function AppShell({ children }) {
     if (!isLoading && !user) router.replace('/login');
   }, [isLoading, user, router]);
 
+  // Chat par, phone me: topbar + chat ka poora stack dikhne wale hisse se BANDHA rehta hai,
+  // upar aur neeche dono se — iPhone keyboard khulne par page ko pan karta hai aur pehle
+  // topbar/header nazar se bahar khisak jaate the. Dekho lib/use-visual-viewport-frame.js.
+  // Early return se PEHLE, kyunki hook hain; callback ref dabba aane par khud chalta hai.
+  const frameRef = useVisualViewportFrame(appPane);
+
   // While /bootstrap loads (and while the effect above sends a signed-out visitor to
   // /login): on iOS the twin of the launch image, so the open reads as one continuous
   // screen; everywhere else the plain spinner — Android already had Chrome's own splash.
@@ -69,7 +76,9 @@ export function AppShell({ children }) {
       <DocumentTitle />
       <UpdatePrompt />
       <AppSidebar user={user} />
-      <div className="lg:pl-64">
+      {/* Chat + phone: ye dabba fixed hai aur dikhne wale hisse jitna (hook inline style
+          deta hai). Andar flex column — topbar apni jagah, `main` baaki saari jagah. */}
+      <div ref={frameRef} className={appPane ? 'lg:pl-64 max-sm:flex max-sm:flex-col' : 'lg:pl-64'}>
         <Topbar user={user} />
         {/* My tasks / Assigned tasks shortcuts, on every page — see the component.
             Chat par ye SIRF phone par chhupta hai: wahi ek jagah hai jahan chat ko har
@@ -89,8 +98,13 @@ export function AppShell({ children }) {
             over it. On a 4K screen that was more than a thousand empty pixels down each side. */}
         <main
           className={
+            // Phone + chat: `main` frame ki bachi jagah bharta hai, aur `[&>*]` uske SEEDHE
+            // bachche ko bhi flex zanjeer me jodta hai. Wo bachcha app/(app)/template.jsx ka
+            // fade wala motion.div hai — ek saada block jo apni poori content lambai tak
+            // phail jaata tha (composer 1782px par, screen 812 ki). "Reduce motion" par
+            // wrapper hota hi nahi, tab ye seedha chat page par lagta hai — dono theek.
             appPane
-              ? 'w-full sm:px-6 sm:pb-6 sm:pt-4 lg:px-8'
+              ? 'w-full max-sm:flex max-sm:min-h-0 max-sm:flex-1 max-sm:flex-col max-sm:[&>*]:flex max-sm:[&>*]:min-h-0 max-sm:[&>*]:flex-1 max-sm:[&>*]:flex-col sm:px-6 sm:pb-6 sm:pt-4 lg:px-8'
               : 'w-full px-4 pb-6 pt-4 sm:px-6 lg:px-8'
           }
         >

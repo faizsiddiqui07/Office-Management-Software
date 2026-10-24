@@ -606,3 +606,27 @@
 .animate-aurora-bg {
   animation: aurora-bg 60s linear infinite;
 }
+
+/* ────────────────────────────────────────────────────────────
+   Chat par, phone me: document ka scroll BAND (owner, 24 Oct 2026).
+   `chat-pane` class lib/use-visual-viewport-frame.js lagata hai, sirf jab chat ka dabba
+   dikhne wale hisse se bandha ho. Us waqt dabbe ke peeche kuch hilne layak bachna hi nahi
+   chahiye: pehle body/shell `min-h-dvh` the, aur iPhone par `100dvh` keyboard ke saath
+   chhota NAHI hota — keyboard ke neeche lagbhag keyboard jitna khaali document bachta tha
+   jo scroll/pan hota tha.
+   - UNLAYERED jaan-boojhkar: Tailwind ki `min-h-dvh` utility (layer me) ko yahi harata hai.
+   - `scroll-behavior: auto`: html ka global `smooth` har programmatic scroll ko dikhne
+     wali phisalan bana deta tha — "page neeche aa raha hai" wali harkat.
+   ──────────────────────────────────────────────────────────── */
+@media (max-width: 639.98px) {
+  html.chat-pane,
+  html.chat-pane body {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+  html.chat-pane {
+    scroll-behavior: auto;
+  }
+}
