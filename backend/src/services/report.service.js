@@ -146,13 +146,28 @@ export async function buildReport(type, dateYMD, range) {
   const now = new Date();
   const todayYMD = ymdInTz(now);
   // Today only becomes an "absent-countable" working day once the office day is
-  // over — until then a no-show may still turn up. So measure up to the last
+  // over — until then a no-show may still turn up. So ABSENCE is measured up to the last
   // FINISHED working day (yesterday while today's company hours are still on).
   const companyClosed = formatCompany(now, 'HH:mm') >= settings.workEnd;
   const lastFinishedYMD = companyClosed ? todayYMD : ymdInTz(new Date(now.getTime() - 86400000));
   const elapsedTo = to < lastFinishedYMD ? to : lastFinishedYMD;
+  // Everything that has already HAPPENED — attendance, working days, the rate — reaches
+  // TODAY instead. Today being a Tuesday is a fact at 10 a.m.; it does not wait for 6 p.m.
+  const countToCompany = to < todayYMD ? to : todayYMD;
   const holidaySet = await holidayYMDSet(from, to);
-  const workingDays = from > elapsedTo ? 0 : countWorkingDays(from, elapsedTo, settings.weekendDays, holidaySet);
+  /**
+   * The headline "N working days" — counted to TODAY, like every other figure beside it.
+   *
+   * It used to stop at `elapsedTo`, i.e. at YESTERDAY until the office closed, and that
+   * made the report contradict itself all day: on 27 Oct 2026 at 10 a.m. the header read
+   * "20 working days" while the attendance rate printed next to it was divided by each
+   * person's OWN working days (`ownWorkingDays`, below), which already counted today — 21.
+   * The employee's own report said 21 for the same month too. Owner spotted it (27 Oct).
+   *
+   * Absence keeps its own, stricter window (`elapsedTo` → `finishedWorkingDays`, and
+   * `absentAsOfYMD` in the payload). Nobody is marked absent for a day still in progress.
+   */
+  const workingDays = from > countToCompany ? 0 : countWorkingDays(from, countToCompany, settings.weekendDays, holidaySet);
 
   const [activeUsers, records, takenLeaves, pendingLeaves, balances, expList, expSummary] = await Promise.all([
     // schedule + employmentType so a part-timer's own working days are used, not the
@@ -180,10 +195,10 @@ export async function buildReport(type, dateYMD, range) {
   // Nobody is accountable for a period they hadn't joined. People who arrived after it
   // drop out entirely; those who arrived during it are judged only on their own days,
   // so the report never counts a day against someone who had no access.
-  // Split on the days that have HAPPENED (today included), not on the last FINISHED day.
-  // Using the finished day pushed anyone whose joining date is today into "joined later"
-  // on today's own report — a person told they arrived after the day they arrived.
-  const countToCompany = to < todayYMD ? to : todayYMD;
+  // Split on the days that have HAPPENED (`countToCompany`, today included), not on the
+  // last FINISHED day. Using the finished day pushed anyone whose joining date is today
+  // into "joined later" on today's own report — a person told they arrived after the day
+  // they arrived.
   const { included: attendanceUsers, joinedLater } = splitByJoining(attendanceRoster, from, countToCompany || to);
   const leaveUserIds = new Set(activeUsers.filter((u) => can({ role: u.role }, 'applyLeave')).map((u) => String(u._id)));
 
