@@ -1,4 +1,5 @@
 import { Task } from '../models/Task.js';
+import { isOwnerRole } from './roles.js';
 
 /**
  * WHO MAY SIGN A SUBMITTED TASK OFF — the one place that answers it.
@@ -105,6 +106,95 @@ export const reviewableByFilter = (uid) => ({
     { assignedBy: { $ne: null }, collaborators: uid, owner: { $ne: uid }, completedBy: { $ne: uid } },
   ],
 });
+
+/**
+ * ── SIGNING OFF EARLY, OVER A MIDDLE LINK (owner's rule, 27 Oct 2026) ───────────────
+ *
+ * Kalpana gives Priyanshi a job with approval on. Priyanshi forwards it to Mariya, also
+ * with approval on. Mariya finishes and submits. The chain now settles one link at a
+ * time (see settleParent): until PRIYANSHI signs, Kalpana's own copy is not even
+ * submitted, so she has nothing to approve and the job can sit for days.
+ *
+ * A CEO & President may now sign such a copy off themselves, skipping the middle
+ * signature. The work itself must be FINISHED — this only ever skips a SIGNATURE, never
+ * the work, because approving unfinished work would pay for it (the same overpayment the
+ * FORWARDED_OPEN guard in reviewTask blocks).
+ */
+
+/**
+ * Every copy forwarded down from these roots, with the fields the sign-off rules need
+ * and how deep each one sits. One breadth-first sweep for every root at once, and
+ * depth-capped like the rest of the forward code so a cycle in the data cannot spin.
+ */
+async function descendantsByRoot(rootIds) {
+  const out = new Map();
+  const roots = [...new Set((rootIds || []).map(idOf).filter(Boolean))];
+  if (!roots.length) return out;
+  for (const r of roots) out.set(r, []);
+
+  let frontier = new Map(roots.map((r) => [r, r])); // id at the frontier → the root it came from
+  for (let depth = 1; frontier.size && depth < 12; depth += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    const kids = await Task.find({ forwardedFrom: { $in: [...frontier.keys()] } })
+      .select('owner assignedBy forwardedFrom status requiresApproval submittedAt').lean();
+    if (!kids.length) break;
+    const next = new Map();
+    for (const k of kids) {
+      const root = frontier.get(String(k.forwardedFrom));
+      if (!root) continue;
+      out.get(root).push({ ...k, depth });
+      next.set(String(k._id), root);
+    }
+    frontier = next;
+  }
+  return out;
+}
+
+/**
+ * For each root: the copies below it that are merely WAITING FOR A SIGNATURE, deepest
+ * first — or null when there is nothing below, or when somebody down there is still
+ * WORKING. Deepest first because signing them in that order lets the ordinary
+ * settleParent cascade lift each parent in turn, exactly as a real approval would.
+ *
+ * "Still working" is judged on the LEAVES: an open copy with no open copy under it, that
+ * nobody has submitted, is work in progress. An open copy that merely sits above another
+ * open one is not — it is blocked, which is the whole problem being solved here.
+ */
+export async function unsignedBelowByRoot(rootIds) {
+  const byRoot = await descendantsByRoot(rootIds);
+  const res = new Map();
+  for (const [root, nodes] of byRoot) {
+    const open = nodes.filter((n) => n.status !== 'DONE');
+    if (!open.length) { res.set(root, null); continue; }
+    const openIds = new Set(open.map((n) => String(n._id)));
+    const hasOpenChild = new Set(open.map((n) => String(n.forwardedFrom)).filter((p) => openIds.has(p)));
+    const stillWorking = open.some((n) => !hasOpenChild.has(String(n._id)) && !(n.requiresApproval && n.submittedAt));
+    res.set(root, stillWorking ? null : [...open].sort((a, b) => b.depth - a.depth));
+  }
+  return res;
+}
+
+/** The same, for a single task. */
+export async function unsignedBelow(taskId) {
+  return (await unsignedBelowByRoot([taskId])).get(idOf(taskId)) ?? null;
+}
+
+/**
+ * May this person sign a copy off BEFORE the middle link has?
+ *
+ * CEO & President only (owner's call) — resolved by top RANK via isOwnerRole, never by
+ * role key or name, so renaming the role or promoting somebody carries it along. They
+ * still have to be one of this copy's ordinary approvers, so being a CEO is not on its
+ * own a key to every task in the company, and whoever DID the work is excluded exactly
+ * as they are from a normal sign-off.
+ *
+ * Says nothing about whether the work below is finished — that is `unsignedBelow`.
+ */
+export function canSignOffEarly(task, user, chainOwners = new Set()) {
+  if (!user || !isOwnerRole(user.role)) return false;
+  if (!task?.requiresApproval || task.status === 'DONE' || task.submittedAt) return false;
+  return approverIdsFor(task, chainOwners).includes(idOf(user._id ?? user.id));
+}
 
 /** Rows from `reviewableByFilter`, sieved through the real rule. */
 export async function sieveReviewable(rows, uid) {

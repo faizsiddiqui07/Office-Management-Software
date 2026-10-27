@@ -4,7 +4,10 @@ import { User } from '../models/User.js';
 import { Setting } from '../models/Setting.js';
 import { Notification, notify, clearNotificationsFor } from '../models/Notification.js';
 import { roleLabel, isOwnerRole } from '../lib/roles.js';
-import { approverIdsFor, canReviewTask, chainOwnersOf, chainOwnersByRoot } from '../lib/taskApprovers.js';
+import {
+  approverIdsFor, canReviewTask, chainOwnersOf, chainOwnersByRoot,
+  canSignOffEarly, unsignedBelow, unsignedBelowByRoot,
+} from '../lib/taskApprovers.js';
 import { can } from '../lib/permissions.js';
 import { companyDayFromYMD, ymdInTz, COMPANY_TZ } from '../lib/time.js';
 import { onAssignedTaskDone, onAssignedTaskUndone, rebuildOverdueForTask } from './bonus.service.js';
@@ -472,6 +475,62 @@ export async function reviewTask(actor, id, approve, reason) {
       ? httpError(403, 'FORBIDDEN', 'You did this work — somebody else has to sign it off')
       : httpError(403, 'FORBIDDEN', 'Only the person who assigned this task, or someone tagged on it, can review it');
   }
+  /**
+   * ── CEO & President signing off over a stuck middle link (owner's rule, 27 Oct 2026) ──
+   *
+   * Kalpana → Priyanshi → Mariya, approval on at both steps. Mariya submits; until
+   * Priyanshi signs, settleParent leaves Kalpana's copy un-submitted, so she has nothing
+   * to approve and the job waits on one person. A CEO & President may now sign the whole
+   * run themselves. The WORK still has to be finished — `unsignedBelow` returns null the
+   * moment anyone below is actually working, and we fall through to the old refusals.
+   */
+  let signedEarly = [];
+  if (approve && !task.awaitingApproval && canSignOffEarly(task, actor, chain)) {
+    const pending = await unsignedBelow(task._id);
+    if (pending?.length) {
+      // Deepest first, so each sign-off's own settleParent lifts the copy above it — the
+      // same path a real approval takes, rather than a second way of closing a chain.
+      for (const node of pending) {
+        // eslint-disable-next-line no-await-in-loop
+        const copy = await Task.findById(node._id);
+        if (!copy || copy.status === 'DONE') continue; // a parent the cascade already closed
+        copy.status = 'DONE';
+        copy.completedAt = new Date();
+        copy.completedBy = copy.completedBy || copy.owner; // credit stays with whoever did it
+        copy.approvedBy = actor._id;
+        copy.rejectionReason = '';
+        /* eslint-disable no-await-in-loop */
+        await copy.save();
+        await clearNotificationsFor('Task', copy._id, { types: ['TASK_APPROVAL'] });
+        signedEarly.push(copy);
+        await notify({ user: copy.owner, type: 'TASK_DONE', title: `${actor.name} approved your task`, message: copy.title, link: todoLink(copy._id) });
+        // The signature we skipped belongs to this copy's assigner — tell them plainly,
+        // or they would keep an approval in their queue for work already closed above
+        // them and never learn their decision was taken out of their hands.
+        if (copy.assignedBy && String(copy.assignedBy) !== String(actor._id)) {
+          await notify({
+            user: copy.assignedBy,
+            type: 'TASK_DONE',
+            title: `${actor.name} approved this without waiting for you`,
+            message: copy.title,
+            link: todoLink(copy._id, true),
+            entityType: 'Task',
+            entityId: copy._id,
+          });
+        }
+        try { await onAssignedTaskDone(copy); } catch (e) { console.error('bonus hook (early sign-off) failed', e?.message); }
+        try { await settleParent(copy); } catch (e) { console.error('forward settle failed', e?.message); }
+        /* eslint-enable no-await-in-loop */
+      }
+      // settleParent has now submitted THIS copy (its approval gate is on), so the
+      // ordinary flow below signs it exactly as it would any other submitted task.
+      const refreshed = await Task.findById(task._id);
+      task.submittedAt = refreshed?.submittedAt ?? task.submittedAt;
+      task.completedBy = refreshed?.completedBy ?? task.completedBy;
+      task.status = refreshed?.status ?? task.status;
+    }
+  }
+
   if (!task.awaitingApproval) throw httpError(400, 'NOT_AWAITING', 'This task isn’t waiting for approval');
   // Approving a copy that was forwarded onward would settle (and pay) the whole chain
   // while the person below is still working — the same overpayment the DONE guard in
@@ -536,7 +595,9 @@ export async function reviewTask(actor, id, approve, reason) {
       entityId: task._id,
     });
   }
-  return populated(task);
+  // How many copies below were signed along with this one, so the client can say what
+  // actually happened ("also signed off 1 pending approval") rather than a bare "Approved".
+  return { ...(await populated(task)), signedOver: signedEarly.length };
 }
 
 /**
@@ -1139,7 +1200,23 @@ export async function listTasks(actor, { scope = 'mine', status, search, period,
   // range". A date filter that hid a submission from three weeks ago would leave the
   // assignee blocked with no way for the assigner to notice, so this scope ignores it.
   if (awaiting) {
-    and.push({ requiresApproval: true, status: 'PENDING', submittedAt: { $ne: null } });
+    const submitted = { requiresApproval: true, status: 'PENDING', submittedAt: { $ne: null } };
+    // A CEO & President also needs to see the copies that are stuck on somebody ELSE's
+    // signature, since they may sign those off themselves (owner's rule, 27 Oct 2026).
+    // Those are NOT submitted, so the plain filter above can never reach them.
+    //
+    // Narrowed to copies that were actually forwarded onward — "has an unsigned
+    // descendant" is not a filter Mongo can express, so the real test runs in JS further
+    // down (unsignedBelowByRoot). Without this narrowing the queue would first load every
+    // open approval-gated task the person ever handed out.
+    if (isOwnerRole(actor.role)) {
+      const forwardedParents = await Task.distinct('forwardedFrom', { forwardedFrom: { $ne: null }, status: { $ne: 'DONE' } });
+      and.push(forwardedParents.length
+        ? { $or: [submitted, { requiresApproval: true, status: 'PENDING', submittedAt: null, _id: { $in: forwardedParents } }] }
+        : submitted);
+    } else {
+      and.push(submitted);
+    }
   } else if (from || to) {
     // A custom date range (x → y) takes precedence over the preset period.
     dateClauseApplied = true;
@@ -1269,6 +1346,41 @@ export async function listTasks(actor, { scope = 'mine', status, search, period,
   }
   for (const t of out) t.canReview = !!t.canReview;
 
+  /**
+   * Work below is finished but a middle link hasn't signed it — and this viewer is a
+   * CEO & President who may sign it anyway (owner's rule, 27 Oct 2026; the rule itself
+   * lives in lib/taskApprovers.js so the button and reviewTask's guard cannot drift).
+   *
+   * Only asked for rows that could possibly qualify: this viewer's own approval-gated,
+   * still-open, not-yet-submitted copies. On any ordinary page that is a handful of rows
+   * or none, so the descendant sweep below costs a couple of queries, not one per row.
+   */
+  const maybeEarly = out.filter((t) => !t.awaitingApproval && t.status !== 'DONE' && t.requiresApproval && !t.forwardedFrom);
+  let earlyCandidates = [];
+  if (maybeEarly.length && isOwnerRole(actor.role)) {
+    // Same chain sweep the Approve button uses, so somebody who holds a copy further
+    // down is excluded here exactly as they are from an ordinary sign-off.
+    const earlyChains = await chainOwnersByRoot(maybeEarly.map((t) => t.id));
+    earlyCandidates = maybeEarly.filter((t) => canSignOffEarly(t, actor, earlyChains.get(String(t.id)) || new Set()));
+  }
+  if (earlyCandidates.length) {
+    const pendingByRoot = await unsignedBelowByRoot(earlyCandidates.map((t) => t.id));
+    const names = new Map();
+    const needed = [...new Set([...pendingByRoot.values()].filter(Boolean).flat()
+      .map((n) => String(n.assignedBy)).filter(Boolean))];
+    if (needed.length) {
+      for (const u of await User.find({ _id: { $in: needed } }).select('name').lean()) names.set(String(u._id), u.name);
+    }
+    for (const t of earlyCandidates) {
+      const pending = pendingByRoot.get(String(t.id));
+      if (!pending?.length) continue;
+      t.canSignOffEarly = true;
+      // Whose signature is being skipped — the assigner of each copy still waiting. Shown
+      // in the warning, so the CEO knows exactly whose decision they are taking over.
+      t.awaitingSignatureFrom = [...new Set(pending.map((n) => names.get(String(n.assignedBy))).filter(Boolean))];
+    }
+  }
+
   // The full hand-off chain for a forwarded task: who started it, everyone it passed
   // through, and where it sits now — e.g. Khaan Aamir → Priyanshi Patel → You. The row
   // only stores its immediate parent (forwardedFrom) and the root originator
@@ -1320,7 +1432,11 @@ export async function listTasks(actor, { scope = 'mine', status, search, period,
   const gSettings = await Setting.getSingleton();
   const graceDays = Math.max(0, gSettings.bonus?.graceDays ?? 0);
 
-  return { tasks: out, total, page, limit, noDueHidden, graceDays };
+  // The approval queue widened its DB filter above to reach copies stuck on somebody
+  // else's signature; only the JS pass can tell which of those really qualify, so the
+  // ones that don't are dropped here rather than padding the caller's inbox.
+  const rows = awaiting ? out.filter((t) => t.awaitingApproval || t.canSignOffEarly) : out;
+  return { tasks: rows, total: awaiting ? rows.length : total, page, limit, noDueHidden, graceDays };
 }
 
 export async function taskSummary(actor) {

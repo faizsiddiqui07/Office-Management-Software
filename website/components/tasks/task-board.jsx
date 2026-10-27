@@ -81,6 +81,14 @@ const onlyTagged = (t, myId) => !!myId && !!t?.owner?.id && !iOwnTask(t, myId);
  */
 const canCompleteTask = (t, myId) => iOwnTask(t, myId) || !t?.assignedBy;
 
+/** "Priyanshi", "Priyanshi and Mariya", "Priyanshi, Mariya and Dev" — for a warning line. */
+const listNames = (names) => {
+  const n = (names || []).filter(Boolean);
+  if (!n.length) return 'Someone';
+  if (n.length === 1) return n[0];
+  return `${n.slice(0, -1).join(', ')} and ${n[n.length - 1]}`;
+};
+
 const STAT_TONE = {
   warning: 'bg-warning/15 text-amber-600 ring-warning/25 dark:text-amber-300',
   success: 'bg-success/12 text-success ring-success/25',
@@ -653,7 +661,7 @@ function TaskBonusPreview({ preview, done, forName }) {
   );
 }
 
-function TaskDetailDialog({ view, myId, onClose, onToggle, onEdit, onDelete, onApprove, onReject, onForward }) {
+function TaskDetailDialog({ view, myId, onClose, onToggle, onEdit, onDelete, onApprove, onReject, onForward, onSignOffEarly }) {
   const task = view?.task;
   const done = task?.status === 'DONE';
   const awaiting = task?.awaitingApproval;
@@ -717,6 +725,12 @@ function TaskDetailDialog({ view, myId, onClose, onToggle, onEdit, onDelete, onA
                   <ThumbsUp className="size-4" /> Approve
                 </Button>
               </div>
+            ) : task?.canSignOffEarly ? (
+              /* Finished work stuck on a middle link's signature — Approve only, and it
+                 goes through the confirm (see onSignOffEarly). */
+              <Button onClick={() => onSignOffEarly(task)}>
+                <ThumbsUp className="size-4" /> Approve
+              </Button>
             ) : view.canToggle ? (
               <>
                 {view.canForward ? (
@@ -1258,7 +1272,9 @@ export function TaskBoard() {
     if (!isAssigned) return [];
     const q = search.toLowerCase().trim();
     return (awaitingData?.tasks ?? []).filter(
-      (t) => t.awaitingApproval
+      // `canSignOffEarly`: finished work stuck on a middle link's signature, which a
+      // CEO & President may sign themselves. The server says who sees these.
+      (t) => (t.awaitingApproval || t.canSignOffEarly)
         && (!q
           || (t.owner?.name || '').toLowerCase().includes(q)
           || t.title.toLowerCase().includes(q)
@@ -1292,11 +1308,20 @@ export function TaskBoard() {
 
   // The assigner approves or rejects a submitted task — a rejection carries a reason.
   const [rejecting, setRejecting] = React.useState(null);
+  // The task a CEO & President is about to sign off over a middle link's head.
+  const [signingEarly, setSigningEarly] = React.useState(null);
   const [rejectReason, setRejectReason] = React.useState('');
   const reviewMut = useMutation({
     mutationFn: ({ id, approve, reason }) => api.patch(`/tasks/${id}/review`, { approve, reason }),
-    onSuccess: (_res, vars) => {
-      toast.success(vars.approve ? 'Task approved' : 'Sent back to the assignee');
+    onSuccess: (res, vars) => {
+      // `signedOver` counts the copies below that were signed along with this one, so a
+      // CEO who skipped a middle link is told that is what happened.
+      const over = res?.task?.signedOver || 0;
+      toast.success(!vars.approve
+        ? 'Sent back to the assignee'
+        : over
+          ? `Approved — ${over} pending approval${over > 1 ? 's' : ''} below closed too`
+          : 'Task approved');
       qc.invalidateQueries({ queryKey: ['tasks'] });
       setRejecting(null);
       setRejectReason('');
@@ -1634,12 +1659,32 @@ export function TaskBoard() {
                             {t.submittedAt ? ` · submitted ${fmtDate(t.submittedAt)}` : ''}
                             {t.dueYMD ? ` · due ${fmtDate(t.dueYMD)}` : ''}
                           </p>
+                          {/* Finished, but the person in the middle hasn't signed it.
+                              Said on the row itself, so it is read BEFORE Approve is
+                              tapped, not only in the confirm that follows. */}
+                          {t.canSignOffEarly ? (
+                            <p className="mt-0.5 flex items-start gap-1 text-xs font-medium text-amber-600 dark:text-amber-300">
+                              <Clock className="mt-0.5 size-3 shrink-0" />
+                              <span className="min-w-0">Not approved by {listNames(t.awaitingSignatureFrom)} yet</span>
+                            </p>
+                          ) : null}
                         </button>
                         <div className="flex shrink-0 items-center gap-1.5">
-                          <Button variant="outline" size="icon" className="size-9 text-destructive" onClick={() => { setRejecting(t); setRejectReason(''); }} aria-label="Reject">
-                            <X className="size-4" />
-                          </Button>
-                          <Button size="icon" className="size-9" disabled={reviewMut.isPending} onClick={() => reviewMut.mutate({ id: t.id, approve: true })} aria-label="Approve">
+                          {/* No Reject on an early sign-off: there is nothing submitted to
+                              THIS person to send back, and the copy below belongs to the
+                              middle link's decision. Approving is the only shortcut. */}
+                          {t.canSignOffEarly ? null : (
+                            <Button variant="outline" size="icon" className="size-9 text-destructive" onClick={() => { setRejecting(t); setRejectReason(''); }} aria-label="Reject">
+                              <X className="size-4" />
+                            </Button>
+                          )}
+                          <Button
+                            size="icon"
+                            className="size-9"
+                            disabled={reviewMut.isPending}
+                            onClick={() => (t.canSignOffEarly ? setSigningEarly(t) : reviewMut.mutate({ id: t.id, approve: true }))}
+                            aria-label="Approve"
+                          >
                             <ThumbsUp className="size-4" />
                           </Button>
                         </div>
@@ -1899,6 +1944,10 @@ export function TaskBoard() {
           setViewing(null);
           reviewMut.mutate({ id: t.id, approve: true });
         }}
+        onSignOffEarly={(t) => {
+          setViewing(null);
+          setSigningEarly(t);
+        }}
         onReject={(t) => {
           setViewing(null);
           setRejecting(t);
@@ -1944,6 +1993,34 @@ export function TaskBoard() {
         loading={toggleMut.isPending}
         onConfirm={() => { if (undoing) { toggleMut.mutate(undoing); setUndoing(null); } }}
       />
+
+      {/* Signing off over a middle link who hasn't approved yet (CEO & President only —
+          the server decides, via `canSignOffEarly`). Asked rather than done, because it
+          takes somebody else's decision out of their hands and closes the whole run. */}
+      <AppDialog
+        open={!!signingEarly}
+        onOpenChange={(o) => (!o ? setSigningEarly(null) : null)}
+        title="Approve without their sign-off?"
+        description={signingEarly
+          ? `${listNames(signingEarly.awaitingSignatureFrom)} ${(signingEarly.awaitingSignatureFrom?.length ?? 0) > 1 ? 'have' : 'has'} not approved “${signingEarly.title}” yet. The work itself is finished and waiting on that sign-off.`
+          : ''}
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setSigningEarly(null)}>Cancel</Button>
+            <Button
+              disabled={reviewMut.isPending}
+              onClick={() => { if (signingEarly) { reviewMut.mutate({ id: signingEarly.id, approve: true }); setSigningEarly(null); } }}
+            >
+              <ThumbsUp className="size-4" /> {reviewMut.isPending ? 'Approving…' : 'Approve anyway'}
+            </Button>
+          </>
+        }
+      >
+        <p className="py-2 text-sm text-muted-foreground">
+          Approving now closes it for everyone below as well, and their pending approval goes away.
+          They&rsquo;ll be told you signed it off.
+        </p>
+      </AppDialog>
 
       {/* Reject with a reason — the assignee sees exactly what to fix. */}
       <AppDialog
