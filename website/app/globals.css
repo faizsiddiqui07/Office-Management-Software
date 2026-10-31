@@ -467,6 +467,20 @@
   animation-iteration-count: infinite !important;
 }
 
+/* …aur koi bhi SPINNER, bilkul usi wajah se.
+   Ruka hua spinner na hone se bhi bura hai: wo "kuch ho raha hai" nahi, "app atak gaya"
+   dikhta hai. Owner ne pakda (31 Oct 2026) — jin phone me Lite mode ON tha, wahan header
+   ka Refresh dabane par ghoomta kuch nahi tha, to button marda lagta tha. Dabne par kaam
+   poora ho raha tha, bas dikhta nahi tha. Yahi baat app ke har "Saving…" / loading wale
+   spinner par lagti hai, isliye chhoot `.animate-spin` par hai, sirf us ek button par
+   nahi. Ek chhota ghoomta icon, wo bhi sirf jab tak kaam chal raha ho — utna hi kharch
+   jitna upar ke teen dot ka.
+   Specificity (0,3,0) upar wale `*` wale rule (0,2,0) se zyada hai, isliye jeetta hai. */
+:root[data-lite='true'] .animate-spin {
+  animation-duration: 1s !important;
+  animation-iteration-count: infinite !important;
+}
+
 /* ────────────────────────────────────────────────────────────
    iOS-only launch screen. `data-ios` is set on <html> by the inline script in
    app/layout.jsx before first paint (see there for why). Both the launch screen and the
