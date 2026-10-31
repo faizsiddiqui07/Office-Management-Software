@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { DatePicker } from '@/components/ui/date-picker';
 import { APP_LIVE_YMD } from '@/lib/app-live';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+import { NoteEditor } from '@/components/ui/note-editor';
 import {
   Select,
   SelectContent,
@@ -149,7 +149,7 @@ export function DuesEntryDialog({ mode = 'due', entry = null, people = [], prese
 
         <div className="space-y-1.5">
           <Label htmlFor="d-note">Note</Label>
-          <Textarea id="d-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional…" className="bg-background/50" />
+          <NoteEditor id="d-note" value={note} onChange={setNote} placeholder="Optional…" />
         </div>
       </div>
     </AppDialog>

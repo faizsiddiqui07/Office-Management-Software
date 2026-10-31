@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import { DatePicker } from '@/components/ui/date-picker';
 import { APP_LIVE_YMD } from '@/lib/app-live';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+import { NoteEditor } from '@/components/ui/note-editor';
 import {
   Select,
   SelectContent,
@@ -158,7 +158,7 @@ export function ExpenseDialog({ expense, open: openProp, onOpenChange }) {
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="ex-notes">Notes</Label>
-          <Textarea id="ex-notes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional…" className="bg-background/50" />
+          <NoteEditor id="ex-notes" value={notes} onChange={setNotes} placeholder="Optional…" />
         </div>
       </div>
     </AppDialog>

@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
+import { NoteEditor } from '@/components/ui/note-editor';
 
 export function AssignDialog() {
   const qc = useQueryClient();
@@ -165,7 +165,7 @@ export function AssignDialog() {
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="a-notes">Notes (optional)</Label>
-          <Textarea id="a-notes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Details…" className="bg-background/50" />
+          <NoteEditor id="a-notes" value={notes} onChange={setNotes} placeholder="Details…" />
         </div>
 
         {/* Tag anyone in the office to keep them in the loop — it shows under "Shared with

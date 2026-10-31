@@ -47,6 +47,7 @@ import { formatRupees } from '@/lib/expense';
 import { EntryDetailDialog } from '@/components/rewards/entry-detail-dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
+import { RichText } from '@/components/ui/rich-text';
 
 function localYMD(d) {
   const y = d.getFullYear();
@@ -383,7 +384,7 @@ export default function UserDossierPage() {
                           <StatusBadge tone={t.status === 'DONE' ? 'success' : 'warning'}>{t.status === 'DONE' ? 'Done' : 'Pending'}</StatusBadge>
                           <span className={cn('text-sm font-medium', t.status === 'DONE' && 'line-through text-muted-foreground')}>{t.title}</span>
                         </div>
-                        {t.notes ? <p className="mt-1 whitespace-pre-wrap break-words text-xs text-muted-foreground">{t.notes}</p> : null}
+                        {t.notes ? <RichText text={t.notes} className="mt-1 text-xs text-muted-foreground" /> : null}
                         <p className="mt-1 text-xs text-muted-foreground">
                           {t.assignedBy?.name ? `By ${t.assignedBy.name}` : 'Personal'}
                           {t.dueYMD ? ` · due ${fmtDate(t.dueYMD)}` : ''}

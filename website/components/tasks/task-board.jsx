@@ -29,6 +29,7 @@ import { AssignDialog } from './assign-dialog';
 import { ForwardDialog } from './forward-dialog';
 import { DateRange } from '@/components/ui/date-range';
 import { PDF_SCOPES, downloadTasksPdf, isOverdue, todayYMD, onTimeUntil } from '@/lib/task';
+import { RichText } from '@/components/ui/rich-text';
 
 // WHICH date a range means, per tab. My tasks and Assigned are lists of work still to be
 // done: every date on them is a DEADLINE, they group and sort by it, so that is what a
@@ -362,7 +363,7 @@ function TaskRow({ task, myId, canToggle, onToggle, onEdit, onDelete, onOpen, as
       </button>
       <div className="min-w-0 flex-1">
         <p className={cn('font-medium leading-snug', done && 'text-muted-foreground line-through')}>{task.title}</p>
-        {task.notes ? <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-muted-foreground">{task.notes}</p> : null}
+        {task.notes ? <RichText text={task.notes} className="mt-0.5 text-sm text-muted-foreground" /> : null}
         <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
           {tagged && from ? (
             <span className="inline-flex items-center gap-1">
@@ -827,9 +828,10 @@ function TaskDetailDialog({ view, myId, onClose, onToggle, onEdit, onDelete, onA
           <div>
             <p className={cn('text-lg font-semibold leading-snug break-words', done && 'text-muted-foreground line-through')}>{task.title}</p>
             {task.notes ? (
-              <p className="mt-2 whitespace-pre-wrap break-words rounded-xl bg-foreground/[0.04] p-3 text-sm text-muted-foreground ring-1 ring-border/50">
-                {task.notes}
-              </p>
+              <RichText
+                text={task.notes}
+                className="mt-2 rounded-xl bg-foreground/[0.04] p-3 text-sm text-muted-foreground ring-1 ring-border/50"
+              />
             ) : null}
           </div>
 

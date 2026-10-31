@@ -3,6 +3,7 @@ import { GlassCard } from '@/components/glass/glass-card';
 import { StatusBadge } from '@/components/glass/status-badge';
 import { Repeat, CalendarClock } from 'lucide-react';
 import { PRIORITY, formatDateTime, describeRecurrence } from '@/lib/announcement';
+import { RichText } from '@/components/ui/rich-text';
 
 export function AnnouncementCard({ announcement, actions, receipts }) {
   const a = announcement;
@@ -41,7 +42,7 @@ export function AnnouncementCard({ announcement, actions, receipts }) {
         </div>
         {actions ? <div className="shrink-0">{actions}</div> : null}
       </div>
-      {a.body ? <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-foreground/90">{a.body}</p> : null}
+      {a.body ? <RichText text={a.body} className="mt-2 text-sm leading-relaxed text-foreground/90" /> : null}
       {receipts}
     </GlassCard>
   );

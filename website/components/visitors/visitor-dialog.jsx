@@ -13,7 +13,7 @@ import { DatePicker } from '@/components/ui/date-picker';
 import { TimePicker } from '@/components/ui/time-picker';
 import { APP_LIVE_YMD } from '@/lib/app-live';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+import { NoteEditor } from '@/components/ui/note-editor';
 import {
   Select,
   SelectContent,
@@ -231,7 +231,7 @@ export function VisitorDialog({ visitor, open: openProp, onOpenChange }) {
 
         <div className="space-y-1.5">
           <Label htmlFor="v-purpose">Purpose / notes</Label>
-          <Textarea id="v-purpose" value={form.purpose || ''} onChange={set('purpose')} placeholder="Optional…" className="bg-background/50" />
+          <NoteEditor id="v-purpose" value={form.purpose || ''} onChange={(v) => setForm((f) => ({ ...f, purpose: v }))} placeholder="Optional…" />
         </div>
       </div>
     </AppDialog>

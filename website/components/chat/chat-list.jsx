@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { useConversations, useContacts, chatInitials, chatTime } from '@/lib/chat';
 import { IosPushHint } from './ios-push-hint';
+import { plainText } from '@/lib/rich-text';
 
 /**
  * Chat list par apne aakhri message ka tick — wahi teen haalat jo bubble par hoti hain.
@@ -112,7 +113,7 @@ export function ChatList({ activeId, onOpenConversation, onOpenPeer }) {
             key={c.id}
             avatarUrl={c.peer?.avatarUrl}
             name={c.peer?.name ?? 'Unknown'}
-            sub={c.lastMessageKind === 'FILE' ? 'Attachment' : c.lastMessage}
+            sub={c.lastMessageKind === 'FILE' ? 'Attachment' : plainText(c.lastMessage)}
             time={chatTime(c.lastMessageAt)}
             unread={c.unread}
             muted={c.muted}

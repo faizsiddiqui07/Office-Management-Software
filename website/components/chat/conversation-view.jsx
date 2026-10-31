@@ -16,6 +16,9 @@ import { FileBubble, MediaViewer } from './file-bubble';
 import { MessageActions } from './message-actions';
 import { useLongPress } from '@/lib/use-long-press';
 import { prettyBytes } from '@/lib/chat-media';
+import { RichText } from '@/components/ui/rich-text';
+import { plainText } from '@/lib/rich-text';
+import { toggleWrap, enterInList } from '@/lib/note-editing';
 
 /** Sent / delivered / read — sirf apne bheje hue message par. */
 function Ticks({ msg, peerDelivered, peerRead }) {
@@ -100,7 +103,7 @@ function Bubble({ msg, peerDelivered, peerRead, onReply, onCopy, onDelete, onOpe
               msg.mine ? 'border-primary-foreground/50 text-primary-foreground/80' : 'border-primary/60 text-muted-foreground',
             )}
           >
-            <p className="line-clamp-2">{msg.replyTo.text}</p>
+            <p className="line-clamp-2">{plainText(msg.replyTo.text)}</p>
           </div>
         ) : null}
 
@@ -121,7 +124,7 @@ function Bubble({ msg, peerDelivered, peerRead, onReply, onCopy, onDelete, onOpe
           </p>
         ) : null}
 
-        {msg.text ? <p className="whitespace-pre-wrap break-words">{msg.text}</p> : null}
+        {msg.text ? <RichText text={msg.text} /> : null}
 
         <span
           className={cn(
@@ -477,7 +480,7 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
       >
         {replyTo ? (
           <div className="mb-2 flex items-start gap-2 rounded-lg border-l-2 border-primary bg-foreground/[0.05] px-2.5 py-1.5">
-            <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{replyTo.text}</p>
+            <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{plainText(replyTo.text)}</p>
             <button
               type="button"
               onClick={() => setReplyTo(null)}
@@ -545,8 +548,32 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
-              // Enter bhejta hai, Shift+Enter nayi line — WhatsApp desktop jaisa.
-              if (e.key === 'Enter' && !e.shiftKey) submit(e);
+              // Enter bhejta hai, Shift+Enter nayi line — WhatsApp desktop jaisa. Isey
+              // chhua NAHI gaya: iPhone par ek-tap-me-send abhi-abhi theek hua hai, aur
+              // bhejne ki aadat badalna sabse bhaari badlaav hota.
+              if (e.key === 'Enter' && !e.shiftKey) { submit(e); return; }
+              const el = e.currentTarget;
+              const meta = e.metaKey || e.ctrlKey;
+              // Ctrl/Cmd + B / I — notes wale box jaisa hi.
+              if (meta && !e.altKey && (e.key.toLowerCase() === 'b' || e.key.toLowerCase() === 'i')) {
+                e.preventDefault();
+                const r = toggleWrap(text, el.selectionStart, el.selectionEnd, e.key.toLowerCase() === 'b' ? '**' : '*');
+                setText(r.value);
+                // Naya matn paint hone ke BAAD hi cursor rakha ja sakta hai.
+                requestAnimationFrame(() => el.setSelectionRange(r.start, r.end));
+                return;
+              }
+              // Shift+Enter = nayi line. Agar us line par list thi to agli line uska
+              // agla nishaan le kar shuru ho — "1. kaam" ke baad "2. ". Chat me Enter
+              // bhejne ke liye hai, isliye list wali sahulat yahin milti hai.
+              if (e.key === 'Enter' && e.shiftKey) {
+                const r = enterInList(text, el.selectionStart, el.selectionEnd);
+                if (r) {
+                  e.preventDefault();
+                  setText(r.value);
+                  requestAnimationFrame(() => el.setSelectionRange(r.start, r.end));
+                }
+              }
             }}
             placeholder="Type a message…"
             /* `text-base md:text-sm` — phone par 16px, usse upar 14px. Ye sajawat nahi,

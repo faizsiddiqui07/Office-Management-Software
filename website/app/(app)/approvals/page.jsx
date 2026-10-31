@@ -20,6 +20,7 @@ import { RegularizationDetailDialog } from '@/components/attendance/regularizati
 import { AppDialog } from '@/components/glass/app-dialog';
 import { requestTypeLabel, isWFHType, formatRange, formatYMD, halfDayNote } from '@/lib/leave';
 import { APP_LIVE_YMD } from '@/lib/app-live';
+import { RichText } from '@/components/ui/rich-text';
 
 /**
  * One kind of decision at a time.
@@ -269,7 +270,7 @@ export default function ApprovalsPage() {
                   onApprove={() => decideTask.mutate({ id: t.id, approve: true, reason: '' })}
                   onReject={(reason) => decideTask.mutate({ id: t.id, approve: false, reason })}
                 >
-                  {t.notes ? <p className="mt-2 whitespace-pre-wrap break-words text-sm text-muted-foreground">{t.notes}</p> : null}
+                  {t.notes ? <RichText text={t.notes} className="mt-2 text-sm text-muted-foreground" /> : null}
                 </ApprovalCard>
               ))}
             </GlassCard>

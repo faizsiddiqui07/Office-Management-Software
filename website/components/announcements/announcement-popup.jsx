@@ -17,6 +17,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/glass/status-badge';
 import { PRIORITY, formatDateTime } from '@/lib/announcement';
+import { RichText } from '@/components/ui/rich-text';
 
 /**
  * Shown once per session after login: steps through announcements the user
@@ -90,8 +91,14 @@ export function AnnouncementPopup() {
             </div>
           </div>
           {current.body ? (
-            <DialogDescription className="mt-2 max-h-[50vh] overflow-y-auto whitespace-pre-line text-sm leading-relaxed text-foreground/80">
-              {current.body}
+            // `asChild`: DialogDescription warna <p> render karta hai, aur ek <p> ke
+            // andar <ul>/<p> daalna galat HTML hai — browser use tod kar bahar nikaal
+            // deta hai aur layout bigad jaata hai.
+            <DialogDescription asChild>
+              <RichText
+                text={current.body}
+                className="mt-2 max-h-[50vh] overflow-y-auto text-sm leading-relaxed text-foreground/80"
+              />
             </DialogDescription>
           ) : null}
         </DialogHeader>

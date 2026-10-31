@@ -10,7 +10,7 @@ import { AppDialog } from '@/components/glass/app-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+import { NoteEditor } from '@/components/ui/note-editor';
 import { TimePicker } from '@/components/ui/time-picker';
 import {
   Select,
@@ -191,7 +191,7 @@ export function CreateAnnouncementDialog({ announcement, open: openProp, onOpenC
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="an-body">Message</Label>
-          <Textarea id="an-body" value={body} onChange={(e) => setBody(e.target.value)} placeholder="Write the announcement…" className="min-h-28 bg-background/50" />
+          <NoteEditor id="an-body" value={body} onChange={setBody} placeholder="Write the announcement…" className="[&_textarea]:min-h-28" />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="an-priority">Priority</Label>

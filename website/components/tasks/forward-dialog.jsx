@@ -10,7 +10,7 @@ import { AppDialog } from '@/components/glass/app-dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
+import { NoteEditor } from '@/components/ui/note-editor';
 
 /**
  * Pass work you were given further down. You keep your copy — you're still answerable
@@ -117,7 +117,7 @@ export function ForwardDialog({ task, open, onOpenChange }) {
 
         <div className="space-y-1.5">
           <Label htmlFor="fw-notes">Notes for them (optional)</Label>
-          <Textarea id="fw-notes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Anything they should know…" className="bg-background/50" />
+          <NoteEditor id="fw-notes" value={notes} onChange={setNotes} placeholder="Anything they should know…" />
         </div>
 
         <div className="flex items-start justify-between gap-3 rounded-xl bg-primary/[0.05] p-3 ring-1 ring-primary/15">

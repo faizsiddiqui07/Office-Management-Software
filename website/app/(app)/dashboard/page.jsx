@@ -40,6 +40,7 @@ import { StatCard } from '@/components/glass/stat-card';
 import { StatusBadge, STATUS_TONES } from '@/components/glass/status-badge';
 import { EmptyState } from '@/components/glass/empty-state';
 import { LoadingState } from '@/components/glass/skeletons';
+import { plainText } from '@/lib/rich-text';
 // Charts pull in the charting library, which is by far the heaviest thing on this
 // page — and the dashboard is the first screen everyone lands on. Load them after
 // the page is interactive instead, behind placeholders of the same height so
@@ -458,7 +459,7 @@ export default function DashboardPage() {
                   <span className="mt-1.5 size-2 shrink-0 rounded-full bg-primary" />
                   <div className="min-w-0 space-y-1">
                     <p className="text-sm font-medium leading-snug">{a.title}</p>
-                    {a.body ? <p className="line-clamp-2 text-sm text-muted-foreground">{a.body}</p> : null}
+                    {a.body ? <p className="line-clamp-2 text-sm text-muted-foreground">{plainText(a.body)}</p> : null}
                     <p className="text-xs text-muted-foreground">{fmtDate(a.createdAt)}</p>
                   </div>
                 </div>

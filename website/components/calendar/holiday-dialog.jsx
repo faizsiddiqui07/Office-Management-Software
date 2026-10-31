@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
+import { NoteEditor } from '@/components/ui/note-editor';
 import {
   Select,
   SelectContent,
@@ -234,7 +234,7 @@ export function HolidayDialog({ open, onOpenChange, holiday, defaultStartYMD }) 
         ) : null}
         <div className="space-y-1.5">
           <Label htmlFor="h-desc">Description</Label>
-          <Textarea id="h-desc" value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Optional details…" className="bg-background/50" />
+          <NoteEditor id="h-desc" value={desc} onChange={setDesc} placeholder="Optional details…" />
         </div>
       </div>
 

@@ -14,7 +14,7 @@ import { DatePicker } from '@/components/ui/date-picker';
 import { APP_LIVE_YMD } from '@/lib/app-live';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
+import { NoteEditor } from '@/components/ui/note-editor';
 
 export function TaskDialog({ task, open: openProp, onOpenChange, batchCount = 0 }) {
   const isEdit = !!task;
@@ -246,7 +246,7 @@ export function TaskDialog({ task, open: openProp, onOpenChange, batchCount = 0 
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="t-notes">Notes (optional)</Label>
-          <Textarea id="t-notes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Details…" disabled={dueOnly} className="bg-background/50" />
+          <NoteEditor id="t-notes" value={notes} onChange={setNotes} placeholder="Details…" disabled={dueOnly} />
         </div>
 
         {/* Approval gate for a delegated task. */}

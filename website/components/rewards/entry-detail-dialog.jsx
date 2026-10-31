@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { plainText } from '@/lib/rich-text';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 
 /**
@@ -67,7 +68,7 @@ function TaskFacts({ task }) {
       {task.approvedBy?.name ? <Fact label="Approved by" value={task.approvedBy.name} /> : null}
       <Fact label="Status" value={task.status === 'DONE' ? 'Done' : 'Pending'} />
       {collabs ? <Fact label="Tagged" value={collabs} /> : null}
-      {task.notes ? <Fact label="Notes" value={task.notes} /> : null}
+      {task.notes ? <Fact label="Notes" value={plainText(task.notes)} /> : null}
     </div>
   );
 }

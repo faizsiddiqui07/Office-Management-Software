@@ -16,7 +16,7 @@ import { LoadingState } from '@/components/glass/skeletons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+import { NoteEditor } from '@/components/ui/note-editor';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
@@ -101,7 +101,7 @@ function RuleDialog({ open, onOpenChange, rule, tokens, onSave, saving }) {
         <div className="space-y-3">
           <div className="space-y-1.5">
             <Label htmlFor="r-text">Rule</Label>
-            <Textarea id="r-text" value={text} onChange={(e) => setText(e.target.value)} rows={4} maxLength={600} placeholder="Write the rule in simple words…" className="bg-background/50" />
+            <NoteEditor id="r-text" value={text} onChange={setText} rows={4} maxLength={600} placeholder="Write the rule in simple words…" />
           </div>
           {tokenEntries.length ? (
             <div className="rounded-xl bg-foreground/[0.03] p-3 ring-1 ring-border/50">
