@@ -37,7 +37,13 @@ export function Topbar({ user }) {
           <PointsBadge />
           <RefreshButton />
           <NotificationsBell />
-          <ThemeToggle />
+          {/* Phone par nahi — header me jagah bachane ke liye (owner, 31 Oct 2026).
+              Theme badalne ka poora option Profile page par pehle se hai (wahan teen
+              choice hain: light, dark, system), isliye yahan kuch kho nahi raha.
+              Desktop par jagah ki tangi nahi, to wahan ye raha. Login/forgot-password
+              wale screen ka toggle alag hai aur zaroori hai — sign-in se pehle theme
+              badalne ka wahi ek raasta hai. */}
+          <ThemeToggle className="hidden sm:inline-flex" />
           <UserMenu user={user} />
         </div>
       </div>
