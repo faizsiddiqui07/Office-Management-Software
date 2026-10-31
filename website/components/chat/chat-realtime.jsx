@@ -53,6 +53,10 @@ export function ChatRealtimeProvider({ children }) {
         const key = ['chat', 'messages', ev.conversationId];
         const { data, backward } = applyPeerRead(qc.getQueryData(key), ev.upToSeq);
         if (data !== qc.getQueryData(key)) qc.setQueryData(key, data);
+        // Is chat ka fetch abhi udaan me hai: uska jawab poore cache ko apne (purane)
+        // snapshot se badal dega aur ye tick wapas grey ho jaayega. Invalidate us fetch
+        // ko radd karke naya bhejta hai. Wahi ilaaj jo neeche chat:deleted me hai.
+        if (qc.isFetching({ queryKey: key })) qc.invalidateQueries({ queryKey: key });
         // Cache me purane bug ka MAX pada tha aur server ne theek number bheja. Cache wala
         // number hi jhootha hai (jhoothe neele tick), to server se taaza mangao.
         if (backward) qc.invalidateQueries({ queryKey: key });

@@ -458,19 +458,38 @@ export async function markRead(user, conversationId, upToSeq) {
   // `Math.max(…, read)`: kharab nishaan theek karte waqt bhi sahi nishaan peeche nahi jaata.
   const newRead = Math.max(upto, read);
 
+  /**
+   * Nishaan AAGE hi badhe, chahe do "padh liya" ek saath aa jaayein.
+   *
+   * Pehle yahan seedha `$set` tha, upar padhe hue snapshot ke hisaab se. Do call
+   * overlap karein (saamne wale ki screen har aane wale message par ek bhejti hai) to
+   * pehle PADHNE wala baad me LIKH sakta tha, aur nishaan 42 se 41 par gir jaata —
+   * ek sahi neela tick grey ho jaata. Ab normal raaste par `$max` hai, jisme ye race
+   * ho hi nahi sakti.
+   *
+   * Kharab nishaan (MAX pada hua) theek karne ke liye use NEECHE laana hota hai, jo
+   * `$max` kar hi nahi sakta. Wo raasta `$set` hi rakhta hai, par arrayFilters me wahi
+   * kharab value maangta hai — to ek saath do theek karne wale aayein to pehla jeet
+   * jaata hai aur doosra chupchap kuch nahi karta (uska number pehle se lag chuka hota).
+   */
+  const nextDelivered = Math.max(newRead, sane(me.deliveredUpToSeq));
+  const stamp = { 'members.$[me].unread': 0, 'members.$[me].lastReadAt': new Date() };
   const updated = await Conversation.findOneAndUpdate(
     { _id: conv._id, participants: user._id },
+    broken
+      ? { $set: { ...stamp, 'members.$[me].readUpToSeq': newRead, 'members.$[me].deliveredUpToSeq': nextDelivered } }
+      : { $set: stamp, $max: { 'members.$[me].readUpToSeq': newRead, 'members.$[me].deliveredUpToSeq': nextDelivered } },
     {
-      $set: {
-        'members.$[me].readUpToSeq': newRead,
-        'members.$[me].deliveredUpToSeq': Math.max(newRead, sane(me.deliveredUpToSeq)),
-        'members.$[me].unread': 0,
-        'members.$[me].lastReadAt': new Date(),
-      },
+      new: true,
+      arrayFilters: [broken
+        ? { 'me.user': user._id, 'me.readUpToSeq': me.readUpToSeq ?? 0, 'me.deliveredUpToSeq': me.deliveredUpToSeq ?? 0 }
+        : { 'me.user': user._id }],
     },
-    { new: true, arrayFilters: [{ 'me.user': user._id }] },
   );
   const m = memberOf(updated, user._id);
+  // Jo DB me sach me baitha hai wahi aage jaata hai — na jawab me, na event me koi aisa
+  // number jo kisi aur call ne peeche chhod diya ho.
+  const finalRead = m?.readUpToSeq ?? newRead;
 
   // Chat padh li — notification ki ginti bhi saaf, taaki agle message par phir se
   // poora notification aur buzz mile (warna wo "2 naye message" kehta).
@@ -482,10 +501,10 @@ export async function markRead(user, conversationId, upToSeq) {
     type: 'chat:read',
     conversationId: String(conv._id),
     by: String(user._id),
-    upToSeq: newRead,
+    upToSeq: finalRead,
   }).catch(() => {});
 
-  return { readUpToSeq: m?.readUpToSeq || 0, unread: 0 };
+  return { readUpToSeq: finalRead, unread: 0 };
 }
 
 /** Hide one message from MY view only. The other side keeps it, exactly like WhatsApp. */

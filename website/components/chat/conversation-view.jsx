@@ -47,7 +47,12 @@ function Bubble({ msg, peerDelivered, peerRead, onReply, onCopy, onDelete, onOpe
           msg.mine ? 'order-first' : 'order-last',
         )}
       >
-        {!msg.deleted ? (
+        {/* `!msg.pending`: ek ja rahe message ka apna `seq` abhi hai hi nahi (uski jagah
+            9007199254740991 rakha hota hai). Uspar Reply dabane par server ko wahi number
+            jaata, usey koi message milta hi nahi, aur quote CHUPCHAP gir jaata — reply to
+            chala jaata par usme kuch quote hota hi nahi. Ab ek pal ruk kar reply karo.
+            Lambe dabane wala menu pehle se `!msg.pending` par hi khulta hai. */}
+        {!msg.deleted && !msg.pending ? (
           <button
             type="button"
             onClick={() => onReply(msg)}

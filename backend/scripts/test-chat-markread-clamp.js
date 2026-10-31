@@ -152,6 +152,50 @@ async function main() {
   check('read 8 hi raha (5 par nahi gira)', b.readUpToSeq === 8, `read=${b.readUpToSeq}`);
   check('delivered 8 par theek', b.deliveredUpToSeq === 8, `delivered=${b.deliveredUpToSeq}`);
 
+  console.log('\nPART 4b - do "padh liya" ek saath: nishaan peeche NAHI girta');
+  {
+    // Saamne wale ki screen har aane wale message par ek markRead bhejti hai, aur wo
+    // calls saath-saath chalti hain. markRead pehle haalat PADHTA hai, phir LIKHTA hai.
+    // Jab tak likhna `$set` tha, jo pehle padhta wo baad me likh sakta tha aur nishaan
+    // 12 se 5 par gir jaata - ek sahi neela tick grey ho jaata. Ab `$max` hai.
+    //
+    // Apni jodi, taaki PART 5 ke scenario se na takraye (openDirect purani chat hi
+    // laut aata hai, to jodi dobara istemaal karne par wahan ke number bigad jaate hain).
+    const race = await mk('Race Tester', 'race@t.co');
+    const { id: cr } = await chat.openDirect(asha, race._id);
+    const N = 12;
+    for (let i = 0; i < N; i += 1) await chat.sendMessage(asha, cr, { text: `m${i + 1}` });
+
+    let dips = 0;
+    for (let round = 0; round < 25; round += 1) {
+      await Conversation.updateOne(
+        { _id: cr },
+        { $set: { 'members.$[m].readUpToSeq': 0, 'members.$[m].deliveredUpToSeq': 0, 'members.$[m].unread': 1 } },
+        { arrayFilters: [{ 'm.user': race._id }] },
+      );
+      // Saare number ek saath, ulte-seedhe kram me - sabse bada beech me. Sab ek hi pal
+      // par 0 padhte hain, phir apna-apna likhte hain; `$set` par aakhri likhne wala
+      // jeet jaata tha, `$max` par sabse bada.
+      const order = [3, 9, N, 2, 11, 5, N - 1, 7, 4, 10, 6, 8];
+      await Promise.all(order.map((v) => chat.markRead(race, cr, v)));
+      if ((await member(cr, race)).readUpToSeq < N) dips += 1;
+    }
+    check(`25 baar ${12} ek-saath call: nishaan kabhi peeche nahi gira`, dips === 0, `${dips} baar gira`);
+    const fin = await member(cr, race);
+    check('aur delivered bhi saath chala', fin.deliveredUpToSeq >= fin.readUpToSeq, JSON.stringify({ r: fin.readUpToSeq, d: fin.deliveredUpToSeq }));
+
+    // Kharab nishaan theek karna phir bhi NEECHE la sakta hai - wahi ek raasta `$set` hai.
+    await corrupt(cr, race, { readUpToSeq: MAX, deliveredUpToSeq: MAX, unread: 2 });
+    await chat.markRead(race, cr, 7);
+    check('kharab MAX phir bhi theek hota hai (neeche aata hai)', (await member(cr, race)).readUpToSeq === 7, String((await member(cr, race)).readUpToSeq));
+
+    // Do theek karne wale ek saath: pehla jeete, doosra chupchap kuch na kare.
+    await corrupt(cr, race, { readUpToSeq: MAX, deliveredUpToSeq: MAX, unread: 2 });
+    await Promise.all([chat.markRead(race, cr, 9), chat.markRead(race, cr, 11)]);
+    const both = await member(cr, race);
+    check('do theek karne wale saath me: sahi daayre me, MAX nahi bacha', both.readUpToSeq <= N && both.readUpToSeq >= 9, String(both.readUpToSeq));
+  }
+
   console.log('\nPART 5 — repair script');
   const esha = await mk('Esha', 'esha@t.co');
   const farhan = await mk('Farhan', 'farhan@t.co');

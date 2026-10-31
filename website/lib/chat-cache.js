@@ -73,6 +73,20 @@ export function mergeIncomingMessage(old, m, myId) {
     if (i !== -1) list = [...list.slice(0, i), ...list.slice(i + 1)];
   }
   pages[0] = { ...pages[0], messages: insertBySeq(list, real) };
+  // Saamne wale ka message aaya → is chat ki apni "kitne bina padhe" ginti bhi badhao.
+  //
+  // Bina iske: chat KHULI hone par bhi wo message padha hua nahi mana jaata tha. Wajah —
+  // conversation-view ka mark-read effect tabhi chalta hai jab cache me `myUnread` 0 se
+  // bada ho, aur ye ginti sirf server se aati thi. Chat kholte hi wo 0 ho jaati, aur
+  // socket se aaye naye message usse chhedte hi nahi the. Natija: us khuli chat par list
+  // me "1" ka badge, aur saamne wale ko grey tick — jabki banda message saamne padh raha
+  // hota. (Owner ne pakda, 27 Oct 2026.) Ab ginti badhti hai, effect chalta hai, aur
+  // server turant "padh liya" likh deta hai.
+  //
+  // Apne hi message (doosre tab ka echo) par nahi — wo apne liye unread hota hi nahi.
+  if (!mine && pages[0].conversation) {
+    pages[0] = { ...pages[0], conversation: { ...pages[0].conversation, myUnread: (pages[0].conversation.myUnread || 0) + 1 } };
+  }
   return { ...old, pages };
 }
 
