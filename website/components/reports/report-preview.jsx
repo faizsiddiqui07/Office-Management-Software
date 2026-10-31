@@ -19,6 +19,9 @@ import { useRoleOptions } from '@/lib/use-roles';
  * in a header bar, content below. On a phone this gives every section an obvious
  * start and end, so a long report doesn't blur into one confusing scroll.
  */
+/** "1 working day", "21 working days" — ek din par "days" likhna roz dikhta tha. */
+const workingDaysLabel = (n) => `${n} working day${n === 1 ? '' : 's'}`;
+
 function ReportSection({ icon: Icon, title, meta, children }) {
   return (
     <section className="overflow-hidden rounded-2xl border border-border/60 bg-card/50 shadow-sm ring-1 ring-white/5">
@@ -210,9 +213,9 @@ function AttendanceSection({ data }) {
     { id: 'ot', header: 'OT', accessorFn: (r) => r.overtimeMinutes, cell: ({ row }) => <span className="tabular-nums">{formatDuration(row.original.overtimeMinutes)}</span> },
   ];
   return (
-    <ReportSection icon={CalendarClock} title="Attendance" meta={`${data.workingDays} working days`}>
+    <ReportSection icon={CalendarClock} title="Attendance" meta={workingDaysLabel(data.workingDays)}>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Attendance rate" value={`${t.attendanceRate}%`} icon={UserCheck} tone="success" hint={`${data.workingDays} working days`} />
+        <StatCard label="Attendance rate" value={`${t.attendanceRate}%`} icon={UserCheck} tone="success" hint={workingDaysLabel(data.workingDays)} />
         <StatCard label="Present" value={t.present} icon={CalendarDays} tone="default" hint={t.late ? `${t.late} came late` : 'nobody late'} />
         <StatCard label="Absent / Leave / WFH" value={`${t.absent} / ${t.onLeave} / ${t.wfh ?? 0}`} icon={UserX} tone="warning" />
         <StatCard label="Overtime" value={formatDuration(t.overtimeMinutes)} icon={Clock} tone="info" hint={`${formatDuration(t.workedMinutes)} worked`} />
@@ -333,7 +336,7 @@ export function OngoingNotice({ data, workingDays }) {
         </span>
         {workingDays != null ? (
           <>
-            {' '}(<span className="font-medium text-foreground">{workingDays}</span> working days so far)
+            {' '}(<span className="font-medium text-foreground">{workingDays}</span> working day{workingDays === 1 ? '' : 's'} so far)
           </>
         ) : null}
         . Upcoming days aren’t counted as absent.

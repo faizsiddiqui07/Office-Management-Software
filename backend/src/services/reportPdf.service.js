@@ -210,7 +210,7 @@ function metaLine(data) {
   // out ~5.5h behind every other (IST) date in the document.
   const generatedOn = new Date(data.generatedAt).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' });
   const wd = data.workingDays ?? data.attendance?.totals?.workingDays;
-  const wdText = wd != null ? ` (${wd} working days so far)` : '';
+  const wdText = wd != null ? ` (${wd} working day${wd === 1 ? '' : 's'} so far)` : '';
   return E(
     View,
     {},
