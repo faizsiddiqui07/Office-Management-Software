@@ -14,6 +14,7 @@ import { listHolidaysQuerySchema } from '../validators/holidays.validators.js';
 import { ymdInTz } from '../lib/time.js';
 import { isOwnerRole } from '../lib/roles.js';
 import { claudeConfigured, CLAUDE_MODEL } from '../lib/claude.js';
+import { vapidPublicKey } from '../lib/push.js';
 
 /**
  * GET /api/bootstrap — app khulte hi jo 11 alag-alag requests jaati thiN, wo sab EK me.
@@ -80,6 +81,15 @@ export async function bootstrap(req, res, next) {
     // hai, aur `/assistant/status` har page load par ek aur round-trip bana raha tha.
     const assistant = { enabled: claudeConfigured(), model: CLAUDE_MODEL };
 
+    // Phone par notification bhejne ki chaabi (VAPID) server par lagi hai ya nahi. Env
+    // padhna hai, koi DB nahi — isliye yahin, apni request nahi.
+    //
+    // Ye client ko isliye bheja jaata hai ki Settings ka card jhooth na bole: wo sirf
+    // browser ki permission dekh kar "On — you'll get alerts" likh deta tha, chahe server
+    // par chaabi hi na ho. Tab enablePush() chupchap "Push is not configured on the
+    // server" par gir jaata aur kisi ko pata hi nahi chalta ki kyun kuch nahi aa raha.
+    const push = { configured: !!vapidPublicKey() };
+
     // Ticket sasta hai (HMAC, koi DB nahi) — sync, Promise.all ke bahar.
     const wsTicket = {
       ticket: issueTicket(user._id),
@@ -99,6 +109,7 @@ export async function bootstrap(req, res, next) {
         chatUnread,
         wsTicket,
         assistant,
+        push,
         bonusMe,
         holidaysToday,
         announcementsUnseen,

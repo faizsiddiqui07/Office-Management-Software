@@ -5,11 +5,28 @@ import { toast } from 'sonner';
 import { Bell, BellRing, Check, Download, Loader2, Share } from 'lucide-react';
 import { GlassPanel } from '@/components/glass/glass-panel';
 import { Button } from '@/components/ui/button';
-import { enablePush, pushSupported, notificationPermission, canInstall, promptInstall } from '@/lib/pwa';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '@/lib/api';
+import {
+  enablePush, pushSupported, notificationPermission, canInstall, promptInstall, hasPushSubscription,
+} from '@/lib/pwa';
 
 export function NotificationsCard() {
   const [perm, setPerm] = React.useState('default');
   const [busy, setBusy] = React.useState(false);
+  // Is THIS device actually subscribed? Permission alone never answered that — see
+  // hasPushSubscription in lib/pwa.js. `null` = abhi pata nahi.
+  const [subscribed, setSubscribed] = React.useState(null);
+
+  // Server par VAPID chaabi lagi hai ya nahi. Bootstrap ise pehle hi cache me rakh deta
+  // hai (lib/auth.jsx), to aam taur par koi request jaati hi nahi.
+  const { data: pushCfg } = useQuery({
+    queryKey: ['push', 'config'],
+    queryFn: async () => ({ configured: !!(await api.get('/push/public-key'))?.key }),
+    staleTime: Infinity,
+    retry: false,
+  });
+  const serverReady = pushCfg?.configured !== false; // pata na ho to raasta mat roko
   const [installable, setInstallable] = React.useState(false);
   const [installed, setInstalled] = React.useState(false);
   const [isIOS, setIsIOS] = React.useState(false);
@@ -17,6 +34,7 @@ export function NotificationsCard() {
   React.useEffect(() => {
     setPerm(notificationPermission());
     setInstallable(canInstall());
+    hasPushSubscription().then(setSubscribed);
 
     // "Am I running INSIDE the installed app?" — which is NOT the same question as
     // "is this app installed on this device?". Using the first to answer the second is
@@ -58,10 +76,12 @@ export function NotificationsCard() {
     try {
       await enablePush();
       setPerm('granted');
+      setSubscribed(true);
       toast.success('Push notifications enabled on this device');
     } catch (e) {
       toast.error(e?.message || 'Could not enable notifications');
       setPerm(notificationPermission());
+      setSubscribed(await hasPushSubscription());
     } finally {
       setBusy(false);
     }
@@ -98,24 +118,35 @@ export function NotificationsCard() {
       <div className="flex flex-col gap-3 rounded-xl bg-muted/30 px-4 py-3 ring-1 ring-border sm:flex-row sm:items-center sm:justify-between">
         <div className="space-y-0.5">
           <p className="text-sm font-medium">Push notifications</p>
+          {/* Teen alag sawaal, teeno ka jawab chahiye. Pehle sirf `perm` dekha jaata
+              tha, isliye card "On" kehta tha jabki server par chaabi hi nahi thi, ya is
+              device ki subscription kab ki ja chuki thi — aur phone chup rehta tha. */}
           <p className="text-xs text-muted-foreground">
             {!supported
               ? 'Not supported on this browser.'
-              : perm === 'granted'
-                ? 'On — you’ll get alerts even when the app is closed.'
-                : perm === 'denied'
-                  ? 'Blocked in your browser settings — allow it there to enable.'
-                  : 'Get alerts on this device for check-ins, leaves, dues and more.'}
+              : perm === 'denied'
+                ? 'Blocked in your browser settings — allow it there to enable.'
+                : !serverReady
+                  ? 'Not set up on the server yet — ask your administrator to add the notification keys.'
+                  : perm === 'granted' && subscribed === false
+                    ? 'Allowed, but this device isn’t registered — tap Fix to start getting alerts again.'
+                    : perm === 'granted'
+                      ? 'On — you’ll get alerts even when the app is closed.'
+                      : 'Get alerts on this device for check-ins, leaves, dues and more.'}
           </p>
         </div>
         <Button
           onClick={enable}
-          disabled={!supported || busy || perm === 'granted' || perm === 'denied'}
+          // `granted` par bhi khula rehta hai jab subscription gayab ho — wahi ek tap
+          // hai jo use wapas jodta hai. Pehle button band tha, to banda kar hi kuch nahi
+          // sakta tha.
+          disabled={!supported || busy || perm === 'denied' || !serverReady
+            || (perm === 'granted' && subscribed !== false)}
           variant="outline"
           className="w-full sm:w-auto"
         >
           {busy ? <Loader2 className="size-4 animate-spin" /> : <Bell className="size-4" />}
-          {perm === 'granted' ? 'Enabled' : 'Enable'}
+          {perm === 'granted' && subscribed === false ? 'Fix' : perm === 'granted' ? 'Enabled' : 'Enable'}
         </Button>
       </div>
 

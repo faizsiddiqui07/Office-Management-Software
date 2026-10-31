@@ -29,7 +29,13 @@ self.addEventListener('push', (event) => {
     // Chat sends "chat:<conversationId>", so a busy conversation keeps updating one
     // notification instead of stacking ten — but two different chats never overwrite
     // each other.
-    tag: data.type || 'office-management',
+    //
+    // `data.tag` FIRST, `data.type` only as a fallback. Everything except chat used to
+    // land on `type` — the category, e.g. "TASK_ASSIGNED" — so the second task anybody
+    // assigned you silently replaced the first, and the one after that replaced it
+    // again. The server now sends its own `tag` (see notify() in models/Notification.js);
+    // the fallback keeps an older server working against this file.
+    tag: data.tag || data.type || 'office-management',
     // …and replacing is SILENT by default. Without this, only the first message in a
     // conversation would ever buzz: every later one would quietly swap the text and the
     // phone would never alert again. The sender decides — chat buzzes on the first

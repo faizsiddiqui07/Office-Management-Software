@@ -61,10 +61,20 @@ function urlBase64ToUint8Array(base64String) {
   return out;
 }
 
-/** Ask permission, subscribe to push, and register the subscription server-side. */
+/**
+ * Ask permission (only if it hasn't been given), subscribe to push, and register the
+ * subscription server-side.
+ *
+ * `requestPermission()` runs ONLY when permission is still undecided. It used to run on
+ * every call, including the silent one `ensurePushOnLaunch` makes on every launch — and on
+ * iOS that call outside a user gesture can reject outright, which took the silent
+ * re-subscribe down with it. When permission is already granted there is nothing to ask.
+ */
 export async function enablePush() {
   if (!pushSupported()) throw new Error('Push notifications aren’t supported on this browser');
-  const perm = await Notification.requestPermission();
+  const perm = Notification.permission === 'granted'
+    ? 'granted'
+    : await Notification.requestPermission();
   if (perm !== 'granted') throw new Error('Notification permission was not granted');
 
   const reg = await navigator.serviceWorker.ready;
@@ -103,15 +113,49 @@ export async function ensurePushOnLaunch() {
       await enablePush();
     } else if (isStandalone()) {
       if (typeof localStorage !== 'undefined' && localStorage.getItem('om_push_asked')) return;
+      // Nishaan KOSHISH KE BAAD lagta hai, pehle nahi. Pehle ye upar lagta tha: agar wo
+      // ek koshish kisi bhi wajah se fail ho jaati (iOS ka bina-tap wala reject, server
+      // par chaabi na hona, network), to nishaan laga rehta aur app DOBARA KABHI nahi
+      // poochhti — banda hamesha ke liye bina notification ke reh jaata.
+      await enablePush();
       try {
         localStorage.setItem('om_push_asked', '1');
       } catch {
         /* ignore */
       }
-      await enablePush();
     }
   } catch {
     /* best-effort — the user can still enable it from Settings/Profile */
+  }
+}
+
+/**
+ * Is this device REALLY subscribed to push right now?
+ *
+ * `Notification.permission === 'granted'` is not the same question, and Settings used to
+ * treat it as if it were — it printed "On — you'll get alerts even when the app is
+ * closed" on the strength of the permission alone. A device can hold that permission and
+ * still have no subscription at all: the browser can expire or rotate one, re-installing
+ * the app drops it, and the server prunes any endpoint the push service reports as gone
+ * (404/410). Nothing told the user, so the card stayed green while the phone stayed
+ * silent. Owner's report, 27 Oct 2026.
+ *
+ * Never throws — an unknown answer comes back as false, and the card then offers to
+ * switch it on rather than claiming it already is.
+ */
+export async function hasPushSubscription() {
+  if (!pushSupported()) return false;
+  try {
+    // Same guard as disablePush: `serviceWorker.ready` never settles when nothing has
+    // been registered on this origin, so this must not be awaited bare.
+    const reg = await Promise.race([
+      navigator.serviceWorker.getRegistration(),
+      new Promise((resolve) => { setTimeout(() => resolve(null), 2000); }),
+    ]);
+    if (!reg?.pushManager) return false;
+    return !!(await reg.pushManager.getSubscription());
+  } catch {
+    return false;
   }
 }
 

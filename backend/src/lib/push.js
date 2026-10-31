@@ -36,9 +36,20 @@ export async function removeSubscription(endpoint) {
  */
 export async function sendPush(userId, payload) {
   try {
-    if (!ensureConfigured()) return;
+    // Ye teen raaste CHUPCHAP lautte the — ek bhi log line nahi. Isi wajah se "phone par
+    // notification nahi aa rahi" ki wajah bahar se jaani hi nahi ja sakti thi: VAPID
+    // chaabi Lambda par lagi hai ya nahi, bande ka koi device juda hai ya nahi, aur push
+    // service ne kya kaha — CloudWatch me kuch bhi nahi hota tha. Ab har haalat ek line
+    // chhodti hai. (Message ka matn kabhi log me nahi jaata.)
+    if (!ensureConfigured()) {
+      console.warn('push: VAPID keys not set — nothing will reach any phone');
+      return;
+    }
     const subs = await PushSubscription.find({ user: userId });
-    if (!subs.length) return;
+    if (!subs.length) {
+      console.log(`push: no device registered for ${userId}`);
+      return;
+    }
     const body = JSON.stringify(payload);
     await Promise.all(
       subs.map(async (s) => {
@@ -46,7 +57,10 @@ export async function sendPush(userId, payload) {
           await webpush.sendNotification({ endpoint: s.endpoint, keys: s.keys }, body);
         } catch (err) {
           if (err?.statusCode === 404 || err?.statusCode === 410) {
+            console.log(`push: endpoint gone (${err.statusCode}), dropping it for ${userId}`);
             await PushSubscription.deleteOne({ _id: s._id });
+          } else {
+            console.error(`push: send failed for ${userId} — ${err?.statusCode || '?'} ${err?.message}`);
           }
         }
       }),

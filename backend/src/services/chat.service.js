@@ -401,8 +401,14 @@ export async function sendMessage(user, conversationId, { text, replyToSeq, uplo
 
   // Notification — kab, kya aur kitni baar, sab chatPush.service me ek jagah hai
   // (khaali text, khuli chat par suppress, aur das message par das ghantiyan nahi).
-  // Best-effort: jawab ka intezaar nahi, message to ja hi chuka hai.
-  notifyNewMessage({
+  //
+  // AWAIT zaroori hai, chhodna nahi. Pehle yahan `.catch(() => {})` tha aur jawab ka
+  // intezaar nahi kiya jaata tha — Lambda par wo matlab "kabhi gaya hi nahi": handler ke
+  // laut-te hi container jam jaata hai (lambda.js me callbackWaitsForEmptyEventLoop =
+  // false), aur adhoori padi promise wahin ruk jaati hai. Isi liye chat ka push phone par
+  // nahi pahunchta tha. Apni galti par ye khud chup rehta hai, to message bhejna phir bhi
+  // nahi rukta.
+  await notifyNewMessage({
     toUser: peerId,
     fromName: user.name,
     conversationId: conv._id,
