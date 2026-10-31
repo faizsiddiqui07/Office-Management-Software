@@ -74,12 +74,26 @@ export function toggleList(value, start, end, kind) {
 
   const block = next.join('\n');
   const grew = block.length - (to - from);
-  return {
-    value: v.slice(0, from) + block + v.slice(to),
-    // Poora badla hua hissa chuna rehta hai — banda turant dobara daba kar wapas kar sake.
-    start: from,
-    end: to + grew,
-  };
+  const out = v.slice(0, from) + block + v.slice(to);
+
+  /**
+   * Cursor kahan jaaye — ek line par aur kai line par alag.
+   *
+   * KUCH CHUNA HI NAHI THA (aam haalat: khaali box me "Numbered list" dabana):
+   * cursor us line ke ANT me, yaani "1. " ke theek baad — banda turant likhna shuru kare.
+   * Pehle yahan poora badla hua hissa CHUNA chhod diya jaata tha, to naya "1. " khud hi
+   * highlight rehta aur agla akshar use mita deta tha: banda jo likhta, "1. " gayab.
+   * Pehle use deselect karna padta tha. Owner ne pakda (31 Oct 2026).
+   *
+   * KUCH CHUNA HUA THA (kai line ek saath list banayin): chuna hua hi rehta hai. Wajah
+   * seedhi hai — dobara button dabane par POORA block wapas saada ho jaaye. Cursor ek
+   * line par chhod dete to sirf wahi ek line hatti.
+   */
+  if (start === end) {
+    const caret = lineEnd(out, from);
+    return { value: out, start: caret, end: caret };
+  }
+  return { value: out, start: from, end: to + grew };
 }
 
 /**

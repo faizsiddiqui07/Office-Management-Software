@@ -52,10 +52,42 @@ ok(run(toggleWrap, '[x]', '~~') === '~~[x]~~', 'kaata hua');
 ok(run(toggleWrap, '`[x]`', '`') === '[x]', 'code wapas');
 
 console.log('4) Bullet list');
-ok(run(toggleList, '|ek', 'ul') === '[- ek]', 'ek line bullet bani', run(toggleList, '|ek', 'ul'));
+ok(run(toggleList, '|ek', 'ul') === '- ek|', 'ek line bullet bani, cursor ANT me (chuni hui nahi)', run(toggleList, '|ek', 'ul'));
 ok(run(toggleList, '[ek\ndo]', 'ul') === '[- ek\n- do]', 'dono line bullet', run(toggleList, '[ek\ndo]', 'ul'));
 ok(run(toggleList, '[- ek\n- do]', 'ul') === '[ek\ndo]', 'dobara dabane par bullet hate', run(toggleList, '[- ek\n- do]', 'ul'));
-ok(run(toggleList, '|ek', 'ul').includes('- ek'), 'cursor line ke beech me ho tab bhi poori line');
+ok(run(toggleList, 'e|k', 'ul') === '- ek|', 'cursor line ke beech me ho tab bhi poori line, aur cursor ant me', run(toggleList, 'e|k', 'ul'));
+
+console.log('4b) BUG (owner, 31 Oct): naya "1. " CHUNA hua nahi rehna chahiye');
+{
+  // Khaali box me "Numbered list" dabao. Pehle "1. " khud highlight reh jaata tha, aur
+  // agla akshar use mita deta tha — banda jo likhta, ginti gayab.
+  const r = toggleList('', 0, 0, 'ol');
+  ok(r.value === '1. ', 'khaali box → "1. " aaya', JSON.stringify(r.value));
+  ok(r.start === r.end, 'kuch CHUNA hua nahi (yahi bug tha)', `start=${r.start} end=${r.end}`);
+  ok(r.start === 3, 'cursor "1. " ke theek baad, seedha likhna shuru', String(r.start));
+
+  // Aur ab likhne par ginti bachni chahiye.
+  const typed = r.value.slice(0, r.start) + 'drawing lena' + r.value.slice(r.end);
+  ok(typed === '1. drawing lena', 'likhne par "1. " bacha raha', JSON.stringify(typed));
+
+  // Bullet par bhi wahi.
+  const b = toggleList('', 0, 0, 'ul');
+  ok(b.value === '- ' && b.start === b.end && b.start === 2, 'bullet par bhi cursor ant me, kuch chuna nahi',
+    JSON.stringify(b));
+
+  // Dobara dabane par wapas saada — cursor ant me hone ke baad bhi.
+  const off = toggleList(r.value, r.start, r.end, 'ol');
+  ok(off.value === '', 'dobara dabaya → ginti hat gayi', JSON.stringify(off.value));
+}
+
+console.log('4c) kai line chuni ho to chuni hi rahein (poora block wapas ho sake)');
+{
+  const r = toggleList('ek\ndo', 0, 5, 'ol');
+  ok(r.value === '1. ek\n2. do', 'dono line ginti me', JSON.stringify(r.value));
+  ok(r.start !== r.end, 'block chuna hua hai', `start=${r.start} end=${r.end}`);
+  const off = toggleList(r.value, r.start, r.end, 'ol');
+  ok(off.value === 'ek\ndo', 'dobara dabane par POORA block wapas saada', JSON.stringify(off.value));
+}
 
 console.log('5) Ginti wali list');
 ok(run(toggleList, '[ek\ndo\nteen]', 'ol') === '[1. ek\n2. do\n3. teen]', '1, 2, 3', run(toggleList, '[ek\ndo\nteen]', 'ol'));
