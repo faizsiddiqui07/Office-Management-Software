@@ -4,6 +4,7 @@ import { Regularization } from '../models/Regularization.js';
 import { Announcement } from '../models/Announcement.js';
 import { can } from '../lib/permissions.js';
 import { reviewableByFilter, sieveReviewable } from '../lib/taskApprovers.js';
+import { visibilityFilter } from './announcement.service.js';
 
 /** Newest of a set of dates, ignoring nulls. */
 function newest(...dates) {
@@ -67,7 +68,12 @@ export async function getBadges(user) {
       : null,
     latest(Regularization, { user: mine, decidedAt: { $ne: null } }, 'decidedAt'),
 
-    latest(Announcement, {}, 'createdAt'),
+    // Sirf wahi announcements jo IS bande ko dikhte hain. Pehle yahan khaali `{}` tha —
+    // poore collection ka sabse naya row — to do logon ko kiya gaya announcement SABKE
+    // menu par laal dot laga deta tha, aur khol kar dekhne par wahan kuch hota hi nahi.
+    // Owner ne pakda (2 Nov 2026). Niyam dobara nahi likha: wahi filter jo feed aur popup
+    // chalate hain (announcement.service.js), warna dono ka jawab alag ho jaata.
+    latest(Announcement, visibilityFilter(user), 'createdAt'),
   ]);
 
   return {

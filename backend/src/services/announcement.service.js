@@ -25,8 +25,17 @@ function httpError(status, code, message) {
   return e;
 }
 
-/** Mongo filter for announcements visible to `role` right now. */
-function visibilityFilter(user, now = new Date()) {
+/**
+ * Mongo filter for announcements visible to `role` right now.
+ *
+ * EXPORTED, aur jahan bhi "kisko dikhna chahiye" ka sawaal ho wahan YAHI chalta hai.
+ * Sidebar ka laal nishaan (services/badges.service.js) iske bajaye khaali `{}` use karta
+ * tha, yaani poore collection ka sabse naya announcement — to kuch hi logon ko kiya gaya
+ * announcement SABKE menu par dot laga deta tha. Owner ne pakda (2 Nov 2026). Audience,
+ * publish ka waqt aur expiry — teeno ka hisaab sirf yahin likha hai, to doosri jagah
+ * dobara likhne ka matlab hai dono ka alag ho jaana.
+ */
+export function visibilityFilter(user, now = new Date()) {
   const viewerId = user?._id || user?.id || null;
   // The three "addressed to" branches are a UNION on purpose. A row carrying both lists is
   // only reachable by a hand edit (the service clears one when the other is set), and showing
