@@ -44,7 +44,9 @@ let boss, u1, u2;
 
 async function main() {
   await connectDB();
-  if (!/test/i.test(process.env.MONGODB_DB)) throw new Error('refusing: DB name has no "test"');
+  // Guard the LIVE connection name, not the env var: this file calls dropDatabase() and a
+  // connection that fell back to a default would not be caught by reading the variable.
+  if (!/test/i.test(mongoose.connection.name || '')) throw new Error('refusing: DB name has no "test"');
   await mongoose.connection.dropDatabase();
   console.log(`\n🧪 Isolated DB: ${process.env.MONGODB_DB}\n`);
 
@@ -169,7 +171,7 @@ async function main() {
     check('agle Saturday phir', (await bells(T)) === 6);
   }
 
-  // ═══ TEST 6 — repeat hataana, retire, expiry ═══
+  // ═══ TEST 6 — repeat hataana, delete, expiry ═══
   console.log('\nTEST 6 — band karne ke teen raaste');
   {
     const T1 = 'Stop me';
@@ -177,13 +179,24 @@ async function main() {
     await svc.updateAnnouncement(a.id, { recurrence: { type: 'NONE' } }, at('2026-09-14', '10:00'));
     await tick(at('2026-09-19', '09:01'));
     check('repeat hataya → agle Sat kuch nahi', (await bells(T1)) === 2, `got ${await bells(T1)}`);
-    check('lastRecurredYMD saaf', (await Announcement.findById(a.id)).lastRecurredYMD === '');
+    // JAAN-BOOJH KAR badla (2 Nov 2026): pehle yahan stamp SAAF hota tha. Ab nahi —
+    // repeat band karke usi din wapas on karne par wo din dobara bell bhej deta tha.
+    // NONE ke waqt stamp koi padhta hi nahi (scanner recurrence.type par match karta hai).
+    check('repeat hatane par stamp BACHA rehta hai', (await Announcement.findById(a.id)).lastRecurredYMD === '2026-09-12',
+      `got ${(await Announcement.findById(a.id)).lastRecurredYMD}`);
 
-    const T2 = 'Retire me';
+    // `retireAnnouncement` ab hai hi nahi — announcement retire (isActive:false) se HARD
+    // DELETE ban gaya, par ye line badli nahi gayi thi. `import * as svc` par gayab export
+    // undefined deta hai, to yahan TypeError uthta tha, main().catch() exit(1) karta tha,
+    // aur TEST 7 se 20 — chaudah test, jinme prod ke asli bug ke pehredaar hain — KABHI
+    // chalte hi nahi the. Suite 'green' kabhi thi hi nahi; wo abort ho rahi thi.
+    const T2 = 'Delete me';
     const b = await svc.createAnnouncement(boss, { title: T2, recurrence: { type: 'WEEKLY', weekday: 6, time: '09:00' } }, at('2026-09-12', '10:00'));
-    await svc.retireAnnouncement(b.id);
+    await svc.deleteAnnouncement(b.id);
     await tick(at('2026-09-19', '09:01'));
-    check('retire → agle Sat kuch nahi', (await bells(T2)) === 2);
+    // 0, 2 nahi: delete ab clearNotificationsFor('Announcement', id) bhi chalata hai, to
+    // pehli outing ki ghanti bhi row ke saath chali jaati hai.
+    check('delete → agle Sat kuch nahi (aur purani ghanti bhi gayi)', (await bells(T2)) === 0, `got ${await bells(T2)}`);
 
     const T3 = 'Expire me';
     await svc.createAnnouncement(boss, { title: T3, expiresAt: at('2026-09-15').toISOString(), recurrence: { type: 'WEEKLY', weekday: 6, time: '09:00' } }, at('2026-09-12', '10:00'));
@@ -421,6 +434,361 @@ async function main() {
     check('Sat tick: kal (Fri 11) ka catch-up NAHI', (await bells(T)) === 2, `got ${await bells(T)}`);
     await tick(at('2026-09-18', '09:02'));
     check('agle Fri: gaya', (await bells(T)) === 4);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // Yahan se aage: KAI din ek hi rule me + gini-chuni taareekhein (owner, 2 Nov 2026)
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  /** Ek post ki ginti, title se nahi id se — multi-date post ek mahine me kai baar jaata
+   *  hai, to title wali ginti padhne me gadbad ho jaati hai. */
+  const bellsById = (id) => Notification.countDocuments({ type: 'ANNOUNCEMENT', entityType: 'Announcement', entityId: id });
+  const occ = async (id) => JSON.stringify((await Announcement.findById(id)).occurrences);
+  /** Kya ye call 400 deti hai, aur kis code ke saath? */
+  const failsWith = async (fn, code) => {
+    try { await fn(); return `no error (${code} chahiye tha)`; } catch (e) { return e.status === 400 && e.code === code ? 'ok' : `${e.status} ${e.code}: ${e.message}`; }
+  };
+
+  // ═══ TEST 21 — MONTHLY kai taareekhein: mahine me theek teen baar ═══
+  console.log('\nTEST 21 — MONTHLY {1,10,20}: mahine me theek teen outing');
+  {
+    await Notification.deleteMany({});
+    const T = 'Teen taareekh';
+    const a = await svc.createAnnouncement(boss, { title: T, recurrence: { type: 'MONTHLY', daysOfMonth: [1, 10, 20], time: '09:00' } }, at('2026-12-05', '10:00'));
+    const row = await Announcement.findById(a.id);
+    check('banate waqt: 0 bell (abhi 10 Dec aana hai)', (await bellsById(a.id)) === 0);
+    check('publishAt 10 Dec 09:00 par', row.publishAt.getTime() === at('2026-12-10', '09:00').getTime(), String(row.publishAt));
+    check('stamp pehle se 10 Dec (pehli outing double na ho)', row.lastRecurredYMD === '2026-12-10', row.lastRecurredYMD);
+    check('daysOfMonth DB me [1,10,20]', JSON.stringify(row.recurrence.daysOfMonth) === '[1,10,20]', JSON.stringify(row.recurrence.daysOfMonth));
+    check('purana dayOfMonth null (migrate-on-write)', row.recurrence.dayOfMonth === null);
+
+    await tick(at('2026-12-10', '08:55'));
+    check('10 Dec 08:55: abhi nahi', (await bellsById(a.id)) === 0);
+    await tick(at('2026-12-10', '09:05'));
+    check('10 Dec 09:05: gaya', (await bellsById(a.id)) === 2, `got ${await bellsById(a.id)}`);
+    await tick(at('2026-12-10', '18:00'));
+    check('usi din shaam: DOBARA NAHI', (await bellsById(a.id)) === 2, `got ${await bellsById(a.id)}`);
+    await tick(at('2026-12-15', '09:05'));
+    check('15 Dec (list me nahi): kuch nahi', (await bellsById(a.id)) === 2);
+    await tick(at('2026-12-20', '09:05'));
+    check('20 Dec: gaya', (await bellsById(a.id)) === 4, `got ${await bellsById(a.id)}`);
+    await tick(at('2027-01-01', '09:05'));
+    check('1 Jan: naya mahina shuru', (await bellsById(a.id)) === 6);
+    await tick(at('2027-01-10', '09:05'));
+    await tick(at('2027-01-20', '09:05'));
+    check('Jan me bhi theek teen (kul 5 outing)', (await bellsById(a.id)) === 10, `got ${await bellsById(a.id)}`);
+    check('occurrences me paanchon din, ek-ek baar',
+      (await occ(a.id)) === '["2026-12-10","2026-12-20","2027-01-01","2027-01-10","2027-01-20"]', await occ(a.id));
+  }
+
+  // ═══ TEST 22 — aaj hi match aur waqt nikal chuka → turant ═══
+  console.log('\nTEST 22 — {10,20}, 10 Dec 10:00 ko banaya (waqt nikal chuka)');
+  {
+    await Notification.deleteMany({});
+    const a = await svc.createAnnouncement(boss, { title: 'Turant multi', recurrence: { type: 'MONTHLY', daysOfMonth: [10, 20], time: '09:00' } }, at('2026-12-10', '10:00'));
+    check('turant gaya', (await bellsById(a.id)) === 2, `got ${await bellsById(a.id)}`);
+    check('publishAt null (hold nahi)', (await Announcement.findById(a.id)).publishAt === null);
+    await tick(at('2026-12-10', '18:00'));
+    check('usi din dobara nahi', (await bellsById(a.id)) === 2);
+    await tick(at('2026-12-20', '09:05'));
+    check('20 ko agla', (await bellsById(a.id)) === 4);
+  }
+
+  // ═══ TEST 23 — aaj match, waqt aana hai: sirf EK job bheje (2 bell, 4 nahi) ═══
+  console.log('\nTEST 23 — {10,20}, 10 Dec 08:00 ko banaya — 09:05 par theek 2 bell');
+  {
+    await Notification.deleteMany({});
+    const a = await svc.createAnnouncement(boss, { title: 'Dono job ek saath', recurrence: { type: 'MONTHLY', daysOfMonth: [10, 20], time: '09:00' } }, at('2026-12-10', '08:00'));
+    check('08:00 par chhupa hai', (await bellsById(a.id)) === 0);
+    await tick(at('2026-12-10', '09:05'));
+    check('theek 2 bell — publishDue aur announceRecurring dono ne nahi bheji', (await bellsById(a.id)) === 2, `got ${await bellsById(a.id)}`);
+  }
+
+  // ═══ TEST 24 — CATCH-UP: lagatar din, aur occurrences me sahi din ═══
+  console.log('\nTEST 24 — {1,2} @23:58: der se gayi pehli outing agli ko na khaaye');
+  {
+    await Notification.deleteMany({});
+    const a = await svc.createAnnouncement(boss, { title: 'Lagatar do din', recurrence: { type: 'MONTHLY', daysOfMonth: [1, 2], time: '23:58' } }, at('2026-12-01', '10:00'));
+    await tick(at('2026-12-01', '23:55'));
+    check('1 Dec 23:55: waqt se pehle kuch nahi', (await bellsById(a.id)) === 0);
+    await tick(at('2026-12-02', '00:02'));
+    check('2 Dec 00:02: 1 Dec ki outing der se gayi', (await bellsById(a.id)) === 2, `got ${await bellsById(a.id)}`);
+    check('…aur record me 1 Dec likha hai, 2 Dec nahi', (await occ(a.id)) === '["2026-12-01"]', await occ(a.id));
+    check('…aur 2 Dec ki apni outing abhi BAKI hai (stamp 1 Dec par)', (await Announcement.findById(a.id)).lastRecurredYMD === '2026-12-01', (await Announcement.findById(a.id)).lastRecurredYMD);
+    await tick(at('2026-12-02', '23:59'));
+    check('2 Dec 23:59: apne waqt par gayi (yahi stamp uthane se gum hoti thi)', (await bellsById(a.id)) === 4, `got ${await bellsById(a.id)}`);
+    check('occurrences me dono din, ek-ek baar', (await occ(a.id)) === '["2026-12-01","2026-12-02"]', await occ(a.id));
+  }
+
+  // ═══ TEST 25 — CATCH-UP mahine ke mod par: {1,31} ═══
+  console.log('\nTEST 25 — {1,31} @09:00: 28 Feb chhoota to agle tick par mile');
+  {
+    await Notification.deleteMany({});
+    // Pehle post ko zinda karte hain (ek purani taareekh par nikal chuka ho), taaki ye
+    // publishDueAnnouncements ka nahi, SIRF repeat-scanner ka test rahe.
+    const a = await svc.createAnnouncement(boss, { title: 'Pehli aur aakhri', recurrence: { type: 'MONTHLY', daysOfMonth: [1, 31], time: '09:00' } }, at('2027-01-31', '10:00'));
+    check('31 Jan ko turant gaya', (await bellsById(a.id)) === 2, `got ${await bellsById(a.id)}`);
+    await tick(at('2027-02-28', '08:55'));
+    check('28 Feb 08:55: waqt se pehle kuch nahi', (await bellsById(a.id)) === 2);
+    // Scanner raat bhar band. Pehla tick 1 March ko, 09:00 SE PEHLE.
+    await tick(at('2027-03-01', '08:55'));
+    check('1 Mar 08:55: 28 Feb ka CATCH-UP ho gaya', (await bellsById(a.id)) === 4, `got ${await bellsById(a.id)}`);
+    check('…aur stamp 28 Feb ka, 1 Mar ka nahi', (await Announcement.findById(a.id)).lastRecurredYMD === '2027-02-28', (await Announcement.findById(a.id)).lastRecurredYMD);
+    await tick(at('2027-03-01', '09:05'));
+    check('1 Mar 09:05: 1 Mar ki apni outing bhi gayi', (await bellsById(a.id)) === 6, `got ${await bellsById(a.id)}`);
+    check('occurrences = 31 Jan, 28 Feb, 1 Mar', (await occ(a.id)) === '["2027-01-31","2027-02-28","2027-03-01"]', await occ(a.id));
+  }
+
+  // ═══ TEST 26 — jaan-boojh kar maani hui seema: outage 09:00 ke BAAD tak chale ═══
+  console.log('\nTEST 26 — wahi {1,31}, par scanner 1 Mar 09:00 ke BAAD tak band (maana hua nuksaan)');
+  {
+    await Notification.deleteMany({});
+    const a = await svc.createAnnouncement(boss, { title: 'Outage lamba', recurrence: { type: 'MONTHLY', daysOfMonth: [1, 31], time: '09:00' } }, at('2027-01-31', '10:00'));
+    check('31 Jan: gaya', (await bellsById(a.id)) === 2);
+    // 28 Feb poora chhoot gaya AUR 1 Mar 09:00 bhi beet gaya — pehla tick 10:00 par.
+    await tick(at('2027-03-01', '10:00'));
+    check('sirf EK outing nikli (1 Mar ki), 28 Feb chhod di gayi', (await bellsById(a.id)) === 4, `got ${await bellsById(a.id)}`);
+    check('…aur record me 28 Feb nahi — jo gaya wahi likha hai', (await occ(a.id)) === '["2027-01-31","2027-03-01"]', await occ(a.id));
+  }
+
+  // ═══ TEST 27 — "hafte bhar band scanner" ka niyam list ke saath bhi bacha ho ═══
+  console.log('\nTEST 27 — {1,2,3,4}, scanner 3 din band: 4 nahi, sirf 1 outing');
+  {
+    await Notification.deleteMany({});
+    const a = await svc.createAnnouncement(boss, { title: 'Chaar lagatar', recurrence: { type: 'MONTHLY', daysOfMonth: [1, 2, 3, 4], time: '09:00' } }, at('2026-12-01', '10:00'));
+    check('1 Dec: turant gaya', (await bellsById(a.id)) === 2, `got ${await bellsById(a.id)}`);
+    await tick(at('2026-12-04', '10:00'));
+    check('4 Dec: theek EK outing (2 aur 3 ki baasi bell nahi)', (await bellsById(a.id)) === 4, `got ${await bellsById(a.id)}`);
+    await tick(at('2026-12-04', '10:05'));
+    check('usi din dobara tick: kuch nahi', (await bellsById(a.id)) === 4);
+    // Saari 31 taareekhein chun kar mahina bhar band — phir bhi kal+aaj se zyada nahi.
+    const b = await svc.createAnnouncement(boss, { title: 'Saari 31', recurrence: { type: 'MONTHLY', daysOfMonth: Array.from({ length: 31 }, (_, i) => i + 1), time: '09:00' } }, at('2026-12-01', '10:00'));
+    await tick(at('2026-12-28', '10:00'));
+    check('saari-31 par mahina bhar band: ek outing, 27 nahi', (await bellsById(b.id)) === 4, `got ${await bellsById(b.id)}`);
+  }
+
+  // ═══ TEST 28 — ek calendar din me do bell ke do raaste band hon ═══
+  console.log('\nTEST 28 — repeat off/on, aur aaj hi gayi post par rule lagana');
+  {
+    await Notification.deleteMany({});
+    const a = await svc.createAnnouncement(boss, { title: 'Off on off', recurrence: { type: 'MONTHLY', daysOfMonth: [1, 10, 20], time: '09:00' } }, at('2026-11-10', '10:00'));
+    check('10 Nov: turant gaya', (await bellsById(a.id)) === 2);
+    await svc.updateAnnouncement(a.id, { recurrence: { type: 'NONE' } }, at('2026-11-10', '15:00'));
+    check('repeat band karne par stamp BACHA (saaf nahi hua)', (await Announcement.findById(a.id)).lastRecurredYMD === '2026-11-10', (await Announcement.findById(a.id)).lastRecurredYMD);
+    await svc.updateAnnouncement(a.id, { recurrence: { type: 'MONTHLY', daysOfMonth: [1, 10, 20], time: '09:00' } }, at('2026-11-10', '16:00'));
+    await tick(at('2026-11-10', '16:02'));
+    check('usi din wapas on kiya: DOOSRI bell nahi', (await bellsById(a.id)) === 2, `got ${await bellsById(a.id)}`);
+    check('occurrences me 10 Nov ek hi baar', (await occ(a.id)) === '["2026-11-10"]', await occ(a.id));
+    await tick(at('2026-11-20', '09:05'));
+    check('20 Nov: aage ka repeat chalta raha', (await bellsById(a.id)) === 4);
+
+    // Aaj subah gayi plain post par dopahar me rule lagana → usi din dobara na jaye.
+    const b = await svc.createAnnouncement(boss, { title: 'Subah gayi', priority: 'NORMAL' }, at('2026-11-10', '08:00'));
+    check('plain post subah gayi', (await bellsById(b.id)) === 2);
+    await svc.updateAnnouncement(b.id, { recurrence: { type: 'MONTHLY', daysOfMonth: [1, 10, 20], time: '09:00' } }, at('2026-11-10', '08:30'));
+    await tick(at('2026-11-10', '09:05'));
+    check('aaj hi gayi post par rule laga: usi din DOBARA nahi', (await bellsById(b.id)) === 2, `got ${await bellsById(b.id)}`);
+    await tick(at('2026-11-20', '09:05'));
+    check('…par 20 Nov par theek gaya', (await bellsById(b.id)) === 4);
+
+    // Aur wahi off/on, par ek PURANI shakal ki row par: jiske paas announcedAt aur
+    // notifiedAt dono nahi hain, sirf stamp hai. Yahan floor kal par gir jaata hai, to
+    // "us din nikal chuka hai" ka eklauta saboot stamp hi bachta hai — isi liye NONE ke
+    // waqt use mitaana nahi chahiye. (Naye rows par floor khud sambhal leta hai; isiliye
+    // ye alag test chahiye tha, warna ye fix bina pehre ka reh jaata.)
+    const ins = await Announcement.collection.insertOne({
+      title: 'Purani shakal off on', body: 'x', priority: 'NORMAL', createdBy: boss._id,
+      audienceRoles: [], audienceUsers: [], isActive: true, publishAt: null, expiresAt: null,
+      notifiedAt: null, announcedAt: null, // dono gayab — purane deploy ki row
+      recurrence: { type: 'MONTHLY', daysOfMonth: [10], time: '09:00' },
+      lastRecurredYMD: '2026-11-10', occurrences: ['2026-11-10'],
+      createdAt: at('2026-11-01', '10:00'), updatedAt: at('2026-11-01', '10:00'),
+    });
+    const dId = ins.insertedId;
+    await svc.updateAnnouncement(dId, { recurrence: { type: 'NONE' } }, at('2026-11-10', '15:00'));
+    await svc.updateAnnouncement(dId, { recurrence: { type: 'MONTHLY', daysOfMonth: [10], time: '09:00' } }, at('2026-11-10', '16:00'));
+    await tick(at('2026-11-10', '16:02'));
+    check('purani shakal par off/on: us din ki DOBARA bell nahi (stamp hi eklauta saboot tha)',
+      (await bellsById(dId)) === 0, `got ${await bellsById(dId)}`);
+
+    // Aur jo post PICHHLE hafte gayi thi, usme aaj rule lagao → aaj hi jaye (purana niyam).
+    const c = await svc.createAnnouncement(boss, { title: 'Pichhle hafte gayi' }, at('2026-11-03', '10:00'));
+    await svc.updateAnnouncement(c.id, { recurrence: { type: 'MONTHLY', daysOfMonth: [10], time: '09:00' } }, at('2026-11-10', '10:00'));
+    await tick(at('2026-11-10', '10:02'));
+    check('purani post par aaj rule laga: aaj hi gaya (ye niyam bacha hai)', (await bellsById(c.id)) === 4, `got ${await bellsById(c.id)}`);
+  }
+
+  // ═══ TEST 29 — PURANA BUG: pehli outing se pehle title theek karna ═══
+  console.log('\nTEST 29 — na-nikli repeating post ka sirf TITLE badlo (purana bug)');
+  {
+    await Notification.deleteMany({});
+    const a = await svc.createAnnouncement(boss, { title: 'Title badlega', recurrence: { type: 'MONTHLY', daysOfMonth: [20], time: '09:00' } }, at('2026-12-05', '10:00'));
+    check('banate waqt chhupa hai', (await bellsById(a.id)) === 0);
+    // THEEK WAISA payload jo purana dialog bhejta tha: title + publishAt: null.
+    await svc.updateAnnouncement(a.id, { title: 'Naya title', publishAt: null }, at('2026-12-06', '10:00'));
+    const row = await Announcement.findById(a.id);
+    check('title badla', row.title === 'Naya title');
+    check('publishAt ZINDA hai (null nahi hua)', row.publishAt && row.publishAt.getTime() === at('2026-12-20', '09:00').getTime(), String(row.publishAt));
+    await tick(at('2026-12-20', '09:05'));
+    check('apne din par bell BAJI (pehle hamesha ke liye gungi ho jaati thi)', (await bellsById(a.id)) === 2, `got ${await bellsById(a.id)}`);
+
+    // Explicit DATE ab bhi maani jaye — repeating post ko rokne ka yahi raasta hai.
+    const b = await svc.createAnnouncement(boss, { title: 'Rok do', recurrence: { type: 'MONTHLY', daysOfMonth: [20], time: '09:00' } }, at('2026-12-05', '10:00'));
+    await svc.updateAnnouncement(b.id, { publishAt: at('2027-06-01', '09:00').toISOString() }, at('2026-12-06', '10:00'));
+    check('explicit date ab bhi lagti hai', (await Announcement.findById(b.id)).publishAt.getTime() === at('2027-06-01', '09:00').getTime());
+  }
+
+  // ═══ TEST 30 — PURANA BUG: mari hui row edit karke ZINDA ho ═══
+  console.log('\nTEST 30 — notifiedAt gayab wali row dobara edit par zinda ho');
+  {
+    await Notification.deleteMany({});
+    const a = await svc.createAnnouncement(boss, { title: 'Mari hui row', recurrence: { type: 'MONTHLY', daysOfMonth: [10], time: '09:00' } }, at('2026-12-01', '10:00'));
+    // Wahi shakal jo purane bug se banti thi: publishAt aur notifiedAt dono null.
+    await Announcement.updateOne({ _id: a.id }, { $set: { publishAt: null, notifiedAt: null, announcedAt: null } });
+    await tick(at('2026-12-10', '09:05'));
+    check('is shakal me koi bell nahi jaati (bug ka saboot)', (await bellsById(a.id)) === 0, `got ${await bellsById(a.id)}`);
+    // Ab wahi rule dobara save karo — pehle `if (!was)` gate ise zinda hone hi nahi deta tha.
+    await svc.updateAnnouncement(a.id, { recurrence: { type: 'MONTHLY', daysOfMonth: [10], time: '09:00' } }, at('2026-12-15', '10:00'));
+    check('notifiedAt wapas bhar gaya', !!(await Announcement.findById(a.id)).notifiedAt);
+    await tick(at('2027-01-10', '09:05'));
+    check('agle 10 par bell BAJI — row zinda ho gayi', (await bellsById(a.id)) === 2, `got ${await bellsById(a.id)}`);
+  }
+
+  // ═══ TEST 31 — WEEKLY kai din, YEARLY kai taareekhein ═══
+  console.log('\nTEST 31 — WEEKLY {Mon,Thu} aur YEARLY Aug {15,31}');
+  {
+    await Notification.deleteMany({});
+    const a = await svc.createAnnouncement(boss, { title: 'Som aur Guru', recurrence: { type: 'WEEKLY', weekdays: [1, 4], time: '09:00' } }, at('2026-09-14', '10:00'));
+    check('Mon 14 Sep: turant gaya', (await bellsById(a.id)) === 2, `got ${await bellsById(a.id)}`);
+    await tick(at('2026-09-15', '09:05'));
+    check('Tue 15 Sep: kuch nahi', (await bellsById(a.id)) === 2);
+    await tick(at('2026-09-17', '09:05'));
+    check('Thu 17 Sep: gaya', (await bellsById(a.id)) === 4, `got ${await bellsById(a.id)}`);
+    await tick(at('2026-09-21', '09:05'));
+    check('agla Mon 21 Sep: gaya', (await bellsById(a.id)) === 6);
+    check('weekdays DB me [1,4], purana weekday null', JSON.stringify((await Announcement.findById(a.id)).recurrence.weekdays) === '[1,4]' && (await Announcement.findById(a.id)).recurrence.weekday === null);
+
+    const b = await svc.createAnnouncement(boss, { title: 'Agast ki do', recurrence: { type: 'YEARLY', month: 8, daysOfMonth: [15, 31], time: '09:00' } }, at('2026-08-01', '10:00'));
+    await tick(at('2026-08-15', '09:05'));
+    check('15 Aug: gaya', (await bellsById(b.id)) === 2, `got ${await bellsById(b.id)}`);
+    await tick(at('2026-08-31', '09:05'));
+    check('31 Aug: gaya', (await bellsById(b.id)) === 4);
+    await tick(at('2026-09-15', '09:05'));
+    check('15 Sep: kuch nahi (galat mahina)', (await bellsById(b.id)) === 4);
+  }
+
+  // ═══ TEST 32 — DATES: gini-chuni taareekhein, phir khatam ═══
+  console.log('\nTEST 32 — DATES [5 Nov, 12 Dec, 3 Jan]: teen baar, phir chup');
+  {
+    await Notification.deleteMany({});
+    const a = await svc.createAnnouncement(boss, { title: 'Teen khaas din', recurrence: { type: 'DATES', dates: ['2026-11-05', '2026-12-12', '2027-01-03'], time: '09:00' } }, at('2026-11-02', '10:00'));
+    const row = await Announcement.findById(a.id);
+    check('dates DB me sahi', JSON.stringify(row.recurrence.dates) === '["2026-11-05","2026-12-12","2027-01-03"]', JSON.stringify(row.recurrence.dates));
+    check('publishAt pehli date par', row.publishAt.getTime() === at('2026-11-05', '09:00').getTime());
+    check('banate waqt 0 bell', (await bellsById(a.id)) === 0);
+    await tick(at('2026-11-05', '08:55'));
+    check('5 Nov 08:55: abhi nahi', (await bellsById(a.id)) === 0);
+    await tick(at('2026-11-05', '09:05'));
+    check('5 Nov: gaya', (await bellsById(a.id)) === 2, `got ${await bellsById(a.id)}`);
+    await tick(at('2026-11-20', '09:05'));
+    check('beech ke din: kuch nahi', (await bellsById(a.id)) === 2);
+    await tick(at('2026-12-12', '09:05'));
+    check('12 Dec: gaya', (await bellsById(a.id)) === 4);
+    await tick(at('2027-01-03', '09:05'));
+    check('3 Jan: gaya', (await bellsById(a.id)) === 6, `got ${await bellsById(a.id)}`);
+    for (const d of ['2027-01-04', '2027-01-10', '2027-02-03', '2028-01-03']) await tick(at(d, '09:05'));
+    check('aakhri date ke baad: hamesha chup', (await bellsById(a.id)) === 6, `got ${await bellsById(a.id)}`);
+    check('feed me ab bhi dikhta hai (khatam = record, gayab nahi)', (await svc.listVisible(u1, at('2027-02-10', '10:00'))).some((x) => x.title === 'Teen khaas din'));
+    check('occurrences = teeno din', (await occ(a.id)) === '["2026-11-05","2026-12-12","2027-01-03"]', await occ(a.id));
+  }
+
+  // ═══ TEST 33 — DATES lagatar din: catch-up aur maani hui seema ═══
+  console.log('\nTEST 33 — DATES lagatar [6 Nov, 7 Nov]: 09:00 se pehle tick par bache');
+  {
+    await Notification.deleteMany({});
+    // Pehli date 1 Nov par post nikal chuka hai, to ye SIRF repeat-scanner ka test hai.
+    const a = await svc.createAnnouncement(boss, { title: 'Lagatar bach gaya', recurrence: { type: 'DATES', dates: ['2026-11-01', '2026-11-06', '2026-11-07'], time: '09:00' } }, at('2026-11-01', '10:00'));
+    check('1 Nov: turant gaya', (await bellsById(a.id)) === 2);
+    await tick(at('2026-11-06', '08:55'));
+    check('6 Nov 08:55: waqt se pehle kuch nahi', (await bellsById(a.id)) === 2);
+    await tick(at('2026-11-07', '08:55')); // scanner raat bhar band tha
+    check('7 Nov 08:55: 6 Nov ka CATCH-UP ho gaya', (await bellsById(a.id)) === 4, `got ${await bellsById(a.id)}`);
+    await tick(at('2026-11-07', '09:05'));
+    check('7 Nov 09:05: 7 Nov ki apni bhi gayi', (await bellsById(a.id)) === 6, `got ${await bellsById(a.id)}`);
+    check('occurrences = teeno', (await occ(a.id)) === '["2026-11-01","2026-11-06","2026-11-07"]', await occ(a.id));
+
+    // Aur wahi haalat jab outage 09:00 ke BAAD tak chale — 6 Nov chhod di jaati hai.
+    await Notification.deleteMany({});
+    const b = await svc.createAnnouncement(boss, { title: 'Lagatar chhoot gaya', recurrence: { type: 'DATES', dates: ['2026-11-01', '2026-11-06', '2026-11-07'], time: '09:00' } }, at('2026-11-01', '10:00'));
+    await tick(at('2026-11-07', '10:00'));
+    check('outage 09:00 ke baad tak: sirf 7 Nov nikla, 6 Nov chhod di (maana hua)', (await bellsById(b.id)) === 4, `got ${await bellsById(b.id)}`);
+    check('…aur record sach bolta hai: 6 Nov likha hi nahi', (await occ(b.id)) === '["2026-11-01","2026-11-07"]', await occ(b.id));
+  }
+
+  // ═══ TEST 34 — DATES ki galtiyan: 400, 500 nahi ═══
+  console.log('\nTEST 34 — DATES: nikal chuki taareekhein par saaf 400');
+  {
+    await Notification.deleteMany({});
+    const before = await Announcement.countDocuments({});
+    check('saari dates nikal chuki → 400 DATES_ALL_PAST (500 nahi)',
+      (await failsWith(() => svc.createAnnouncement(boss, { title: 'Sab purani', recurrence: { type: 'DATES', dates: ['2026-10-01', '2026-10-15'], time: '09:00' } }, at('2026-11-02', '10:00')), 'DATES_ALL_PAST')) === 'ok',
+      await failsWith(() => svc.createAnnouncement(boss, { title: 'Sab purani 2', recurrence: { type: 'DATES', dates: ['2026-10-01'], time: '09:00' } }, at('2026-11-02', '10:00')), 'DATES_ALL_PAST'));
+    check('…aur koi row bani hi nahi', (await Announcement.countDocuments({})) === before);
+
+    // Na-nikle post ki dates ko saari-purani se badalna → 400, aur row ACHHOOTI rahe.
+    const a = await svc.createAnnouncement(boss, { title: 'Achhoota rahe', recurrence: { type: 'DATES', dates: ['2027-01-05'], time: '09:00' } }, at('2026-11-02', '10:00'));
+    check('edit me saari purani dates → 400',
+      (await failsWith(() => svc.updateAnnouncement(a.id, { title: 'Badla hua', recurrence: { type: 'DATES', dates: ['2026-10-01'], time: '09:00' } }, at('2026-11-02', '11:00')), 'DATE_IN_PAST')) === 'ok');
+    const row = await Announcement.findById(a.id);
+    check('…aur row par title bhi nahi badla (guard save se PEHLE hai)', row.title === 'Achhoota rahe', row.title);
+    check('…aur dates bhi waisi hi', JSON.stringify(row.recurrence.dates) === '["2027-01-05"]');
+    check('sirf title badalna chalta hai (post uneditable na ho)',
+      (await svc.updateAnnouncement(a.id, { title: 'Sirf title' }, at('2026-11-02', '11:30'))).title === 'Sirf title');
+
+    // Jo date post PEHLE SE carry kar raha hai, wo nikal jaane ke baad bhi chalti rahe.
+    const b = await svc.createAnnouncement(boss, { title: 'Purani apni date', recurrence: { type: 'DATES', dates: ['2026-11-01', '2027-01-05'], time: '09:00' } }, at('2026-11-01', '10:00'));
+    check('apni purani date wapas bhejna chalta hai (dialog poori list bhejta hai)',
+      !!(await svc.updateAnnouncement(b.id, { recurrence: { type: 'DATES', dates: ['2026-11-01', '2027-01-05', '2027-02-09'], time: '09:00' } }, at('2026-11-10', '10:00'))));
+    check('NAYI purani date jodna reject hoti hai',
+      (await failsWith(() => svc.updateAnnouncement(b.id, { recurrence: { type: 'DATES', dates: ['2026-11-01', '2026-11-05', '2027-01-05'], time: '09:00' } }, at('2026-11-10', '10:00')), 'DATE_IN_PAST')) === 'ok');
+
+    // Type badalne par purani list DB me zero ho jaye.
+    await svc.updateAnnouncement(b.id, { recurrence: { type: 'WEEKLY', weekdays: [6], time: '09:00' } }, at('2026-11-10', '11:00'));
+    check('DATES → WEEKLY: dates [] ho gayi (stale list na bache)', JSON.stringify((await Announcement.findById(b.id)).recurrence.dates) === '[]', JSON.stringify((await Announcement.findById(b.id)).recurrence.dates));
+  }
+
+  // ═══ TEST 35 — purani single-day row (daysOfMonth key hai hi nahi) ═══
+  console.log('\nTEST 35 — bahut purani row: sirf dayOfMonth, koi list nahi');
+  {
+    await Notification.deleteMany({});
+    const ins = await Announcement.collection.insertOne({
+      title: 'Bahut purani monthly', body: 'x', priority: 'NORMAL', createdBy: boss._id,
+      audienceRoles: [], audienceUsers: [], isActive: true, publishAt: null, expiresAt: null,
+      notifiedAt: at('2026-11-15', '09:00'), announcedAt: at('2026-11-15', '09:00'),
+      recurrence: { type: 'MONTHLY', dayOfMonth: 15, time: '09:00' }, // list key BILKUL nahi
+      lastRecurredYMD: '2026-11-15', occurrences: ['2026-11-15'],
+      createdAt: at('2026-11-15', '09:00'), updatedAt: at('2026-11-15', '09:00'),
+    });
+    const id = ins.insertedId;
+    await tick(at('2026-12-15', '09:05'));
+    check('purani shakal par scanner crash nahi hua aur 15 Dec par bell gayi', (await bellsById(id)) === 2, `got ${await bellsById(id)}`);
+    // Ab usi row par nayi list lagao — purane 15 ka asar poora khatam ho.
+    await svc.updateAnnouncement(id, { recurrence: { type: 'MONTHLY', daysOfMonth: [3], time: '09:00' } }, at('2026-12-16', '10:00'));
+    await tick(at('2027-01-15', '09:05'));
+    check('nayi list ke baad purana 15 mar gaya', (await bellsById(id)) === 2, `got ${await bellsById(id)}`);
+    await tick(at('2027-02-03', '09:05'));
+    check('…aur naya 3 chalta hai', (await bellsById(id)) === 4, `got ${await bellsById(id)}`);
+  }
+
+  // ═══ TEST 36 — do instance ek hi tick par: ek hi outing ═══
+  console.log('\nTEST 36 — lagatar din + do scanner ek saath: ek hi outing');
+  {
+    await Notification.deleteMany({});
+    const a = await svc.createAnnouncement(boss, { title: 'Race multi', recurrence: { type: 'MONTHLY', daysOfMonth: [1, 2], time: '09:00' } }, at('2026-12-01', '10:00'));
+    const when = at('2026-12-02', '09:05');
+    await Promise.all([svc.announceRecurring(when), svc.announceRecurring(when), svc.announceRecurring(when)]);
+    check('teen instance, phir bhi EK outing', (await bellsById(a.id)) === 4, `got ${await bellsById(a.id)}`);
+    check('occurrences me 2 Dec ek hi baar', (await occ(a.id)) === '["2026-12-01","2026-12-02"]', await occ(a.id));
   }
 
   console.log(`\n${failures ? `❌ ${failures} FAIL` : '✅ SAB PASS'}\n`);

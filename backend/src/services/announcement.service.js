@@ -7,7 +7,15 @@ import { notify, clearNotificationsFor } from '../models/Notification.js';
 import { can } from '../lib/permissions.js';
 import { ensureRolesFresh, roleExists, roleLabel } from '../lib/roles.js';
 import { ymdInTz, companyDayFromYMD, companyDayInstantAt } from '../lib/time.js';
-import { matchesYMD, nextOccurrenceYMD, lastOccurrenceOnOrBefore, normalizeRule, prevDay } from '../lib/recurrence.js';
+import {
+  matchesYMD,
+  nextOccurrenceYMD,
+  lastOccurrenceOnOrBefore,
+  normalizeRule,
+  prevDay,
+  dayLabel,
+  REPEATING_TYPES,
+} from '../lib/recurrence.js';
 
 /** The instant 'HH:mm' falls on a given company day — through the zone-aware helper, so
  *  it stays right even if COMPANY_TZ is ever pointed at a zone with DST. */
@@ -23,6 +31,27 @@ function httpError(status, code, message) {
   e.status = status;
   e.code = code;
   return e;
+}
+
+/**
+ * The first day a rule goes out, or a 400 saying why it can't.
+ *
+ * `nextOccurrenceYMD` could not answer null for a valid rule until DATES existed — a
+ * weekly, monthly or yearly rule always lands inside a year. Both call sites were written
+ * on that assumption and hand the answer straight to the date maths, where null becomes
+ * an Invalid Date, a RangeError with no `status` on it, and "Something went wrong" in the
+ * browser. A list of days that have all gone by is an ordinary mistake, not a crash.
+ *
+ * It also closes a hole that was already there: any internal caller that builds a rule by
+ * hand and forgets a day (leave.service.js creates announcements without going through the
+ * validator) used to hit exactly that RangeError.
+ */
+function firstOutingOrThrow(rule, today) {
+  const first = nextOccurrenceYMD(rule, today);
+  if (!first) {
+    throw httpError(400, 'DATES_ALL_PAST', 'Every date you picked has already gone by. Pick at least one that is today or later.');
+  }
+  return first;
 }
 
 /**
@@ -145,14 +174,35 @@ export async function publishDueAnnouncements(now = new Date()) {
     // audienceUsers is NOT optional here: leave it out of the projection and mongoose
     // hands back an empty array, audienceUserQuery reads that as "everyone", and a scheduled
     // post meant for three people goes to the whole office with nothing in the logs.
-  }).select('_id title priority audienceRoles audienceUsers createdBy').limit(20);
+    // publishAt comes back so the record below can name the day this was BOOKED for rather
+    // than the day the sending happened to run.
+  }).select('_id title priority audienceRoles audienceUsers createdBy publishAt').limit(20);
 
   for (const a of due) {
     // Claim it first — only the instance whose update matches gets to send.
     // eslint-disable-next-line no-await-in-loop
     const claimed = await Announcement.findOneAndUpdate(
       { _id: a._id, notifiedAt: null },
-      { $set: { notifiedAt: now, announcedAt: now }, $push: { occurrences: { $each: [ymdInTz(now)], $slice: -200 } } },
+      // The repeat stamp is deliberately LEFT ALONE here, and that is worth stating because
+      // raising it to "the day this actually went out" looks like an improvement.
+      //
+      // It is not. The stamp records which OCCURRENCE has gone out, not which day the
+      // sending happened — createAnnouncement pre-stamps the first occurrence precisely so
+      // this function cannot double it. When a publish is LATE the two differ: a post
+      // booked for the 1st at 23:58 that goes out at 00:02 on the 2nd has delivered the
+      // 1st's occurrence, and stamping the 2nd would throw away the 2nd's own outing later
+      // that night. Which, with days that can sit next to each other, is the exact loss
+      // this release set out to stop.
+      //
+      // The day recorded is the day it was BOOKED for, not the minute this ran. They are
+      // the same within a few minutes on a punctual publish; they differ when the publish
+      // was late, and then "it went out on the 2nd" for a post booked on the 1st makes the
+      // record disagree with the rule it came from — a post named for the 5th would show a
+      // day it never picked.
+      {
+        $set: { notifiedAt: now, announcedAt: now },
+        $push: { occurrences: { $each: [ymdInTz(a.publishAt || now)], $slice: -200 } },
+      },
     );
     // eslint-disable-next-line no-await-in-loop
     if (claimed) await notifyAudience(a, a.createdBy);
@@ -179,7 +229,11 @@ export async function announceRecurring(now = new Date()) {
   const today = ymdInTz(now);
   const candidates = await Announcement.find({
     isActive: true,
-    'recurrence.type': { $in: ['WEEKLY', 'MONTHLY', 'YEARLY'] },
+    // From the shared list, never a hand-written one. A new repeat type missing from here
+    // is the quietest way this whole feature can fail: everything else looks right, the
+    // post goes out on its first day through publishDueAnnouncements (which never looks at
+    // recurrence), and then never again, with nothing in CloudWatch to read.
+    'recurrence.type': { $in: REPEATING_TYPES },
     notifiedAt: { $ne: null },
     lastRecurredYMD: { $ne: today },
     // A future publishAt hides the post from the feed; announcing it while hidden would
@@ -188,18 +242,36 @@ export async function announceRecurring(now = new Date()) {
       { $or: [{ expiresAt: null }, { expiresAt: { $gt: now } }] },
       { $or: [{ publishAt: null }, { publishAt: { $lte: now } }] },
     ],
+    // `recurrence` must come back WHOLE — narrow the projection to the old single-day
+    // fields and the lists arrive undefined, every rule reads as having no days, and
+    // nothing ever fires again.
   }).select('_id title priority audienceRoles audienceUsers createdBy recurrence lastRecurredYMD');
 
   for (const a of candidates) {
     const rule = ruleOf(a);
+    // NOT guarded on "it already went out today". That reads as the obvious safety net and
+    // it quietly eats real outings: a post whose first delivery ran late went out TODAY for
+    // YESTERDAY's occurrence, and today's own occurrence is still owed. One outing per
+    // OCCURRENCE is the rule, and the claim stamp below is what enforces it — a day cannot
+    // go out twice. Two bells in one day only happen when a late delivery is followed by a
+    // genuinely due occurrence, which is two different days' news, not a duplicate.
+    //
     // The occurrence to announce is the most recent one on or before today that has not
     // already gone out — today if today falls on the rule and its time has passed, else
     // YESTERDAY if that did and was missed (its time fell in the gap between two ticks,
     // or the last tick of the day came before it). Nothing older: a scanner that was
     // down for a week does not get to announce a week of stale reminders on Monday.
-    const due = lastOccurrenceOnOrBefore(rule, today, 1);
+    let due = lastOccurrenceOnOrBefore(rule, today, 1);
+    // Today falls on the rule but its hour has not come. This used to `continue`, which
+    // also threw away yesterday — and while a rule fell on ONE day a month that cost
+    // nothing, because two occurrences were twenty-eight days apart and "today" could
+    // never hide "yesterday". A list falls on consecutive days: {1st, 31st} is adjacent at
+    // every month boundary in the year, which is exactly what somebody picking the first
+    // and last date of the month gets. So look back one more day, with maxBack 0 — the
+    // window stays EXACTLY one day wide, and a scanner that was down for a week still
+    // announces at most yesterday and today.
+    if (due === today && now < atCompanyTime(today, rule.time)) due = lastOccurrenceOnOrBefore(rule, prevDay(today), 0);
     if (!due || due <= (a.lastRecurredYMD || '')) continue;
-    if (due === today && now < atCompanyTime(today, rule.time)) continue; // its hour hasn't come yet
     // eslint-disable-next-line no-await-in-loop
     const claimed = await Announcement.findOneAndUpdate(
       { _id: a._id, lastRecurredYMD: { $ne: due } },
@@ -279,7 +351,7 @@ export async function createAnnouncement(creator, data, now = new Date()) {
     // if it has already passed today, the person plainly wants it out now. Either way
     // the day is stamped as claimed, so the repeat scanner never doubles the first one.
     const today = ymdInTz(now);
-    const first = nextOccurrenceYMD(rule, today);
+    const first = firstOutingOrThrow(rule, today);
     const firstAt = atCompanyTime(first, rule.time);
     publishAt = firstAt.getTime() > now.getTime() ? firstAt : null;
     lastRecurredYMD = first;
@@ -482,6 +554,27 @@ export async function updateAnnouncement(id, data, now = new Date()) {
   if (data.audienceRoles !== undefined) await assertAudienceRoles(data.audienceRoles);
   const ann = await Announcement.findById(id);
   if (!ann) throw httpError(404, 'NOT_FOUND', 'Announcement not found');
+
+  // READ THE ROW'S OWN STATE FIRST, before a single field is assigned. This ordering is
+  // load-bearing, and it is the whole of a bug that was live until 2 Nov 2026.
+  //
+  // `isOut` tests `!doc.publishAt` before anything else, and the dialog used to send
+  // `publishAt: null` on every save of a repeating post — its schedule is derived from its
+  // own rule, so it had nothing of its own to send. Applying that null first made a post
+  // that had NOT yet gone out look as though it had: the wrong branch ran, publishAt and
+  // notifiedAt were both left null, and the row fell out of reach of publishDueAnnouncements
+  // (which wants publishAt) AND of announceRecurring (which wants notifiedAt). It stayed
+  // visible in the feed and never rang again — for a repeating post, fixing a typo before
+  // its first outing was enough to silence it for good. Do not move these two lines down.
+  const wasRecurring = isRecurring(ann);
+  const wasOut = isOut(ann, now);
+  // The days this post already carries, read before the new rule replaces them — an edit
+  // may name a date that has gone by as long as the post was already carrying it.
+  const hadDates = [...(ann.recurrence?.dates || [])];
+  // A date the client CHOSE, as opposed to the null it sends for a post with no schedule
+  // of its own. The difference decides whether dropping a repeat sends the post now.
+  const clientScheduled = data.publishAt !== undefined && data.publishAt !== null;
+
   const fields = ['title', 'body', 'priority'];
   for (const f of fields) if (data[f] !== undefined) ann[f] = data[f];
 
@@ -508,25 +601,52 @@ export async function updateAnnouncement(id, data, now = new Date()) {
     ann.audienceRoles = data.audienceRoles;
     if (data.audienceRoles.length) ann.audienceUsers = [];
   }
-  if (data.publishAt !== undefined) ann.publishAt = data.publishAt ? new Date(data.publishAt) : null;
+  // A repeating post that has not gone out yet has NO publishAt of its own — the schedule
+  // is worked out from its rule. The dialog sent `publishAt: null` on every save of one,
+  // having nothing else to send, and obeying that null is the whole of the bug described
+  // above: the row ended up with neither a publishAt nor a notifiedAt and fell out of reach
+  // of both scanners. So a null for such a post is read as "the client has nothing to say",
+  // not as an instruction — which also means an app still running a cached copy cannot keep
+  // causing it for the weeks it takes to update. An explicit DATE is still obeyed: that is
+  // how a repeating post is held back.
+  const derivedHold = wasRecurring && !wasOut && data.publishAt === null;
+  if (data.publishAt !== undefined && !derivedHold) ann.publishAt = data.publishAt ? new Date(data.publishAt) : null;
   if (data.expiresAt !== undefined) ann.expiresAt = data.expiresAt ? new Date(data.expiresAt) : null;
   let announceNow = false;
   if (data.recurrence !== undefined) {
     const rule = normalizeRule(data.recurrence);
-    const was = isRecurring(ann);
-    const out = isOut(ann, now);
     const today = ymdInTz(now);
+    // A named calendar day that has gone by cannot be ADDED — there is no day left for it
+    // to go out on, and a chip sitting in the dialog that will never fire is worse than a
+    // refusal. Days the post was already carrying are left alone, or a post would become
+    // uneditable the moment its first date passed: the dialog sends the whole list back on
+    // every save, so "reject any past date" would reject the post's own history.
+    if (rule.type === 'DATES') {
+      const already = new Set([...hadDates, ...(ann.occurrences || [])]);
+      const stale = rule.dates.filter((d) => d < today && !already.has(d));
+      if (stale.length) {
+        throw httpError(400, 'DATE_IN_PAST', `${stale.map(dayLabel).join(', ')} has already gone by. Pick a date that is today or later.`);
+      }
+    }
     ann.recurrence = rule;
     if (rule.type === 'NONE') {
-      ann.lastRecurredYMD = '';
-      if (was && !out) {
+      // The stamp is deliberately NOT cleared. Nothing reads it while the rule is NONE —
+      // the scanner's query matches on recurrence.type — and clearing it meant that
+      // turning a repeat off and straight back on, which is exactly how somebody tries out
+      // a new picker, sent a second bell for a day that had already gone out.
+      if (wasRecurring && !wasOut && !clientScheduled) {
         // The schedule was DERIVED from the rule; with the rule gone it is a plain post,
         // and a plain post goes out now rather than sitting hidden until a first-Saturday
         // that no longer means anything.
+        //
+        // Only when the client named no date of its own. The dialog used to pre-fill its
+        // "send later" box from that derived publishAt, so the screen could read "nobody
+        // sees it or is notified until 5 Nov" while this line sent it to the whole office
+        // that second — the promise on screen and the behaviour were exact opposites.
         ann.publishAt = null;
         announceNow = true;
       }
-    } else if (out) {
+    } else if (wasOut) {
       // Already out. The stamp must sit no earlier than YESTERDAY, whether the rule is
       // being added or changed: the scanner catches up one missed day, and a day before
       // the rule existed is not a missed day. This was learned the hard way — a Friday
@@ -536,19 +656,32 @@ export async function updateAnnouncement(id, data, now = new Date()) {
       // somebody adding "every Saturday" on a Saturday expects); a day that already went
       // out under an old rule cannot go out again under the new one, since the max keeps
       // that stamp.
-      const yesterday = prevDay(today);
-      ann.lastRecurredYMD = (ann.lastRecurredYMD || '') > yesterday ? ann.lastRecurredYMD : yesterday;
-      if (!was) {
-        // Rows from before notifiedAt existed have none; the scanner keys on it, so a
-        // repeat added to one of those would never fire. Stamp what is already true.
-        if (!ann.notifiedAt) ann.notifiedAt = ann.announcedAt || ann.createdAt;
-        if (!ann.announcedAt) ann.announcedAt = ann.notifiedAt;
-      }
+      //
+      // The floor is yesterday, EXCEPT for a post that went out TODAY — then it is today.
+      // Otherwise adding a rule in the afternoon to something announced this morning rang
+      // a second time for the same day. The intended same-day case is untouched: adding
+      // "every Saturday" on a Saturday to a post that went out last week still fires,
+      // because that post's outing day is not today.
+      const outDay = ann.announcedAt || ann.notifiedAt;
+      const floor = outDay && ymdInTz(outDay) === today ? today : prevDay(today);
+      ann.lastRecurredYMD = (ann.lastRecurredYMD || '') > floor ? ann.lastRecurredYMD : floor;
+      // Rows from before notifiedAt existed have none; this branch keys on it, so a repeat
+      // added to one of those would never fire. Stamp what is already true — and do it
+      // WHENEVER it is missing, not only the first time a rule is added. The old
+      // `if (!was)` gate meant a row that had already lost its notifiedAt (see the comment
+      // at the top of this function) could not be brought back by editing it either: the
+      // post was silent, and every attempt to fix it kept it silent.
+      if (!ann.notifiedAt) ann.notifiedAt = ann.announcedAt || ann.createdAt;
+      if (!ann.announcedAt) ann.announcedAt = ann.notifiedAt;
     } else {
       // Not out yet, so the schedule follows the rule — whether the rule is being added
       // or changed. Keeping the old first day here was the bug: "every Saturday" edited
       // to "every Monday" before it ever went out still went out on the Saturday.
-      const first = nextOccurrenceYMD(rule, today);
+      //
+      // This throws BEFORE the save below, so a rule with no day left to land on leaves
+      // the row on disk exactly as it was — the fields assigned further up are only in
+      // memory until then.
+      const first = firstOutingOrThrow(rule, today);
       ann.publishAt = atCompanyTime(first, rule.time);
       ann.lastRecurredYMD = first;
     }

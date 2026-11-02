@@ -59,15 +59,25 @@ export function formatDateTime(iso) {
 // ── Repeats ────────────────────────────────────────────────────────────────────
 // Mirrors backend/src/lib/recurrence.js for DISPLAY only. The server decides when a
 // post actually goes out; this just says the rule back in words.
+//
+// WORD FOR WORD with the server's describeRule, because that string is not only shown on
+// a card: the API writes it into the activity log. Two wordings for one post would read
+// as two different posts.
 export const RECURRENCE_OPTIONS = [
   { value: 'NONE', label: 'Doesn’t repeat' },
   { value: 'WEEKLY', label: 'Every week' },
   { value: 'MONTHLY', label: 'Every month' },
   { value: 'YEARLY', label: 'Every year' },
+  { value: 'DATES', label: 'On dates I pick' },
 ];
 export const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 export const WEEKDAYS_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 export const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** Keep in step with MAX_RULE_DATES in backend/src/lib/recurrence.js. If these two drift,
+ *  the server quietly trims dates the dialog let somebody add. */
+export const MAX_RULE_DATES = 24;
 
 const ordinal = (n) => {
   const s = ['th', 'st', 'nd', 'rd'];
@@ -75,12 +85,69 @@ const ordinal = (n) => {
   return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`;
 };
 
+/** '2026-11-05' → '5 Nov 2026'. Built by hand, exactly as the server builds it — not
+ *  through Intl, whose output varies by machine and locale. */
+export function formatDay(ymd) {
+  if (typeof ymd !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return '';
+  const [y, m, d] = ymd.split('-').map(Number);
+  return `${d} ${MONTHS_SHORT[m - 1]} ${y}`;
+}
+
+const listOf = (items) => {
+  if (!items.length) return '';
+  if (items.length === 1) return String(items[0]);
+  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+};
+
+// A rule's days, from the list if it has any and from the old single field otherwise —
+// the same two shapes the server reads.
+//
+// Tested on `?.length`, NEVER on the key itself. A row saved before lists existed now
+// comes back with `daysOfMonth: []` (mongoose fills the default on read), and `[]` is
+// TRUTHY in JavaScript — so `r.daysOfMonth ? … : …` renders "Every month on the " with
+// nothing after it on every older post.
+const nums = (list) => [...new Set(list)].sort((a, b) => a - b);
+const weekdaysOf = (r) => (r?.weekdays?.length ? nums(r.weekdays) : (r?.weekday != null ? [r.weekday] : []));
+const monthDays = (r) => (r?.daysOfMonth?.length ? nums(r.daysOfMonth) : (r?.dayOfMonth != null ? [r.dayOfMonth] : []));
+const ruleDates = (r) => (r?.dates?.length ? [...new Set(r.dates)].sort() : []);
+
 /** "Every Saturday at 09:00" — empty for a post that doesn't repeat. */
 export function describeRecurrence(r) {
   if (!r || !r.type || r.type === 'NONE') return '';
   const at = r.time ? ` at ${r.time}` : '';
-  if (r.type === 'WEEKLY' && r.weekday != null) return `Every ${WEEKDAYS_LONG[r.weekday]}${at}`;
-  if (r.type === 'MONTHLY' && r.dayOfMonth != null) return `Every month on the ${ordinal(r.dayOfMonth)}${at}`;
-  if (r.type === 'YEARLY' && r.month != null && r.dayOfMonth != null) return `Every year on ${r.dayOfMonth} ${MONTHS[r.month - 1]}${at}`;
+  if (r.type === 'WEEKLY') {
+    const ws = weekdaysOf(r);
+    return ws.length ? `Every ${listOf(ws.map((w) => WEEKDAYS_LONG[w]))}${at}` : '';
+  }
+  if (r.type === 'MONTHLY') {
+    const ds = monthDays(r);
+    return ds.length ? `Every month on the ${listOf(ds.map(ordinal))}${at}` : '';
+  }
+  if (r.type === 'YEARLY') {
+    const ds = monthDays(r);
+    return r.month != null && ds.length ? `Every year on ${listOf(ds)} ${MONTHS[r.month - 1]}${at}` : '';
+  }
+  if (r.type === 'DATES') {
+    const ds = ruleDates(r);
+    if (!ds.length) return '';
+    // Past three the full list stops being a sentence — and this sits in a chip on a phone.
+    if (ds.length > 3) return `On ${ds.length} dates between ${formatDay(ds[0])} and ${formatDay(ds[ds.length - 1])}${at}`;
+    return `On ${listOf(ds.map(formatDay))}${at}`;
+  }
   return '';
+}
+
+/**
+ * For a picked-dates post: how many days it names, and how many are still ahead.
+ *
+ * Only the card's wording uses this — once nothing is left, a "Repeat" chip is claiming
+ * something that will not happen again. Kept OUT of describeRecurrence on purpose: that
+ * one mirrors the server's string, and a string that changes with the clock cannot mirror
+ * anything.
+ */
+export function datesLeft(r, todayYMD) {
+  if (!r || r.type !== 'DATES') return null;
+  const ds = ruleDates(r);
+  if (!ds.length) return null;
+  return { total: ds.length, left: ds.filter((d) => d >= todayYMD).length, lastYMD: ds[ds.length - 1] };
 }

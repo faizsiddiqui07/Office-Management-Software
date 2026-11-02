@@ -44,6 +44,13 @@ export function DatePicker({
   placeholder = 'Pick a date',
   clearable = false,
   disabled = false,
+  // Days already chosen elsewhere, shown marked in the grid. For a picker used to ADD to a
+  // list — pick one, pick another — where `value` is always empty and the calendar would
+  // otherwise give no sign of what is already on the list.
+  marked = [],
+  // Which month to open on when nothing is picked, so adding several dates in a row does
+  // not send the calendar back to today every time.
+  viewYMD = '',
   id,
   className,
   align = 'start',
@@ -56,7 +63,7 @@ export function DatePicker({
   const today = todayYMDLocal();
 
   // Where the calendar opens: the picked date, else today clamped into range.
-  const anchor = value || (min && today < min ? min : max && today > max ? max : today);
+  const anchor = value || viewYMD || (min && today < min ? min : max && today > max ? max : today);
   const [view, setView] = React.useState({ y: Number(anchor.slice(0, 4)), m: Number(anchor.slice(5, 7)) - 1 });
   React.useEffect(() => {
     if (open) {
@@ -169,6 +176,9 @@ export function DatePicker({
                 {cells.map((c) => {
                   const off = (min && c.ymd < min) || (max && c.ymd > max);
                   const sel = c.ymd === value;
+                  // Already on the caller's list. Ranked BELOW `off`: a day out of range
+                  // cannot be picked, and showing it as chosen would promise otherwise.
+                  const mk = !sel && !off && marked.includes(c.ymd);
                   const isToday = c.ymd === today;
                   return (
                     <button
@@ -176,17 +186,20 @@ export function DatePicker({
                       type="button"
                       disabled={off}
                       onClick={() => pick(c.ymd)}
-                      aria-label={c.ymd}
+                      aria-label={mk ? `${c.ymd} (already picked)` : c.ymd}
+                      aria-pressed={mk || undefined}
                       className={cn(
                         'mx-auto flex size-9 items-center justify-center rounded-lg text-sm tabular-nums transition-colors',
                         sel
                           ? 'bg-primary font-semibold text-primary-foreground'
                           : off
                             ? 'cursor-not-allowed text-muted-foreground/30'
-                            : c.inMonth
-                              ? 'hover:bg-foreground/8'
-                              : 'text-muted-foreground/50 hover:bg-foreground/5',
-                        isToday && !sel && 'ring-1 ring-inset ring-primary/50',
+                            : mk
+                              ? 'bg-primary/12 font-medium text-primary ring-1 ring-inset ring-primary/25 hover:bg-primary/20'
+                              : c.inMonth
+                                ? 'hover:bg-foreground/8'
+                                : 'text-muted-foreground/50 hover:bg-foreground/5',
+                        isToday && !sel && !mk && 'ring-1 ring-inset ring-primary/50',
                       )}
                     >
                       {c.date.getDate()}
