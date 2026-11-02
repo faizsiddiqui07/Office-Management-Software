@@ -26,6 +26,14 @@ import { setStatus, reviewTask, listTasks } from '../src/services/task.service.j
 import { pendingCount, pendingFor, historyFor } from '../src/services/approvals.service.js';
 import { getBadges } from '../src/services/badges.service.js';
 
+// JAAN-BOOJH KAR badla (2 Nov 2026): ab `title` me kaam ka NAAM jaata hai aur "kisne kya
+// kiya" `message` me — phone aur bell list dono pehli line mote akshar me dikhate hain aur
+// ek-ek line me kaat dete hain, to upar wahi hona chahiye jo har khabar me alag ho. Ye
+// helper DONO field me dekhta hai, taaki shabd ke idhar-udhar hone par test chupchaap na
+// mar jaye — poochhna ye hai ki bande ko BATAYA GAYA ya nahi.
+const says = (n, re) => re.test(`${n.title || ''} ${n.message || ''}`);
+const saidTo = (rows) => rows.map((n) => `${n.title} / ${n.message}`).join(' | ');
+
 let failures = 0;
 function check(name, cond, extra = '') {
   console.log(`  ${cond ? '✅' : '❌'} ${name}${extra ? '  →  ' + extra : ''}`);
@@ -207,8 +215,8 @@ async function main() {
     check('review ke baad sabki ghanti saaf', (await Notification.countDocuments({ entityId: t._id, type: 'TASK_APPROVAL' })) === 0);
     // ...aur Priyanshi ko pata chale ki uske kaam par kisi aur ne faisla kiya
     const told = await Notification.find({ user: P._id, entityId: t._id, type: { $ne: 'TASK_APPROVAL' } }).lean();
-    check('Priyanshi ko khabar mili ki Kalpana ne approve kiya', told.some((n) => /Kalpana Saini approved/.test(n.title)),
-      told.map((n) => n.title).join(' | ') || 'koi khabar nahi ❌');
+    check('Priyanshi ko khabar mili ki Kalpana ne approve kiya', told.some((n) => says(n, /Kalpana Saini approved/)),
+      saidTo(told) || 'koi khabar nahi ❌');
   }
 
   // ═══ TEST 8 — tagged banda wapas bhi bhej sakta hai, aur assigner ko pata chale ═══
@@ -223,11 +231,11 @@ async function main() {
     // NOTE: reject wali notification par entityId set nahi hota (purana behaviour),
     // isliye title se dhoondh rahe hain.
     const toM = await Notification.find({ user: M._id }).lean();
-    check('Mariya ko wapas bheje jaane ki khabar', toM.some((n) => /Khaan Aamir sent your task back/.test(n.title)),
-      toM.map((n) => n.title).join(' | ') || 'koi khabar nahi');
+    check('Mariya ko wapas bheje jaane ki khabar', toM.some((n) => says(n, /Khaan Aamir sent it back/)),
+      saidTo(toM) || 'koi khabar nahi');
     const told = await Notification.find({ user: P._id, entityId: t._id }).lean();
-    check('Priyanshi ko bhi khabar', told.some((n) => /sent back work you assigned/.test(n.title)),
-      told.map((n) => n.title).join(' | ') || 'koi khabar nahi ❌');
+    check('Priyanshi ko bhi khabar', told.some((n) => says(n, /sent back work you assigned/)),
+      saidTo(told) || 'koi khabar nahi ❌');
     check('kisi ko koi point nahi mila', (await PointEntry.countDocuments({ taskRef: t._id })) === 0);
   }
 

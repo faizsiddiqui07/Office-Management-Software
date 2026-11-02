@@ -24,6 +24,12 @@ import { Notification } from '../src/models/Notification.js';
 import { loadRoles } from '../src/lib/roles.js';
 import { setStatus, reviewTask } from '../src/services/task.service.js';
 
+// JAAN-BOOJH KAR badla (2 Nov 2026): ab `title` me kaam ka NAAM hota hai aur "kisne kya
+// kiya" `message` me — phone aur bell list dono pehli line mote akshar me dikhate hain
+// aur ek-ek line me kaat dete hain. Dono field me dekho, taaki shabd ke idhar-udhar hone
+// par test chupchaap na mar jaye.
+const says = (n, re) => re.test(`${n?.title || ''} ${n?.message || ''}`);
+
 let failures = 0;
 function check(name, cond, extra = '') {
   console.log(`  ${cond ? '✅' : '❌'} ${name}${extra ? '  →  ' + extra : ''}`);
@@ -80,7 +86,7 @@ async function main() {
   check('Manish ko theek 1 bell', nB.length === 1, `got ${nB.length}`);
   check('Chirag ko theek 1 bell', nC.length === 1, `got ${nC.length}`);
   check('Ankur ko khud koi bell NAHI (usne to kar diya)', nA.length === 0, `got ${nA.length}`);
-  check('bell me karne wale ka naam', (nB[0]?.title || '').startsWith('Ankur Saini finished'), nB[0]?.title);
+  check('bell me karne wale ka naam', says(nB[0], /Ankur Saini finished/), `${nB[0]?.title} / ${nB[0]?.message}`);
   check('link Manish ki APNI copy pe (Ankur ki nahi)', nB[0]?.link === `/todo?task=${b1._id}`, nB[0]?.link);
   check('entityId bhi apni hi copy', String(nB[0]?.entityId) === String(b1._id));
   check('Chirag ka link bhi apni copy pe', nC[0]?.link === `/todo?task=${c1._id}`, nC[0]?.link);
@@ -114,7 +120,7 @@ async function main() {
   check('approve hote hi Manish ko bell', nB2.length === 1, `got ${nB2.length}`);
   check('Chirag ko bhi', nC2.length === 1, `got ${nC2.length}`);
   check('bell me KAAM KARNE WALE ka naam hai, approve karne wale ka nahi',
-    (nB2[0]?.title || '').startsWith('Ankur Saini finished'), nB2[0]?.title);
+    says(nB2[0], /Ankur Saini finished/), `${nB2[0]?.title} / ${nB2[0]?.message}`);
 
   // ═══ TEST 5 — jiska kaam approval me atka hai use nudge mat karo ═══
   console.log('\nTEST 5 — Manish ne submit kar diya, phir Chirag ne kar diya: Manish ko taana na jaye');

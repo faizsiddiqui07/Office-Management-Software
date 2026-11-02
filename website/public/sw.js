@@ -22,8 +22,15 @@ self.addEventListener('push', (event) => {
   const title = data.title || 'Office Management';
   const options = {
     body: data.body || '',
-    // No custom icon/badge — the installed app's own icon is shown, so we don't
-    // display the extra placeholder graphic alongside it.
+    // The big round picture on the right of the notification.
+    //
+    // This used to be left out, on the reasoning that the installed app's own icon is
+    // already shown and a second graphic would be clutter. On a real phone the opposite
+    // happens: with no icon given, Android invents one — a grey circle with a letter taken
+    // from the text. The owner's screenshot (2 Nov 2026) showed "T", from the word
+    // "testing". A meaningless letter is worse than the app's mark, so now we say which
+    // picture to use. If some phone ends up showing the mark twice, delete this one line.
+    icon: '/brand/icon-192.png',
     //
     // `tag` groups notifications: a new one REPLACES an existing one with the same tag.
     // Chat sends "chat:<conversationId>", so a busy conversation keeps updating one

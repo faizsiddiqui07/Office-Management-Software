@@ -136,10 +136,17 @@ async function main() {
     check('Priyanshi ko aage dene ke points mile', (await pts(P, a)) === 3, String(await pts(P, a)));
     check('Kalpana ko kaam karwane ke points mile', (await pts(K, a)) === 3, String(await pts(K, a)));
 
+    // JAAN-BOOJH KAR badla (2 Nov 2026). Pehle ye `n.title` me sentence dhoondhta tha.
+    // Ab `title` me kaam ka NAAM jaata hai aur "kisne kya kiya" `message` me — phone ka
+    // notification aur app ka bell list dono pehli line mote akshar me dikhate hain aur
+    // ek-ek line me kaat dete hain, to upar wahi hona chahiye jo har khabar me alag ho.
+    // Dono field me dhoondha jaata hai taaki ye test shabd ke idhar-udhar hone par
+    // chupchaap na mar jaye — poochhna ye hai ki bande ko BATAYA GAYA ya nahi.
+    const says = (n, re) => re.test(`${n.title || ''} ${n.message || ''}`);
     const pb = await bells(P);
     check('Priyanshi ko bataya gaya ki uske bina approve hua',
-      pb.some((n) => /without waiting for you/i.test(n.title || '')), pb[0]?.title || '(kuch nahi)');
-    check('Mariya ko bhi khabar gayi', (await bells(M)).some((n) => /approved your task/i.test(n.title || '')));
+      pb.some((n) => says(n, /without waiting for you/i)), pb[0]?.message || '(kuch nahi)');
+    check('Mariya ko bhi khabar gayi', (await bells(M)).some((n) => says(n, /approved it/i)));
   }
 
   console.log('\nTEST 2 — Priyanshi approve kar chuki ho → bilkul pehle jaisa');

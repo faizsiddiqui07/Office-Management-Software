@@ -26,6 +26,36 @@ export function ymdInTz(date = new Date()) {
 }
 
 /** Company-TZ midnight (UTC instant) for an instant — the canonical Attendance.date. */
+/**
+ * A day the way a person says it: 'today', 'tomorrow', 'yesterday', else 'Wed 4 Nov'
+ * (with the year too, when it isn't this one).
+ *
+ * For text somebody reads on a phone. '2026-11-04' is a precise answer to a question
+ * nobody asked — in one grey line under a notification, what the reader wants to know is
+ * whether it matters today.
+ */
+export function dayInWords(ymd, now = new Date()) {
+  if (typeof ymd !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return '';
+  const today = ymdInTz(now);
+  if (ymd === today) return 'today';
+  const shift = (n) => {
+    const d = new Date(`${today}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + n);
+    return d.toISOString().slice(0, 10);
+  };
+  if (ymd === shift(1)) return 'tomorrow';
+  if (ymd === shift(-1)) return 'yesterday';
+  // The pattern is not proof the day exists: '2026-02-29' matches it and is not a day,
+  // and formatting it throws a RangeError. This runs while building notification text, so
+  // a throw here would take down the save that was trying to tell somebody about it. Hand
+  // back the raw string instead — ugly, truthful, and it shows that a stored date is wrong
+  // rather than hiding it.
+  const day = companyDayFromYMD(ymd);
+  if (Number.isNaN(day.getTime())) return ymd;
+  const fmt = ymd.slice(0, 4) === today.slice(0, 4) ? 'EEE d MMM' : 'EEE d MMM yyyy';
+  return formatInTimeZone(day, COMPANY_TZ, fmt);
+}
+
 export function companyTzMidnight(date = new Date()) {
   return fromZonedTime(`${ymdInTz(date)}T00:00:00`, COMPANY_TZ);
 }

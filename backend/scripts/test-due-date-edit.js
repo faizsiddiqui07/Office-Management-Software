@@ -250,8 +250,13 @@ async function main() {
     const toAssigner = await Notification.find({ user: P._id }).lean();
     const toDoer = await Notification.find({ user: M._id }).lean();
     check('Priyanshi (jisne diya) ko khabar gayi', toAssigner.length === 1, String(toAssigner.length));
-    check('…usme CEO ka naam aur nayi date', /Khaan/.test(toAssigner[0]?.title || '') && /2026-12-11/.test(toAssigner[0]?.message || ''),
-      `${toAssigner[0]?.title} | ${toAssigner[0]?.message}`);
+    // JAAN-BOOJH KAR badla (2 Nov 2026). Do baatein badlin: sentence ab `message` me hai
+    // (`title` me kaam ka naam), aur tareekh shabdon me likhi jaati hai — '2026-12-11'
+    // ek aisa jawab tha jo kisi ne poochha hi nahi tha. Aakhri check wahi niyam pakad kar
+    // rakhta hai: raw YYYY-MM-DD dobara na aa jaye.
+    const whole = `${toAssigner[0]?.title || ''} | ${toAssigner[0]?.message || ''}`;
+    check('…usme CEO ka naam aur nayi date', /Khaan/.test(whole) && /11 Dec/.test(whole), whole);
+    check('…aur tareekh shabdon me, raw YMD nahi', !/\d{4}-\d{2}-\d{2}/.test(whole), whole);
     check('Mariya (jisko karna hai) ko bhi khabar gayi', toDoer.length === 1, String(toDoer.length));
 
     // Assigner khud badle to use apni hi khabar na mile.

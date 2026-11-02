@@ -9,7 +9,7 @@ import {
   canSignOffEarly, unsignedBelow, unsignedBelowByRoot,
 } from '../lib/taskApprovers.js';
 import { can } from '../lib/permissions.js';
-import { companyDayFromYMD, ymdInTz, COMPANY_TZ } from '../lib/time.js';
+import { companyDayFromYMD, ymdInTz, dayInWords, COMPANY_TZ } from '../lib/time.js';
 import { onAssignedTaskDone, onAssignedTaskUndone, rebuildOverdueForTask } from './bonus.service.js';
 
 function httpError(status, code, message) {
@@ -53,8 +53,7 @@ async function notifyApprovers(task, title) {
       // Its own type (not TASK_ASSIGNED, which also means "new task"/"tagged you") so
       // withdrawing/deciding can clear THIS without touching the assignment notice.
       type: 'TASK_APPROVAL',
-      title,
-      message: task.title,
+      ...taskNews(task.title, title),
       // Each person's own tab: the assigner's copy lives under "Assigned by me", a tagged
       // colleague's under "Shared with me". The wrong tab opens a list the task isn't in
       // and the dialog never appears.
@@ -78,6 +77,24 @@ async function notifyApprovers(task, title) {
  * forwarded onward are left out: finishing at the bottom of a chain marks every copy
  * above it done as well, and one piece of work should appear once.
  */
+/**
+ * A task's news, shaped for where it is actually read.
+ *
+ * Android puts a notification's first line in bold and greys the second, and the app's own
+ * bell list does exactly the same — both cut each to ONE line. The sentence used to go
+ * first ("New task from ADMIN. CONTROLLER") and the task's own name second, so the part
+ * that never changes was bold and truncated while the actual news sat small and grey
+ * underneath. Owner showed a screenshot of it (2 Nov 2026). Now the task leads and the
+ * sentence explains it.
+ *
+ * `due` goes through dayInWords, so it reads "due tomorrow" rather than "due 2026-11-04":
+ * a date somebody has to decode is a date they skim past.
+ */
+export const taskNews = (taskTitle, sentence, { due, note } = {}) => ({
+  title: taskTitle,
+  message: [sentence, due ? `due ${dayInWords(due)}` : '', note].filter(Boolean).join(' \u00b7 '),
+});
+
 export async function eodDigest(dateYMD) {
   const forwardedParentIds = await Task.distinct('forwardedFrom', { forwardedFrom: { $ne: null } });
   const rows = await Task.aggregate([
@@ -211,8 +228,7 @@ export async function createTask(actor, data) {
       await notify({
         user: target._id,
         type: 'TASK_ASSIGNED',
-        title: `New task from ${actor.name}`,
-        message: data.dueYMD ? `${data.title} (due ${data.dueYMD})` : data.title,
+        ...taskNews(data.title, `New task from ${actor.name}`, { due: data.dueYMD }),
         link: todoLink(task._id),
       });
       await task.populate('owner', 'name');
@@ -225,8 +241,7 @@ export async function createTask(actor, data) {
       await notify({
         user: cid,
         type: 'TASK_ASSIGNED',
-        title: `${actor.name} tagged you on a task`,
-        message: data.title,
+        ...taskNews(data.title, `${actor.name} tagged you`),
         link: taggedLink(created[0]?.id),
       });
     }
@@ -249,8 +264,7 @@ export async function createTask(actor, data) {
     await notify({
       user: cid,
       type: 'TASK_ASSIGNED',
-      title: `${actor.name} tagged you on a task`,
-      message: data.dueYMD ? `${data.title} (due ${data.dueYMD})` : data.title,
+      ...taskNews(data.title, `${actor.name} tagged you`, { due: data.dueYMD }),
       link: taggedLink(task._id),
     });
   }
@@ -328,8 +342,7 @@ async function nudgeBatchSiblings(task, doerName) {
     await notify({
       user: sib.owner,
       type: 'TASK_BATCH_PENDING',
-      title: `${doerName} finished — yours is still open`,
-      message: task.title,
+      ...taskNews(task.title, `${doerName} finished — yours is still open`),
       // Their OWN copy, never the one that just closed: the link has to land on the
       // thing they can actually tick.
       link: todoLink(sib._id),
@@ -416,13 +429,13 @@ export async function setStatus(actor, id, status) {
 
   if (task.status === 'DONE') {
     if (task.assignedBy && !isAssigner) {
-      await notify({ user: task.assignedBy, type: 'TASK_DONE', title: `${actor.name} completed a task`, message: task.title, link: todoLink(task._id, true) });
+      await notify({ user: task.assignedBy, type: 'TASK_DONE', ...taskNews(task.title, `${actor.name} completed it`), link: todoLink(task._id, true) });
     }
     // Legacy shared "collaborator" task (single doc, tagged teammates) → tell the others.
     const involved = new Set([String(task.owner), ...(task.collaborators || []).map(String)]);
     involved.delete(String(actor._id));
     for (const uid of involved) {
-      await notify({ user: uid, type: 'TASK_DONE', title: `${actor.name} completed a shared task`, message: task.title, link: todoLink(task._id) });
+      await notify({ user: uid, type: 'TASK_DONE', ...taskNews(task.title, `${actor.name} completed this shared task`), link: todoLink(task._id) });
     }
     // This copy is closed — its own "yours is still open" has nothing left to point at.
     await clearNotificationsFor('Task', task._id, { types: ['TASK_BATCH_PENDING'] });
@@ -503,7 +516,7 @@ export async function reviewTask(actor, id, approve, reason) {
         await copy.save();
         await clearNotificationsFor('Task', copy._id, { types: ['TASK_APPROVAL'] });
         signedEarly.push(copy);
-        await notify({ user: copy.owner, type: 'TASK_DONE', title: `${actor.name} approved your task`, message: copy.title, link: todoLink(copy._id) });
+        await notify({ user: copy.owner, type: 'TASK_DONE', ...taskNews(copy.title, `${actor.name} approved it`), link: todoLink(copy._id) });
         // The signature we skipped belongs to this copy's assigner — tell them plainly,
         // or they would keep an approval in their queue for work already closed above
         // them and never learn their decision was taken out of their hands.
@@ -511,8 +524,7 @@ export async function reviewTask(actor, id, approve, reason) {
           await notify({
             user: copy.assignedBy,
             type: 'TASK_DONE',
-            title: `${actor.name} approved this without waiting for you`,
-            message: copy.title,
+            ...taskNews(copy.title, `${actor.name} approved this without waiting for you`),
             link: todoLink(copy._id, true),
             entityType: 'Task',
             entityId: copy._id,
@@ -555,7 +567,7 @@ export async function reviewTask(actor, id, approve, reason) {
     task.approvedBy = actor._id;
     task.rejectionReason = '';
     await task.save();
-    await notify({ user: task.owner, type: 'TASK_DONE', title: `${actor.name} approved your task`, message: task.title, link: todoLink(task._id) });
+    await notify({ user: task.owner, type: 'TASK_DONE', ...taskNews(task.title, `${actor.name} approved it`), link: todoLink(task._id) });
     await clearNotificationsFor('Task', task._id, { types: ['TASK_BATCH_PENDING'] });
     // `actor` is the assigner who approved it, not the person who did the work — name
     // the owner, or the others would be told their boss had finished their task.
@@ -573,8 +585,7 @@ export async function reviewTask(actor, id, approve, reason) {
     await notify({
       user: task.owner,
       type: 'TASK_ASSIGNED',
-      title: `${actor.name} sent your task back`,
-      message: task.rejectionReason ? `${task.title} — ${task.rejectionReason}` : task.title,
+      ...taskNews(task.title, `${actor.name} sent it back`, { note: task.rejectionReason }),
       link: todoLink(task._id),
     });
   }
@@ -586,10 +597,11 @@ export async function reviewTask(actor, id, approve, reason) {
     await notify({
       user: task.assignedBy,
       type: approve ? 'TASK_DONE' : 'TASK_ASSIGNED',
-      title: approve
-        ? `${actor.name} approved work you assigned`
-        : `${actor.name} sent back work you assigned`,
-      message: !approve && task.rejectionReason ? `${task.title} — ${task.rejectionReason}` : task.title,
+      ...taskNews(
+        task.title,
+        approve ? `${actor.name} approved work you assigned` : `${actor.name} sent back work you assigned`,
+        { note: approve ? '' : task.rejectionReason },
+      ),
       link: todoLink(task._id, true),
       entityType: 'Task',
       entityId: task._id,
@@ -708,8 +720,7 @@ export async function forwardTask(actor, id, { assignTo, requiresApproval, notes
   await notify({
     user: target._id,
     type: 'TASK_ASSIGNED',
-    title: `${actor.name} forwarded a task to you`,
-    message: parent.dueYMD ? `${parent.title} (due ${parent.dueYMD})` : parent.title,
+    ...taskNews(parent.title, `${actor.name} forwarded it to you`, { due: parent.dueYMD }),
     link: todoLink(child._id),
   });
   return populated(child);
@@ -762,8 +773,7 @@ async function settleParent(childTask, depth = 0) {
     await notify({
       user: parent.assignedBy,
       type: 'TASK_DONE',
-      title: 'A task you assigned is done',
-      message: parent.title,
+      ...taskNews(parent.title, 'A task you assigned is done'),
       link: todoLink(parent._id, true),
     });
   }
@@ -905,7 +915,7 @@ export async function updateTask(actor, id, data) {
           );
           await mm.deleteOne(); // drop a not-yet-started copy for someone taken off the task
           try { await onAssignedTaskUndone(mm._id); } catch (e) { console.error('bonus hook (reassign remove) failed', e?.message); }
-          await notify({ user: mm.owner, type: 'TASK_ASSIGNED', title: `${actor.name} removed a task`, message: mm.title, link: '/todo' });
+          await notify({ user: mm.owner, type: 'TASK_ASSIGNED', ...taskNews(mm.title, `${actor.name} removed it`), link: '/todo' });
           for (const d of orphans) {
             const ownerId = d.owner;
             const title = d.title;
@@ -913,7 +923,7 @@ export async function updateTask(actor, id, data) {
             await d.deleteOne();
             try { await onAssignedTaskUndone(d._id); } catch (e) { console.error('bonus hook (reassign cascade) failed', e?.message); }
             if (wasOpen && String(ownerId) !== String(actor._id)) {
-              await notify({ user: ownerId, type: 'TASK_ASSIGNED', title: `${actor.name} removed a task`, message: title, link: '/todo' });
+              await notify({ user: ownerId, type: 'TASK_ASSIGNED', ...taskNews(title, `${actor.name} removed it`), link: '/todo' });
             }
           }
         }
@@ -927,7 +937,7 @@ export async function updateTask(actor, id, data) {
       const baseCollabs = (nextCollabs ?? task.collaborators ?? []).filter((cid) => !desired.includes(String(cid)));
       for (const t of addedUsers) {
         const nt = await Task.create({ ...base, owner: t._id, assignedBy: actor._id, collaborators: baseCollabs, assignBatch: batch, status: 'PENDING' });
-        await notify({ user: t._id, type: 'TASK_ASSIGNED', title: `New task from ${actor.name}`, message: base.dueYMD ? `${base.title} (due ${base.dueYMD})` : base.title, link: todoLink(nt._id) });
+        await notify({ user: t._id, type: 'TASK_ASSIGNED', ...taskNews(base.title, `New task from ${actor.name}`, { due: base.dueYMD }), link: todoLink(nt._id) });
       }
       members = await Task.find({ assignBatch: batch, assignedBy: actor._id });
     }
@@ -953,8 +963,7 @@ export async function updateTask(actor, id, data) {
         await notify({
           user: cid,
           type: 'TASK_ASSIGNED',
-          title: `${actor.name} tagged you on a task`,
-          message: task.dueYMD ? `${task.title} (due ${task.dueYMD})` : task.title,
+          ...taskNews(task.title, `${actor.name} tagged you`, { due: task.dueYMD }),
           link: taggedLink(members[0]?._id),
         });
       }
@@ -1008,7 +1017,7 @@ export async function updateTask(actor, id, data) {
           } catch (e) { console.error('bonus hook (due-date edit) failed', e?.message); }
         }
         if (mm.status !== 'DONE' && String(mm.owner) !== String(actor._id)) {
-          await notify({ user: mm.owner, type: 'TASK_ASSIGNED', title: `${actor.name} updated a task`, message: mm.dueYMD ? `${mm.title} (due ${mm.dueYMD})` : mm.title, link: todoLink(mm._id) });
+          await notify({ user: mm.owner, type: 'TASK_ASSIGNED', ...taskNews(mm.title, `${actor.name} updated it`, { due: mm.dueYMD }), link: todoLink(mm._id) });
         }
       }
     }
@@ -1035,7 +1044,7 @@ export async function updateTask(actor, id, data) {
             } catch (e) { console.error('bonus hook (due-date cascade) failed', e?.message); }
           }
           if (d.status !== 'DONE') {
-            await notify({ user: d.owner, type: 'TASK_ASSIGNED', title: `${actor.name} updated a task`, message: d.dueYMD ? `${d.title} (due ${d.dueYMD})` : d.title, link: todoLink(d._id) });
+            await notify({ user: d.owner, type: 'TASK_ASSIGNED', ...taskNews(d.title, `${actor.name} updated it`, { due: d.dueYMD }), link: todoLink(d._id) });
           }
         }
       }
@@ -1049,8 +1058,11 @@ export async function updateTask(actor, id, data) {
       await notify({
         user: task.assignedBy,
         type: 'TASK_ASSIGNED',
-        title: `${actor.name} moved a deadline`,
-        message: patch.dueYMD ? `${task.title} — now due ${patch.dueYMD}` : `${task.title} — deadline removed`,
+        ...taskNews(
+          task.title,
+          patch.dueYMD ? `${actor.name} moved the deadline` : `${actor.name} removed the deadline`,
+          { due: patch.dueYMD },
+        ),
         link: todoLink(id),
       });
     }
@@ -1068,7 +1080,7 @@ export async function updateTask(actor, id, data) {
     task.collaborators = resolved;
     for (const cid of resolved) {
       if (!before.has(String(cid))) {
-        await notify({ user: cid, type: 'TASK_ASSIGNED', title: `${actor.name} tagged you on a task`, message: task.dueYMD ? `${task.title} (due ${task.dueYMD})` : task.title, link: taggedLink(task._id) });
+        await notify({ user: cid, type: 'TASK_ASSIGNED', ...taskNews(task.title, `${actor.name} tagged you`, { due: task.dueYMD }), link: taggedLink(task._id) });
       }
     }
   }
@@ -1103,7 +1115,7 @@ export async function deleteTask(actor, id) {
     await d.deleteOne();
     try { await onAssignedTaskUndone(d._id); } catch (e) { console.error('bonus hook (cascade delete) failed', e?.message); }
     if (wasOpen && String(ownerId) !== String(actor._id)) {
-      await notify({ user: ownerId, type: 'TASK_ASSIGNED', title: `${actor.name} removed a task`, message: title, link: '/todo' });
+      await notify({ user: ownerId, type: 'TASK_ASSIGNED', ...taskNews(title, `${actor.name} removed it`), link: '/todo' });
     }
   }
 
