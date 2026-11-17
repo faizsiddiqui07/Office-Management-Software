@@ -84,12 +84,22 @@ export function AppShell({ children }) {
           (chat needs the pixels) and the frame is a measured, fixed-height column, so
           padding would shrink the chat for nothing. From sm up chat is an ordinary
           scrolling page again and does need the room. */}
+      {/* A column at least as tall as the screen, with `main` taking whatever is spare —
+          so the shortcuts and the credit line sit at the BOTTOM of a short page instead of
+          wherever the content happens to stop. Before this they came straight after the
+          content: on a page still loading, which is a spinner and nothing else, the two
+          coloured buttons landed in the middle of an empty screen (owner's screenshot,
+          17 Nov). This matters now because they moved down there; the credit line had the
+          same habit before and nobody noticed it on its own.
+          NOT on the chat pane at phone width: there the hook gives this box an exact
+          height, and `min-h-dvh` would fight it — the box must SHRINK when the keyboard
+          opens, which is the whole point of that frame. */}
       <div
         ref={frameRef}
         className={
           appPane
-            ? 'lg:pl-64 max-sm:flex max-sm:flex-col sm:max-lg:pb-[4.75rem]'
-            : 'lg:pl-64 max-lg:pb-[4.75rem]'
+            ? 'lg:pl-64 max-sm:flex max-sm:flex-col sm:flex sm:min-h-dvh sm:flex-col sm:max-lg:pb-[4.75rem]'
+            : 'flex min-h-dvh flex-col lg:pl-64 max-lg:pb-[4.75rem]'
         }
       >
         <Topbar user={user} />
@@ -104,9 +114,12 @@ export function AppShell({ children }) {
             // fade wala motion.div hai — ek saada block jo apni poori content lambai tak
             // phail jaata tha (composer 1782px par, screen 812 ki). "Reduce motion" par
             // wrapper hota hi nahi, tab ye seedha chat page par lagta hai — dono theek.
+            // `flex-1` is what pushes the footer down on a short page — see the comment on
+            // the column above. On the chat pane at phone width `max-sm:flex-1` already did
+            // this job, for a different reason.
             appPane
-              ? 'w-full max-sm:flex max-sm:min-h-0 max-sm:flex-1 max-sm:flex-col max-sm:[&>*]:flex max-sm:[&>*]:min-h-0 max-sm:[&>*]:flex-1 max-sm:[&>*]:flex-col sm:px-6 sm:pb-6 sm:pt-4 lg:px-8'
-              : 'w-full px-4 pb-6 pt-4 sm:px-6 lg:px-8'
+              ? 'w-full max-sm:flex max-sm:min-h-0 max-sm:flex-1 max-sm:flex-col max-sm:[&>*]:flex max-sm:[&>*]:min-h-0 max-sm:[&>*]:flex-1 max-sm:[&>*]:flex-col sm:flex-1 sm:px-6 sm:pb-6 sm:pt-4 lg:px-8'
+              : 'w-full flex-1 px-4 pb-6 pt-4 sm:px-6 lg:px-8'
           }
         >
           {children}
