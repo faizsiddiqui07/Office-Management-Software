@@ -6,7 +6,6 @@ import { useAuth } from '@/lib/auth';
 import { AppSidebar } from './app-sidebar';
 import { Topbar } from './topbar';
 import { BottomNav } from './bottom-nav';
-import { QuickTaskActions } from './quick-task-actions';
 import { ForcePasswordChange } from '@/components/auth/force-password-change';
 import { LoadingState } from '@/components/glass/skeletons';
 import { LaunchScreen } from './launch-screen';
@@ -124,18 +123,13 @@ export function AppShell({ children }) {
         >
           {children}
         </main>
-        {/* My tasks / Assigned tasks shortcuts — see the component. They used to be stuck
-            under the header on every page, where they took a strip off the top of every
-            screen before anything on it had been read. Owner asked for them lower
-            (17 Nov 2026), so they sit after the page now, above the credit line.
-            Still hidden on the chat pane at phone width, for the same reason as before. */}
-        {appPane ? (
-          <div className="hidden sm:contents">
-            <QuickTaskActions />
-          </div>
-        ) : (
-          <QuickTaskActions />
-        )}
+        {/* The "My tasks / Assigned tasks" bar stood here until 17 Nov 2026. It existed to
+            reach the To-Do page from anywhere on a phone — and the bottom bar now has
+            To-Do as a tab, so it was a second door to the same room, sitting on every
+            single page. Owner called it: "ab unki zaroorat to hai nahi."
+            What it did beyond a plain /todo link was land on a chosen TAB (?tab=assigned).
+            That costs one extra tap now — the page's own tabs are right there — and the
+            query parameters still work, because notification links use them too. */}
         {/* Har page ke neeche product ka naam — hardcode, Settings se nahi (owner ka niyam). */}
         <footer
           className={`w-full px-4 pb-8 pt-2 text-center text-[11px] text-muted-foreground sm:px-6 lg:px-8 ${

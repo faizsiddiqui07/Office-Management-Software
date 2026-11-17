@@ -1523,9 +1523,10 @@ export function TaskBoard() {
         <StatMini label="Tagged" value={tg.total} icon={Users} onClick={() => { setFlat(null); setTab('tagged'); scrollToList(); }} hint="Tasks you’re tagged on — someone else does them" />
       </div>
 
-      {/* Creating work lives here, on the page it belongs to, at every screen size. The
-          bar under the header (QuickTaskActions) only navigates INTO this page — it no
-          longer duplicates these two, so there is nothing to hide from. */}
+      {/* Creating work lives here, on the page it belongs to, at every screen size. There
+          used to be a shortcut bar on every page that only navigated INTO this page; it was
+          removed on 17 Nov 2026 once the bottom nav bar carried To-Do, so these two are the
+          only Add/Assign buttons anywhere and have nothing to compete with. */}
       <div className="flex flex-wrap gap-2">
         <TaskDialog />
         {canAssign ? <AssignDialog /> : null}
