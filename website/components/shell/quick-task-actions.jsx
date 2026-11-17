@@ -25,12 +25,12 @@ import { cn } from '@/lib/utils';
  * That stripping is what makes a SECOND tap work: the URL returns to a plain ?tab=…, so
  * tapping again is a real navigation instead of a no-op link to where you already are.
  *
- * `sticky`, never `fixed`: every /(app) page is wrapped in a framer-motion opacity
- * animation (app/(app)/template.jsx), and its will-change becomes a containing block
- * mid-navigation — a fixed child would jump on every route change. top-[4.25rem] tucks the
- * bar a few pixels behind the header card's bottom edge so no seam of scrolling content
- * shows through the gap, exactly as the expenses filter bar already does. z-20 keeps it
- * under the header (z-30) and well under dialogs (z-50).
+ * AFTER the page, not stuck under the header. It used to be `sticky top-[4.25rem]`, which
+ * meant a strip off the top of every screen on every page, permanently, before a word of
+ * that page had been read — owner asked for it moved down (17 Nov 2026). Being in normal
+ * flow also retires an old hazard: every /(app) page is wrapped in a framer-motion opacity
+ * animation (app/(app)/template.jsx) whose will-change becomes a containing block
+ * mid-navigation, so anything `fixed` in here would jump on every route change.
  *
  * Phone and tablet only (`lg:hidden`): lg is exactly the breakpoint where the sidebar
  * appears, so from a laptop up the navigation is already on screen and this bar would only
@@ -61,7 +61,7 @@ export function QuickTaskActions() {
   const canAssign = ta.mode === 'ALL' || (ta.mode === 'SELECTED' && (ta.users || []).length > 0);
 
   return (
-    <div className="sticky top-[4.25rem] z-20 px-4 pt-2 sm:px-6 lg:hidden">
+    <div className="px-4 pt-1 sm:px-6 lg:hidden">
       <div className="glass glass-highlight flex items-center gap-2 rounded-2xl px-2.5 py-2">
         <Link
           href="/todo?tab=mine&jump=1"

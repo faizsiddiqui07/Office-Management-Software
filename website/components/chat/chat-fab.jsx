@@ -42,7 +42,11 @@ export function ChatFab() {
       href="/chat"
       aria-label={`Open chat${unread ? ` — ${unread} unread` : ''}`}
       className={cn(
-        'fixed bottom-6 right-6 z-50 grid size-14 place-items-center rounded-full',
+        // Laptop and up only. Below `lg` the bottom nav bar carries Chat as a tab — with
+        // this very unread count on it — so the button would have been a second door to
+        // the same room, sitting right on top of the first one.
+        'hidden lg:grid',
+        'fixed bottom-6 right-6 z-50 size-14 place-items-center rounded-full',
         'bg-primary text-primary-foreground shadow-lg shadow-primary/25',
         'transition-transform hover:scale-105 active:scale-95',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2',

@@ -128,7 +128,9 @@ export function Buddy() {
         onClick={() => setOpen(true)}
         aria-label="Ask ManagiBot AI"
         className={cn(
-          'fixed bottom-24 right-7 z-50 grid size-12 place-items-center rounded-full',
+          // Below `lg` it clears the bottom nav bar (4.75rem) with a thumb's gap under it;
+          // from `lg` up there is no bar and it sits above the chat button, as before.
+          'fixed bottom-[5.5rem] right-7 z-50 grid size-12 place-items-center rounded-full lg:bottom-24',
           // Ghera patla rakha hai: blob 44px aur button 48px, yaani har taraf sirf 2px.
           // Pehle blob 34px ka tha aur 7px ka gehra ghera use dabaa deta tha — icon
           // chhota lagta tha aur button ek kaala gola.

@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { AppSidebar } from './app-sidebar';
 import { Topbar } from './topbar';
+import { BottomNav } from './bottom-nav';
 import { QuickTaskActions } from './quick-task-actions';
 import { ForcePasswordChange } from '@/components/auth/force-password-change';
 import { LoadingState } from '@/components/glass/skeletons';
@@ -78,20 +79,20 @@ export function AppShell({ children }) {
       <AppSidebar user={user} />
       {/* Chat + phone: ye dabba fixed hai aur dikhne wale hisse jitna (hook inline style
           deta hai). Andar flex column — topbar apni jagah, `main` baaki saari jagah. */}
-      <div ref={frameRef} className={appPane ? 'lg:pl-64 max-sm:flex max-sm:flex-col' : 'lg:pl-64'}>
+      {/* Bottom padding below lg, so the last line of a page is never left sitting under
+          the bottom nav bar. Not on the chat pane at phone width: there the bar is hidden
+          (chat needs the pixels) and the frame is a measured, fixed-height column, so
+          padding would shrink the chat for nothing. From sm up chat is an ordinary
+          scrolling page again and does need the room. */}
+      <div
+        ref={frameRef}
+        className={
+          appPane
+            ? 'lg:pl-64 max-sm:flex max-sm:flex-col sm:max-lg:pb-[4.75rem]'
+            : 'lg:pl-64 max-lg:pb-[4.75rem]'
+        }
+      >
         <Topbar user={user} />
-        {/* My tasks / Assigned tasks shortcuts, on every page — see the component.
-            Chat par ye SIRF phone par chhupta hai: wahi ek jagah hai jahan chat ko har
-            pixel chahiye. `sm:contents` se wrapper usse badi screen par layout me se gayab
-            ho jaata hai, isliye bar ki apni sticky position bilkul waisi hi rehti hai
-            jaisi baaki pages par — tablet par kuch nahi badalta. */}
-        {appPane ? (
-          <div className="hidden sm:contents">
-            <QuickTaskActions />
-          </div>
-        ) : (
-          <QuickTaskActions />
-        )}
         {/* Same width as the topbar above it, which has never been capped. These two used to
             disagree: the bar ran edge to edge while the page under it stopped at 1280px, so on
             anything wider than a laptop the content sat in a narrow column with a bar stretched
@@ -110,6 +111,18 @@ export function AppShell({ children }) {
         >
           {children}
         </main>
+        {/* My tasks / Assigned tasks shortcuts — see the component. They used to be stuck
+            under the header on every page, where they took a strip off the top of every
+            screen before anything on it had been read. Owner asked for them lower
+            (17 Nov 2026), so they sit after the page now, above the credit line.
+            Still hidden on the chat pane at phone width, for the same reason as before. */}
+        {appPane ? (
+          <div className="hidden sm:contents">
+            <QuickTaskActions />
+          </div>
+        ) : (
+          <QuickTaskActions />
+        )}
         {/* Har page ke neeche product ka naam — hardcode, Settings se nahi (owner ka niyam). */}
         <footer
           className={`w-full px-4 pb-8 pt-2 text-center text-[11px] text-muted-foreground sm:px-6 lg:px-8 ${
@@ -119,6 +132,9 @@ export function AppShell({ children }) {
           <ProductCredit />
         </footer>
       </div>
+      {/* Phone aur tablet ki navigation — neeche, jahan angootha pehle se hai.
+          `lg` se upar ye khud chhup jaati hai, wahan asli sidebar aa jaata hai. */}
+      <BottomNav />
       {/* Chat ka floating button — shell me, kisi page ke andar NAHI: page template ka
           framer-motion wrapper `position: fixed` ko todta hai (dekho chat-fab.jsx). */}
       <ChatFab />
