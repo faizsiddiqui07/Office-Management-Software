@@ -42,18 +42,22 @@ export function ChatFab() {
       href="/chat"
       aria-label={`Open chat${unread ? ` — ${unread} unread` : ''}`}
       className={cn(
-        // Laptop and up only. Below `lg` the bottom nav bar carries Chat as a tab — with
-        // this very unread count on it — so the button would have been a second door to
-        // the same room, sitting right on top of the first one.
-        'hidden lg:grid',
-        'fixed bottom-6 right-6 z-50 size-14 place-items-center rounded-full',
+        // Back on every screen size (owner, 17 Nov 2026). It spent a few hours hidden on
+        // phones while Chat had a slot in the bottom bar; the owner wanted the button
+        // instead, so Chat gave its slot back to the work shortcuts.
+        //
+        // SMALLER on phone and tablet than it used to be — the owner asked for that in the
+        // same breath, and it now shares the bottom-right corner with a nav bar underneath
+        // and the Buddy button above, where a 56px circle was simply too much. 48px is
+        // still past the 44px a thumb needs. Laptop has the room, so there it is unchanged.
+        'fixed bottom-[5.5rem] right-6 z-50 grid size-12 place-items-center rounded-full lg:bottom-6 lg:size-14',
         'bg-primary text-primary-foreground shadow-lg shadow-primary/25',
         'transition-transform hover:scale-105 active:scale-95',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2',
         'motion-reduce:transition-none motion-reduce:hover:scale-100',
       )}
     >
-      <MessageCircle className="size-6" />
+      <MessageCircle className="size-5 lg:size-6" />
       {unread ? (
         <span className="absolute -right-0.5 -top-0.5 grid min-w-6 place-items-center rounded-full bg-destructive px-1.5 py-0.5 text-[11px] font-bold leading-none text-white ring-2 ring-background">
           {unread > 99 ? '99+' : unread}

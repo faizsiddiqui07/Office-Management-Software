@@ -2,11 +2,10 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { Menu } from 'lucide-react';
+import { usePathname, useSearchParams } from 'next/navigation';
+import { ClipboardList, ListTodo, Menu } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
-import { useChatUnread } from '@/lib/chat';
-import { navItemsFor } from '@/lib/permissions';
+import { can, navItemsFor } from '@/lib/permissions';
 import { useNavBadges } from '@/lib/badges';
 import { cn } from '@/lib/utils';
 import { MobileNavDrawer } from './mobile-sidebar';
@@ -14,19 +13,31 @@ import { MobileNavDrawer } from './mobile-sidebar';
 /**
  * The phone and tablet navigation bar, pinned to the bottom of the screen.
  *
- * Four destinations plus More, the way a phone app does it — the thumb sits at the bottom
- * of a phone, and the whole nav used to be behind a hamburger in the top-left corner,
- * which is the furthest point from it. Owner asked for this (17 Nov 2026).
+ * Five slots, the way a phone app does it — the thumb rests at the bottom of a phone, and
+ * the whole nav used to be behind a hamburger in the top-left corner, which is the
+ * furthest point on the screen from it. Owner asked for this (17 Nov 2026).
  *
- * WHICH FOUR. Twenty-one pages do not fit, so the four are the ones every single person
- * opens every day and that no permission can take away: Dashboard, To-Do, Chat,
- * Attendance. Everything else — including the pages only some roles have — lives behind
- * More, which opens the same drawer the hamburger used to, with the same full list in the
- * same order. One nav list, two ways in; nothing can drift apart.
+ * WHAT IS IN THEM, and why these:
+ *   Home            — /dashboard
+ *   My tasks        — /todo on the "mine" tab
+ *   Assigned tasks  — /todo on "assigned by me", as one flat list. Only for somebody who
+ *                     can actually delegate; without that there is no such tab to land on.
+ *   Attendance      — OR Approvals. See below.
+ *   More            — the full list, in the same drawer the hamburger used to open.
  *
- * They are still filtered through navItemsFor, so a tab can never point at a page the
- * person is not allowed to open. If a filter ever removed one, the bar simply renders
- * fewer tabs rather than a dead one.
+ * ATTENDANCE OR APPROVALS, not both. Leadership does not mark attendance — the roster is
+ * built from the `markAttendance` permission (attendance.service.js does exactly this), so
+ * for Khaan Aamir or Kalpana Saini an Attendance tab is a daily-use slot pointing at
+ * something they never do. They get Approvals instead, which is what they open all day.
+ * Owner's call, 17 Nov 2026. Somebody with neither simply gets four tabs; a slot is not
+ * worth filling with a page that person has no use for.
+ *
+ * Chat is NOT here. It had a slot for a few hours and the floating button came back
+ * instead (owner, 17 Nov) — so these five are the ones a floating button cannot replace.
+ *
+ * Everything is filtered through `navItemsFor`/`can`, so a tab can never point at a page
+ * the person is not allowed to open. If a filter removes one, the bar renders fewer tabs
+ * rather than a dead one.
  *
  * `lg:hidden` is not a guess: lg is exactly where the real sidebar appears, so this bar
  * and the sidebar are never on screen together.
@@ -43,37 +54,88 @@ import { MobileNavDrawer } from './mobile-sidebar';
  * `transition-colors` is safe, since Lite mode only makes it instant.
  */
 
-// Everyone has these four, whatever their role — see the note above.
-const PRIMARY = ['/dashboard', '/todo', '/chat', '/attendance'];
-
-// A tab is about a sixth of a 360px screen. "Dashboard" does not fit and came out as
-// "Dashb…", which is worse than a shorter word that fits whole. Only the bar uses these;
-// the drawer and the desktop sidebar keep the real names, and nothing else reads them.
-const SHORT = { '/dashboard': 'Home' };
-
 export function BottomNav() {
   const { user } = useAuth();
   const pathname = usePathname();
+  const params = useSearchParams();
   const [menuOpen, setMenuOpen] = React.useState(false);
   const hasDot = useNavBadges();
-  const unread = useChatUnread();
 
   // Close the drawer on every route change — the drawer does this too, but a tab tapped
   // from inside it should not leave the sheet hanging while the page changes behind it.
   React.useEffect(() => { setMenuOpen(false); }, [pathname]);
 
   const allowed = navItemsFor(user);
-  const tabs = PRIMARY.map((href) => allowed.find((i) => i.href === href)).filter(Boolean);
+  const find = (href) => allowed.find((i) => i.href === href);
+
+  // The same per-person delegation setting the To-Do page gates its "Assigned by me" tab
+  // on — somebody who cannot delegate has no such tab, so the shortcut would land them on
+  // a tab that isn't there.
+  const ta = user?.taskAssign || {};
+  const canAssign = ta.mode === 'ALL' || (ta.mode === 'SELECTED' && (ta.users || []).length > 0);
+
+  const onTodo = pathname === '/todo';
+  // The board keeps `?tab=` in the URL after consuming a link (it only strips `view` and
+  // `jump`), so this is a reliable read of which To-Do tab is open.
+  const todoTab = params.get('tab');
+
+  const tabs = [];
+  const home = find('/dashboard');
+  if (home) tabs.push({ key: 'home', href: '/dashboard', label: 'Home', icon: home.icon, active: pathname === '/dashboard' });
+
+  if (find('/todo')) {
+    tabs.push({
+      key: 'mine',
+      // `?jump=1` scrolls past the stat cards to the list, which on a phone is otherwise
+      // below the fold. The board consumes these and strips them, which is what makes a
+      // SECOND tap work instead of being a no-op link to where you already are.
+      href: '/todo?tab=mine&jump=1',
+      label: 'My tasks',
+      icon: ListTodo,
+      active: onTodo && todoTab !== 'assigned',
+      // One dot for the whole To-Do page is all the server sends — it covers both work
+      // given to me AND work waiting on my sign-off (getBadges merges the two). It rides
+      // this tab alone: the same dot on both To-Do tabs reads as a rendering bug, and
+      // this is the tab the page opens on, where opening it clears the dot anyway.
+      dot: hasDot('/todo'),
+    });
+    if (canAssign) {
+      tabs.push({
+        key: 'assigned',
+        href: '/todo?tab=assigned&view=all&jump=1',
+        label: 'Assigned',
+        icon: ClipboardList,
+        active: onTodo && todoTab === 'assigned',
+      });
+    }
+  }
+
+  // Attendance for the people who mark it; Approvals for the people who don't.
+  const duty = can(user, 'markAttendance') ? find('/attendance') : find('/approvals');
+  if (duty) {
+    tabs.push({
+      key: duty.href,
+      href: duty.href,
+      label: duty.label,
+      icon: duty.icon,
+      active: pathname === duty.href || pathname.startsWith(`${duty.href}/`),
+      dot: hasDot(duty.href),
+    });
+  }
+
   // A dot on More when anything hidden behind it has news. Without this the only way to
   // find out would be to open the drawer and look, which is the opposite of what a dot
-  // is for.
-  const moreDot = allowed.some((i) => !PRIMARY.includes(i.href) && hasDot(i.href));
+  // is for. `shown` is every href already on the bar, so nothing is counted twice.
+  const shown = new Set(tabs.map((t) => (t.href.startsWith('/todo') ? '/todo' : t.href)));
+  const moreDot = allowed.some((i) => !shown.has(i.href) && hasDot(i.href));
 
   // The chat page is the one screen that needs every pixel on a phone: it is a full-height
   // pane with its own composer pinned above the keyboard, and the shell already drops its
-  // other furniture there for exactly this reason (see AppShell). The way out is still the
-  // logo and the account menu in the header.
+  // other furniture there for exactly this reason (see AppShell). The way out is the
+  // hamburger the header puts back at exactly this width.
   const onChat = pathname === '/chat' || pathname?.startsWith('/chat/');
+
+  const itemClass = 'relative flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 pb-1.5 pt-2 transition-colors';
 
   return (
     <>
@@ -87,38 +149,22 @@ export function BottomNav() {
         )}
       >
         <div className="mx-auto flex max-w-2xl items-stretch justify-around px-1">
-          {tabs.map((item) => {
-            const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
-            const Icon = item.icon;
-            const isChat = item.href === '/chat';
-            // The unread COUNT rides the Chat tab now. The floating chat button carried it
-            // before and is hidden here (it would have sat on top of this bar, pointing at
-            // a tab two centimetres away), so the number has to live somewhere.
-            const count = isChat && unread ? unread : 0;
-            const dot = !count && hasDot(item.href);
+          {tabs.map((t) => {
+            const Icon = t.icon;
             return (
               <Link
-                key={item.href}
-                href={item.href}
-                aria-current={active ? 'page' : undefined}
-                className={cn(
-                  // h-14 + the label keeps every tab well past the 44px a thumb needs.
-                  'relative flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 pb-1.5 pt-2 transition-colors',
-                  active ? 'text-primary' : 'text-muted-foreground active:text-foreground',
-                )}
+                key={t.key}
+                href={t.href}
+                aria-current={t.active ? 'page' : undefined}
+                // h-11-ish once the label is counted — comfortably past the 44px a thumb needs.
+                className={cn(itemClass, t.active ? 'text-primary' : 'text-muted-foreground active:text-foreground')}
               >
                 <span className="relative">
-                  <Icon className="size-[22px]" strokeWidth={active ? 2.4 : 1.8} />
-                  {count ? (
-                    <span className="absolute -right-2 -top-1.5 grid min-w-[18px] place-items-center rounded-full bg-destructive px-1 py-px text-[10px] font-bold leading-none text-white ring-2 ring-card">
-                      {count > 99 ? '99+' : count}
-                    </span>
-                  ) : dot ? (
-                    <span className="absolute -right-1 -top-0.5 size-2 rounded-full bg-destructive ring-2 ring-card" />
-                  ) : null}
+                  <Icon className="size-[22px]" strokeWidth={t.active ? 2.4 : 1.8} />
+                  {t.dot ? <span className="absolute -right-1 -top-0.5 size-2 rounded-full bg-destructive ring-2 ring-card" /> : null}
                 </span>
-                <span className={cn('max-w-full truncate text-[11px] leading-none', active ? 'font-semibold' : 'font-medium')}>
-                  {SHORT[item.href] || item.label}
+                <span className={cn('max-w-full truncate text-[11px] leading-none', t.active ? 'font-semibold' : 'font-medium')}>
+                  {t.label}
                 </span>
               </Link>
             );
@@ -129,10 +175,7 @@ export function BottomNav() {
             onClick={() => setMenuOpen(true)}
             aria-label="Open menu"
             aria-expanded={menuOpen}
-            className={cn(
-              'relative flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 pb-1.5 pt-2 transition-colors',
-              menuOpen ? 'text-primary' : 'text-muted-foreground active:text-foreground',
-            )}
+            className={cn(itemClass, menuOpen ? 'text-primary' : 'text-muted-foreground active:text-foreground')}
           >
             <span className="relative">
               <Menu className="size-[22px]" strokeWidth={menuOpen ? 2.4 : 1.8} />
