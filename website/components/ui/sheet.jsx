@@ -50,6 +50,11 @@ function SheetOverlay({
 
 function SheetContent({
   className,
+  // The backdrop is rendered in here, so a caller that needs to reshape it — the mobile
+  // nav drawer stops above the bottom bar, and its backdrop has to stop there too, or the
+  // bar would be covered by a transparent sheet that swallows every tap — had no way to
+  // reach it. Optional and empty by default: every other caller is untouched.
+  overlayClassName,
   children,
   side = "right",
   showCloseButton = true,
@@ -57,7 +62,7 @@ function SheetContent({
 }) {
   return (
     <SheetPortal>
-      <SheetOverlay />
+      <SheetOverlay className={overlayClassName} />
       <SheetPrimitive.Popup
         data-slot="sheet-content"
         data-side={side}

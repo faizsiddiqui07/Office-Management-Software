@@ -3,12 +3,13 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { ClipboardList, ListTodo, Menu } from 'lucide-react';
+import { ClipboardList, ListTodo, Menu, X } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { can, navItemsFor } from '@/lib/permissions';
 import { useNavBadges } from '@/lib/badges';
 import { cn } from '@/lib/utils';
-import { MobileNavDrawer } from './mobile-sidebar';
+import { Sheet, SheetClose, SheetTrigger } from '@/components/ui/sheet';
+import { NavDrawerContent } from './mobile-sidebar';
 
 /**
  * The phone and tablet navigation bar, pinned to the bottom of the screen.
@@ -138,17 +139,29 @@ export function BottomNav() {
   const itemClass = 'relative flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 pb-1.5 pt-2 transition-colors';
 
   return (
-    <>
+    // The Sheet WRAPS the bar, so the More button can be a real SheetTrigger. A plain
+    // button out here would fight the drawer's own outside-press dismiss: the press would
+    // close the drawer first and the click handler would reopen it a moment later, so the
+    // menu could never be closed from the button that opened it. A trigger is registered
+    // with the popup and is exempt from that dismiss — this is exactly what it is for.
+    <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
       <nav
         aria-label="Main"
         className={cn(
+          // z-40 keeps it under dialogs (z-50) as before. It does NOT need to climb over
+          // the drawer: the drawer and its backdrop stop at this bar's top edge instead,
+          // so there is nothing here to cover it (see mobile-sidebar.jsx).
           'fixed inset-x-0 bottom-0 z-40 lg:hidden',
           'border-t border-border/60 bg-card/85 backdrop-blur-2xl',
           'pb-[env(safe-area-inset-bottom)]',
           onChat && 'max-sm:hidden',
         )}
       >
-        <div className="mx-auto flex max-w-2xl items-stretch justify-around px-1">
+        {/* The row's height is DECLARED, not left to emerge from the padding inside the
+            tabs — mobile-sidebar.jsx has to stop the drawer exactly here, and a number
+            that drifts when somebody nudges a padding would open a strip of page between
+            the two. If you change `h-[3.25rem]`, change the inset there to match. */}
+        <div className="mx-auto flex h-[3.25rem] max-w-2xl items-stretch justify-around px-1">
           {tabs.map((t) => {
             const Icon = t.icon;
             return (
@@ -170,24 +183,36 @@ export function BottomNav() {
             );
           })}
 
-          <button
-            type="button"
-            onClick={() => setMenuOpen(true)}
-            aria-label="Open menu"
-            aria-expanded={menuOpen}
-            className={cn(itemClass, menuOpen ? 'text-primary' : 'text-muted-foreground active:text-foreground')}
-          >
-            <span className="relative">
-              <Menu className="size-[22px]" strokeWidth={menuOpen ? 2.4 : 1.8} />
-              {moreDot ? <span className="absolute -right-1 -top-0.5 size-2 rounded-full bg-destructive ring-2 ring-card" /> : null}
-            </span>
-            <span className={cn('text-[11px] leading-none', menuOpen ? 'font-semibold' : 'font-medium')}>More</span>
-          </button>
+          {/* Opens the menu, and closes it again — the icon turns into an X while it is
+              open, so the way back out is the same spot the thumb just used. The label
+              stays "More" rather than becoming "Close": the word is how people find this
+              tab, and a label that moves is a tab that has to be re-learnt.
+              Trigger when shut, Close when open, because a dialog TRIGGER only ever
+              opens — tapping it again did nothing, and the menu could not be dismissed
+              from the button that raised it. Both are registered with the popup, so
+              neither fights the outside-press dismiss the way a plain button would. */}
+          {React.createElement(
+            menuOpen ? SheetClose : SheetTrigger,
+            {
+              render: (
+                <button
+                  type="button"
+                  aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+                  className={cn(itemClass, menuOpen ? 'text-primary' : 'text-muted-foreground active:text-foreground')}
+                />
+              ),
+            },
+            <span key="icon" className="relative">
+              {menuOpen ? <X className="size-[22px]" strokeWidth={2.4} /> : <Menu className="size-[22px]" strokeWidth={1.8} />}
+              {!menuOpen && moreDot ? <span className="absolute -right-1 -top-0.5 size-2 rounded-full bg-destructive ring-2 ring-card" /> : null}
+            </span>,
+            <span key="label" className={cn('text-[11px] leading-none', menuOpen ? 'font-semibold' : 'font-medium')}>More</span>,
+          )}
         </div>
       </nav>
 
-      {/* The same drawer the hamburger opened, now driven from here. */}
-      <MobileNavDrawer user={user} open={menuOpen} onOpenChange={setMenuOpen} />
-    </>
+      {/* The full list. It stops at this bar's top edge — see mobile-sidebar.jsx. */}
+      <NavDrawerContent user={user} onNavigate={() => setMenuOpen(false)} />
+    </Sheet>
   );
 }
