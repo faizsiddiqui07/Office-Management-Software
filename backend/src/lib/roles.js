@@ -167,6 +167,30 @@ export function rolesWithPermission(perm) {
   return out;
 }
 
+/**
+ * Who should hear about something that only `perm` holders can act on — a leave to
+ * approve, an attendance correction to review.
+ *
+ * Every role holding `perm`. If NO role holds it (the owner unticked it everywhere), the
+ * owner tier instead: they can't act on it either, but they are the ones who can grant
+ * the permission, and a request that lands with the owners beats one nobody hears about.
+ *
+ * The fallback looks at ROLES, not people — the owner's rule as approved (18 Nov 2026) is
+ * "if no role holds it". A role that holds `perm` but whose only active member is the
+ * person asking (callers exclude them) still reaches nobody; with the owner role holding
+ * the approve permissions, as it does here, that cannot happen.
+ *
+ * Never a hardcoded key list. The seed keys (CEO, DIRECTOR) don't exist in this office —
+ * its owner role is CEO_PRESIDENT — so a list of them reaches nobody, silently: no row,
+ * no push, no error. That is exactly how the correction bell went dead from go-live
+ * (1 Jul 2026) until this fix (found 18 Nov 2026), and how leave approvals had gone dead
+ * before bb85a0f.
+ */
+export function rolesToNotifyFor(perm) {
+  const keys = rolesWithPermission(perm);
+  return keys.length ? keys : ownerRoleKeys();
+}
+
 export function sanitizePermissions(perms) {
   if (!Array.isArray(perms)) return [];
   const valid = new Set(ALL_PERMISSION_KEYS);

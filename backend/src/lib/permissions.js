@@ -15,7 +15,18 @@ import { getRolePermissionSet, getRoleRank } from './roles.js';
 // ensureRolesFresh. The groups below are different — they are seed defaults and the
 // fallback used only until the role cache has loaded.
 
-/** Top leadership tier — full access + leadership-only features. */
+/**
+ * Top leadership tier OF THE SEED ROLES — full access + leadership-only features.
+ *
+ * Only for the cold-cache fallbacks below (canHardcoded, canAssignRole). It is NOT a
+ * recipient list: this office has no CEO or DIRECTOR role (its owner role is
+ * CEO_PRESIDENT), so `User.find({ role: { $in: LEADERSHIP } })` finds nobody, silently.
+ * Address the owners with ownerRoleKeys(), approvers with rolesToNotifyFor() (lib/roles.js).
+ * Two alerts still query it — the check-in alert and the day-close digest. The owner chose
+ * (18 Nov 2026) to leave them as they are, which means reaching nobody — but only because no
+ * role has these keys. A role labelled "CEO" or "Director" would switch both on for its
+ * holders; see the notes in those two services.
+ */
 export const LEADERSHIP = ['CEO', 'DIRECTOR'];
 
 /** Calendar editing + user creation + reset-credentials tier. */

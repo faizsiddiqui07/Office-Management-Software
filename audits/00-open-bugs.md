@@ -21,6 +21,16 @@
 | T4 | 🔴 `manageUsers` wala apni hi schedule badal kar attendance/overtime rig kar sakta hai | owner ne mana kiya | 08 |
 | A3 | Attendance ka ek behaviour | jaan-boojh kar aisa hi rakha | 03 |
 | — | To-Do ke 3 fix | owner ne revert karwaye | 02 |
+| AL1 | ⚠️ Check-in alert kisi tak nahi jaata — code `LEADERSHIP=['CEO','DIRECTOR']` dhoondhta hai, aur ye role is office me ab hain hi nahi (go-live se pehle haath se hataye gaye). Go-live 1 Jul se kisi tak nahi gaya | *"Dono band rehne do"* (18 Nov 2026) — roz subah ~8 ping nahi chahiye | 18 Nov |
+| AL2 | ⚠️ Shaam ka attendance digest kisi tak nahi gaya (31 Jul ko bana, tab se) — wahi jad | wahi faisla, 18 Nov 2026 | 18 Nov |
+
+**⚠️ AL1 / AL2 ka "band" ittefaq hai, switch nahi.** Ye sirf isliye kisi tak nahi jaate ki koi role `CEO` ya `DIRECTOR` key ka nahi. Roles page par **"CEO" ya "Director" naam** ka role banaya to key wahi banti hai — aur us role ke log (chahe junior hon) ko agle din se har check-in ka ping aur shaam ka digest (absent logon ke naam samet) jaane lagega. Check-in alert ko pakka band karna ho to Settings → **"Enable check-in alerts" OFF**. Digest ka alag switch nahi hai — "Show the daily round-up" band karne se owners ka task popup bhi band ho jaata hai.
+
+**AL1 / AL2 kabhi chalu karne hon to ye sab ek saath:** recipients `ownerRoleKeys()` se; check-in controller `notifyCheckIn` ko **await** kare (warna Lambda ping ko beech me rok deta hai); digest pehle log dhoondhe, phir din "bhej diya" mark kare; aur S11 (Settings save digest ka nishaan mita deta hai → digest do baar). Isi jad ke do aur tukde **18 Nov ko code me theek** hue (live tab, jab Lambda zip chadhe): correction request ki ghanti (ab `approveRegularization` walon ko, maangne wale ko chhod kar) aur leave ka backup (kisi **role** ke paas `approveLeave` na ho to owner tier) — dono `lib/roles.js` ke `rolesToNotifyFor` se.
+
+**PARKED (18 Nov ke review me mile — pehle se maujood, leave me bhi bilkul aisa hi; correction ki ghanti ab pahunchti hai isliye dikhenge):**
+- **AL3** 🔵 Correction approve karte waqt us din par leave/WFH lag chuki ho to approve **409** deta hai aur request PENDING rehti hai — par `decide()` sabki ghanti us se *pehle* hi hata chuka hota hai. Request phir sirf Approvals/Attendance ke dot se dikhegi. Fix: ghanti `save()` ke baad hatao.
+- **AL4** 🔵 Pending correction ki **taarikh badli** (edit) to approvers ki ghanti purani taarikh hi dikhati rehti hai ("For 16 Nov" jabki ab 17 Nov). Leave edit me bhi yahi hota hai.
 
 **⚠️ T1 + T2 ke saath ek baat yaad rakhni hai:** dono aaj isliye surakshit hain ki (a) `manageRoles` sirf owner ke paas hai, aur (b) prod ke roles **DB me haath se** rank ke saath banaye gaye the. Agar kabhi Roles page se naya senior role banaya jaaye, wo **rank 100** par banega aur system use **owner nahi maanega** — jiska asar bonus ke owner-tier gate aur office-wide WFH par padega. Us din ye dono wapas dekhne padenge.
 

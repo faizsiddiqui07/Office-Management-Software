@@ -15,9 +15,10 @@ function names(list, n = 6) {
 /**
  * Once a day, after the office-close time, push leadership ONE attendance round-up:
  * how many were in / WFH / on leave, who was absent with no leave, and who never checked
- * out. checkinAlert pings them on every check-in but nobody tells them about the day's
- * no-shows (the AWAITED→ABSENT flip happens silently when the work window closes) — this
- * is that one evening glance, deep-linked to the roster.
+ * out. The day's no-shows otherwise go unannounced (the AWAITED→ABSENT flip happens
+ * silently when the work window closes) — this was meant as that one evening glance,
+ * deep-linked to the roster. In THIS office it reaches nobody — see the ⚠ note at the
+ * recipient query below.
  *
  * Runs from the EventBridge schedule (see scheduler.service). Throttled AND claimed with
  * an atomic update, so ticks every few minutes across warm containers still send it once.
@@ -60,6 +61,20 @@ export async function maybeRunDayCloseDigest() {
     if (absent.length) lines.push(`Absent (no leave): ${names(absent)}`);
     if (noCheckout.length) lines.push(`No check-out: ${names(noCheckout)}`);
 
+    // ⚠ REACHES NOBODY HERE — BY ACCIDENT, NOT BY A SWITCH. LEADERSHIP is ['CEO','DIRECTOR'],
+    // seed roles this office no longer has (removed by hand before go-live; its owner role
+    // is CEO_PRESIDENT), so this has found nobody since it was written (31 Jul 2026). Found
+    // 18 Nov 2026; the owner chose to leave it as it is. Do NOT "fix" the list without
+    // asking them.
+    //
+    // It is only off because no role has those KEYS. A role created on the Roles page with
+    // the label "CEO" or "Director" gets exactly that key — and that evening its holders,
+    // however junior, get the digest with the absentees' names. There is no separate switch
+    // to stop it: eodDigest.enabled also drives the owners' task round-up popup.
+    //
+    // Turning it on properly also needs: recipients resolved BEFORE the day is claimed above
+    // (or a cold role cache silently burns the day), and a Settings save no longer wiping
+    // eodDigest.digestLastRun (audit S11) — otherwise the owners get it twice.
     const recipients = await User.find({ role: { $in: LEADERSHIP }, isActive: true }).select('_id');
     await Promise.all(
       recipients.map((u) =>

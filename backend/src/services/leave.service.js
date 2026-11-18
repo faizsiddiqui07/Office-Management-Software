@@ -9,7 +9,7 @@ import { joinedYMD, hadAccessOn } from '../lib/joining.js';
 import { createAnnouncement, deleteAnnouncement } from './announcement.service.js';
 import { notify, clearNotificationsFor } from '../models/Notification.js';
 import { can, canAssignRole } from '../lib/permissions.js';
-import { rolesWithPermission, roleLabel, isOwnerRole, ownerRoleKeys } from '../lib/roles.js';
+import { rolesToNotifyFor, roleLabel, isOwnerRole, ownerRoleKeys } from '../lib/roles.js';
 import { companyDayFromYMD, ymdInTz, dayOfWeekInTz } from '../lib/time.js';
 import { leaveYearOf, currentLeaveYear } from '../lib/leaveYear.js';
 import { APP_LIVE_YMD } from '../lib/appLive.js';
@@ -448,12 +448,14 @@ export async function applyLeave(user, { type, startYMD, endYMD, halfDay, halfDa
  * Leave goes to the `approveLeave` holders (resolved by permission, not by hardcoded
  * role keys, so custom roles work). WFH is decided by the OWNER tier alone, so it is
  * addressed only to them — see canDecideRequest.
+ *
+ * If no role holds approveLeave at all, the request goes to the owner tier (see
+ * rolesToNotifyFor). The backup used to be ['CEO', 'DIRECTOR'] — seed roles this office
+ * doesn't have — so in that case it reached nobody. Owner's call, 18 Nov 2026.
  */
 async function notifyApprovers(request, applicant) {
   const wfh = isWFH(request.type);
-  const roleKeys = wfh
-    ? ownerRoleKeys()
-    : (rolesWithPermission('approveLeave').length ? rolesWithPermission('approveLeave') : ['CEO', 'DIRECTOR']);
+  const roleKeys = wfh ? ownerRoleKeys() : rolesToNotifyFor('approveLeave');
   const approvers = await User.find({ isActive: true, role: { $in: roleKeys }, _id: { $ne: applicant._id } }).select('name');
   const message = wfh
     ? `${applicant.name} requested to work from home on ${request.startYMD}`

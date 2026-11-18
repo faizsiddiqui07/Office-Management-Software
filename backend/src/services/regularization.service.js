@@ -3,7 +3,7 @@ import { Attendance } from '../models/Attendance.js';
 import { Setting } from '../models/Setting.js';
 import { User } from '../models/User.js';
 import { notify, clearNotificationsFor } from '../models/Notification.js';
-import { LEADERSHIP } from '../lib/permissions.js';
+import { rolesToNotifyFor } from '../lib/roles.js';
 import { companyDayFromYMD, companyDayInstantAt, computeWork } from '../lib/time.js';
 import { effectiveSchedule } from '../lib/schedule.js';
 import { judgeCheckIn, penaltyRungs, isSelfieCheckIn } from '../lib/lateLadder.js';
@@ -72,7 +72,24 @@ export async function createRequest(user, { dateYMD, checkIn, checkOut, reason }
     reason,
   });
 
-  const leaders = await User.find({ role: { $in: LEADERSHIP }, isActive: true }).select('_id');
+  // Who hears about it: the people who can actually decide it — holders of
+  // approveRegularization, the same permission the queue, the decide route and the
+  // Approvals dot are gated on — minus the person asking (decide() refuses a
+  // self-decision anyway, so pinging them would only point them at a button they can't
+  // press).
+  //
+  // This used to be the hardcoded LEADERSHIP list, ['CEO', 'DIRECTOR'] — seed roles this
+  // office no longer has (removed by hand before go-live; its owner role is CEO_PRESIDENT).
+  // So from go-live (1 Jul 2026) until this fix (found 18 Nov 2026) the bell reached
+  // NOBODY — no row, no push, no error — while the requester was told "leadership will
+  // review it". Approvers only ever saw corrections passively: the Attendance → Corrections
+  // tab, and the Attendance / Approvals dots once those arrived (18 / 22 Jul). Leave
+  // approvals had the same disease and were cured on 1 Jul (bb85a0f); this one was missed.
+  const leaders = await User.find({
+    role: { $in: rolesToNotifyFor('approveRegularization') },
+    isActive: true,
+    _id: { $ne: user._id },
+  }).select('_id');
   await Promise.all(
     leaders.map((l) =>
       notify({
