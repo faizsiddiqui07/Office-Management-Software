@@ -49,15 +49,38 @@ const at = (ymd, hms = '00:00:00') => new Date(`${ymd}T${hms.length === 5 ? `${h
 // ── Fake clock: service code `new Date()` se "abhi" leta hai — usko yahan se set karte hain
 // (Ek function jo ASLI Date lautata hai — subclass nahi: Mongoose/BSON subclass ko Date
 // nahi maanta aur number bana kar store kar deta hai.)
+//
+// SIRF `new Date()` nakli hai — `Date.now()` ASLI rehta hai. 18 Nov 2026 tak ye suite PART B5
+// par "Connection operation buffering timed out after 10000ms" se gir raha tha, kyunki
+// Date.now() bhi nakli tha:
+//   • Mongoose 8 ka `connection.readyState` getter (Lambda ke jame container ke liye) dekhta hai
+//     ki aakhri heartbeat `Date.now()` ke hisaab se 2×heartbeatFrequencyMS (20s) se purana to
+//     nahi. Ghadi B4 (23 Sep 20:00) se B5 (24 Sep 08:00) par 12 ghante aage koodi → Mongoose
+//     ko laga 12 ghante se heartbeat nahi aaya → "disconnected" → pehla transaction
+//     (decideLeave → startSession) reconnect ka intezaar karta raha jo kabhi nahi aata.
+//   • Settings / roles / owner-tier ke cache aur rebuild ka lock bhi Date.now() se beeta hua
+//     waqt naapte hain — unhe bhi asli waqt chahiye.
+// Is suite ke raaste par business "abhi" kahin bhi Date.now() se nahi aata (sab `new Date()`),
+// isliye Date.now() asli rakhne se kisi niyam ki jaanch nahi badalti. Naya code jo "aaj" ko
+// Date.now() se nikaale, wo yahan nakli ghadi NAHI dekhega — use `new Date()` likho.
+//
+// `name: 'Date'` bhi zaroori hai: notify() push.js ko BAAD me (dynamic import) load karta hai, aur
+// PushSubscription ka schema tab banta hai jab global Date yahi function hai. Mongoose timestamps
+// type ko naam se pehchanta hai — 'FakeDate' par "is not a valid type at path createdAt" phenkta
+// tha aur har notify() ka push wala hissa fail hota tha.
 const RealDate = Date;
 let FAKE_NOW = RealDate.now();
 function FakeDate(...a) { return new RealDate(...(a.length ? a : [FAKE_NOW])); }
+Object.defineProperty(FakeDate, 'name', { value: 'Date' });
 FakeDate.prototype = RealDate.prototype;
-FakeDate.now = () => FAKE_NOW;
+FakeDate.now = () => RealDate.now();
 FakeDate.UTC = RealDate.UTC;
 FakeDate.parse = RealDate.parse;
 const setClock = (d) => { FAKE_NOW = d.getTime(); };
 globalThis.Date = FakeDate;
+// Ab push.js sach me load hota hai — asli VAPID chaabi ho to bhi kuch bahar na jaaye.
+delete process.env.VAPID_PUBLIC_KEY;
+delete process.env.VAPID_PRIVATE_KEY;
 
 const lateRow = (uid, ymd) => PointEntry.findOne({ dedupeKey: `auto_late:${uid}:${ymd}` }).lean();
 const rowStr = (r) => (r ? `${r.points} "${r.reason}"` : 'no row');
@@ -355,7 +378,12 @@ async function main() {
     await rules.list({ user: K }, resK, (e) => { throw e; });
     const textsK = (resK.body?.data?.sections || resK.body?.data || []).flatMap((s) => (s.rules || []).map((r) => r.text));
     check('11–8 viewer: "after 12:00 PM"; afternoon "3:30 PM sharp", marks "4:30 PM, 5:30 PM, 6:30 PM, 7:30 PM"', /after 12:00 PM/.test(textsK.find((t) => /counts as LATE and cuts/.test(t)) || '') && /due at 3:30 PM sharp/.test(textsK.find((t) => /AFTERNOON half/.test(t)) || '') && /4:30 PM, 5:30 PM, 6:30 PM, 7:30 PM/.test(textsK.find((t) => /AFTERNOON half/.test(t)) || ''));
-    check('rulesTextVersion 7 stamp', (await Setting.findOne({ key: 'global' }).select('rulesTextVersion').lean()).rulesTextVersion === 7);
+    // v7 = late-ladder wala text. Uske baad ke bump bhi isi pass me chalte hain (8 = chhutti ke
+    // din poora OT, 12 Oct 2026), to stamp ko bas 7 tak PAHUNCHNA chahiye. Pehle yahan `=== 7`
+    // tha — 12 Oct ke bump ke baad galat, par suite B5 par crash hone ki wajah se ye check
+    // kabhi chala hi nahi aur kisi ko pata nahi chala.
+    const rtv = (await Setting.findOne({ key: 'global' }).select('rulesTextVersion').lean()).rulesTextVersion;
+    check('rulesTextVersion kam se kam 7 (late-ladder text lag chuka)', rtv >= 7, `stamp ${rtv}`);
     check('RuleSection me late rule ek hi baar (duplicate nahi)', (await RuleSection.find().lean()).flatMap((s) => s.rules).filter((r) => /AFTERNOON half/.test(r.text)).length === 1);
   }
 
