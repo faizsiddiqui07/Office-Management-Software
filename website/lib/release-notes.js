@@ -31,6 +31,7 @@ export const RELEASES = [
       'That button no longer appears on today\'s shift while it is still open.',
       'Days with no work show a dash instead of "0m", and every status now reads in plain words instead of shouting capitals.',
       'The check-in card no longer gets squeezed into a thin strip on a laptop screen.',
+      'On a laptop the card now lays itself out side by side — clock, times and the check-in button on one line — so your history is visible without scrolling. On a phone it looks exactly as before.',
     ],
   },
   {

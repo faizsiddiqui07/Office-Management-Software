@@ -113,9 +113,34 @@ export function CheckInCard() {
 
   return (
     <>
-      <GlassCard className="p-6 sm:p-8">
-        <div className="flex flex-col gap-6">
-          <div className="flex items-start justify-between gap-3">
+      {/*
+        CARD KI CHAUDAI PAR LAYOUT, SCREEN KI CHAUDAI PAR NAHI — isliye `@container`.
+
+        Ye card do bilkul alag jagah baithta hai: bade screen par 360px ki patli column
+        me (Attendance page), aur chhote laptop par POORI chaudai me (jab page ek hi
+        column me stack ho jaata hai). Media query se faisla karte to wo galat hota —
+        screen chhoti hone par hi to card BADA ho jaata hai.
+
+        TEEN HAALAT, ISI KRAM ME:
+          • patla (360px wali column, aur phone)  — sab kuch ek ke neeche ek. Purana
+            roop, waisa ka waisa.
+          • @xl se (card ka content ≥576px)       — ghadi aur teen aankde SAATH me,
+            button poori chaudai me neeche.
+          • @4xl se (content ≥896px)              — button bhi usi kataar me aa jaata hai.
+        Warna 730px chauda card poori pehli screen kha jaata tha aur chhote laptop par
+        history dekhne ke liye scroll karna padta tha (naapa: 492px lamba).
+
+        NAAP CARD KE *CONTENT* KA HOTA HAI, border ka nahi — 732px ke card me padding
+        ke baad 668px bachta hai. Isi wajah se pehle `@2xl` (672px) chuna tha aur wo
+        1062px wale laptop par chup-chaap chala hi nahi. Koi bhi hadd badlo to card ki
+        ASLI content chaudai naap kar badlo, andaaze se nahi.
+
+        DOM ka kram nahi badla (phone par button ab bhi GPS wali chetavni ke BAAD hi
+        hai); kataar me jagah sirf `order` se tay hoti hai.
+      */}
+      <GlassCard className="@container p-6 sm:p-8">
+        <div className="flex flex-col gap-6 @xl:flex-row @xl:flex-wrap @xl:items-center @xl:gap-x-8 @xl:gap-y-4">
+          <div className="flex items-start justify-between gap-3 @xl:order-1 @xl:shrink-0 @xl:flex-col @xl:items-start @xl:gap-2">
             <div>
               <p className="text-sm text-muted-foreground">{formatFullDate(now)}</p>
               <p className="mt-1 font-mono text-3xl font-semibold tabular-nums tracking-tight sm:text-4xl">
@@ -128,7 +153,9 @@ export function CheckInCard() {
             ) : null}
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          {/* `basis-80` zaroori hai, `min-w-0` nahi: min-w-0 dene par teenon aankde
+              nichud kar ek doosre par chadh jaate hain (chala kar dekha). */}
+          <div className="grid grid-cols-3 gap-3 @xl:order-2 @xl:flex-1 @xl:basis-64">
             <Stat label="Check-in" value={checkedIn ? formatTime(record.checkInAt) : '—'} />
             <Stat label={checkedOut ? 'Worked' : 'Elapsed'} value={checkedIn ? formatDuration(elapsedMin) : '—'} />
             <Stat label="Overtime" value={checkedIn ? formatDuration(overtimeMin) : '—'} highlight={overtimeMin > 0} />
@@ -139,7 +166,7 @@ export function CheckInCard() {
               invisible at the moment it happened. The server sends it with this payload,
               so it moves the instant a check-in lands. */}
           {data?.streak ? (
-            <div className="-mt-2 flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5 rounded-xl bg-foreground/[0.03] px-3 py-2 text-xs ring-1 ring-border/50">
+            <div className="-mt-2 flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5 rounded-xl bg-foreground/[0.03] px-3 py-2 text-xs ring-1 ring-border/50 @xl:order-4 @xl:mt-0 @xl:basis-full">
               <Flame className={cn('size-3.5 shrink-0', data.streak.count > 0 ? 'text-amber-500' : 'text-muted-foreground')} />
               <span className="font-medium tabular-nums">
                 {data.streak.count} of {data.streak.target} on time
@@ -149,11 +176,13 @@ export function CheckInCard() {
           ) : null}
 
           {data?.gps?.enabled && !checkedOut ? (
-            <p className="-mb-1 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
-              <MapPin className="size-3.5" /> Location required — you must be at the office.
+            <p className="-mb-1 flex items-center justify-center gap-1.5 text-xs text-muted-foreground @xl:order-5 @xl:mb-0 @xl:basis-full">
+              <MapPin className="size-3.5 shrink-0" /> Location required — you must be at the office.
             </p>
           ) : null}
 
+          {/* Button chaudi haalat me teesre number par — ghadi aur aankdon ke bagal me. */}
+          <div className="@xl:order-3 @xl:basis-full @4xl:w-60 @4xl:shrink-0 @4xl:basis-auto">
           {isWFH ? (
             // Already recorded as worked — there is nothing to check in or out of.
             <div className="rounded-2xl bg-primary/10 p-3 text-center text-sm font-medium text-primary ring-1 ring-primary/20">
@@ -197,13 +226,14 @@ export function CheckInCard() {
               You&apos;re done for today — checked out at {formatTime(record.checkOutAt)}
             </div>
           )}
+          </div>
 
           {/* Site par kaam karne walon ke liye. Office ka geo-fence 50 m ka hai, isliye site
               se upar wala button chalta hi nahi — ye raasta us fence se nahi guzarta aur us
               par late bhi nahi lagti (owner ka niyam). Ye SIRF Attendance page par hai;
               homepage wala quick-action jaisa tha waisa hi hai. */}
           {!checkedOut && !isWFH ? (
-            <div className="space-y-2 border-t border-border/50 pt-3">
+            <div className="space-y-2 border-t border-border/50 pt-3 @xl:order-6 @xl:w-full">
               <p className="text-center text-xs text-muted-foreground">Working at a site today?</p>
               <SelfieAttendance mode={checkedIn ? 'out' : 'in'} userName={user?.name} disabled={isLoading} />
             </div>

@@ -33,10 +33,18 @@ function MeView() {
 
         2. Breakpoint bhi galat tha. 1024px par sidebar BHI khulta hai (256px le jaata hai)
            aur do-column BHI shuru ho jaata tha — dono ek saath, jabki bachi hui chaudai
-           me do haath aate hi nahi. `xl` (1280px) par shuru karne se neeche wale saare
-           naap par dono cheezein poori chaudai me, ek ke neeche ek aati hain.
+           me do haath aate hi nahi.
+
+           Hadd `2xl` (1536px) hai, aur ye naap kar chuni gayi hai: table ko 667px
+           chahiye, card ko 360px, beech me 24px — yaani 1051px ki grid. Shell sidebar
+           (256px) aur page padding milakar ~330px khaa jaate hain, to window ~1381px se
+           kam par do-column me table ko sideways scroll karna padta hai. Tailwind ki
+           agli hadd 2xl hai, aur wahan grid ~1206px ki hoti hai — dono aaram se aate
+           hain. Usse neeche ek-ke-neeche-ek BEHTAR hai, bura nahi: card ab apni chaudai
+           dekh kar khud chhota ho jaata hai (check-in-card ka @container), aur table ko
+           poori chaudai mil jaati hai — koi scroll nahi.
       */}
-      <div className="grid gap-6 xl:grid-cols-[minmax(320px,360px)_minmax(0,1fr)]">
+      <div className="grid gap-6 2xl:grid-cols-[minmax(320px,360px)_minmax(0,1fr)]">
         <CheckInCard />
         <AttendanceHistory />
       </div>
