@@ -10,7 +10,6 @@ import {
 } from '../lib/taskApprovers.js';
 import { can } from '../lib/permissions.js';
 import { companyDayFromYMD, ymdInTz, dayInWords, COMPANY_TZ } from '../lib/time.js';
-import { nextTaskDueYMD, repeatBlockedReason, isValidTaskRepeat } from '../lib/taskRepeat.js';
 import { onAssignedTaskDone, onAssignedTaskUndone, rebuildOverdueForTask } from './bonus.service.js';
 
 function httpError(status, code, message) {
@@ -189,14 +188,10 @@ async function resolveCollaborators(actor, ids, alreadyOn = []) {
  * same work to several people at once (then one independent task per person).
  */
 /**
- * Reminder aur repeat ka saaf hissa, jo seedha Task par likha ja sake.
+ * Reminder ka saaf hissa, jo seedha Task par likha ja sake.
  *
  * Key BHEJI GAYI hai ya nahi, uska farak rakha jaata hai (`!== undefined`): update par
- * jo bheja hi nahi gaya use chhedna nahi hai, warna ek field ka save baaki do ko uda deta.
- *
- * Galat/adhoora repeat chup-chaap NONE ban jaata hai — adhoora rule (jaise "WEEKLY par
- * koi din nahi") ko zinda rakhna matlab ek aisa task jo kabhi lautega hi nahi, aur kisi
- * ko wajah nahi dikhegi. Validator ise pehle hi rokta hai; ye doosri deewar hai.
+ * jo bheja hi nahi gaya use chhedna nahi hai, warna ek field ka save doosre ko uda deta.
  */
 function reminderPatch(data) {
   const out = {};
@@ -206,30 +201,11 @@ function reminderPatch(data) {
     out.remindTimes = [...new Set((data.remindTimes || []).filter(Boolean))].sort().slice(0, 3);
   }
   if (data.remindDayBefore !== undefined) out.remindDayBefore = !!data.remindDayBefore;
-  if (data.repeat !== undefined) {
-    const r = data.repeat || {};
-    out.repeat = isValidTaskRepeat(r)
-      ? {
-        type: r.type,
-        weekdays: [...new Set(r.weekdays || [])].sort((a, b) => a - b),
-        daysOfMonth: [...new Set(r.daysOfMonth || [])].sort((a, b) => a - b),
-        dates: [...new Set(r.dates || [])].sort(),
-      }
-      : { type: 'NONE', weekdays: [], daysOfMonth: [], dates: [] };
-  }
   return out;
-}
-
-/** Repeat laga ho to due date zaroori hai — agli taarikh kis se ginein? */
-function assertRepeatHasDueDate(repeat, dueYMD) {
-  if (repeat && repeat.type && repeat.type !== 'NONE' && !dueYMD) {
-    throw httpError(400, 'REPEAT_NEEDS_DUE', 'A repeating task needs a due date — that is what the next one is counted from');
-  }
 }
 
 export async function createTask(actor, data) {
   const reminders = reminderPatch(data);
-  assertRepeatHasDueDate(reminders.repeat, data.dueYMD);
   // `assignTo` may be a single id or a list. Delegating to one or more people creates
   // an independent task each (each person owns and completes their own copy).
   const rawAssign = Array.isArray(data.assignTo) ? data.assignTo : data.assignTo ? [data.assignTo] : [];
@@ -266,7 +242,7 @@ export async function createTask(actor, data) {
         assignBatch: batch,
         requiresApproval: !!data.requiresApproval,
         status: 'PENDING',
-        // Kaam dete waqt hi yaad ka waqt aur repeat set ho jaate hain (owner, 19 Nov 2026).
+        // Kaam dete waqt hi yaad ka waqt set ho jaata hai (owner, 19 Nov 2026).
         // Yaad JISKO kaam mila usi ke phone par jaati hai, dene wale ke nahi.
         ...reminders,
       });
@@ -501,80 +477,11 @@ export async function setStatus(actor, id, status) {
   // own approval if one was asked for. Best-effort: their chain must never block this.
   if (task.status === 'DONE') {
     try { await settleParent(task); } catch (e) { console.error('forward settle failed', e?.message); }
-    try { await spawnRepeatIfDue(task); } catch (e) { console.error('task repeat spawn failed', e?.message); }
   }
 
   return populated(task);
 }
 
-/**
- * REPEAT: kaam poora hua, to agli taarikh wala naya copy bana do (owner, 19 Nov 2026).
- *
- * KAB chalta hai: sirf tab jab task SACH ME poora ho. Approval wale task par wo lamha
- * "submit" nahi, "approve" hai — isliye ye setStatus ke DONE par aur reviewTask ke approve
- * par bulaya jaata hai, submit par nahi. Submit par banate to reject hone par do copy
- * zinda reh jaatiN.
- *
- * EK COPY, EK BAAR: nishaan `repeatSpawned` ATOMIC update se lagta hai (findOneAndUpdate
- * jisme shart hi `repeatSpawned: false` hai). Pehle padh kar phir likhte to done → undo →
- * done, ya do request saath aa jaane par, do copy ban jaate. Jo update jeet-ta hai wahi
- * banata hai.
- *
- * KAB NAHI: aage pass ki hui copy se, dene wale ka account hat jaane par, bina due date
- * ke, ya jab karne wala ab active na ho — wo aakhri wala khaas hai: kaam banta rehta aur
- * kisi inactive account ki list me padta rehta, jahan kisi ki nazar nahi jaati.
- *
- * Best-effort: naya copy na ban paaye to bhi jo kaam abhi poora hua wo poora hi rahega.
- */
-async function spawnRepeatIfDue(doneTask) {
-  const why = repeatBlockedReason(doneTask);
-  if (why) return null;
-
-  const nextDue = nextTaskDueYMD(doneTask.repeat, doneTask.dueYMD);
-  if (!nextDue) return null; // aage koi taarikh nahi (jaise DATES ki saari guzar gayi)
-
-  // Karne wala abhi bhi yahan hai? Aur agar kisi ne diya tha, to wo khud?
-  const owner = await User.findById(doneTask.owner).select('isActive').lean();
-  if (!owner?.isActive) return null;
-  if (doneTask.assignedBy) {
-    const assigner = await User.findById(doneTask.assignedBy).select('isActive').lean();
-    if (!assigner) return null; // account hi nahi raha
-  }
-
-  // Nishaan pehle, banana baad me — aur sirf wahi aage badhta hai jo ye update jeete.
-  const claimed = await Task.findOneAndUpdate(
-    { _id: doneTask._id, repeatSpawned: { $ne: true } },
-    { $set: { repeatSpawned: true } },
-  );
-  if (!claimed) return null;
-
-  const next = await Task.create({
-    title: doneTask.title,
-    notes: doneTask.notes || '',
-    dueYMD: nextDue,
-    owner: doneTask.owner,
-    assignedBy: doneTask.assignedBy || null,
-    collaborators: doneTask.collaborators || [],
-    requiresApproval: !!doneTask.requiresApproval,
-    // Reminder ke waqt saath chalte hain — warna har baar dobara lagane padte.
-    remindTimes: doneTask.remindTimes || [],
-    remindDayBefore: !!doneTask.remindDayBefore,
-    repeat: doneTask.repeat,
-    repeatSpawned: false,
-    status: 'PENDING',
-    // assignBatch JAAN-BOOJH KAR nahi: batch ka matlab "ek hi kaam kai logon ko ek saath"
-    // hai, aur uski ginti ("3 me se 2 ho gaye") is nayi baari par lagti hi nahi.
-  });
-
-  // Jisko kaam karna hai use pata to chale ki wo laut aaya.
-  await notify({
-    user: next.owner,
-    type: 'TASK_ASSIGNED',
-    ...taskNews(next.title, doneTask.assignedBy ? 'Back again (repeating task)' : 'Back on your list (repeating)', { due: nextDue }),
-    link: todoLink(next._id),
-  });
-  return next;
-}
 
 /**
  * The assigner reviews an approval-required task the assignee has submitted:
@@ -695,7 +602,6 @@ export async function reviewTask(actor, id, approve, reason) {
     // An approval can be the last link needed to settle the copy above it.
     try { await settleParent(task); } catch (e) { console.error('forward settle failed', e?.message); }
     // Approval wale task ke liye "sach me poora hua" ka lamha YAHI hai, submit nahi.
-    try { await spawnRepeatIfDue(task); } catch (e) { console.error('task repeat spawn failed', e?.message); }
   } else {
     task.submittedAt = null; // back to plain pending, with the reason attached
     task.rejectionReason = String(reason || '').trim();
@@ -941,21 +847,17 @@ export async function updateTask(actor, id, data) {
   const isTaggedBoss = !!task.assignedBy && !isAssigner && isOwnerRole(actor.role)
     && (task.collaborators || []).some((c) => String(c) === String(actor._id));
   /**
-   * Jisko kaam MILA hai, wo apni YAAD aur REPEAT badal sakta hai — aur bilkul kuch nahi.
+   * Jisko kaam MILA hai, wo apni YAAD ka waqt badal sakta hai — aur bilkul kuch nahi.
    *
-   * Owner ka faisla (19 Nov 2026): "repeat dono jagah dono log" set kar sakein, aur
-   * reminder sirf karne wale ko jaati hai — to uske waqt uske apne hain. Baaki sab (kya
-   * kaam hai, kab tak, kiska hai, approval chahiye ya nahi) wahin rehta hai jahan tha:
-   * jisne kaam diya uske paas.
-   *
-   * ⚠ Owner ko ye baat batayi gayi thi aur unhone jaan-boojh kar chuni: isse karne wala
-   * apne hi kaam ka repeat BAND bhi kar sakta hai, aur dene wale ko khabar nahi hogi.
+   * Owner ka faisla (19 Nov 2026): reminder sirf karne wale ko jaati hai — to uske
+   * waqt uske apne hain. Baaki sab (kya kaam hai, kab tak, kiska hai, approval chahiye
+   * ya nahi) wahin rehta hai jahan tha: jisne kaam diya uske paas.
    */
-  // ...aur SIRF tab jab request me waqai yaad/repeat ho. Bina iske assignee ka saada
+  // ...aur SIRF tab jab request me waqai yaad ka waqt ho. Bina iske assignee ka saada
   // `{ dueYMD }` wala patch is raaste me aa jaata aur purana ASSIGNED_TASK error badal kar
   // REMINDER_ONLY ho jaata — rok wahi rehti, par error ka naam badal jaata, jis par
   // test-due-date-edit tika hua hai (aur kal ko frontend bhi tik sakta hai).
-  const touchesReminder = data.remindTimes !== undefined || data.remindDayBefore !== undefined || data.repeat !== undefined;
+  const touchesReminder = data.remindTimes !== undefined || data.remindDayBefore !== undefined;
   const isAssigneeTuning = !!task.assignedBy && isOwner && !isAssigner && !isTaggedBoss && touchesReminder;
   // A delegated task can only be edited by the person who assigned it (plus the tagged
   // boss above) — the assignee completes it (or asks), but can't change what was asked.
@@ -981,18 +883,15 @@ export async function updateTask(actor, id, data) {
       || (data.requiresApproval !== undefined && !!data.requiresApproval !== !!task.requiresApproval)
       || (data.collaborators !== undefined && idKey(data.collaborators) !== idKey(task.collaborators));
     if (wouldChange) {
-      throw httpError(403, 'REMINDER_ONLY', 'This task was assigned to you — you can set your own reminder and repeat, but the rest belongs to whoever assigned it');
+      throw httpError(403, 'REMINDER_ONLY', 'This task was assigned to you — you can set your own reminder times, but the rest belongs to whoever assigned it');
     }
     delete patch.title;
     delete patch.notes;
     delete patch.dueYMD;
   }
 
-  // Yaad aur repeat — dono branch se PEHLE, kyunki ye dono jagah ek jaise lagte hain.
+  // Yaad ka waqt — dono branch se PEHLE, kyunki ye dono jagah ek jaisa lagta hai.
   const reminders = reminderPatch(data);
-  if (Object.keys(reminders).length) {
-    assertRepeatHasDueDate(reminders.repeat ?? task.repeat, patch.dueYMD ?? task.dueYMD);
-  }
   // Jisko kaam mila hai: bas yahi badlega, aur isi ek copy par. Neeche ka batch/cascade
   // wala poora rasta uska hai hi nahi — wo kisi aur ke kaam ko chhoo nahi sakta.
   if (isAssigneeTuning) {
@@ -1148,10 +1047,10 @@ export async function updateTask(actor, id, data) {
       let contentChanged = false;
       let dueChanged = false;
       for (const f of contentFields) if (patch[f] !== undefined && mm[f] !== patch[f]) { if (f === 'dueYMD') dueChanged = true; mm[f] = patch[f]; changed = true; contentChanged = true; }
-      // Yaad ka waqt aur repeat har us copy par jo is edit ke dayre me hai. Ye CONTENT
-      // nahi hai — isliye `contentChanged` nahi chhedte: na receipt mitti hai, na ye
-      // forward chain me neeche jaata hai (har copy ki apni baari, apna reminder).
-      for (const f of ['remindTimes', 'remindDayBefore', 'repeat']) {
+      // Yaad ka waqt har us copy par jo is edit ke dayre me hai. Ye CONTENT nahi hai —
+      // isliye `contentChanged` nahi chhedte: na receipt mitti hai, na ye forward chain
+      // me neeche jaata hai (har copy ki apni baari, apna reminder).
+      for (const f of ['remindTimes', 'remindDayBefore']) {
         if (reminders[f] !== undefined) { mm[f] = reminders[f]; changed = true; }
       }
       // Rewriting the work makes an old receipt a lie — "Seen 20 Jul" would refer to

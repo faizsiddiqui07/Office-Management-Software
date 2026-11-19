@@ -15,7 +15,7 @@ import { APP_LIVE_YMD } from '@/lib/app-live';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { NoteEditor } from '@/components/ui/note-editor';
-import { ReminderRepeatFields, cleanRepeat, EMPTY_REPEAT } from '@/components/tasks/reminder-repeat-fields';
+import { ReminderFields } from '@/components/tasks/reminder-fields';
 
 export function TaskDialog({ task, open: openProp, onOpenChange, batchCount = 0 }) {
   const isEdit = !!task;
@@ -47,10 +47,9 @@ export function TaskDialog({ task, open: openProp, onOpenChange, batchCount = 0 
   const [assignees, setAssignees] = React.useState([]); // who a delegated task is assigned to
   const [requiresApproval, setRequiresApproval] = React.useState(false);
   const [applyToAll, setApplyToAll] = React.useState(true); // batch content edit: push to every copy
-  // Yaad ka waqt aur repeat (I43). Yaad hamesha us bande ko jaati hai jiska kaam hai.
+  // Yaad ka waqt (I43). Yaad hamesha us bande ko jaati hai jiska kaam hai, due wale din.
   const [remindTimes, setRemindTimes] = React.useState([]);
   const [remindDayBefore, setRemindDayBefore] = React.useState(false);
-  const [repeat, setRepeat] = React.useState(EMPTY_REPEAT);
   // A tagged CEO & President, on work somebody ELSE handed out: the DEADLINE only
   // (owner's rule, 25 Oct 2026). Everything else on this form is theirs to read, not to
   // change — the SERVER is the real gate (it refuses the patch); this stops them typing
@@ -73,7 +72,6 @@ export function TaskDialog({ task, open: openProp, onOpenChange, batchCount = 0 
     setApplyToAll(true);
     setRemindTimes(task?.remindTimes || []);
     setRemindDayBefore(!!task?.remindDayBefore);
-    setRepeat({ ...EMPTY_REPEAT, ...(task?.repeat || {}) });
   }, [open, task]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const { data: assignData } = useQuery({
@@ -122,7 +120,6 @@ export function TaskDialog({ task, open: openProp, onOpenChange, batchCount = 0 
       body.collaborators = collaborators;
       body.remindTimes = remindTimes;
       body.remindDayBefore = remindDayBefore;
-      body.repeat = cleanRepeat(repeat);
       return isEdit ? api.patch(`/tasks/${task.id}`, body) : api.post('/tasks', body);
     },
     onSuccess: (res) => {
@@ -261,14 +258,12 @@ export function TaskDialog({ task, open: openProp, onOpenChange, batchCount = 0 
         </div>
         {/* Tagged CEO ko sirf deadline chhoone ki ijazat hai — baaki sab padhne ke liye. */}
         {dueOnly ? null : (
-          <ReminderRepeatFields
+          <ReminderFields
             times={remindTimes}
             setTimes={setRemindTimes}
             dayBefore={remindDayBefore}
             setDayBefore={setRemindDayBefore}
-            repeat={repeat}
-            setRepeat={setRepeat}
-            hasDueDate={!!dueYMD}
+            dueYMD={dueYMD}
             forSomeoneElse={isAssignedByMe}
           />
         )}

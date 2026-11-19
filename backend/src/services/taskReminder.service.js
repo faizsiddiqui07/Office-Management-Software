@@ -86,9 +86,9 @@ const daysBetween = (a, b) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.pa
  * uske ulta hai: ye banda khud tay karta hai, aur SIRF use jaati hai jiska kaam hai —
  * dene wale ko nahi (owner ka faisla; use overdue wali alag ghanti pehle se milti hai).
  *
- * KIS DIN: due wale din. Aur `remindDayBefore` ho to ek din pehle bhi, unhi waqton par.
- * Repeat wale task par naya copy apni nayi due date ke saath banta hai, to ye apne aap
- * us din chali jaati hai — alag se kuch jodna nahi padta.
+ * KIS DIN: DUE WALE DIN. Aur `remindDayBefore` ho to ek din pehle bhi, unhi waqton par.
+ * (Yahi baat UI par bhi saaf likhi hai — owner ne 19 Nov 2026 ko batayi: "9 baje chuna
+ * to kis din ka 9 baje, ye dikh hi nahi raha tha".)
  *
  * KIS WAQT: `remindTimes` me jo likha ho (zyada se zyada 3). Waqt "us waqt YA uske baad"
  * ka pehla tick hai — scheduler har kuch minute jaagta hai, to 10:00 ka matlab 10:00 se

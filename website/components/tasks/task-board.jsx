@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { AlarmClock, AlertTriangle, Award, Check, CheckCircle2, ClipboardList, Clock, Download, Eye, EyeOff, FolderOpen, Forward, ListTodo, Pencil, Repeat, Search, Send, ThumbsUp, Trash2, Undo2, UserRound, Users, X } from 'lucide-react';
+import { AlarmClock, AlertTriangle, Award, Check, CheckCircle2, ClipboardList, Clock, Download, Eye, EyeOff, FolderOpen, Forward, ListTodo, Pencil, Search, Send, ThumbsUp, Trash2, Undo2, UserRound, Users, X } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -323,44 +323,29 @@ function shortTime(hm) {
   return `${h12}${m ? `:${String(m).padStart(2, '0')}` : ''} ${pm ? 'PM' : 'AM'}`;
 }
 
-/** Repeat ka chhota text. Server ke describeTaskRepeat ka jodidaar — dono ek jaisa padhte
- *  hain, par ye row par chhota rehta hai. */
-function repeatWords(r) {
-  const D = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  if (r?.type === 'DAILY') return 'Daily';
-  if (r?.type === 'WEEKLY') return [...(r.weekdays || [])].sort((a, b) => a - b).map((d) => D[d]).join(', ');
-  if (r?.type === 'MONTHLY') return `Monthly ${[...(r.daysOfMonth || [])].sort((a, b) => a - b).join(', ')}`;
-  if (r?.type === 'DATES') return `${(r.dates || []).length} dates`;
-  return '';
-}
-
 /**
- * Yaad aur repeat ka nishaan — warna set karne ke baad kahin dikhta hi nahi aur banda
- * bhool jaata hai ki laga bhi hai ya nahi.
+ * Yaad ka nishaan — warna waqt set karne ke baad kahin dikhta hi nahi aur banda bhool
+ * jaata hai ki laga bhi hai ya nahi.
  *
  * Ek hi component do jagah: flat TaskRow aur DatedTaskList ki chhoti row (kisi bande ke
- * folder ke andar). Dono ki meta line alag-alag likhi hui hai, aur pehle ye chips sirf
- * flat row me the — to kaam DEKAR person-folder kholne wale ko apna hi lagaya hua waqt
+ * folder ke andar). Dono ki meta line alag-alag likhi hui hai, aur pehle ye chip sirf
+ * flat row me tha — to kaam DEKAR person-folder kholne wale ko apna hi lagaya hua waqt
  * nahi dikhta tha. DONE row par bekaar hai, isliye wahan kuch nahi.
+ *
+ * Row par sirf waqt likha jaata hai, tareekh nahi — tareekh usi line me "Due …" bankar
+ * bagal me khadi hai, aur dono ek hi din hain. Poora jawab ("kis din?") dialog me aur
+ * task kholne par milta hai.
  */
 function ReminderChips({ task, done }) {
-  const hasTimes = !done && !!task.remindTimes?.length;
-  const hasRepeat = !done && !!task.repeat?.type && task.repeat.type !== 'NONE';
-  if (!hasTimes && !hasRepeat) return null;
+  if (done || !task.remindTimes?.length) return null;
   return (
-    <>
-      {hasTimes ? (
-        <span className="inline-flex items-center gap-1" title={`Reminder at ${task.remindTimes.join(', ')}${task.remindDayBefore ? ' (and a day before)' : ''}`}>
-          <AlarmClock className="size-3" />
-          {task.remindTimes.map(shortTime).join(', ')}
-        </span>
-      ) : null}
-      {hasRepeat ? (
-        <span className="inline-flex items-center gap-1 text-primary">
-          <Repeat className="size-3" /> {repeatWords(task.repeat)}
-        </span>
-      ) : null}
-    </>
+    <span
+      className="inline-flex items-center gap-1"
+      title={`Reminder on the due day at ${task.remindTimes.join(', ')}${task.remindDayBefore ? ' (and the day before)' : ''}`}
+    >
+      <AlarmClock className="size-3" />
+      {task.remindTimes.map(shortTime).join(', ')}
+    </span>
   );
 }
 
@@ -1058,17 +1043,14 @@ function TaskDetailDialog({ view, myId, onClose, onToggle, onEdit, onDelete, onA
               </Row>
             ) : null}
             <Row label="Due date">{task.dueYMD ? fmtDate(task.dueYMD) : '—'}</Row>
-            {/* Yaad aur repeat yahan POORE lafzon me — row par chip tang jagah me kata
-                hua hota hai ("Mon, Fri"), aur "ek din pehle bhi" wahan dikhta hi nahi.
-                Band ho chuke kaam par dono bemaani hain. */}
+            {/* Yaad yahan POORE lafzon me, TAREEKH ke saath — row ka chip tang jagah me
+                sirf waqt dikhata hai, aur "kis din ka waqt" wahi sawaal hai jo owner ne
+                poochha tha (19 Nov 2026). Band ho chuke kaam par ye bemaani hai. */}
             {!done && task.remindTimes?.length ? (
               <Row label="Reminder">
-                {task.remindTimes.map(shortTime).join(', ')}
-                {task.remindDayBefore ? <span className="block text-xs font-normal text-muted-foreground">and a day before</span> : null}
+                {task.dueYMD ? `${fmtDate(task.dueYMD)} · ` : ''}{task.remindTimes.map(shortTime).join(', ')}
+                {task.remindDayBefore ? <span className="block text-xs font-normal text-muted-foreground">and the same times the day before</span> : null}
               </Row>
-            ) : null}
-            {!done && task.repeat?.type && task.repeat.type !== 'NONE' ? (
-              <Row label="Repeat">{repeatWords(task.repeat)}</Row>
             ) : null}
             <Row label="Created">{fmtDate(task.createdAt)}</Row>
             {done ? (

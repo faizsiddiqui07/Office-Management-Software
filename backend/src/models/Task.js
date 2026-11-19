@@ -44,28 +44,6 @@ const taskSchema = new mongoose.Schema(
     remindTimes: { type: [String], default: [] },
     // Due se EK DIN pehle bhi, unhi waqton par.
     remindDayBefore: { type: Boolean, default: false },
-    // ── Repeat: kaam kin dinon lautega ────────────────────────────────────────
-    // Kaam poora hote hi agli taarikh wala naya copy ban jaata hai aur ye History me
-    // chala jaata hai. Owner ne personal AUR diye hue, dono par ijazat di (19 Nov 2026).
-    //
-    // `repeat.type` ko plain { type, enum, default } hi rehne do — wahi shakl mongoose ko
-    // `repeat` ko NESTED path maanne par majboor karti hai, aur usi se neeche ke teen
-    // array asli schema path bante hain. Chhota karke `type: String` likha to poora
-    // sub-object bikhar jaata hai. (Bilkul yahi baat Announcement.recurrence par likhi
-    // hai — wahan array chhootne par post hi nahi jaata tha.)
-    //
-    // DAILY yahin ka hai, lib/recurrence.js ka nahi: wo file announcements ke saath saajha
-    // hai aur usme DAILY jodne se announcements me bhi aa jaata, jo owner ne maanga nahi.
-    // Baaki teen type ka hisaab wahi file karti hai (31 → 30/28 wala clamp samet).
-    repeat: {
-      type: { type: String, enum: ['NONE', 'DAILY', 'WEEKLY', 'MONTHLY', 'DATES'], default: 'NONE' },
-      weekdays: { type: [Number], default: [] }, // 0–6, 0 = Sunday
-      daysOfMonth: { type: [Number], default: [] }, // 1–31
-      dates: { type: [String], default: [] }, // 'YYYY-MM-DD'
-    },
-    // Is copy se agla copy ban chuka. Done → undo → done dobara karne par doosra copy na
-    // bane, iska pakka nishaan. (Niyam: ek copy, ek baar.)
-    repeatSpawned: { type: Boolean, default: false },
     // Forwarding: a manager passes work down but stays on the hook for it. The copy
     // they were given stays in their list and only closes once this child does —
     // through their own approval if they asked for one, then their assigner's.
