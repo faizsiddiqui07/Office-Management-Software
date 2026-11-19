@@ -20,6 +20,33 @@
  */
 export const RELEASES = [
   {
+    id: '2026-11-19-task-reminders-repeat',
+    ymd: '2026-11-19',
+    title: 'Set your own reminder times, and tasks that come back',
+    points: [
+      'A task with a due date can now carry up to three reminder times — tap 9:30, 1 PM or 5 PM, or pick your own.',
+      'You can also ask to be reminded a day before, not only on the day itself.',
+      'When you give someone a task, you can set those reminder times for them right there — they go to whoever has to do the work, not to you.',
+      'A task can now repeat: every day, on chosen weekdays, on chosen dates of the month, or on dates you pick one by one.',
+      'A repeating task creates the next one by itself the moment it is finished, with the same reminder times.',
+      'If you are given a repeating task, you can change your own reminder times and repeat — the rest of the task still belongs to whoever gave it to you.',
+      'A month with no 29th, 30th or 31st uses its last day instead, so nothing is skipped.',
+    ],
+  },
+  {
+    id: '2026-11-19-slide-to-complete',
+    ymd: '2026-11-19',
+    title: 'Finish a task by sliding, on your phone',
+    points: [
+      'On a phone or tablet, every task now has a slider under it — slide it to the right to finish the task, the way you answer a call.',
+      'After you slide, the task stays on screen for five seconds with a countdown before it moves to History.',
+      'During that countdown you can take back your own personal task if you slid by mistake.',
+      'A task that needs approval says "Slide to submit", and one already waiting says "Slide to withdraw".',
+      'In History, the same slider puts a finished task back on your list.',
+      'On a laptop or desktop nothing changes — the round tick works exactly as before.',
+    ],
+  },
+  {
     id: '2026-11-19-deadline-reminders',
     ymd: '2026-11-19',
     title: 'Task deadline reminders',

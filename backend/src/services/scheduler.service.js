@@ -2,7 +2,7 @@ import { maybeRunDaily } from './bonus.service.js';
 import { maybeAnnounceBirthdays } from './holiday.service.js';
 import { publishDueAnnouncements, announceRecurring } from './announcement.service.js';
 import { maybeRunDayCloseDigest } from './dayDigest.service.js';
-import { runTaskReminders } from './taskReminder.service.js';
+import { runTaskReminders, runOwnReminders } from './taskReminder.service.js';
 import { pruneOldChats } from './chat.service.js';
 import { runSetupTasks } from '../app.js';
 
@@ -20,7 +20,7 @@ import { runSetupTasks } from '../app.js';
  * must never error out.
  */
 export async function runScheduledJobs() {
-  const jobs = { setup: 'ok', bonus: 'ok', birthdays: 'ok', announcements: 'ok', recurring: 'ok', dayDigest: 'ok', taskReminders: 'ok', chatPrune: 'ok' };
+  const jobs = { setup: 'ok', bonus: 'ok', birthdays: 'ok', announcements: 'ok', recurring: 'ok', dayDigest: 'ok', taskReminders: 'ok', ownReminders: 'ok', chatPrune: 'ok' };
   const tickNow = new Date();
   const settled = await Promise.allSettled([
     // Seed/migration/repair maintenance (system roles, role migrations, admin-lockout
@@ -45,11 +45,14 @@ export async function runScheduledJobs() {
     // −5 likh raha hota hai; do alag "abhi" ke beech aadhi raat pad jaye to ek din ka
     // task dono taraf se chhoot sakta hai.
     runTaskReminders(tickNow),
+    // Aur jo waqt bande ne KHUD apne task par chune hain (I43) — usi tick ke instant par,
+    // taaki "aaj" dono jobs ke liye ek hi din ho.
+    runOwnReminders(tickNow),
     // Purani chat hatana — sirf tab jab owner ne retention chaalu kiya ho. Band haalat
     // me ye ek Setting padh kar wapas aa jaata hai, isliye har tick par bhi sasta hai.
     pruneOldChats(),
   ]);
-  const keys = ['setup', 'bonus', 'birthdays', 'announcements', 'recurring', 'dayDigest', 'taskReminders', 'chatPrune'];
+  const keys = ['setup', 'bonus', 'birthdays', 'announcements', 'recurring', 'dayDigest', 'taskReminders', 'ownReminders', 'chatPrune'];
   settled.forEach((r, i) => {
     if (r.status === 'rejected') {
       jobs[keys[i]] = r.reason?.message || 'error';

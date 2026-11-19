@@ -5,6 +5,41 @@ const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD').or(z.
 // throws a cast error with no status and surfaces as a 500 on what is really bad input.
 const objectId = z.string().regex(/^[a-f\d]{24}$/i, 'Not a valid person');
 
+/**
+ * "Yaad dilana" ka waqt — company time, 24-ghante wala 'HH:mm'. Teen ki hadd owner ne
+ * chuni (19 Nov 2026).
+ *
+ * Yahan `.max(3)` hatana sirf UI ka mamla nahi hai: ye waqt scheduler ke ek hi tick me
+ * push bante hain, aur har push 3 second tak await hota hai (models/Notification.js).
+ * Bina hadd ke ek banda ek task par 50 waqt daal sakta hai aur us tick ke baaki kaam
+ * (points, announcements, digest) Lambda ke 30s me nahi samaate.
+ */
+const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Expected HH:mm');
+const remindTimes = z.array(hhmm).max(3, 'Ek din me 3 se zyada reminder nahi');
+
+/**
+ * Repeat ka niyam. `type` batata hai kaunse field maayne rakhte hain, aur refine zid
+ * karta hai ki wo waqai bheje gaye hon — warna "WEEKLY par koi din nahi" jaisa task banta
+ * hai jo kabhi lautta hi nahi.
+ *
+ * LENGTH jaancho, `=== undefined` nahi: khaali array bhi "defined" hota hai aur wahi
+ * aage tareekh ke hisaab tak pahunch jaata hai jiske paas ginne ko koi din nahi.
+ * (Yahi do jaal announcements ke validator par likhe hain — wahan se seekha hua hai.)
+ */
+const repeatSchema = z
+  .object({
+    type: z.enum(['NONE', 'DAILY', 'WEEKLY', 'MONTHLY', 'DATES']),
+    weekdays: z.array(z.number().int().min(0).max(6)).max(7).optional(),
+    daysOfMonth: z.array(z.number().int().min(1).max(31)).max(31).optional(),
+    dates: z.array(ymd).max(24).optional(),
+  })
+  .superRefine((r, ctx) => {
+    const need = (ok, path, message) => { if (!ok) ctx.addIssue({ code: 'custom', path: [path], message }); };
+    if (r.type === 'WEEKLY') need(r.weekdays?.length, 'weekdays', 'Hafte ka kam se kam ek din chuno');
+    if (r.type === 'MONTHLY') need(r.daysOfMonth?.length, 'daysOfMonth', 'Mahine ki kam se kam ek tareekh chuno');
+    if (r.type === 'DATES') need(r.dates?.length, 'dates', 'Kam se kam ek taarikh chuno');
+  });
+
 export const createTaskSchema = z.object({
   title: z.string().min(1, 'Add the work').max(300),
   notes: z.string().max(2000).optional().default(''),
@@ -14,6 +49,9 @@ export const createTaskSchema = z.object({
   assignTo: z.union([objectId, z.array(objectId).max(50)]).optional(),
   collaborators: z.array(objectId).max(20).optional(), // tagged teammates on a shared task
   requiresApproval: z.boolean().optional(), // assigner must approve before it's done
+  remindTimes: remindTimes.optional(),
+  remindDayBefore: z.boolean().optional(),
+  repeat: repeatSchema.optional(),
 });
 
 export const updateTaskSchema = z.object({
@@ -24,6 +62,9 @@ export const updateTaskSchema = z.object({
   applyToAll: z.boolean().optional(), // assigner: push a content edit to every copy of a multi-assigned task
   assignTo: z.union([objectId, z.array(objectId).max(50)]).optional(), // assigner: change who it's assigned to
   requiresApproval: z.boolean().optional(),
+  remindTimes: remindTimes.optional(),
+  remindDayBefore: z.boolean().optional(),
+  repeat: repeatSchema.optional(),
 });
 
 export const statusSchema = z.object({ status: z.enum(['PENDING', 'DONE']) });

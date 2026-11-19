@@ -64,10 +64,94 @@ const OVERDUE_AT = '10:00';
 const ESCALATE_EVERY = 3;
 /** Ek tick me itne se zyada task nahi — aur agar zyada mile to log me saaf likho (chup-chaap na katein). */
 const MAX_TASKS = 300;
+/**
+ * Ek tick me itni se zyada "apni yaad" nahi bhejenge (idea I43).
+ *
+ * Kyun hadd: har notify() push ke liye 3 second tak rukta hai, aur is tick ke saare kaam
+ * (points, announcements, digest, ye dono reminder) EK hi Lambda invocation me chalte
+ * hain jiski hadd 30 second hai. "Subah 10 baje" jaisa aam waqt bahut saare task par ek
+ * saath aata hai. Jo is tick me chhoot gaye wo agle tick par chale jaayenge (kuch minute
+ * baad) — der se jaana chalega, aadhe raaste me tick ka mar jaana nahi.
+ */
+const MAX_OWN_REMINDERS = 40;
 
 const idOf = (v) => String(v?._id ?? v ?? '');
 /** b − a, dinon me. Dono 'YYYY-MM-DD'. */
 const daysBetween = (a, b) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86400000);
+
+/**
+ * "YAAD DILANA" — jo waqt bande ne KHUD chune (Task.remindTimes, idea I43, 19 Nov 2026).
+ *
+ * Upar wali ghanti (due se ek din pehle / overdue) app apne hisaab se bhejti hai. Ye
+ * uske ulta hai: ye banda khud tay karta hai, aur SIRF use jaati hai jiska kaam hai —
+ * dene wale ko nahi (owner ka faisla; use overdue wali alag ghanti pehle se milti hai).
+ *
+ * KIS DIN: due wale din. Aur `remindDayBefore` ho to ek din pehle bhi, unhi waqton par.
+ * Repeat wale task par naya copy apni nayi due date ke saath banta hai, to ye apne aap
+ * us din chali jaati hai — alag se kuch jodna nahi padta.
+ *
+ * KIS WAQT: `remindTimes` me jo likha ho (zyada se zyada 3). Waqt "us waqt YA uske baad"
+ * ka pehla tick hai — scheduler har kuch minute jaagta hai, to 10:00 ka matlab 10:00 se
+ * 10:05 hai. Isse sateek nahi ho sakta aur owner ko ye bataya gaya hai.
+ *
+ * EK YAAD EK BAAR: NudgeLog ka unique-key claim — `own:<task>:<din>:<waqt>`. Din aur waqt
+ * dono key me hain, to 10:00 wali aur 17:00 wali alag ginti jaati hain, aur kal phir se
+ * jaayengi.
+ */
+export async function runOwnReminders(now = new Date()) {
+  try {
+    const today = ymdInTz(now);
+    const tomorrow = addDays(today, 1);
+    const hhmm = formatInTimeZone(now, COMPANY_TZ, 'HH:mm');
+
+    // Aaj sirf do tarah ke task maayne rakhte hain: jinki due AAJ hai, aur jinki due KAL
+    // hai par "ek din pehle" chaalu hai. Dono haalat me ghanti AAJ bajti hai.
+    const rows = await Task.find({
+      status: 'PENDING',
+      'remindTimes.0': { $exists: true },
+      dueYMD: { $in: [today, tomorrow] },
+    }).select('title owner dueYMD remindTimes remindDayBefore requiresApproval submittedAt status').limit(MAX_TASKS);
+
+    const jobs = [];
+    for (const t of rows) {
+      const dayBefore = t.dueYMD === tomorrow;
+      if (dayBefore && !t.remindDayBefore) continue;
+      // Submit kar chuke bande ko "yaad hai na" bolna galat hai — uska hissa ho chuka.
+      if (t.requiresApproval && t.submittedAt) continue;
+      for (const time of t.remindTimes || []) {
+        if (hhmm < time) continue; // abhi waqt nahi aaya
+        jobs.push({ t, time, dayBefore });
+      }
+    }
+
+    const sending = jobs.slice(0, MAX_OWN_REMINDERS);
+    if (jobs.length > sending.length) {
+      console.warn(`own reminders: ${jobs.length - sending.length} is tick me chhoot gaye — agle tick par jaayenge`);
+    }
+
+    let sent = 0;
+    // Claim PEHLE, phir bhejna — par ek-ek karke, taaki ek ka fail hona baaki ko na roke.
+    await Promise.all(sending.map(async ({ t, time, dayBefore }) => {
+      if (!(await claimNudge(`own:${idOf(t)}:${today}:${time}`))) return;
+      await notify({
+        user: t.owner,
+        type: 'TASK_REMINDER',
+        ...taskNews(t.title, 'Reminder', { due: t.dueYMD, note: dayBefore ? 'due tomorrow — a day to go' : '' }),
+        link: todoLink(t._id),
+        // Wahi tag jo deadline wali ghanti ka hai: ek hi task ki agli khabar pichhli ko
+        // badal de, phone par dher na lage.
+        entityType: 'TaskDue',
+        entityId: t._id,
+      });
+      sent += 1;
+    }));
+
+    return { considered: rows.length, due: jobs.length, sent };
+  } catch (err) {
+    console.error('own reminders failed:', err?.message);
+    return { error: err?.message || 'error' };
+  }
+}
 
 export async function runTaskReminders(now = new Date()) {
   try {

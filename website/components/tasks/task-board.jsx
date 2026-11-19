@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { AlertTriangle, Award, Check, CheckCircle2, ClipboardList, Clock, Download, Eye, EyeOff, FolderOpen, Forward, ListTodo, Pencil, Search, Send, ThumbsUp, Trash2, Undo2, UserRound, Users, X } from 'lucide-react';
+import { AlarmClock, AlertTriangle, Award, Check, CheckCircle2, ClipboardList, Clock, Download, Eye, EyeOff, FolderOpen, Forward, ListTodo, Pencil, Repeat, Search, Send, ThumbsUp, Trash2, Undo2, UserRound, Users, X } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -314,6 +314,56 @@ function ForwardTrail({ task, myId }) {
  * `assignerView` flips it round for "Assigned by me": the interesting person is who the
  * work went TO, not who it came from (which is me), and I may edit or withdraw it.
  */
+/** '17:00' → '5 PM' / '09:30' → '9:30 AM'. Row ki meta line tang hai — poora ghanta ho to
+ *  minute girana ek chip ke layak jagah bachata hai. */
+function shortTime(hm) {
+  const [h, m] = String(hm).split(':').map(Number);
+  const pm = h >= 12;
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}${m ? `:${String(m).padStart(2, '0')}` : ''} ${pm ? 'PM' : 'AM'}`;
+}
+
+/** Repeat ka chhota text. Server ke describeTaskRepeat ka jodidaar — dono ek jaisa padhte
+ *  hain, par ye row par chhota rehta hai. */
+function repeatWords(r) {
+  const D = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  if (r?.type === 'DAILY') return 'Daily';
+  if (r?.type === 'WEEKLY') return [...(r.weekdays || [])].sort((a, b) => a - b).map((d) => D[d]).join(', ');
+  if (r?.type === 'MONTHLY') return `Monthly ${[...(r.daysOfMonth || [])].sort((a, b) => a - b).join(', ')}`;
+  if (r?.type === 'DATES') return `${(r.dates || []).length} dates`;
+  return '';
+}
+
+/**
+ * Yaad aur repeat ka nishaan — warna set karne ke baad kahin dikhta hi nahi aur banda
+ * bhool jaata hai ki laga bhi hai ya nahi.
+ *
+ * Ek hi component do jagah: flat TaskRow aur DatedTaskList ki chhoti row (kisi bande ke
+ * folder ke andar). Dono ki meta line alag-alag likhi hui hai, aur pehle ye chips sirf
+ * flat row me the — to kaam DEKAR person-folder kholne wale ko apna hi lagaya hua waqt
+ * nahi dikhta tha. DONE row par bekaar hai, isliye wahan kuch nahi.
+ */
+function ReminderChips({ task, done }) {
+  const hasTimes = !done && !!task.remindTimes?.length;
+  const hasRepeat = !done && !!task.repeat?.type && task.repeat.type !== 'NONE';
+  if (!hasTimes && !hasRepeat) return null;
+  return (
+    <>
+      {hasTimes ? (
+        <span className="inline-flex items-center gap-1" title={`Reminder at ${task.remindTimes.join(', ')}${task.remindDayBefore ? ' (and a day before)' : ''}`}>
+          <AlarmClock className="size-3" />
+          {task.remindTimes.map(shortTime).join(', ')}
+        </span>
+      ) : null}
+      {hasRepeat ? (
+        <span className="inline-flex items-center gap-1 text-primary">
+          <Repeat className="size-3" /> {repeatWords(task.repeat)}
+        </span>
+      ) : null}
+    </>
+  );
+}
+
 /**
  * Slide-to-complete ka saaman, board se har row tak — CONTEXT se, props se nahi.
  *
@@ -467,6 +517,7 @@ function TaskRow({ task, myId, canToggle, onToggle, onEdit, onDelete, onOpen, as
             </span>
           ) : null}
           {task.dueYMD ? <span className={cn(overdue && 'font-medium text-destructive')}>Due {fmtDate(task.dueYMD)}</span> : null}
+          <ReminderChips task={task} done={done} />
           {task.requiresApproval && !done && !awaiting && !task.canReview ? <span className="inline-flex items-center gap-1 text-primary"><ThumbsUp className="size-3" /> Needs approval</span> : null}
           {done && task.completedAt ? <span className="text-success">Done {fmtDate(task.completedAt)}{task.completedBy && task.completedBy.id !== myId ? ` · by ${task.completedBy.name}` : ''}</span> : null}
           {task.siblings?.length ? <SiblingProgress siblings={task.siblings} selfDone={done} /> : null}
@@ -581,6 +632,7 @@ function DatedTaskList({ tasks, myId, dateKey, ascending = false, onEdit, onDele
                   <p className={cn('text-sm font-medium', done && 'text-muted-foreground line-through')}>{t.title}</p>
                   <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
                     {t.dueYMD ? <span className={cn(overdue && 'font-medium text-destructive')}>Due {fmtDate(t.dueYMD)}</span> : null}
+                    <ReminderChips task={t} done={done} />
                     {done && t.completedAt ? <span className="text-success">Done {fmtDate(t.completedAt)}{t.completedBy?.name ? ` · by ${t.completedBy.name}` : ''}</span> : null}
                     {t.siblings?.length ? <SiblingProgress siblings={t.siblings} selfDone={done} /> : null}
                     {t.canReview ? (
@@ -1006,6 +1058,18 @@ function TaskDetailDialog({ view, myId, onClose, onToggle, onEdit, onDelete, onA
               </Row>
             ) : null}
             <Row label="Due date">{task.dueYMD ? fmtDate(task.dueYMD) : '—'}</Row>
+            {/* Yaad aur repeat yahan POORE lafzon me — row par chip tang jagah me kata
+                hua hota hai ("Mon, Fri"), aur "ek din pehle bhi" wahan dikhta hi nahi.
+                Band ho chuke kaam par dono bemaani hain. */}
+            {!done && task.remindTimes?.length ? (
+              <Row label="Reminder">
+                {task.remindTimes.map(shortTime).join(', ')}
+                {task.remindDayBefore ? <span className="block text-xs font-normal text-muted-foreground">and a day before</span> : null}
+              </Row>
+            ) : null}
+            {!done && task.repeat?.type && task.repeat.type !== 'NONE' ? (
+              <Row label="Repeat">{repeatWords(task.repeat)}</Row>
+            ) : null}
             <Row label="Created">{fmtDate(task.createdAt)}</Row>
             {done ? (
               <Row label="Completed">

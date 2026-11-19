@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { ReminderRepeatFields, cleanRepeat, EMPTY_REPEAT } from '@/components/tasks/reminder-repeat-fields';
 import { NoteEditor } from '@/components/ui/note-editor';
 
 export function AssignDialog() {
@@ -25,6 +26,11 @@ export function AssignDialog() {
   const [notes, setNotes] = React.useState('');
   const [dueYMD, setDueYMD] = React.useState('');
   const [requiresApproval, setRequiresApproval] = React.useState(false);
+  // Kaam DETE waqt hi yaad ka waqt aur repeat (I43, owner ka faisla 19 Nov 2026 — "sirf
+  // personal task me nahi"). Yaad jisko kaam mila usi ke phone par jaati hai.
+  const [remindTimes, setRemindTimes] = React.useState([]);
+  const [remindDayBefore, setRemindDayBefore] = React.useState(false);
+  const [repeat, setRepeat] = React.useState(EMPTY_REPEAT);
 
   const { data } = useQuery({ queryKey: ['tasks', 'assignable'], queryFn: () => api.get('/tasks/assignable'), enabled: open });
   const users = data?.users ?? [];
@@ -40,6 +46,9 @@ export function AssignDialog() {
       setNotes('');
       setDueYMD('');
       setRequiresApproval(false);
+      setRemindTimes([]);
+      setRemindDayBefore(false);
+      setRepeat(EMPTY_REPEAT);
     }
   }, [open]);
 
@@ -61,7 +70,7 @@ export function AssignDialog() {
   };
 
   const mut = useMutation({
-    mutationFn: () => api.post('/tasks', { assignTo, collaborators, title, notes, dueYMD, requiresApproval }),
+    mutationFn: () => api.post('/tasks', { assignTo, collaborators, title, notes, dueYMD, requiresApproval, remindTimes, remindDayBefore, repeat: cleanRepeat(repeat) }),
     onSuccess: (res) => {
       const n = res?.count ?? assignTo.length;
       toast.success(n > 1 ? `Task assigned to ${n} people` : 'Task assigned');
@@ -167,6 +176,16 @@ export function AssignDialog() {
           <Label htmlFor="a-notes">Notes (optional)</Label>
           <NoteEditor id="a-notes" value={notes} onChange={setNotes} placeholder="Details…" />
         </div>
+        <ReminderRepeatFields
+          times={remindTimes}
+          setTimes={setRemindTimes}
+          dayBefore={remindDayBefore}
+          setDayBefore={setRemindDayBefore}
+          repeat={repeat}
+          setRepeat={setRepeat}
+          hasDueDate={!!dueYMD}
+          forSomeoneElse
+        />
 
         {/* Tag anyone in the office to keep them in the loop — it shows under "Shared with
             me" for them, and the assignee is still the one who does it. Leadership
