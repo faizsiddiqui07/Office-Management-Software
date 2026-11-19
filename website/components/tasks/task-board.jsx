@@ -15,6 +15,7 @@ import { LoadingState } from '@/components/glass/skeletons';
 import { QueryError } from '@/components/glass/query-error';
 import { ConfirmDialog } from '@/components/glass/confirm-dialog';
 import { AppDialog } from '@/components/glass/app-dialog';
+import { SlideAction, SlideDonePending } from '@/components/tasks/slide-action';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -313,6 +314,19 @@ function ForwardTrail({ task, myId }) {
  * `assignerView` flips it round for "Assigned by me": the interesting person is who the
  * work went TO, not who it came from (which is me), and I may edit or withdraw it.
  */
+/**
+ * Slide-to-complete ka saaman, board se har row tak — CONTEXT se, props se nahi.
+ *
+ * TaskRow chhah alag jagah par banti hai (flat list, folder, tagged, assigned, batch,
+ * History), aur beech me DatedTaskList aur PersonFolder jaise do aur component padte
+ * hain. Props se bhejte to har beech wale component me do-teen naye prop jodne padte,
+ * sirf aage pahunchane ke liye — aur ek jagah bhoolne par wahi row chup-chaap bina
+ * slider ke reh jaati. Context me ye khatra hai hi nahi.
+ *
+ * `null` ka matlab: koi slider nahi (jaise dialog ke andar ki row).
+ */
+const SlideCtx = React.createContext(null);
+
 function TaskRow({ task, myId, canToggle, onToggle, onEdit, onDelete, onOpen, assignerView = false, allowEdit }) {
   const done = task.status === 'DONE';
   const awaiting = task.awaitingApproval;
@@ -334,11 +348,68 @@ function TaskRow({ task, myId, canToggle, onToggle, onEdit, onDelete, onOpen, as
   const sharedWith = canManage && task.collaborators?.length ? task.collaborators : [];
   // Never offer a button the server will refuse.
   const mayToggle = canToggle && canCompleteTask(task, myId);
+
+  // ── Slide-to-complete (owner, 19 Nov 2026) ──────────────────────────────────
+  const slide = React.useContext(SlideCtx);
+  const pending = slide?.linger?.[task.id];
+  let slider = null;
+  if (pending) {
+    // Ho chuka hai, par row 5 second yahin rukti hai — ginti ke saath.
+    slider = (
+      <SlideDonePending
+        secondsLeft={(pending.until - slide.now) / 1000}
+        totalSeconds={slide.lingerMs / 1000}
+        onUndo={pending.canUndo ? () => slide.undo(task) : null}
+      />
+    );
+  } else if (slide && mayToggle) {
+    slider = awaiting ? (
+      // Approval ke intezaar wali row. Pehle yahan slider nahi tha aur purana gol button
+      // ye kaam karta tha — par phone par ab wo button hai hi nahi, to bina iske
+      // "submission wapas lo" ka raasta hi band ho jaata.
+      <SlideAction
+        label="Slide to withdraw"
+        Icon={Undo2}
+        tone="warning"
+        onComplete={() => onToggle(task)}
+      />
+    ) : done ? (
+      <SlideAction
+        label="Slide to undo"
+        Icon={Undo2}
+        tone="muted"
+        // Seedha wahi purana raasta: delegated task wapas kholne par "points hat
+        // jayenge" wali chetavni yahan bhi waisi ki waisi aati hai.
+        onComplete={() => onToggle(task)}
+      />
+    ) : (
+      <SlideAction
+        label={task.requiresApproval ? 'Slide to submit' : 'Slide to complete'}
+        Icon={task.requiresApproval ? Send : Check}
+        tone={task.requiresApproval ? 'warning' : 'success'}
+        busy={slide.busyId === task.id}
+        onComplete={() => slide.complete(task)}
+      />
+    );
+  }
+
+  // SLIDER PHONE/TABLET PAR, TICK LAPTOP PAR (owner, 19 Nov 2026). `lg` wahi lakeer hai
+  // jahan asli sidebar aata hai aur neeche ki nav bar jaati hai (bottom-nav.jsx) — to
+  // "phone jaisa" aur "laptop jaisa" poore app me ek hi jagah se tay hota hai.
+  //
+  // Jis row par slider hai, wahan gol tick phone par CHHUP jaata hai — do raaste ek hi
+  // kaam ke liye rakhna wahi bhaari-pan hai jo owner hamesha hatate hain. Par jis row par
+  // slider nahi hai (jo mera kaam hi nahi — "Not yours to complete"), wahan wo gola
+  // phone par bhi rehta hai: wahan wo button nahi, nishaan hai — hara tick matlab ho
+  // gaya, peela ghadi matlab approval ka intezaar.
+  const hideTickOnPhone = !!slider;
+
   return (
     <div
       onClick={() => onOpen(task)}
-      className="flex cursor-pointer items-start gap-3 rounded-xl bg-foreground/[0.03] p-3 ring-1 ring-border/50 transition-colors hover:bg-foreground/[0.06]"
+      className="cursor-pointer rounded-xl bg-foreground/[0.03] p-3 ring-1 ring-border/50 transition-colors hover:bg-foreground/[0.06]"
     >
+      <div className="flex items-start gap-3">
       {/* 40px touch target; the visual 20px circle sits inside (negative margins keep layout). */}
       <button
         type="button"
@@ -348,7 +419,13 @@ function TaskRow({ task, myId, canToggle, onToggle, onEdit, onDelete, onOpen, as
           if (mayToggle) onToggle(task);
         }}
         aria-label={!mayToggle ? 'Not yours to complete' : done ? 'Mark as not done' : awaiting ? 'Withdraw submission' : 'Mark as done'}
-        className={cn('group/tgl -m-2.5 -mt-2 flex size-10 shrink-0 items-center justify-center', !mayToggle && 'cursor-default')}
+        className={cn(
+          'group/tgl -m-2.5 -mt-2 size-10 shrink-0 items-center justify-center',
+          // Phone/tablet par jahan slider hai wahan ye chhup jaata hai; laptop par yahi
+          // asli control hai (mouse ka nishaana pakka hota hai, slide ki zaroorat nahi).
+          hideTickOnPhone ? 'hidden lg:flex' : 'flex',
+          !mayToggle && 'cursor-default',
+        )}
       >
         <span
           className={cn(
@@ -427,7 +504,9 @@ function TaskRow({ task, myId, canToggle, onToggle, onEdit, onDelete, onOpen, as
             <Trash2 className="size-4" />
           </Button>
         ) : null}
+        </div>
       </div>
+      {slider ? <div className="lg:hidden">{slider}</div> : null}
     </div>
   );
 }
@@ -1308,6 +1387,101 @@ export function TaskBoard() {
     toggleMut.mutate(t);
   };
 
+  // ── Slide-to-complete: kaam turant, par row 5 second rukti hai ───────────────
+  //
+  // Owner ka faisla (19 Nov 2026): slide karte hi kaam ho jaye, phir row wahin ruke aur
+  // ek ghadi batati rahe ki ab History me jaane me kitna baaki hai — usi dauraan wapas
+  // lene ka mauka ho.
+  //
+  // Isliye is raaste par list TURANT refresh NAHI hoti. Refresh karte hi server se nayi
+  // list aati, jisme ye task DONE ho kar pending list se nikal chuka hota — row aankh
+  // jhapakte gayab, aur ginti dikhane ko kuch bachta hi nahi. Refresh 5 second baad
+  // hota hai, jab row waise bhi jaa rahi hoti hai.
+  //
+  // UNDO SIRF APNE PERSONAL TASK PAR (owner ka faisla, usi din). Doosre ka diya kaam
+  // "done" hote hi server teen cheezein kar deta hai jo wapas nahi aatiN: dene wale ko
+  // push, batch ke baaki logon ko nudge, aur forward chain me upar ki copies band. Points
+  // to wapas ho jaate hain, par settleParent ka koi ulta raasta code me hai hi nahi.
+  // Isliye wahan "5 second me palat denge" wala vaada jhootha hota — row sirf ginti
+  // dikhati hai, Undo ka button nahi.
+  const LINGER_MS = 5000;
+  const [linger, setLinger] = React.useState({}); // id -> { until, canUndo }
+  const [lingerNow, setLingerNow] = React.useState(() => Date.now());
+  const lingerTimers = React.useRef(new Map());
+
+  const hasLinger = Object.keys(linger).length > 0;
+  React.useEffect(() => {
+    if (!hasLinger) return undefined;
+    // Ginti ke liye. 500ms par isliye ki "3s" se "2s" nazar ke saamne badle, ek second
+    // ka jhatka na lage.
+    const h = setInterval(() => setLingerNow(Date.now()), 500);
+    return () => clearInterval(h);
+  }, [hasLinger]);
+
+  // Page chhodte waqt adhoore timer saaf — warna unmount ke baad setState hota hai.
+  React.useEffect(() => {
+    const timers = lingerTimers.current;
+    return () => { timers.forEach((h) => clearTimeout(h)); timers.clear(); };
+  }, []);
+
+  const dropLinger = React.useCallback((id) => {
+    const h = lingerTimers.current.get(id);
+    if (h) clearTimeout(h);
+    lingerTimers.current.delete(id);
+    setLinger((m) => { const n = { ...m }; delete n[id]; return n; });
+  }, []);
+
+  // Kis task ka jawab abhi raaste me hai — slider ko tab tak khulne se rokne ke liye.
+  const [busyId, setBusyId] = React.useState('');
+
+  const completeMut = useMutation({
+    mutationFn: (t) => api.patch(`/tasks/${t.id}/status`, { status: 'DONE' }),
+    onSettled: () => setBusyId(''),
+    onSuccess: (res, t) => {
+      // Approval wale task par slide "submit" hai, "done" nahi — wo list me hi rehta hai
+      // (ab intezaar me), to use rokne ki koi baat hi nahi.
+      if (res?.task?.awaitingApproval) {
+        toast.success('Submitted for approval');
+        qc.invalidateQueries({ queryKey: ['tasks'] });
+        return;
+      }
+      // `Date.now()` updater ke BAHAR. React updater ko ek se zyada baar chala sakta hai
+      // (wo "pure" maana jaata hai), aur andar rakhne par har baar nayi "until" banti
+      // thi — ginti 5s ki jagah 6s se shuru hoti dikhi, jabki timeout 5s par hi lag chuka
+      // hota tha. Yaani likha hua waqt aur asli waqt alag ho jaate the.
+      const until = Date.now() + LINGER_MS;
+      setLinger((m) => ({ ...m, [t.id]: { until, canUndo: !t.assignedBy } }));
+      setLingerNow(Date.now());
+      const prev = lingerTimers.current.get(t.id);
+      if (prev) clearTimeout(prev);
+      lingerTimers.current.set(t.id, setTimeout(() => {
+        lingerTimers.current.delete(t.id);
+        setLinger((m) => { const n = { ...m }; delete n[t.id]; return n; });
+        qc.invalidateQueries({ queryKey: ['tasks'] });
+      }, LINGER_MS));
+    },
+    onError: (e, t) => {
+      toast.error(e?.message || 'Could not update the task');
+      dropLinger(t.id);
+      qc.invalidateQueries({ queryKey: ['tasks'] });
+    },
+  });
+
+  const undoSlideMut = useMutation({
+    mutationFn: (t) => api.patch(`/tasks/${t.id}/status`, { status: 'PENDING' }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['tasks'] }); },
+    onError: (e) => { toast.error(e?.message || 'Could not undo'); qc.invalidateQueries({ queryKey: ['tasks'] }); },
+  });
+
+  const slideCtx = {
+    linger,
+    now: lingerNow,
+    lingerMs: LINGER_MS,
+    busyId,
+    complete: (t) => { setBusyId(t.id); completeMut.mutate(t); },
+    undo: (t) => { dropLinger(t.id); undoSlideMut.mutate(t); },
+  };
+
   // The assigner approves or rejects a submitted task — a rejection carries a reason.
   const [rejecting, setRejecting] = React.useState(null);
   // The task a CEO & President is about to sign off over a middle link's head.
@@ -1512,6 +1686,7 @@ export function TaskBoard() {
   }, [isAssigned, assignedFlat, search, tasks]);
 
   return (
+    <SlideCtx.Provider value={slideCtx}>
     <div className="space-y-6">
       {/* Four across is too tight on a phone, so it's 2×2 there and a single row from sm up. */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
@@ -2046,5 +2221,6 @@ export function TaskBoard() {
         </div>
       </AppDialog>
     </div>
+    </SlideCtx.Provider>
   );
 }
