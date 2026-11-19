@@ -64,7 +64,8 @@ export async function setRecord(req, res, next) {
     if (checkOut && !checkIn) {
       return res.status(400).json(fail('BAD_INPUT', 'Add a check-in time as well — a check-out on its own would leave the day marked absent. Clear both to wipe the day.'));
     }
-    const result = await svc.setAttendanceRecord(userId, dateYMD, checkIn, checkOut);
+    // req.user rides along so the employee's notification can name who changed their day.
+    const result = await svc.setAttendanceRecord(userId, dateYMD, checkIn, checkOut, req.user);
     await audit({
       actor: req.user._id,
       action: 'attendance.edit',

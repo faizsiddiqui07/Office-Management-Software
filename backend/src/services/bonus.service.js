@@ -15,6 +15,7 @@ import { APP_LIVE_YMD } from '../lib/appLive.js';
 import { holidayYMDSet } from './holiday.service.js';
 import { isBirthdayYMD } from '../lib/birthday.js';
 import { judgeStreakDay, STREAK_LEN, STREAK_BREAK, STREAK_NEUTRAL, STREAK_PENDING } from '../lib/streakDay.js';
+import { alertRecordChange, monthLabel } from '../lib/recordAlert.js';
 
 const toId = (v) => (typeof v === 'string' ? new mongoose.Types.ObjectId(v) : v);
 const rand = () => Math.random().toString(36).slice(2, 10);
@@ -367,6 +368,21 @@ export async function awardManual(actor, { userId, points, reason, itemId, month
   if (!Number.isFinite(pts) || pts === 0) throw httpError(400, 'BAD_POINTS', 'Enter a non-zero points value');
   if (!label) throw httpError(400, 'BAD_REASON', 'Add a short reason');
   const entry = await PointEntry.create({ user: target._id, month: month || currentMonth(), earnedYMD: ymdInTz(new Date()), points: Math.round(pts), reason: label.slice(0, 140), source: 'manual', awardedBy: actor._id });
+  // Points are money here (rupeesPerPoint), so a hand-entered award or deduction is the
+  // last thing that should arrive silently. A deduction especially: people need to know
+  // what they are being docked for, and by whom, while they can still ask about it.
+  const n = Math.abs(entry.points);
+  await alertRecordChange({
+    subject: target._id,
+    actor,
+    type: 'POINTS_CHANGED',
+    title: entry.points > 0 ? 'Points added' : 'Points deducted',
+    lead: `${n} point${n === 1 ? '' : 's'} ${entry.points > 0 ? 'added' : 'deducted'} for ${monthLabel(entry.month)}`,
+    changes: [entry.reason],
+    link: '/rewards',
+    entityType: 'PointEntry',
+    entityId: entry._id,
+  });
   return entry.toJSON();
 }
 
@@ -375,7 +391,20 @@ export async function removeEntry(actor, id) {
   if (actor.role !== 'CEO_PRESIDENT') throw httpError(403, 'FORBIDDEN', 'Only CEO & President can delete points');
   const entry = await PointEntry.findById(id);
   if (!entry) throw httpError(404, 'NOT_FOUND', 'Entry not found');
+  // Read the figures before the row is gone — the message quotes what was taken away.
+  const removed = { user: entry.user, points: entry.points, reason: entry.reason, month: entry.month };
   await entry.deleteOne();
+  // Their month's total just dropped with no trace on any page. No entity tag: the row it
+  // referred to no longer exists, so each removal is its own piece of news.
+  await alertRecordChange({
+    subject: removed.user,
+    actor,
+    type: 'POINTS_CHANGED',
+    title: 'Points entry removed',
+    lead: `A points entry was removed from ${monthLabel(removed.month)}`,
+    changes: [`${removed.points > 0 ? '+' : ''}${removed.points} ${removed.reason}`.trim()],
+    link: '/rewards',
+  });
   return { success: true };
 }
 

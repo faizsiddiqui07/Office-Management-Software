@@ -20,6 +20,8 @@ import { markStreaksStale } from './bonus.service.js';
 import { can, canAssignRole } from '../lib/permissions.js';
 import { clearFailures } from '../lib/loginGuard.js';
 import { leaveYearOf } from '../lib/leaveYear.js';
+import { effectiveSchedule } from '../lib/schedule.js';
+import { alertRecordChange, changed, dateLabel, workDaysLabel } from '../lib/recordAlert.js';
 import { quotaForJoiner } from './leave.service.js';
 import { ledgerFor } from './dues.service.js';
 
@@ -174,9 +176,40 @@ const PROFILE_FIELDS = ['name', 'department', 'designation', 'phone', 'reportsTo
  * stops a junior manageUsers holder from demoting, disabling or editing the CEO.
  * You still can't change your own role or deactivate yourself.
  */
+/**
+ * Which of this person's working terms are worth telling THEM about (owner's rule,
+ * 19 Nov 2026): the shift, the grace, the overtime buffer, which days they work, full- vs
+ * part-time, and the joining date. Every one of these changes their late marks, overtime or
+ * leave. A department rename or a corrected phone number does not, and deliberately sends
+ * nothing — see lib/recordAlert.js.
+ *
+ * The EFFECTIVE schedule is snapshotted, not the stored one. A full-timer stores blank
+ * hours and runs on the office hours, so the raw fields would report "shift — → 09:30-18:00"
+ * and a grace of 0 that was never theirs. effectiveSchedule resolves the fallbacks, so both
+ * sides of the arrow are the hours that actually applied to them.
+ */
+function workTerms(user, settings) {
+  const s = effectiveSchedule(user, settings);
+  return {
+    shift: `${s.workStart}–${s.workEnd}`,
+    grace: `${s.graceMinutes} min`,
+    otBuffer: `${s.overtimeAfterMinutes} min`,
+    days: workDaysLabel(user.schedule?.workDays),
+    kind: user.employmentType === 'PART_TIME' ? 'Part-time' : 'Full-time',
+    joining: user.dateOfJoining ? dateLabel(ymdInTz(user.dateOfJoining)) : '',
+  };
+}
+
 export async function updateUser(actor, id, data) {
   const user = await User.findById(id);
   if (!user) throw httpError(404, 'NOT_FOUND', 'User not found');
+  // Snapshot before anything is touched (the doc is mutated in place below). Settings are
+  // cached, so this read costs nothing in practice.
+  const termsSettings = await Setting.getSingleton();
+  const wasTerms = workTerms(user, termsSettings);
+  // Filled in by the joining-date branch when it also moves the leave quota — a second,
+  // hidden change on the same request that the employee would otherwise never see.
+  let quotaMoved = '';
   const isSelf = String(actor._id) === String(id);
   // Whether the actor outranks (or ties) the TARGET as they are right now.
   const canActOnTarget = canAssignRole(actor.role, user.role);
@@ -237,6 +270,7 @@ export async function updateUser(actor, id, data) {
         const wasExpected = quotaForJoiner(wasYMD, year, settings.annualLeaveQuota);
         const nowExpected = quotaForJoiner(nowYMD, year, settings.annualLeaveQuota);
         if (bal.totalQuota === wasExpected && nowExpected !== wasExpected) {
+          quotaMoved = changed('leave quota', bal.totalQuota, nowExpected);
           bal.totalQuota = nowExpected;
           bal.remaining = nowExpected - bal.used;
           await bal.save();
@@ -279,6 +313,30 @@ export async function updateUser(actor, id, data) {
   if (scheduleTouched || joiningMoved) {
     try { await markStreaksStale(); } catch (e) { console.error('streak stale after user edit failed', e?.message); }
   }
+
+  // Last, once the overtime has been re-derived, tell the person what moved. Nothing is
+  // sent when none of these terms actually changed — editing somebody's phone number, or
+  // re-saving the dialog untouched, must not ping them.
+  const nowTerms = workTerms(user, termsSettings);
+  await alertRecordChange({
+    subject: user._id,
+    actor,
+    type: 'WORK_DETAILS_CHANGED',
+    title: 'Your work details changed',
+    lead: 'Your work details were changed',
+    changes: [
+      changed('shift', wasTerms.shift, nowTerms.shift),
+      changed('grace', wasTerms.grace, nowTerms.grace),
+      changed('overtime after', wasTerms.otBuffer, nowTerms.otBuffer),
+      changed('working days', wasTerms.days, nowTerms.days),
+      changed('employment type', wasTerms.kind, nowTerms.kind),
+      changed('joining date', wasTerms.joining, nowTerms.joining),
+      quotaMoved,
+    ],
+    link: '/attendance',
+    entityType: 'User',
+    entityId: user._id,
+  });
   return user.toJSON();
 }
 

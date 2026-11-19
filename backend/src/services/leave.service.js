@@ -10,6 +10,7 @@ import { createAnnouncement, deleteAnnouncement } from './announcement.service.j
 import { notify, clearNotificationsFor } from '../models/Notification.js';
 import { can, canAssignRole } from '../lib/permissions.js';
 import { rolesToNotifyFor, roleLabel, isOwnerRole, ownerRoleKeys } from '../lib/roles.js';
+import { alertRecordChange, changed } from '../lib/recordAlert.js';
 import { companyDayFromYMD, ymdInTz, dayOfWeekInTz } from '../lib/time.js';
 import { leaveYearOf, currentLeaveYear } from '../lib/leaveYear.js';
 import { APP_LIVE_YMD } from '../lib/appLive.js';
@@ -294,10 +295,27 @@ export async function setLeaveBalance(actor, userId, { totalQuota, used }) {
 
   const year = currentLeaveYear();
   const bal = await getOrCreateBalance(userId, year);
+  // Read before writing — the message says "quota 18 → 16", and `bal` is about to become
+  // the new figures.
+  const wasQuota = bal.totalQuota;
+  const wasUsed = bal.used;
   if (totalQuota !== undefined && totalQuota !== null) bal.totalQuota = Math.max(0, Math.round(totalQuota));
   if (used !== undefined && used !== null) bal.used = Math.max(0, Math.round(used));
   bal.remaining = bal.totalQuota - bal.used;
   await bal.save();
+  // How many days off somebody has left is theirs to know. Saving the dialog without
+  // moving either figure sends nothing.
+  await alertRecordChange({
+    subject: userId,
+    actor,
+    type: 'LEAVE_BALANCE_CHANGED',
+    title: 'Leave balance changed',
+    lead: 'Your leave balance was changed',
+    changes: [changed('quota', wasQuota, bal.totalQuota), changed('used', wasUsed, bal.used)],
+    link: '/leaves',
+    entityType: 'LeaveBalance',
+    entityId: bal._id,
+  });
   return bal.toJSON();
 }
 
@@ -626,7 +644,12 @@ export async function recordLeaveForUser(actor, userId, { type, startYMD, endYMD
   });
   // `replaceAttendance` clears whatever was recorded for those days inside the same
   // transaction, so leadership's "they were on leave" wins over an existing check-in.
-  return decideLeave(actor, req.id, 'APPROVE', 'Recorded by leadership', { replaceAttendance: true });
+  //
+  // `recordedBy` only changes the WORDING of the one notification the approval already
+  // sends. The employee used to read "Leave approved" for a leave they never applied for,
+  // with no hint that somebody had entered it for them (owner's rule, 19 Nov 2026). A
+  // second notification would mean two buzzes for one event, so this reuses that one.
+  return decideLeave(actor, req.id, 'APPROVE', 'Recorded by leadership', { replaceAttendance: true, recordedBy: actor });
 }
 
 /**
@@ -829,7 +852,7 @@ export async function fixHalfDayLatePenalties() {
   Setting.invalidateCache();
 }
 
-export async function decideLeave(approver, id, decision, note, { replaceAttendance = false } = {}) {
+export async function decideLeave(approver, id, decision, note, { replaceAttendance = false, recordedBy = null } = {}) {
   const request = await LeaveRequest.findById(id);
   if (!request) throw httpError(404, 'NOT_FOUND', 'Leave request not found');
   if (request.status !== 'PENDING') {
@@ -1016,13 +1039,22 @@ export async function decideLeave(approver, id, decision, note, { replaceAttenda
     }
   }
 
+  // Leadership entered this leave FOR them (recordLeaveForUser) → say so, and say who.
+  // Otherwise it is their own request coming back approved, and the old wording stands.
+  const by = recordedBy?.name ? ` · by ${recordedBy.name}` : '';
   await notify({
     user: result.user,
     type: 'LEAVE_DECISION',
-    title: wfh ? 'Work from home approved' : 'Leave approved',
-    message: wfh
-      ? `You're approved to work from home on ${result.startYMD}`
-      : `Your ${result.type.toLowerCase()} leave (${result.workingDays} day(s)) was approved`,
+    title: recordedBy
+      ? (wfh ? 'Work from home recorded for you' : 'Leave recorded for you')
+      : (wfh ? 'Work from home approved' : 'Leave approved'),
+    message: recordedBy
+      ? (wfh
+        ? `A work-from-home day on ${result.startYMD} was recorded for you${by}`
+        : `${result.workingDays} day(s) of ${result.type.toLowerCase()} leave from ${result.startYMD} was recorded for you${by}`)
+      : (wfh
+        ? `You're approved to work from home on ${result.startYMD}`
+        : `Your ${result.type.toLowerCase()} leave (${result.workingDays} day(s)) was approved`),
     link: '/leaves',
   });
   return result.toJSON();

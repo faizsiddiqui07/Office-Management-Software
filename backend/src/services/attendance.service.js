@@ -13,8 +13,10 @@ import {
   companyDayInstantAt,
   dayOfWeekInTz,
   ymdInTz,
+  dayInWords,
   computeWork,
 } from '../lib/time.js';
+import { alertRecordChange, hm, changed } from '../lib/recordAlert.js';
 import { judgeCheckIn, penaltyRungs, lateMarksAt, isSelfieCheckIn } from '../lib/lateLadder.js';
 import { effectiveSchedule, userWeekendDays, workWindowClosed } from '../lib/schedule.js';
 import { splitByJoining, periodStartFor, joinedYMD } from '../lib/joining.js';
@@ -181,8 +183,14 @@ export async function checkIn(user, meta, coords, lateReason, { selfieToken = ''
  * Leadership sets/edits a user's check-in and/or check-out for a given day —
  * for any date, past or present. Recomputes late/worked/overtime against that
  * user's effective schedule. Both times blank clears the record (→ absent).
+ *
+ * `actor` is who is doing it, and it is only used to TELL the employee what changed on
+ * their own day (owner's rule, 19 Nov 2026 — see lib/recordAlert.js). It is optional and
+ * trailing on purpose: this function never needed an actor for its own logic, and the
+ * two test scripts that drive it (test-late-ladder, test-selfie-late-exempt) call it with
+ * four arguments. Without it the change still happens, just silently.
  */
-export async function setAttendanceRecord(userId, dateYMD, checkIn, checkOut) {
+export async function setAttendanceRecord(userId, dateYMD, checkIn, checkOut, actor = null) {
   const user = await User.findById(userId).select('employmentType schedule dateOfBirth');
   if (!user) throw httpError(404, 'NOT_FOUND', 'User not found');
   const settings = await Setting.getSingleton();
@@ -193,6 +201,9 @@ export async function setAttendanceRecord(userId, dateYMD, checkIn, checkOut) {
   const offDay = await isOffDayFor(user, dateYMD, settings);
 
   let record = await Attendance.findOne({ user: userId, date: day });
+  // Snapshot BEFORE anything is touched — `record` is mutated in place below, so the old
+  // times are gone by the time we want to say "18:40 → 18:00". null = there was no day here.
+  const was = record ? { in: hm(record.checkInAt), out: hm(record.checkOutAt), status: record.status } : null;
 
   if (record && record.status === 'ON_LEAVE') {
     throw httpError(409, 'ON_LEAVE', 'This day is marked on leave — cancel the leave first to edit attendance');
@@ -211,6 +222,17 @@ export async function setAttendanceRecord(userId, dateYMD, checkIn, checkOut) {
     try { await onCheckOut(user, dateYMD, 0); } catch (e) { console.error('bonus hook (attendance clear) failed', e?.message); }
     // A cleared day is an unexplained absence again, which BREAKS any run that counted it.
     try { await markStreaksStale(); } catch (e) { console.error('bonus hook (streak stale, clear) failed', e?.message); }
+    // The day just became an absence on their sheet (and a −1 with it). `was` null means
+    // the day was already empty, so nothing changed and nothing is sent.
+    await alertRecordChange({
+      subject: userId,
+      actor,
+      type: 'ATTENDANCE_CHANGED',
+      title: 'Attendance cleared',
+      lead: `Your attendance for ${dayInWords(dateYMD)} was cleared`,
+      changes: was ? [`the day was ${was.in}–${was.out}`] : [],
+      link: '/attendance',
+    });
     return { cleared: true, dateYMD };
   }
 
@@ -264,6 +286,30 @@ export async function setAttendanceRecord(userId, dateYMD, checkIn, checkOut) {
   // will never look at it again, so a day typed in (or corrected) after the fact leaves the
   // run short for good. Mark it; the scheduler re-walks within minutes.
   try { await markStreaksStale(); } catch (e) { console.error('bonus hook (streak stale, edit) failed', e?.message); }
+
+  // Now tell the person whose day it is. Last, so everything the message implies (the
+  // recomputed late penalty, the overtime) has already been written. The entity tag is the
+  // attendance row, so a second edit to the SAME day replaces the first on their phone
+  // instead of stacking two half-stories.
+  const now = { in: hm(record.checkInAt), out: hm(record.checkOutAt), status: record.status };
+  await alertRecordChange({
+    subject: userId,
+    actor,
+    type: 'ATTENDANCE_CHANGED',
+    title: was ? 'Attendance changed' : 'Attendance recorded',
+    lead: `Your attendance for ${dayInWords(dateYMD)} was ${was ? 'changed' : 'recorded'}`,
+    changes: was
+      ? [
+        changed('check-in', was.in, now.in),
+        changed('check-out', was.out, now.out),
+        // Worth its own line: this is the part that costs points.
+        was.status !== now.status ? `day now ${String(now.status).replace(/_/g, ' ').toLowerCase()}` : '',
+      ]
+      : [`check-in ${now.in}`, `check-out ${now.out}`],
+    link: '/attendance',
+    entityType: 'Attendance',
+    entityId: record._id,
+  });
   return record.toJSON();
 }
 
@@ -271,6 +317,7 @@ export async function setAttendanceRecord(userId, dateYMD, checkIn, checkOut) {
 export async function excuseLate(approver, attendanceId, excused) {
   const record = await Attendance.findById(attendanceId);
   if (!record) throw httpError(404, 'NOT_FOUND', 'Attendance record not found');
+  const wasExcused = !!record.excused;
   record.excused = excused !== false;
   record.excusedBy = record.excused ? approver._id : null;
   record.excusedAt = record.excused ? new Date() : null;
@@ -282,6 +329,24 @@ export async function excuseLate(approver, attendanceId, excused) {
   // …and the streak too. An unexcused late RESETS the run, so a day excused after the scan
   // has judged it leaves a chain broken on paper that was never broken in fact.
   try { await markStreaksStale(); } catch (e) { console.error('bonus hook (streak stale, excuse) failed', e?.message); }
+
+  // Their late just stopped (or started) costing them points — that is their business.
+  // An "excuse" on an already-excused row changes nothing, so `changes` is empty and
+  // nothing is sent (the toggle in the UI can be pressed twice).
+  const ymd = ymdInTz(record.date);
+  await alertRecordChange({
+    subject: record.user,
+    actor: approver,
+    type: 'ATTENDANCE_CHANGED',
+    title: record.excused ? 'Late marked On duty' : 'On duty removed',
+    lead: `Your late arrival for ${dayInWords(ymd)} is ${record.excused ? 'now' : 'no longer'} On duty`,
+    changes: wasExcused === record.excused
+      ? []
+      : [record.excused ? 'it no longer counts against you' : 'the late counts again'],
+    link: '/attendance',
+    entityType: 'Attendance',
+    entityId: record._id,
+  });
   return record;
 }
 
