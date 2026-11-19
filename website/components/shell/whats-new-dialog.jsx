@@ -6,6 +6,7 @@ import { Sparkles, Check, ArrowDown } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { RELEASES } from '@/lib/release-notes';
+import { companyYMDHM, companyYMD, formatClock } from '@/lib/time';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -49,6 +50,14 @@ export function WhatsNewDialog() {
   // checkbox hamesha band rehta aur banda modal me PHANS jaata. State me node rakhne se
   // effect theek us waqt chalta hai jab dabba sach me ban jaata hai.
   const [scrollEl, setScrollEl] = React.useState(null);
+
+  // Abhi ka company waqt, 'YYYY-MM-DD HH:mm'. `liveAt` isi se napa jaata hai.
+  //
+  // STATE me hai, seedha `companyYMDHM()` call nahi — kyunki agar koi app khole hi rakhe
+  // aur beech me koi update ka waqt aa jaye (jaise raat 11 baje), to bina state badle ye
+  // component dobara sochta hi nahi aur wo update subah tak chhupa reh jaata. Neeche wala
+  // timer theek us lamhe par ise aage badha deta hai.
+  const [nowHM, setNowHM] = React.useState(() => companyYMDHM());
 
   const checkScrolled = React.useCallback(() => {
     if (!scrollEl) return;
@@ -101,8 +110,55 @@ export function WhatsNewDialog() {
       const d = new Date(since);
       if (!Number.isNaN(d.getTime())) joinedYMD = d.toISOString().slice(0, 10);
     }
-    return RELEASES.filter((r) => !seen.has(r.id) && (!joinedYMD || !r.ymd || r.ymd >= joinedYMD));
-  }, [user]);
+    return RELEASES.filter(
+      (r) =>
+        !seen.has(r.id)
+        && (!joinedYMD || !r.ymd || r.ymd >= joinedYMD)
+        // Jiska waqt abhi nahi aaya wo abhi nahi dikhta. Dono taraf ek hi roop
+        // ('YYYY-MM-DD HH:mm', company time), isliye seedhi akshar-tulna kaafi hai.
+        && (!r.liveAt || r.liveAt <= nowHM),
+    );
+  }, [user, nowHM]);
+
+  // App khuli reh gayi aur beech me kisi update ka waqt aa gaya — to wahi lamha pakdo.
+  // Har minute ghadi chalane ki zaroorat nahi: sirf AGLE waqt tak ka ek timer, aur wahi
+  // ek baar bajta hai. Koi aage ka `liveAt` na ho to koi timer hi nahi banta.
+  React.useEffect(() => {
+    if (!user) return undefined;
+    const next = RELEASES.map((r) => r.liveAt).filter((t) => t && t > nowHM).sort()[0];
+    if (!next) return undefined;
+    // Dono waqt COMPANY ke hain, isliye dono ko ek hi tarah (UTC maan kar) parse karke
+    // unka antar nikala jaata hai. `new Date(next)` likhte to wo DEVICE ke timezone me
+    // padha jaata aur antar poora galat aata — jabki upar wali tulna company time par
+    // chal rahi hai. Bharat me DST nahi hai, to beech me ghadi khiskti bhi nahi.
+    // Bacha hua waqt ASLI "abhi" se napo — aur SECOND tak.
+    //
+    // Do galtiyan yahan chala kar pakdi gayin:
+    //   • `nowHM` se naapa to wo purana ho chuka tha, aur ye effect har `user` badalne
+    //     par dobara chalta hai ("padh liya" wali request ke baad bhi) — har baar poora
+    //     60 second dobara gin liya jaata tha. /auth/me baar-baar refresh ho to timer
+    //     reset hote-hote KABHI nahi chalta.
+    //   • sirf minute tak naapa (HH:mm) to 15:57:37 ko "15:57" padh kar poore 62 second
+    //     ginay gaye — timer 15:58:00 ki jagah 15:58:39 par chala.
+    // Dono taraf company waqt, dono ko UTC maan kar parse — to antar sach me bacha hua
+    // waqt hai, chahe device kisi bhi timezone me ho.
+    const nowS = `${companyYMD(new Date())}T${formatClock(new Date())}Z`;
+    const ms = Date.parse(`${next.replace(' ', 'T')}:00Z`) - Date.parse(nowS) + 1000;
+    // setTimeout ki hadd ~24.8 din hai; usse aage ka waqt ho to bas agli baar app
+    // khulne par dikh jaayega — uske liye timer chalaye rakhna bemaani hai.
+    if (!(ms > 0) || ms > 2 ** 31 - 1) return undefined;
+    const t = setTimeout(() => {
+      setNowHM(companyYMDHM());
+      // `closed` bhi kholna ZAROORI hai. Jisne pehla batch padh kar band kar diya aur
+      // app khuli chhod di, uske liye ye component band hi pada rehta (`closed` true) —
+      // aur raat 11 wala doosra batch reload karne tak dikhta hi nahi. Jo padh liya
+      // gaya wo ab `seenReleases` me hai, to dobara nahi aayega; sirf naye aayenge.
+      setClosed(false);
+      setAgreed(false);
+      setReadAll(false);
+    }, ms);
+    return () => clearTimeout(t);
+  }, [user, nowHM]);
 
   if (!user || closed || !unseen.length) return null;
 

@@ -17,6 +17,24 @@
  *      ban kar dikhte hain. Code ka naam ya file ka naam nahi; ye poore office ke liye hai.
  *
  * Yahan jo likha hai wahi sabko dikhega, isliye jo sach me badla ho wahi likho.
+ *
+ * ── BAAD ME DIKHANA HO TO: `liveAt` ───────────────────────────────────────────────
+ * `liveAt: '2026-11-19 23:00'` (company time, 'YYYY-MM-DD HH:mm') — us waqt se PEHLE
+ * ye update kisi ko nahi dikhta. Bina `liveAt` ke update turant dikhta hai.
+ *
+ * KIS KAAM KA: ek saath chhe update push karne par bande ko ek hi modal me 35 points
+ * padhne padte the — phone par saat screen scroll (naapa gaya). `liveAt` se unhe do
+ * batch me baanta ja sakta hai: kuch aaj, baaki raat ko — taaki agli subah doosri
+ * list mile, pehli padhi ja chuki ho.
+ *
+ * TEEN BAATEIN JO YAAD RAKHNI HAIN:
+ *   • Code us waqt se PEHLE deploy hona chahiye. `liveAt` sirf CHHUPATA hai; wo khud
+ *     kuch publish nahi karta. Bina deploy ke 11 baje kuch nahi hoga.
+ *   • Jo banda pehli baar 11 baje ke BAAD hi app khole, use dono batch EK SAATH
+ *     milenge — ye theek hai, uske liye sab kuch naya hi hai.
+ *   • Waqt device ki ghadi se naapa jaata hai (company timezone me dikha kar) — wahi
+ *     tareeka jo poore app me hai. Jiska phone ka waqt bahut galat ho, wo thoda jaldi
+ *     ya der se dekhega.
  */
 export const RELEASES = [
   {
@@ -37,6 +55,7 @@ export const RELEASES = [
   {
     id: '2026-11-19-task-reminders-repeat',
     ymd: '2026-11-19',
+    liveAt: '2026-11-19 23:00',
     title: 'Set your own reminder times, and tasks that come back',
     points: [
       'A task with a due date can now carry up to three reminder times — tap 9:30, 1 PM or 5 PM, or pick your own.',
@@ -51,6 +70,7 @@ export const RELEASES = [
   {
     id: '2026-11-19-slide-to-complete',
     ymd: '2026-11-19',
+    liveAt: '2026-11-19 23:00',
     title: 'Finish a task by sliding, on your phone',
     points: [
       'On a phone or tablet, every task now has a slider under it — slide it to the right to finish the task, the way you answer a call.',
@@ -64,6 +84,7 @@ export const RELEASES = [
   {
     id: '2026-11-19-deadline-reminders',
     ymd: '2026-11-19',
+    liveAt: '2026-11-19 23:00',
     title: 'Task deadline reminders',
     points: [
       'The day before a task is due, you now get a reminder at 5 PM — with the points you earn for finishing on time.',

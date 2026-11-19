@@ -31,6 +31,20 @@ export function companyYMD(date) {
   return new Intl.DateTimeFormat('en-CA', { timeZone: COMPANY_TZ }).format(d);
 }
 
+/**
+ * Company-TZ ka din AUR waqt, ek hi string me: 'YYYY-MM-DD HH:mm'.
+ *
+ * Isi roop me do waqt seedhe `<` / `>=` se nape ja sakte hain — koi Date object banana
+ * nahi padta, koi timezone beech me nahi aata. "What's new" ka `liveAt` isi par chalta
+ * hai (release-notes.js). Lambai tay hai aur hissa bada-se-chhota kram me hai, isliye
+ * aksharon ki tulna waqt ki tulna ke barabar hai.
+ */
+export function companyYMDHM(date = new Date()) {
+  const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return '';
+  return `${companyYMD(d)} ${formatTime(d)}`;
+}
+
 function fmt(date, opts, locale = 'en-GB') {
   return new Intl.DateTimeFormat(locale, { timeZone: COMPANY_TZ, ...opts }).format(new Date(date));
 }
