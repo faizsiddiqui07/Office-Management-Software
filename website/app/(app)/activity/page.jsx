@@ -74,7 +74,7 @@ export default function ActivityPage() {
   if (!allowed) {
     return (
       <div className="space-y-8">
-        <PageHeader eyebrow="Activity" title="Activity log" icon={Activity} />
+        <PageHeader title="Activity log" icon={Activity} />
         <EmptyState icon={ShieldAlert} title="No access" description="Only leadership (CEO / Boss) can view the activity log." />
       </div>
     );
@@ -87,7 +87,6 @@ export default function ActivityPage() {
   return (
     <div className="space-y-8">
       <PageHeader
-        eyebrow="Activity"
         title="Activity log"
         icon={Activity}
         description="Every meaningful action across the company, newest first."

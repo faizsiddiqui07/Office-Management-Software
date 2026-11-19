@@ -24,7 +24,6 @@ export default function ReportsPage() {
   return (
     <div className="space-y-8">
       <PageHeader
-        eyebrow="Reports"
         title="Reports"
         icon={FileText}
         description="Generate detailed, branded PDF reports — your own records, or company-wide if you have access."

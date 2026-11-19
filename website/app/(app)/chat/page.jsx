@@ -55,7 +55,6 @@ export default function ChatPage() {
     <div className="max-sm:flex max-sm:min-h-0 max-sm:flex-1 max-sm:flex-col sm:space-y-6">
       <div className="hidden sm:block">
         <PageHeader
-          eyebrow="Chat"
           title="Chat"
           icon={MessagesSquare}
           description="Direct messages with your colleagues. Only the two of you can see a chat."

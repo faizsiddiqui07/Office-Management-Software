@@ -85,7 +85,7 @@ export default function AttendancePage() {
 
   return (
     <div className="space-y-8">
-      <PageHeader eyebrow="Attendance" title="Attendance" icon={CalendarClock} description={description} />
+      <PageHeader title="Attendance" icon={CalendarClock} description={description} />
 
       {tabs.length > 1 ? (
         <Tabs

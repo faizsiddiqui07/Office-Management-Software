@@ -14,7 +14,7 @@ export default function UsersPage() {
   if (!allowed) {
     return (
       <div className="space-y-8">
-        <PageHeader eyebrow="Team" title="Users" icon={Users} />
+        <PageHeader title="Users" icon={Users} />
         <EmptyState icon={Users} title="No access" description="Only admins can manage users and credentials." />
       </div>
     );
@@ -23,7 +23,6 @@ export default function UsersPage() {
   return (
     <div className="space-y-8">
       <PageHeader
-        eyebrow="Team"
         title="Users & credentials"
         icon={Users}
         description="The staff directory — create accounts, manage roles and access, and reset credentials."

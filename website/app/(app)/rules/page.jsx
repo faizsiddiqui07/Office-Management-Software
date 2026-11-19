@@ -175,7 +175,6 @@ export default function RulesPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Office"
         title="Rules & Regulations"
         icon={BookOpen}
         description="How the office runs — timings, tasks, leaves, overtime and points, section by section. Every timing and point value shown here is live: it follows YOUR shift and the current Settings."

@@ -105,7 +105,7 @@ export default function LeavesPage() {
   return (
     <div className="space-y-8">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <PageHeader eyebrow="Leaves" title="Leave management" icon={CalendarDays} description={description} />
+        <PageHeader title="Leave management" icon={CalendarDays} description={description} />
         {isOwner ? (
           <div className="flex flex-wrap items-center gap-2">
             <DeclareWfhDialog />

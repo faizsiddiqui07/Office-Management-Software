@@ -89,7 +89,6 @@ export default function MyStandingPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        eyebrow="You"
         title="My summary"
         icon={UserRound}
         description="Your own numbers — attendance, hours, leave, work and dues — for whatever stretch of time you pick."

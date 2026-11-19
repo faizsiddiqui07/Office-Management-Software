@@ -8,7 +8,6 @@ export default function TodoPage() {
   return (
     <div className="space-y-8">
       <PageHeader
-        eyebrow="Work"
         title="To-Do"
         icon={ListTodo}
         description="Note your work, tick it off as you go — everything is recorded. Leadership can assign tasks down the line."

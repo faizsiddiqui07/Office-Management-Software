@@ -138,7 +138,7 @@ export default function ProfilePage() {
 
   return (
     <div className="space-y-8">
-      <PageHeader eyebrow="Account" title="Profile & settings" icon={UserCog} description="Manage your personal details, password, and appearance." />
+      <PageHeader title="Profile & settings" icon={UserCog} description="Manage your personal details, password, and appearance." />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Profile */}

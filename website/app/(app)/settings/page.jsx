@@ -96,7 +96,7 @@ export default function SettingsPage() {
   if (!allowed) {
     return (
       <div className="space-y-8">
-        <PageHeader eyebrow="Settings" title="Company settings" icon={Settings} />
+        <PageHeader title="Company settings" icon={Settings} />
         <EmptyState icon={ShieldAlert} title="No access" description="Only leadership (CEO / Boss) can change company settings." />
       </div>
     );
@@ -290,7 +290,6 @@ export default function SettingsPage() {
   return (
     <div className="space-y-8">
       <PageHeader
-        eyebrow="Settings"
         title="Company settings"
         icon={Settings}
         description="These values drive attendance, leave, and expense rules everywhere."

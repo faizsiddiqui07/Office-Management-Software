@@ -162,7 +162,7 @@ export default function ExpensesPage() {
   if (!canView) {
     return (
       <div className="space-y-8">
-        <PageHeader eyebrow="Finance" title="Expenses" icon={Wallet} />
+        <PageHeader title="Expenses" icon={Wallet} />
         <EmptyState icon={Wallet} title="No access" description="You don’t have access to the expense register." />
       </div>
     );
@@ -170,7 +170,7 @@ export default function ExpensesPage() {
 
   return (
     <div className="space-y-5">
-      <PageHeader eyebrow="Finance" title="Expenses" icon={Wallet} />
+      <PageHeader title="Expenses" icon={Wallet} />
 
       <ExpenseFilterBar
         filters={{ ...filters, resolvedFrom: range?.from, resolvedTo: range?.to }}

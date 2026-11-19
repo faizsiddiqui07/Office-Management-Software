@@ -102,7 +102,6 @@ export default function TeamPage() {
   return (
     <div className="space-y-8">
       <PageHeader
-        eyebrow="Team"
         title="Team"
         icon={Users}
         description={`Everyone on the team${users.length ? ` · ${users.length} members` : ''}, grouped by role.`}

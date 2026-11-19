@@ -6,7 +6,6 @@ export default function AnnouncementsPage() {
   return (
     <div className="space-y-8">
       <PageHeader
-        eyebrow="Announcements"
         title="Announcements"
         icon={Megaphone}
         // No "newest first" here any more: the feed can be re-sorted now, so a

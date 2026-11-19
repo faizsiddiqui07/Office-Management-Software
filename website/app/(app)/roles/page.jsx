@@ -14,7 +14,7 @@ export default function RolesPage() {
   if (!allowed) {
     return (
       <div className="space-y-8">
-        <PageHeader eyebrow="Admin" title="Roles & permissions" icon={ShieldCheck} />
+        <PageHeader title="Roles & permissions" icon={ShieldCheck} />
         <EmptyState
           icon={ShieldCheck}
           title="No access"
@@ -27,7 +27,6 @@ export default function RolesPage() {
   return (
     <div className="space-y-8">
       <PageHeader
-        eyebrow="Admin"
         title="Roles & permissions"
         icon={ShieldCheck}
         description="Create your own roles and control exactly what each one can do — flip any single permission on or off."

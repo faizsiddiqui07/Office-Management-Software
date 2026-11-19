@@ -473,7 +473,6 @@ export function DuesAdmin() {
   return (
     <div className="space-y-8">
       <PageHeader
-        eyebrow="Dues"
         title="Dues ledger"
         icon={HandCoins}
         description="Track what each person owes you for lunch & errands — and their advances. Only you can see this."

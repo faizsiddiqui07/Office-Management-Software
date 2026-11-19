@@ -7,15 +7,11 @@ import { useQuery } from '@tanstack/react-query';
 import {
   Activity,
   CalendarDays,
-  CalendarPlus,
   Clock,
-  FileText,
   Home,
   Inbox,
   ListTodo,
-  Megaphone,
   Plane,
-  Settings,
   TimerReset,
   TrendingUp,
   UserCheck,
@@ -24,7 +20,7 @@ import {
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { can, roleName } from '@/lib/permissions';
+import { can } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
 import { firstName } from '@/lib/name';
 import { formatMoney, categoryLabel } from '@/lib/expense';
@@ -93,23 +89,6 @@ function SectionTitle({ children, action }) {
   );
 }
 
-function QuickAction({ href, icon: Icon, children, primary }) {
-  return (
-    <Link
-      href={href}
-      className={cn(
-        'inline-flex min-h-10 items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-medium ring-1 transition-colors',
-        primary
-          ? 'bg-primary text-primary-foreground ring-primary/30 hover:bg-primary/90'
-          : 'glass ring-border hover:bg-muted/40',
-      )}
-    >
-      <Icon className="size-4" />
-      {children}
-    </Link>
-  );
-}
-
 /** Derives the "today" status card content from the attendance payload. */
 function todayStat(today) {
   const rec = today?.record;
@@ -139,7 +118,7 @@ export default function DashboardPage() {
   if (isLoading || !data) {
     return (
       <div className="space-y-8">
-        <PageHeader eyebrow="Overview" title={`${greeting()}${user ? `, ${firstName(user.name)}` : ''}`} />
+        <PageHeader title={`${greeting()}${user ? `, ${firstName(user.name)}` : ''}`} />
         {isError ? (
           <EmptyState
             icon={Activity}
@@ -164,34 +143,29 @@ export default function DashboardPage() {
   return (
     <div className="space-y-8">
       <PageHeader
-        eyebrow={roleName(data) || 'Overview'}
         title={`${greeting()}, ${firstName(user?.name)}`}
         description={`Here’s your snapshot for ${new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Kolkata' })}.`}
       />
 
-      {/* Quick actions */}
-      <div className="flex flex-wrap gap-2.5">
-        {/* Marks attendance right here — same rules as the Attendance page card. */}
-        {can(user, 'markAttendance') ? <QuickAttendanceAction /> : null}
-        {can(user, 'applyLeave') ? (
-          <QuickAction href="/leaves" icon={CalendarPlus}>Apply leave</QuickAction>
-        ) : null}
-        {isApprover ? (
-          <QuickAction href="/leaves" icon={UserCheck}>Approvals</QuickAction>
-        ) : null}
-        {can(user, 'manageExpenses') ? (
-          <QuickAction href="/expenses" icon={Wallet}>Add expense</QuickAction>
-        ) : null}
-        {can(user, 'postAnnouncements') ? (
-          <QuickAction href="/announcements" icon={Megaphone}>Announce</QuickAction>
-        ) : null}
-        {can(user, 'downloadReports') ? (
-          <QuickAction href="/reports" icon={FileText}>Reports</QuickAction>
-        ) : null}
-        {can(user, 'manageSettings') ? (
-          <QuickAction href="/settings" icon={Settings}>Settings</QuickAction>
-        ) : null}
-      </div>
+      {/*
+        SIRF CHECK-IN / CHECK-OUT. Owner ka faisla, 19 Nov 2026.
+
+        Pehle yahan saat tak button lag jaate the — Apply leave, Approvals, Add expense,
+        Announce, Reports, Settings. Wo saare wahi jagah hain jahan sidebar se do tap me
+        pahuncha ja sakta hai, aur dashboard ka pehla hissa unse bhar jaata tha. Jo kaam
+        SIRF yahin ho sakta hai wo ek hi hai: hazri lagana.
+
+        QuickAttendanceAction khud tay karta hai ki "Check in" dikhe ya "Check out" — to
+        yahan koi doosra button jodna nahi hai.
+
+        Jo banda attendance lagata hi nahi (leadership ke kuch role), uske liye poori
+        kataar gayab — khaali div bhi nahi, warna neeche ka faasla do guna lagta hai.
+      */}
+      {canMark ? (
+        <div className="flex flex-wrap gap-2.5">
+          <QuickAttendanceAction />
+        </div>
+      ) : null}
 
       {/* Personal stats — each card gated on the permission that makes it TRUE for this
           person. "Today"/"Overtime" need markAttendance (a role that can't check in was

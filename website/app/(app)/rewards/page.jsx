@@ -356,7 +356,6 @@ export default function RewardsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Bonus"
         title="Rewards"
         icon={Award}
         description="Earn points for good work — leadership sets what each is worth. Positives reset each month; a negative balance carries into the next month until you clear it."

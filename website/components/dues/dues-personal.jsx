@@ -371,7 +371,6 @@ export function DuesPersonal() {
   return (
     <div className="space-y-8">
       <PageHeader
-        eyebrow="Dues"
         title="My dues"
         icon={HandCoins}
         description="What you owe the office admin for lunch, tea, and errands — and any advance you’ve paid."

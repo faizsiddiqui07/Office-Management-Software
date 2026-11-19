@@ -8,7 +8,6 @@ export default function CalendarPage() {
   return (
     <div className="space-y-8">
       <PageHeader
-        eyebrow="Calendar"
         title="Holidays & calendar"
         icon={CalendarRange}
         description="Company holidays and events — shared with everyone. Admins can add and edit."

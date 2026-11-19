@@ -15,7 +15,7 @@ export default function VisitorsPage() {
   if (!canAccess) {
     return (
       <div className="space-y-8">
-        <PageHeader eyebrow="Front desk" title="Visitors" icon={DoorOpen} />
+        <PageHeader title="Visitors" icon={DoorOpen} />
         <EmptyState icon={DoorOpen} title="No access" description="You don’t have access to the visitor register." />
       </div>
     );
@@ -24,7 +24,6 @@ export default function VisitorsPage() {
   return (
     <div className="space-y-8">
       <PageHeader
-        eyebrow="Front desk"
         title="Visitors"
         icon={DoorOpen}
         description="Log every visitor — who came, when, from where, and whom they met. Filter and export the full record."

@@ -124,7 +124,7 @@ export default function UserDossierPage() {
   if (!allowed) {
     return (
       <div className="space-y-8">
-        <PageHeader eyebrow="Team member" title="User details" icon={UserCircle} />
+        <PageHeader title="User details" icon={UserCircle} />
         <EmptyState icon={ShieldAlert} title="No access" description="Only leadership can view another person's full details." />
       </div>
     );
@@ -200,7 +200,6 @@ export default function UserDossierPage() {
           <ArrowLeft className="size-4" /> Back
         </Button>
         <PageHeader
-          eyebrow="Team member"
           title={u?.name || 'Loading…'}
           icon={UserCircle}
           // Bandi ki asli photo — badi, gol, halki ring ke saath. Photo na ho to initials.

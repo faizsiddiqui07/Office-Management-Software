@@ -113,7 +113,10 @@ export default function StyleGuidePage() {
       <header className="sticky top-0 z-30 px-4 pt-4 sm:px-6">
         <div className="glass glass-highlight mx-auto flex max-w-6xl items-center justify-between gap-3 rounded-2xl px-4 py-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary/80">Design system</p>
+            {/* Yahan pehle ek chhota uppercase "eyebrow" tha. Wo roop 19 Nov 2026 ko
+                poore app se hata diya gaya (dekho glass/page-header.jsx) — to is
+                style-guide me use dikhate rehna ek aisi cheez ka namoona dena hota jo
+                ab kahin hai hi nahi. */}
             <h1 className="text-lg font-semibold tracking-tight">Premium Apple Glass · Style Guide</h1>
           </div>
           <div className="flex items-center gap-2">
@@ -395,7 +398,6 @@ export default function StyleGuidePage() {
         </Section>
 
         <PageHeader
-          eyebrow="That's everything"
           title="One coherent system"
           description="Built once, reused across every screen in the app."
         />

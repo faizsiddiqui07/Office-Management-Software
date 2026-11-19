@@ -149,7 +149,6 @@ export default function ApprovalsPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        eyebrow="Approvals"
         title="Waiting on you"
         icon={Inbox}
         description="One kind at a time — what needs your decision, and what you've already decided."

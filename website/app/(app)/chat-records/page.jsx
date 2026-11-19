@@ -31,7 +31,6 @@ export default function ChatRecordsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Chat records"
         title="Chat records"
         icon={ShieldCheck}
         description="Look up any employee's conversations."
