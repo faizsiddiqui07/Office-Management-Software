@@ -19,6 +19,7 @@ import { ChatRealtimeProvider } from '@/components/chat/chat-realtime';
 import { EodDigestPopup } from '@/components/tasks/eod-digest-popup';
 import { PwaRegister } from '@/components/pwa/pwa-register';
 import { ProfilePhotoPrompt } from '@/components/profile/photo-prompt';
+import { WhatsNewDialog } from '@/components/shell/whats-new-dialog';
 import { DocumentTitle } from './document-title';
 import { UpdatePrompt } from './update-prompt';
 
@@ -155,6 +156,10 @@ export function AppShell({ children }) {
       {/* Sabse aakhir me, taaki baaki popups ke UPAR aaye: jiski photo nahi, use pehle
           yahi dikhe — naya employee password badalte hi isi par utarta hai. */}
       <ProfilePhotoPrompt />
+      {/* SABSE AAKHIR me, yaani sab popups ke UPAR: koi bada update live hone ke baad app
+          khulte hi pehle yahi dikhna chahiye (owner, 19 Nov 2026). Naye bande ko purani
+          updates dikhti hi nahi, to pehle din wala photo-prompt isse nahi dabta. */}
+      <WhatsNewDialog />
       <PwaRegister />
     </div>
     </ChatRealtimeProvider>

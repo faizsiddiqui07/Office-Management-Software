@@ -138,6 +138,29 @@ export async function updateProfile(req, res, next) {
   }
 }
 
+/**
+ * "What's new" ka modal band hua — ye update padh liye gaye.
+ *
+ * `$addToSet` isliye ki do device par saath band karne se list me duplicate na banein, aur
+ * ye likhna idempotent rahe. Koi validation nahi ki id asli release ki hai ya nahi: list
+ * frontend ke code me hai (website/lib/release-notes.js), server use jaanta hi nahi, aur
+ * ek bekaar string sirf is bande ki apni list me padi rehti hai — kisi ko kuch nahi dikhati.
+ */
+export async function ackReleases(req, res, next) {
+  try {
+    const { ids } = req.body;
+    const user = await User.findByIdAndUpdate(
+      req.user._id,
+      { $addToSet: { seenReleases: { $each: ids } } },
+      { new: true },
+    );
+    if (!user) return res.status(404).json(fail('NOT_FOUND', 'User not found'));
+    return res.json(ok({ seenReleases: user.seenReleases }));
+  } catch (err) {
+    return next(err);
+  }
+}
+
 export async function changePassword(req, res, next) {
   try {
     const { currentPassword, newPassword } = req.body;

@@ -41,6 +41,10 @@ const userSchema = new mongoose.Schema(
     // tak dobara nahi tangta. Server par isliye ki phone par skip kiya to laptop par
     // phir na aaye. Photo lagte hi iska koi matlab nahi rehta.
     avatarPromptSkippedAt: { type: Date, default: null },
+    // "What's new" ke jo update is bande ne padh kar tick kiye — unki id (release id,
+    // website/lib/release-notes.js). Server par isliye ki phone par padh liya to laptop
+    // par dobara na tange. Ek release = ek chhoti string, to list choti rehti hai.
+    seenReleases: { type: [String], default: [] },
     dateOfJoining: { type: Date, default: Date.now },
     // Offboarding: the person's last working day (YYYY-MM-DD, company TZ). Set when winding
     // an account down; the exit summary is reviewed before deactivating. Blank = not leaving.

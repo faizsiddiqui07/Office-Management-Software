@@ -53,13 +53,19 @@ function DialogOverlay({
 
 function DialogContent({
   className,
+  // Backdrop yahin andar banta hai, isliye jis caller ko use badalna ho uske paas koi
+  // raasta nahi tha. "What's new" wale modal ko baaki popups ke UPAR aana hai (z-60), aur
+  // sirf uska popup upar karne se uske NEECHE doosre dialog ka backdrop reh jaata.
+  // Optional hai aur default khaali — baaki har caller jaisa tha waisa hi.
+  // (Bilkul yahi prop ui/sheet.jsx me bhi hai, usi wajah se.)
+  overlayClassName,
   children,
   showCloseButton = true,
   ...props
 }) {
   return (
     <DialogPortal>
-      <DialogOverlay />
+      <DialogOverlay className={overlayClassName} />
       <DialogPrimitive.Popup
         data-slot="dialog-content"
         className={cn(

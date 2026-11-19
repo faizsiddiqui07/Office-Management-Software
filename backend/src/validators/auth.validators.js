@@ -31,3 +31,10 @@ export const updateProfileSchema = z.object({
   // Profile-photo modal par "Skip for now" — server par tareekh darj hoti hai.
   skipAvatarPrompt: z.boolean().optional(),
 });
+
+/** "What's new" ka modal band karte waqt: kaun-kaun si update padh li. */
+export const ackReleasesSchema = z.object({
+  // 20 se zyada ek baar me kabhi nahi — modal sirf un-padhi updates dikhata hai. Id ka
+  // roop frontend tay karta hai (`2026-11-19-reminders`), isliye yahan sirf hadd hai.
+  ids: z.array(z.string().min(1).max(80)).min(1).max(20),
+});
