@@ -2,6 +2,7 @@ import { maybeRunDaily } from './bonus.service.js';
 import { maybeAnnounceBirthdays } from './holiday.service.js';
 import { publishDueAnnouncements, announceRecurring } from './announcement.service.js';
 import { maybeRunDayCloseDigest } from './dayDigest.service.js';
+import { runTaskReminders } from './taskReminder.service.js';
 import { pruneOldChats } from './chat.service.js';
 import { runSetupTasks } from '../app.js';
 
@@ -19,7 +20,7 @@ import { runSetupTasks } from '../app.js';
  * must never error out.
  */
 export async function runScheduledJobs() {
-  const jobs = { setup: 'ok', bonus: 'ok', birthdays: 'ok', announcements: 'ok', recurring: 'ok', dayDigest: 'ok', chatPrune: 'ok' };
+  const jobs = { setup: 'ok', bonus: 'ok', birthdays: 'ok', announcements: 'ok', recurring: 'ok', dayDigest: 'ok', taskReminders: 'ok', chatPrune: 'ok' };
   const tickNow = new Date();
   const settled = await Promise.allSettled([
     // Seed/migration/repair maintenance (system roles, role migrations, admin-lockout
@@ -38,11 +39,17 @@ export async function runScheduledJobs() {
     // every-few-minutes cadence is what lets "at 09:00" land within minutes of 09:00.
     announceRecurring(tickNow),
     maybeRunDayCloseDigest(),
+    // Task ki deadline ki ghanti (due se ek din pehle, overdue hone par, phir har teesre
+    // din). Yahan bhi WAHI tick ka instant jaata hai — ye job "kal due hai" aur "aaj
+    // overdue hua" dono apne hi `today` se naapta hai, aur maybeRunDaily usi tick par
+    // −5 likh raha hota hai; do alag "abhi" ke beech aadhi raat pad jaye to ek din ka
+    // task dono taraf se chhoot sakta hai.
+    runTaskReminders(tickNow),
     // Purani chat hatana — sirf tab jab owner ne retention chaalu kiya ho. Band haalat
     // me ye ek Setting padh kar wapas aa jaata hai, isliye har tick par bhi sasta hai.
     pruneOldChats(),
   ]);
-  const keys = ['setup', 'bonus', 'birthdays', 'announcements', 'recurring', 'dayDigest', 'chatPrune'];
+  const keys = ['setup', 'bonus', 'birthdays', 'announcements', 'recurring', 'dayDigest', 'taskReminders', 'chatPrune'];
   settled.forEach((r, i) => {
     if (r.status === 'rejected') {
       jobs[keys[i]] = r.reason?.message || 'error';

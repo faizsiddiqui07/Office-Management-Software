@@ -53,7 +53,7 @@ const RULE_KEYS = new Set(AUTO_RULES.map((r) => r.key));
 export function currentMonth() {
   return ymdInTz(new Date()).slice(0, 7);
 }
-function addDays(ymd, n) {
+export function addDays(ymd, n) {
   const d = new Date(`${ymd}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + (n || 0));
   return d.toISOString().slice(0, 10);
@@ -126,7 +126,7 @@ function monthEndOf(ym) {
 }
 
 /** Grace days in force on `forYMD` (the deadline's own terms — see ratesOn). */
-function graceDaysOn(bonus, forYMD) {
+export function graceDaysOn(bonus, forYMD) {
   return Math.max(0, ratesOn(bonus, forYMD).graceDays || 0);
 }
 
@@ -514,8 +514,14 @@ async function awardOnce(key, { user, month, points, reason, source, taskRef = n
 
 let ownerIdsCache = null;
 let ownerIdsAt = 0;
-/** User-ids of everyone in the owner tier (CEO & President). Cached ~60s. */
-async function ownerTierIds() {
+/**
+ * User-ids of everyone in the owner tier (CEO & President). Cached ~60s.
+ *
+ * Exported so the deadline reminders (taskReminder.service.js) ask the SAME question the
+ * penalties ask. If they ever disagreed, somebody would be told "−5 applied" on a task the
+ * points system never touched, or get no warning about one it did.
+ */
+export async function ownerTierIds() {
   if (ownerIdsCache && Date.now() - ownerIdsAt < 60_000) return ownerIdsCache;
   const keys = ownerRoleKeys();
   const users = keys.length ? await User.find({ role: { $in: keys } }).select('_id') : [];
@@ -562,7 +568,7 @@ function taskEligible(task, ownerIds) {
  * passes (the root is where the assigner/tags live; forwarded copies inherit the chain's
  * visibility). `memo` de-dups ancestor fetches across a scan.
  */
-async function chainEligible(task, ownerIds, memo = new Map()) {
+export async function chainEligible(task, ownerIds, memo = new Map()) {
   if (taskEligible(task, ownerIds)) return true;
   let cur = task;
   for (let depth = 0; cur.forwardedFrom && depth < 12; depth += 1) {
@@ -1191,7 +1197,7 @@ const DRIP_FLOOR_YMD = '2026-08-01';
 /** The day a task became overdue (due + grace + 1), never before go-live. The -5 mark
  *  and a late completion are both filed under THIS day — the cut happens when the due
  *  date passes, not whenever the task is eventually finished or the scan gets to it. */
-function overdueDayFor(dueYMD, graceDays) {
+export function overdueDayFor(dueYMD, graceDays) {
   const d = addDays(dueYMD, (graceDays || 0) + 1);
   return d < APP_LIVE_YMD ? APP_LIVE_YMD : d;
 }

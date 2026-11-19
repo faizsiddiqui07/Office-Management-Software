@@ -31,7 +31,9 @@ const taskSchema = new mongoose.Schema(
     submittedAt: { type: Date, default: null }, // when the assignee submitted for approval (also the on-time reference for bonus)
     approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }, // whoever signed it off — the assigner, or a tagged colleague
     rejectionReason: { type: String, default: '' }, // why it was last sent back
-    dueYMD: { type: String, default: '' }, // optional deadline (YYYY-MM-DD)
+    // Optional deadline (YYYY-MM-DD). Indexed because two scheduled passes narrow on it
+    // every few minutes — the overdue penalty scan and the deadline reminders.
+    dueYMD: { type: String, default: '', index: true },
     // Forwarding: a manager passes work down but stays on the hook for it. The copy
     // they were given stays in their list and only closes once this child does —
     // through their own approval if they asked for one, then their assigner's.

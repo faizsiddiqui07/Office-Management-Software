@@ -29,7 +29,7 @@ function escapeRegex(s) {
  * the "Assigned by me" tab (for the person who handed the work out); everyone else lands
  * on "My tasks". A removed task has no id to open, so it falls back to the plain page.
  */
-const todoLink = (id, assigned = false) =>
+export const todoLink = (id, assigned = false) =>
   (id ? `/todo?${assigned ? 'tab=assigned&' : ''}task=${id}` : assigned ? '/todo?tab=assigned' : '/todo');
 
 /**
@@ -37,7 +37,7 @@ const todoLink = (id, assigned = false) =>
  * tab loads its own list — without the tab the notification would land on "My tasks",
  * whose list no longer contains the task, and the detail dialog would never open.
  */
-const taggedLink = (id) => (id ? `/todo?tab=tagged&task=${id}` : '/todo?tab=tagged');
+export const taggedLink = (id) => (id ? `/todo?tab=tagged&task=${id}` : '/todo?tab=tagged');
 
 /** The "please approve this" bell, to the assigner AND every tagged colleague. */
 async function notifyApprovers(task, title) {
