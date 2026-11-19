@@ -20,6 +20,20 @@
  */
 export const RELEASES = [
   {
+    id: '2026-11-19-attendance-full-calendar',
+    ymd: '2026-11-19',
+    title: 'Your attendance history now shows every day',
+    points: [
+      'Sundays, company holidays and days you were absent now appear in your own attendance history — until now it only listed days you had checked in or were on leave.',
+      'A day that is still running shows a dash, not "Absent" — you are only marked absent once your own shift has ended.',
+      'Your history now matches the Team-member page and the PDF report exactly, because all three are built from the same calendar.',
+      'The "Fix" button next to a day you forgot to check out now opens the correction form with that date already filled in — it used to say "Invalid Date".',
+      'That button no longer appears on today\'s shift while it is still open.',
+      'Days with no work show a dash instead of "0m", and every status now reads in plain words instead of shouting capitals.',
+      'The check-in card no longer gets squeezed into a thin strip on a laptop screen.',
+    ],
+  },
+  {
     id: '2026-11-19-task-reminders-repeat',
     ymd: '2026-11-19',
     title: 'Set your own reminder times, and tasks that come back',

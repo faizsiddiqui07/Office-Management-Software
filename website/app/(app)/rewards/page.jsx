@@ -242,7 +242,7 @@ function LeadershipTools({ isOwner, onDelete, periodParams, periodLabel, onOpenP
           </div>
         </div>
         {itemId === 'custom' ? (
-          <div className="grid gap-3 sm:grid-cols-[8rem_1fr]">
+          <div className="grid gap-3 sm:grid-cols-[8rem_minmax(0,1fr)]">
             <div className="space-y-1.5">
               <Label>Points (+/−)</Label>
               <Input type="number" value={points} onChange={(e) => setPoints(e.target.value)} placeholder="e.g. 20 or -10" className="bg-background/50" />

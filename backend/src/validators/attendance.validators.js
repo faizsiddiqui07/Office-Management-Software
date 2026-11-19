@@ -9,6 +9,10 @@ export const listQuerySchema = z.object({
   all: z.union([z.literal('true'), z.literal('false')]).optional(),
   page: z.coerce.number().int().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(100).optional(),
+  // `fill=true` → khaali din bhi bharo (Sunday, holiday, absent). Opt-in JAAN-BOOJH kar
+  // hai: CSV export aur Everyone tab isi raaste se aate hain aur unhe asli rows hi
+  // chahiye. Ye sirf EK bande ki apni history ke liye hai.
+  fill: z.union([z.literal('true'), z.literal('false')]).optional(),
 });
 
 export const overviewQuerySchema = z.object({

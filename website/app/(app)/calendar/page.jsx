@@ -14,7 +14,11 @@ export default function CalendarPage() {
         description="Company holidays and events — shared with everyone. Admins can add and edit."
         actions={<HolidayListDownload />}
       />
-      <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
+      {/* `minmax(0,1fr)`, kora `1fr` nahi: `1fr` ka chhupa hua minimum uske ANDAR ke
+          content se aata hai, to calendar grid khud ko sikod nahi pata aur 300px wala
+          saathi dab jaata hai (Attendance page par yahi galti naapi gayi thi — wahan
+          card 360px ki jagah 269px ka reh gaya tha). */}
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
         <HolidayCalendar />
         <UpcomingHolidays />
       </div>

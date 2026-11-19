@@ -63,7 +63,9 @@ export function ChatRecords() {
   const pickChat = (c) => setChat(c);
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
+    {/* `minmax(0,1fr)` — warna lambe message wali chat ka min-content 280px wali
+        list ko nichod deta hai (wahi galti Attendance page par naapi gayi thi). */}
+    <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
       {/* Kiski chat */}
       <GlassCard className="flex h-[calc(100dvh-20rem)] min-h-[340px] flex-col overflow-hidden p-0 lg:h-[calc(100dvh-16rem)]">
         <div className="shrink-0 p-3">

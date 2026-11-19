@@ -4,6 +4,7 @@ import { User } from '../models/User.js';
 import { can } from '../lib/permissions.js';
 import { haversineMeters } from '../lib/geo.js';
 import { holidayYMDSet } from './holiday.service.js';
+import { buildAttendanceDays } from './attendanceDays.service.js';
 import { isBirthdayYMD } from '../lib/birthday.js';
 import { isOffDaySync } from '../lib/offDay.js';
 import { readSelfieToken, selfieExists, signSelfieUpload, signSelfieView, attendanceSelfieConfigured } from '../lib/attendanceMedia.js';
@@ -571,7 +572,7 @@ export async function getTodayPayload(user) {
   };
 }
 
-export async function listAttendance(viewer, { userId, all, from, to, page = 1, limit = 31 }) {
+export async function listAttendance(viewer, { userId, all, from, to, page = 1, limit = 31, fill = false }) {
   // `can(..., 'viewEveryone')`, hardcoded `canViewEveryone(role)` NAHI — wahi wajah jo
   // selfieUrl par likhi hai. Wo list purane role-naamon par bani thi (CEO, DIRECTOR,
   // ADMIN_MANAGER, MANAGER); is office ke role ab CEO_PRESIDENT / ADMIN_MANAGER_OFFICE /
@@ -599,6 +600,34 @@ export async function listAttendance(viewer, { userId, all, from, to, page = 1, 
     if (to) filter.date.$lte = companyDayFromYMD(to);
   }
 
+  // ── Khaali din bhi bharo (ek bande ki apni history) ────────────────────────
+  //
+  // Attendance collection me sirf un dinon ki row hoti hai jab kuch hua ho. Sunday,
+  // company holiday aur "koi aaya hi nahi" wale din ki koi row kabhi nahi banti, to
+  // seedhi rows chhapne wali table unhe dikha hi nahi sakti. Yahan wahi calendar
+  // banaya jata hai jo Team-member page (dossier) pehle se dikhata hai — EK HI
+  // helper se, taaki dono screens kabhi alag jawab na dein.
+  //
+  // Sirf tab jab: maanga gaya ho (`fill`), poori date-window di ho, aur baat EK
+  // bande ki ho. `all=true` (CSV export, Everyone tab) is raaste par nahi aata —
+  // unhe asli rows hi chahiye.
+  if (fill && from && to && !(all && everyone)) {
+    const whose = String(filter.user);
+    const [user, settings, records] = await Promise.all([
+      User.findById(whose),
+      Setting.getSingleton(),
+      Attendance.find(filter).sort({ date: -1 }),
+    ]);
+    if (user) {
+      const days = await buildAttendanceDays({ user, records, fromYMD: from, toYMD: to, settings });
+      // Window ke saare din gin kar `total` me bhejte hain, phir `limit` tak kaat kar.
+      // Table ke upar jo "sirf itne dikh rahe hain" wali lakeer hai wo isi jodi par
+      // chalti hai — rows ki ginti badalne se wo lakeer jhooth bolne lagti.
+      const skipped = (page - 1) * limit;
+      return { records: days.slice(skipped, skipped + limit), total: days.length, page, limit };
+    }
+  }
+
   const skip = (page - 1) * limit;
   const [records, total] = await Promise.all([
     Attendance.find(filter)
@@ -609,7 +638,17 @@ export async function listAttendance(viewer, { userId, all, from, to, page = 1, 
     Attendance.countDocuments(filter),
   ]);
 
-  return { records: records.map((r) => r.toJSON()), total, page, limit };
+  // Asli rows par bhi `dateYMD` bhejte hain. `date` company-midnight ka UTC instant
+  // hai (18 Nov = "2026-11-17T18:30:00.000Z"), to ISO string ke pehle 10 akshar EK
+  // DIN PEECHHE padhte hain. Jo bhi screen us din ko wapas bhejti hai (jaise history
+  // ka "Fix" button correction form me), use ye saaf field milni chahiye — apne aap
+  // kaat kar nikalne ki zaroorat hi na pade.
+  return {
+    records: records.map((r) => ({ ...r.toJSON(), dateYMD: ymdInTz(r.date) })),
+    total,
+    page,
+    limit,
+  };
 }
 
 /**

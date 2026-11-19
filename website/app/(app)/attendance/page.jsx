@@ -17,7 +17,26 @@ import { RegularizationQueue } from '@/components/attendance/regularization-queu
 function MeView() {
   return (
     <div className="space-y-8">
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,360px)_1fr]">
+      {/*
+        DO COLUMN, PAR TABHI JAB SACH ME JAGAH HO.
+        Pehle yahan `lg:grid-cols-[minmax(0,360px)_1fr]` tha, aur wo do tarah se galat tha:
+
+        1. `1fr` ka apna chhupa hua minimum uske ANDAR ke content se aata hai, aur andar
+           history table hai jiske har cell par `whitespace-nowrap` hai (ui/table.jsx) —
+           yaani wo ~667px se neeche ja hi nahi sakti. Doosri taraf `minmax(0,360px)` ka
+           minimum poora 0 hai. Nateeja: table pehle apne 667px le leti thi aur check-in
+           card ko jo bachta wo milta tha. Naapa gaya: 1280px par card 269px ka, aur
+           1024px par sirf 13px ka — poora content bahar nikla hua.
+           Ilaaj: table wale track ko `minmax(0,1fr)` karo (ab uska minimum sach me 0 hai,
+           aur zaroorat padne par wo apne `overflow-x-auto` me khisak jaati hai), aur card
+           wale track ko ek ASLI minimum do.
+
+        2. Breakpoint bhi galat tha. 1024px par sidebar BHI khulta hai (256px le jaata hai)
+           aur do-column BHI shuru ho jaata tha — dono ek saath, jabki bachi hui chaudai
+           me do haath aate hi nahi. `xl` (1280px) par shuru karne se neeche wale saare
+           naap par dono cheezein poori chaudai me, ek ke neeche ek aati hain.
+      */}
+      <div className="grid gap-6 xl:grid-cols-[minmax(320px,360px)_minmax(0,1fr)]">
         <CheckInCard />
         <AttendanceHistory />
       </div>

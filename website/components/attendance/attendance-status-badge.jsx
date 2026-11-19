@@ -25,7 +25,9 @@ export function AttendanceStatusBadge({ attendance, fallback }) {
   }
   const s = effectiveStatus(attendance, fallback);
   // Awaited = office day still running, not in yet → a quiet dash, never "Absent".
-  if (s === 'AWAITED') return <span className="text-sm text-muted-foreground">—</span>;
+  // UPCOMING server ka wahi matlab wala naam hai (dossier aur ab attendance history
+  // dono bhejte hain) — warna wo badge ke andar "—" bankar aata, jo bemaani lagta hai.
+  if (s === 'AWAITED' || s === 'UPCOMING') return <span className="text-sm text-muted-foreground">—</span>;
   if (s === 'LATE') {
     return (
       <span className="inline-flex flex-wrap items-center gap-1.5">

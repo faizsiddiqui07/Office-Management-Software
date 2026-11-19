@@ -9,7 +9,8 @@ import { can } from '../lib/permissions.js';
 import { userWeekendDays, workWindowClosed } from '../lib/schedule.js';
 import { computeWorkingDays } from './workingDays.service.js';
 import { holidayYMDSet } from './holiday.service.js';
-import { isBirthdayYMD, birthdayYMDSet } from '../lib/birthday.js';
+import { buildAttendanceDays } from './attendanceDays.service.js';
+import { birthdayYMDSet } from '../lib/birthday.js';
 import { periodStartFor, joinedYMD } from '../lib/joining.js';
 import { leaveYearOf } from '../lib/leaveYear.js';
 import { getOrCreateBalance, overtimeMinutesForYear } from './leave.service.js';
@@ -126,44 +127,12 @@ export async function getUserDossier(userId, { from, to }) {
   // only the Attendance ROWS, and an absent day has no row — so exactly the absent days
   // (and the weekend/holiday context around them) were invisible, leaving a page that
   // looked like nothing but "Present". Every day now appears with its real status.
-  const recByYmd = new Map(records.map((r) => [ymdInTz(r.date), r]));
-  let days = attendanceRecords; // non-tracking roles: just their rows (they have no absent math)
-  if (tracksAttendance && countFrom <= cappedTo) {
-    const holidays = await holidayYMDSet(countFrom, cappedTo);
-    const weekend = userWeekendDays(user, settings);
-    days = [];
-    let cur = new Date(`${countFrom}T00:00:00.000Z`);
-    const end = new Date(`${cappedTo}T00:00:00.000Z`);
-    while (cur.getTime() <= end.getTime()) {
-      const ymd = cur.toISOString().slice(0, 10);
-      const rec = recByYmd.get(ymd);
-      if (rec) {
-        days.push({
-          id: rec.id, dateYMD: ymd, checkInAt: rec.checkInAt, checkOutAt: rec.checkOutAt,
-          workedMinutes: rec.workedMinutes || 0, overtimeMinutes: rec.overtimeMinutes || 0,
-          status: rec.status, excused: !!rec.excused, lateReason: rec.lateReason || null, halfDayLeave: !!rec.halfDayLeave,
-          wfhOfficeWide: !!rec.wfhOfficeWide,
-        });
-      } else {
-        const dow = cur.getUTCDay();
-        // A working day with no check-in is only ABSENT once the office day is over —
-        // today, before their window closes, is UPCOMING (matches the company report and
-        // the daily roster), not a red "absent".
-        const status = holidays.has(ymd)
-          ? 'HOLIDAY'
-          : isBirthdayYMD(user, ymd)
-            ? 'BIRTHDAY' // their own day off — never a red "absent"
-            : weekend.includes(dow)
-              ? 'WEEKEND'
-              : workWindowClosed(user, ymd, settings, now)
-                ? 'ABSENT'
-                : 'UPCOMING';
-        days.push({ id: `d-${ymd}`, dateYMD: ymd, checkInAt: null, checkOutAt: null, workedMinutes: 0, overtimeMinutes: 0, status, excused: false, lateReason: null, halfDayLeave: false });
-      }
-      cur = new Date(cur.getTime() + 86400000);
-    }
-    days.reverse(); // newest first, like the raw record list
-  }
+  //
+  // Ye loop pehle yahin likha tha. Ab wahi code services/attendanceDays.service.js me
+  // hai, kyunki "meri attendance" wali table ko bhi bilkul yahi calendar chahiye tha
+  // (19 Nov 2026). Do jagah copy rakhte to ek din dono alag jawab dene lagte — aur
+  // owner dono screen saath rakh kar milata hai.
+  const days = await buildAttendanceDays({ user, records, fromYMD: from, toYMD: to, settings, now });
 
   const attendance = {
     tracksAttendance,

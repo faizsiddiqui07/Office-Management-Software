@@ -13,22 +13,44 @@ import { RegularizationDialog } from './regularization-dialog';
 import { TableSkeleton } from '@/components/glass/skeletons';
 import { PeriodFilter } from '@/components/glass/period-filter';
 import { resolvePeriod } from '@/lib/date-period';
-import { formatTime, formatDuration, formatDayLabel, todayYMD } from '@/lib/time';
+import { formatTime, formatDuration, formatDayLabel, companyYMD } from '@/lib/time';
 
 /** Is din selfie se attendance lagi thi? */
 const hasSelfie = (r) => !!(r.checkInMeta?.selfieKey || r.checkOutMeta?.selfieKey);
 
+/**
+ * Is row ka din, 'YYYY-MM-DD' me.
+ *
+ * Server ab har row par `dateYMD` bhejta hai. Purane jawab (ya cache me pada purana
+ * data) us field ke bina aa sakta hai, isliye `date` se nikaalne ka raasta bhi rakha
+ * hai — par `companyYMD` se, slice se KABHI nahi: `date` company-midnight ka UTC
+ * instant hai, to ISO ke pehle 10 akshar poora ek din peechhe padte hain.
+ */
+const rowYMD = (r) => r.dateYMD || companyYMD(r.date);
+
+/** Khaali din par "0m" nahi — dash, jaise dossier aur PDF dikhate hain. */
+const dur = (mins) => (mins ? formatDuration(mins) : <span className="text-muted-foreground">—</span>);
+
 const ALL_COLUMNS = [
-  { accessorKey: 'date', header: 'Date', cell: ({ row }) => formatDayLabel(row.original.date) },
+  {
+    id: 'date',
+    header: 'Date',
+    // accessorFn YMD par, kacche `date` par nahi: ab table me asli rows (jinke paas ISO
+    // `date` hai) aur bharey hue khaali din (jinke paas sirf `dateYMD` hai) saath me
+    // aate hain. Dono ko ek hi roop me naapna zaroori hai, warna sorting ek din khisak
+    // jaati hai aur do format aapas me ulat-pulat ho jaate hain.
+    accessorFn: (r) => rowYMD(r),
+    cell: ({ row }) => formatDayLabel(rowYMD(row.original)),
+  },
   { accessorKey: 'checkInAt', header: 'In', cell: ({ row }) => formatTime(row.original.checkInAt) },
   { accessorKey: 'checkOutAt', header: 'Out', cell: ({ row }) => formatTime(row.original.checkOutAt) },
-  { accessorKey: 'workedMinutes', header: 'Worked', cell: ({ row }) => formatDuration(row.original.workedMinutes) },
+  { accessorKey: 'workedMinutes', header: 'Worked', cell: ({ row }) => dur(row.original.workedMinutes) },
   {
     accessorKey: 'overtimeMinutes',
     header: 'Overtime',
     cell: ({ row }) => (
       <span className={row.original.overtimeMinutes ? 'font-medium text-primary' : ''}>
-        {formatDuration(row.original.overtimeMinutes)}
+        {dur(row.original.overtimeMinutes)}
       </span>
     ),
   },
@@ -70,11 +92,18 @@ const ALL_COLUMNS = [
     // may yet check out.
     cell: ({ row }) => {
       const r = row.original;
-      const forgotCheckout = !!r.checkInAt && !r.checkOutAt && r.date < todayYMD();
+      const ymd = rowYMD(r);
+      // Dono taraf company ka calendar-din. Pehle yahan kaccha `r.date` tha — ek ISO
+      // instant — aur uski tulna `todayYMD()` se hoti thi. Wo do tareeke se galat tha:
+      // (1) `date` 18 Nov ke liye "2026-11-17T18:30:00.000Z" hota hai, to tulna EK DIN
+      // peechhe se hoti thi aur AAJ ki khuli shift par bhi "Fix" aa jaata tha — jabki
+      // neeche ka comment kehta hai ki nahi aana chahiye; (2) `todayYMD()` DEVICE ki
+      // ghadi se banta hai, jabki poora app company time par chalta hai.
+      const forgotCheckout = !!r.checkInAt && !r.checkOutAt && ymd < companyYMD(new Date());
       if (!forgotCheckout) return null;
       return (
         <RegularizationDialog
-          prefill={{ dateYMD: r.date, reason: 'Forgot to check out' }}
+          prefill={{ dateYMD: ymd, reason: 'Forgot to check out' }}
           trigger={
             <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs text-amber-600 hover:text-amber-600 dark:text-amber-400">
               <Wrench className="size-3.5" /> Fix
@@ -104,9 +133,18 @@ export function AttendanceHistory() {
       // this table came back empty the first time. Three months is ~92 working
       // days, so every chip fits; only a long CUSTOM range can hit the ceiling,
       // and the line under the table says so when it does.
+      // `fill=true` → server khaali din bhi bhejta hai: Sunday, company holiday, aur
+      // wo din jab koi aaya hi nahi. Un dinon ki Attendance row kabhi banti hi nahi
+      // (naapa: 725 rows wale DB me ABSENT = 0, HOLIDAY = 0), isliye bina iske ye table
+      // sirf "Present / On leave" dikha sakti thi. Wahi calendar Team-member page
+      // pehle se dikhata hai — ab dono ek hi helper se aate hain.
+      //
+      // Dono taraf date chahiye, warna server bharne se mana kar deta hai (kitne din
+      // bharne hain ye jaane bina khaali din banta hi nahi).
       const qs = new URLSearchParams({ limit: '100' });
       if (range.from) qs.set('from', range.from);
       if (range.to) qs.set('to', range.to);
+      if (range.from && range.to) qs.set('fill', 'true');
       return api.get(`/attendance?${qs.toString()}`);
     },
   });
@@ -152,7 +190,7 @@ export function AttendanceHistory() {
           value={period}
           onChange={setPeriod}
           presets={['this_month', 'last_month', 'last_3', 'custom']}
-          max={todayYMD()}
+          max={companyYMD(new Date())}
           className="w-full sm:w-auto"
         />
       </div>

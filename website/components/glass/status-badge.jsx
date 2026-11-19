@@ -52,5 +52,11 @@ export const STATUS_TONES = {
   // are both 'info'), and without a key here it would fall back to a grey "nothing
   // happened" badge.
   WFH: 'primary',
+  // Chhutti ka din aur "abhi din baaki hai" — dono chup-chaap grey. Inke bina ye naye
+  // status `?? 'neutral'` par gir jaate the, jo dikhne me to sahi tha par likha kahin
+  // nahi tha; PDF inhe pehle se grey (#9ca3af) chhapta hai, to yahan saaf likh diya.
+  // WEEKEND ko ABSENT ki tarah laal karna sabse badi galti hoti — Sunday koi kasoor nahi.
+  WEEKEND: 'neutral',
+  UPCOMING: 'neutral',
   CANCELLED: 'neutral',
 };

@@ -129,7 +129,7 @@ export async function today(req, res, next) {
 export async function list(req, res, next) {
   try {
     const q = listQuerySchema.parse(req.query);
-    const data = await svc.listAttendance(req.user, { ...q, all: q.all === 'true' });
+    const data = await svc.listAttendance(req.user, { ...q, all: q.all === 'true', fill: q.fill === 'true' });
     res.json(ok(data));
   } catch (err) {
     handleErr(res, err, next);

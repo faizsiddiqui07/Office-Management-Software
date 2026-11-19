@@ -12,19 +12,43 @@ export function effectiveStatus(att, fallback) {
   return s;
 }
 
-/** Human label for an attendance status. */
-export function attendanceStatusLabel(status) {
-  if (status === 'ON_DUTY') return 'On duty';
+/**
+ * Human label for an attendance status.
+ *
+ * YE POORA MAP KYUN HAI: pehle yahan sirf chaar khaas haalat likhe the aur baaki
+ * sab `status.replace('_',' ')` par chhod diya tha. Us fallback ka nateeja ye tha ki
+ * ek hi table me "Present (late)" ke bagal me kaccha "PRESENT" aur "ON LEAVE" chhapta
+ * tha — bade akshar, underscore ke saath. Aur jab se "mera attendance" me khaali din
+ * bhi aane lage (19 Nov 2026), HOLIDAY / WEEKEND / ABSENT / UPCOMING bhi usi fallback
+ * se guzarte, yaani poori table bhari hui hoti kacche enum se.
+ *
+ * Lafz backend/src/services/report.service.js ke STATUS_LABEL se HU-BA-HU milte hain,
+ * kyunki wahi lafz PDF me chhapte hain — screen aur PDF alag bolein, ye nahi chalega.
+ */
+const LABELS = {
+  PRESENT: 'Present',
+  LATE: 'Late',
+  ON_DUTY: 'On duty',
+  ABSENT: 'Absent',
+  ON_LEAVE: 'On leave',
   // Worked, from home — spelled out so the bare acronym never reaches a screen, and so
   // the day is findable by typing "work from home" in the searchable tables.
-  if (status === 'WFH') return 'Work from home';
-  // Not in yet, but their office day isn't over — shown as a neutral dash, not "Absent".
-  if (status === 'AWAITED') return '—';
+  WFH: 'Work from home',
+  HOLIDAY: 'Holiday',
+  WEEKEND: 'Weekend',
+  BEFORE_JOINING: 'Not employed yet',
   // Their own birthday: a day off for them alone. Named (with the cake) so a blank day on
   // the sheet reads as "it was their birthday", never as an unexplained absence — and so
   // it is distinguishable from a company holiday, which shares its tone.
-  if (status === 'BIRTHDAY') return 'Birthday 🎂';
-  return (status || '').replace('_', ' ');
+  BIRTHDAY: 'Birthday 🎂',
+  // Din abhi chal raha hai — aaye nahi hain, par shift khatam bhi nahi hui. Dash, "Absent"
+  // nahi. (AWAITED purana naam hai, UPCOMING server ka — dono ek hi baat kehte hain.)
+  AWAITED: '—',
+  UPCOMING: '—',
+};
+
+export function attendanceStatusLabel(status) {
+  return LABELS[status] ?? (status || '').replace(/_/g, ' ');
 }
 
 /**
