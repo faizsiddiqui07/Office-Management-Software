@@ -22,10 +22,19 @@
  * `liveAt: '2026-11-19 23:00'` (company time, 'YYYY-MM-DD HH:mm') — us waqt se PEHLE
  * ye update kisi ko nahi dikhta. Bina `liveAt` ke update turant dikhta hai.
  *
+ * YE AAM NIYAM NAHI HAI — MAUKE KI CHEEZ HAI (owner, 19 Nov 2026: "bas is baar
+ * chahiye, hamesha ke liye nahi bol rahe"). Saadha update par `liveAt` MAT lagao:
+ * bina iske turant dikhna hi default hai, aur wahi theek hai. Ye sirf tab uthao jab
+ * ek saath itne update ja rahe hon ki ek modal me padhna bhaari ho jaye.
+ *
  * KIS KAAM KA: ek saath chhe update push karne par bande ko ek hi modal me 35 points
  * padhne padte the — phone par saat screen scroll (naapa gaya). `liveAt` se unhe do
  * batch me baanta ja sakta hai: kuch aaj, baaki raat ko — taaki agli subah doosri
  * list mile, pehli padhi ja chuki ho.
+ *
+ * NEECHE JO TEEN `liveAt` LAGE HAIN wo SIRF 19 Nov 2026 wale push ke liye hain. Un par
+ * poori tareekh likhi hai, to us raat 11 ke baad wo apne aap bemaani ho jaate hain —
+ * koi aage ka update unse nahi rukta. Chaaho to baad me saaf bhi kar sakte ho.
  *
  * TEEN BAATEIN JO YAAD RAKHNI HAIN:
  *   • Code us waqt se PEHLE deploy hona chahiye. `liveAt` sirf CHHUPATA hai; wo khud
