@@ -14,8 +14,19 @@
  *
  * Run (backend folder se):  node scripts/test-notification-text.js
  */
-import { dayInWords } from '../src/lib/time.js';
+import { dayInWords, ymdInTz } from '../src/lib/time.js';
 import { taskNews } from '../src/services/task.service.js';
+
+/**
+ * Aaj se n din aage/peeche ki tareekh (company time).
+ *
+ * KYUN: section 3 ke test `taskNews()` ko bina `now` ke bulate hain, to wo ASLI ghadi
+ * padhta hai. Pehle wahan tareekhein hardcode thiN — '2026-11-03' se "tomorrow" aur
+ * '2026-11-02' se "today" ki ummeed. Wo us din (2 Nov 2026) sach tha; 19 Nov ko yahi
+ * test 'Tue 3 Nov' dene laga aur do check jhoothe laal ho gaye — niyam kuch nahi toota tha,
+ * sirf test sadd gaya tha. Ab tareekh aaj se ginti hai, to shabd hamesha sach rahenge.
+ */
+const inDays = (n) => ymdInTz(new Date(Date.now() + n * 86400000));
 
 let failures = 0;
 function check(name, cond, extra = '') {
@@ -57,11 +68,13 @@ console.log('\n2 — dayInWords KABHI crash na kare (ye save ke beech chalta hai
 console.log('\n3 — taskNews: kaam ka naam UPAR, sentence NEECHE');
 {
   // Screenshot wala theek wahi mamla.
-  const n = taskNews('testing', 'New task from ADMIN. CONTROLLER', { due: '2026-11-04' });
+  const FAR = inDays(10); // door ki tareekh — kabhi today/tomorrow/yesterday nahi banegi
+  const n = taskNews('testing', 'New task from ADMIN. CONTROLLER', { due: FAR });
   check('mote akshar me kaam ka naam', n.title === 'testing', n.title);
-  check('neeche: kisne diya + kab tak', n.message === 'New task from ADMIN. CONTROLLER · due Wed 4 Nov', n.message);
+  check('neeche: kisne diya + kab tak', n.message === `New task from ADMIN. CONTROLLER · due ${dayInWords(FAR)}`, n.message);
+  check('door ki tareekh "Wed 4 Nov" wali shakl me (raw date nahi)', /^[A-Z][a-z]{2} \d{1,2} [A-Z][a-z]{2}/.test(dayInWords(FAR)), dayInWords(FAR));
 
-  const t = taskNews('Site visit', 'Asha tagged you', { due: '2026-11-03' });
+  const t = taskNews('Site visit', 'Asha tagged you', { due: inDays(1) });
   check('kal wali tareekh bhi shabdon me', t.message === 'Asha tagged you · due tomorrow', t.message);
 
   const nd = taskNews('Site visit', 'Asha tagged you');
@@ -70,7 +83,7 @@ console.log('\n3 — taskNews: kaam ka naam UPAR, sentence NEECHE');
   const wn = taskNews('Drawing set', 'Asha sent it back', { note: 'Scale galat hai' });
   check('wajah bhi usi line me', wn.message === 'Asha sent it back · Scale galat hai', wn.message);
 
-  const both = taskNews('Drawing set', 'Asha sent it back', { due: '2026-11-02', note: 'Scale galat hai' });
+  const both = taskNews('Drawing set', 'Asha sent it back', { due: inDays(0), note: 'Scale galat hai' });
   check('teenon ek saath, kram tay', both.message === 'Asha sent it back · due today · Scale galat hai', both.message);
 
   // Khaali hisse beech me do separator na chhod dein.
