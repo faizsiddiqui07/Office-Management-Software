@@ -218,17 +218,22 @@ export default function DashboardPage() {
           >
             Team today
           </SectionTitle>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {/* Phone par DO-DO ki kataar (owner, 20 Nov 2026). Pehle ek-ek karke aate the,
+              to chaar tile me poora pehla screen bhar jaata tha aur neeche kuch dikhta
+              hi nahi tha. `tightOnPhone` sirf phone par padding/icon/figure chhota
+              karta hai — laptop par tile poore ke poore rehte hain. */}
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
             <StatCard
+              tightOnPhone
               label="Present"
               value={`${team.present}/${team.total}`}
               icon={Users}
               tone="success"
               hint={[team.late ? `${team.late} late` : '', team.awaited ? `${team.awaited} not in yet` : ''].filter(Boolean).join(' · ') || 'incl. late check-ins'}
             />
-            <StatCard label="On leave" value={team.onLeave} icon={Plane} tone="info" />
-            <StatCard label="Absent" value={team.absent} icon={CalendarDays} tone={team.absent ? 'destructive' : 'default'} />
-            <StatCard label="Team overtime" value={formatDuration(team.overtimeMinutes || 0)} icon={TimerReset} tone="default" hint="this month" />
+            <StatCard tightOnPhone label="On leave" value={team.onLeave} icon={Plane} tone="info" />
+            <StatCard tightOnPhone label="Absent" value={team.absent} icon={CalendarDays} tone={team.absent ? 'destructive' : 'default'} />
+            <StatCard tightOnPhone label="Team overtime" value={formatDuration(team.overtimeMinutes || 0)} icon={TimerReset} tone="default" hint="this month" />
           </div>
         </section>
       ) : null}

@@ -13,11 +13,21 @@ const toneIcon = {
 };
 
 /**
- * `compact` is for a row of MANY tiles (the user dossier has seven): smaller padding,
- * icon and figure, and the figure on one line — at full size a seven-across row broke
- * "From home" over two lines and "3h 13m" over three.
+ * TEEN NAAP, AUR DONO PROP KA KAAM ALAG HAI:
+ *
+ *  • `compact`      — HAR naap par chhota. Ek kataar me BAHUT saare tile ho (dossier me
+ *                     saat hain) tab. Poore size par saat-ka-row "From home" ko do line
+ *                     aur "3h 13m" ko teen line me tod deta tha.
+ *  • `tightOnPhone` — SIRF phone par chhota, `sm` (640px) se upar poora. Jab tile phone
+ *                     par do-do ki kataar me aate hain: aadhi chaudai me poora size
+ *                     bhadda lagta hai, par laptop par wahi tile poore chahiye.
+ *                     (Owner ka faisla 20 Nov 2026 — dashboard ke "Team today" tile.)
+ *
+ * Dono ek saath dene ki zaroorat nahi: `compact` upar bhaari padta hai.
  */
-export function StatCard({ label, value, icon: Icon, hint, tone = 'default', trend, compact = false, className }) {
+export function StatCard({ label, value, icon: Icon, hint, tone = 'default', trend, compact = false, tightOnPhone = false, className }) {
+  // Ek jagah tay, taaki chhe jagah `compact ? … : tight ? … : …` na likhna pade.
+  const pick = (full, phone, small) => (compact ? small : tightOnPhone ? phone : full);
   const reduce = useReducedMotion();
   const TrendIcon =
     trend?.direction === 'up' ? ArrowUpRight : trend?.direction === 'down' ? ArrowDownRight : Minus;
@@ -33,15 +43,15 @@ export function StatCard({ label, value, icon: Icon, hint, tone = 'default', tre
       initial={reduce ? false : { opacity: 0, y: 10 }}
       animate={reduce ? undefined : { opacity: 1, y: 0 }}
       transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
-      className={cn('glass glass-highlight rounded-2xl', compact ? 'p-4' : 'p-5', className)}
+      className={cn('glass glass-highlight rounded-2xl', pick('p-5', 'p-3.5 sm:p-5', 'p-4'), className)}
     >
-      <div className={cn('flex items-start justify-between', compact ? 'gap-2' : 'gap-3')}>
+      <div className={cn('flex items-start justify-between', pick('gap-3', 'gap-2 sm:gap-3', 'gap-2'))}>
         <div className="min-w-0 space-y-1">
-          <p className={cn('font-medium text-muted-foreground', compact ? 'text-xs' : 'text-sm')}>{label}</p>
+          <p className={cn('font-medium text-muted-foreground', pick('text-sm', 'text-xs sm:text-sm', 'text-xs'))}>{label}</p>
           <p
             className={cn(
               'font-semibold tracking-tight tabular-nums',
-              compact ? 'whitespace-nowrap text-xl' : 'break-words text-2xl sm:text-3xl',
+              pick('break-words text-2xl sm:text-3xl', 'break-words text-xl sm:text-3xl', 'whitespace-nowrap text-xl'),
             )}
           >
             {value}
@@ -51,17 +61,17 @@ export function StatCard({ label, value, icon: Icon, hint, tone = 'default', tre
           <span
             className={cn(
               'flex shrink-0 items-center justify-center rounded-xl ring-1',
-              compact ? 'size-9' : 'size-11',
+              pick('size-11', 'size-8 sm:size-11', 'size-9'),
               toneIcon[tone],
             )}
           >
-            <Icon className={compact ? 'size-4' : 'size-5'} />
+            <Icon className={pick('size-5', 'size-4 sm:size-5', 'size-4')} />
           </span>
         ) : null}
       </div>
 
       {(trend || hint) && (
-        <div className={cn('flex items-center gap-2', compact ? 'mt-2.5 text-xs' : 'mt-4 text-sm')}>
+        <div className={cn('flex items-center gap-2', pick('mt-4 text-sm', 'mt-2 text-xs sm:mt-4 sm:text-sm', 'mt-2.5 text-xs'))}>
           {trend ? (
             <span className={cn('inline-flex items-center gap-0.5 font-medium', trendColor)}>
               <TrendIcon className="size-4" />
