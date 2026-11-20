@@ -47,14 +47,22 @@
  */
 export const RELEASES = [
   {
-    id: '2026-11-20-home-screen-tidy',
+    id: '2026-11-20-checkin-button',
+    ymd: '2026-11-20',
+    title: 'The check-in button now carries your whole day',
+    points: [
+      'The check-in button is full width now, so it is easy to tap.',
+      'After you check in, that same button counts down the 30 minutes before check-out opens, so you know exactly when it does.',
+      'After you check out, it shows how long you worked and your overtime for the day.',
+    ],
+  },
+  {
+    id: '2026-11-20-home-cards-two-up',
     ymd: '2026-11-20',
     title: 'A tidier home screen on your phone',
     points: [
       'The cards on your home screen now sit two to a row on a phone, so you can see your day without scrolling.',
-      'The check-in button is now full width and easier to tap.',
-      'After you check in, that button counts down the 30 minutes before you can check out, so you know exactly when it opens.',
-      'After you check out, the same button shows how long you worked and your overtime for the day.',
+      'Nothing changes on a laptop — the cards stay full size there.',
     ],
   },
   {
