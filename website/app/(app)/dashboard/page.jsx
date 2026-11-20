@@ -170,12 +170,19 @@ export default function DashboardPage() {
       {/* Personal stats — each card gated on the permission that makes it TRUE for this
           person. "Today"/"Overtime" need markAttendance (a role that can't check in was
           stuck with a permanent amber "Not in" warning it could never clear); the leave
-          cards need applyLeave. */}
+          cards need applyLeave.
+
+          Phone par DO-DO ki kataar — wahi jo upar "Team today" par hai (owner, 20 Nov
+          2026). Tippani YAHAN hai, ternary ke khulne wale bracket ke BAAD nahi: wahan
+          JSX tippani tippani nahi rehti, ek object literal padhi jaati hai aur build
+          gir jaati hai. (Aur tippani ke ANDAR comment band karne wale do akshar mat
+          likhna — wo use beech me hi khatam kar dete hain; ye bhi chala kar pakda.) */}
       {canMark || canApplyLeave ? (
-      <div className={cn('grid grid-cols-1 gap-4', canMark && canApplyLeave ? 'sm:grid-cols-2 xl:grid-cols-4' : 'sm:grid-cols-2')}>
-        {canMark ? <StatCard label="Today" value={ts.value} icon={UserCheck} tone={ts.tone} hint={ts.hint} /> : null}
+      <div className={cn('grid grid-cols-2 gap-3 sm:gap-4', canMark && canApplyLeave ? 'xl:grid-cols-4' : '')}>
+        {canMark ? <StatCard tightOnPhone label="Today" value={ts.value} icon={UserCheck} tone={ts.tone} hint={ts.hint} /> : null}
         {canApplyLeave ? (
           <StatCard
+            tightOnPhone
             label="Leave balance"
             value={`${balance?.remaining ?? 0}/${balance?.totalQuota ?? 0}`}
             icon={Plane}
@@ -185,6 +192,7 @@ export default function DashboardPage() {
         ) : null}
         {canApplyLeave ? (
           <StatCard
+            tightOnPhone
             label="Pending leaves"
             value={myPendingLeaves.length}
             icon={Inbox}
@@ -194,6 +202,7 @@ export default function DashboardPage() {
         ) : null}
         {canMark ? (
           <StatCard
+            tightOnPhone
             label="Overtime banked"
             value={formatDuration(balance?.overtimeMinutes || 0)}
             icon={TimerReset}
