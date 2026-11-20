@@ -27,6 +27,8 @@ export function QuickAttendanceAction() {
     checkedOut,
     isWFH,
     elapsedMin,
+    overtimeMin,
+    cooldownMin,
     cooldownLeftMs,
     inCooldown,
     wouldBeLate,
@@ -50,7 +52,31 @@ export function QuickAttendanceAction() {
     return () => clearTimeout(t);
   }, [confirmOut]);
 
-  const base = 'inline-flex min-h-10 items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-medium ring-1 transition-colors';
+  /*
+   * POORI CHAUDAI KA EK BUTTON, CHAAR HAALAT (owner ka faisla, 20 Nov 2026).
+   *
+   * Pehle ye content jitna chauda tha aur dashboard par paanch doosre button ke beech
+   * baithta tha. Ab wo saare button hat chuke hain (19 Nov) — yahi akela kaam hai jo
+   * sirf isi screen par ho sakta hai, isliye poori chaudai iski hai.
+   *
+   * Chaar haalat, ek hi jagah:
+   *   1. hazri se pehle  → "Check in"
+   *   2. check-in ke baad → 30 minute ka block, ulti ginti + patli lakeer
+   *   3. block ke baad    → "Check out", saath me kab aaye aur kitna kaam hua
+   *   4. check-out ke baad → kitna kaam hua aur kitna overtime
+   *
+   * 30 MINUTE KA BLOCK NAYA NAHI HAI — `checkOutCooldownMinutes` pehle se 30 hai aur
+   * Settings se badla ja sakta hai. Pehle wo ek chhoti si line me chhupa hua tha; ab
+   * ginti bhi dikhti hai aur wajah bhi likhi hai.
+   */
+  // Phone par POORI chaudai (owner ne yahi maanga). Laptop par ek thehri hui chaudai —
+  // 1440px par poori chaudai ka button 1110px ka ho jaata tha, jo ek lambi patli patti
+  // jaisa lagta hai, button jaisa nahi (naap kar dekha).
+  const base = 'flex w-full min-h-12 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium ring-1 transition-colors sm:max-w-sm';
+  // Block kitna beet chuka — patli lakeer isi par bharti hai.
+  const cooldownDone = cooldownMin > 0
+    ? Math.min(100, Math.max(0, 100 - (cooldownLeftMs / (cooldownMin * 60000)) * 100))
+    : 100;
 
   const onCheckIn = () => {
     if (wouldBeLate) setLateOpen(true);
@@ -72,31 +98,56 @@ export function QuickAttendanceAction() {
     // Nothing to clock on a work-from-home day — the attendance is already recorded.
     control = (
       <span className={cn(base, 'bg-primary/12 text-primary ring-primary/25')}>
-        <Home className="size-4" /> Working from home
+        <Home className="size-4 shrink-0" /> Working from home
       </span>
     );
   } else if (checkedOut) {
+    // Din khatam. Ab is jagah ka ek hi kaam hai: aaj kitna kaam hua, aur kitna overtime.
+    // "Done at 18:30" akela ye nahi batata tha, aur wahi sabse pehla sawaal hota hai.
     control = (
-      <span className={cn(base, 'bg-success/12 text-success ring-success/25')}>
-        <Check className="size-4" /> Done at {formatTime(record.checkOutAt)}
-      </span>
+      <div className={cn(base, 'flex-col gap-1 bg-success/10 text-success ring-success/25')}>
+        <span className="flex items-center gap-2 font-semibold">
+          <Check className="size-4 shrink-0" />
+          Worked {formatDuration(elapsedMin)}
+          {overtimeMin > 0 ? <span className="text-primary">· OT {formatDuration(overtimeMin)}</span> : null}
+        </span>
+        <span className="text-xs font-normal text-muted-foreground">
+          {formatTime(record.checkInAt)} – {formatTime(record.checkOutAt)}
+        </span>
+      </div>
     );
   } else if (!checkedIn) {
     control = (
-      <button type="button" onClick={onCheckIn} disabled={checkInMut.isPending} className={cn(base, 'bg-primary text-primary-foreground ring-primary/30 hover:bg-primary/90 disabled:opacity-70')}>
-        <LogIn className="size-4" /> {checkInMut.isPending ? 'Checking in…' : 'Check in'}
+      <button type="button" onClick={onCheckIn} disabled={checkInMut.isPending} className={cn(base, 'bg-primary text-base text-primary-foreground ring-primary/30 hover:bg-primary/90 disabled:opacity-70')}>
+        <LogIn className="size-4 shrink-0" /> {checkInMut.isPending ? 'Checking in…' : 'Check in'}
       </button>
     );
   } else if (inCooldown) {
+    // Block ke do hisse: ulti ginti (kitna baaki) aur patli lakeer (kitna beet gaya).
+    // Sirf ginti dene par wo rukà hua lagta hai; lakeer se dikhta hai ki chal raha hai.
     control = (
-      <span className={cn(base, 'cursor-not-allowed bg-muted/40 text-muted-foreground ring-border')} title="Locked briefly so a double-tap can't check you out by mistake">
-        <Clock className="size-4" /> Check out in <span className="tabular-nums">{fmtCountdown(cooldownLeftMs)}</span>
-      </span>
+      <div className={cn(base, 'flex-col gap-1.5 bg-muted/40 text-muted-foreground ring-border')}>
+        <span className="flex items-center gap-2">
+          <Clock className="size-4 shrink-0" />
+          Check out in <span className="font-semibold tabular-nums text-foreground">{fmtCountdown(cooldownLeftMs)}</span>
+        </span>
+        <span className="h-1 w-full overflow-hidden rounded-full bg-foreground/10">
+          <span className="block h-full rounded-full bg-primary/60 transition-[width] duration-1000 ease-linear" style={{ width: `${cooldownDone}%` }} />
+        </span>
+        <span className="text-xs">
+          Checked in {formatTime(record.checkInAt)} · locked for {cooldownMin} min
+        </span>
+      </div>
     );
   } else {
     control = (
-      <button type="button" onClick={() => setConfirmOut(true)} disabled={checkOutMut.isPending} className={cn(base, 'glass ring-border hover:bg-muted/40 disabled:opacity-70')}>
-        <LogOut className="size-4" /> {checkOutMut.isPending ? 'Checking out…' : 'Check out'}
+      <button type="button" onClick={() => setConfirmOut(true)} disabled={checkOutMut.isPending} className={cn(base, 'glass flex-col gap-0.5 ring-border hover:bg-muted/40 disabled:opacity-70')}>
+        <span className="flex items-center gap-2 text-base">
+          <LogOut className="size-4 shrink-0" /> {checkOutMut.isPending ? 'Checking out…' : 'Check out'}
+        </span>
+        <span className="text-xs font-normal text-muted-foreground">
+          In at {formatTime(record.checkInAt)} · worked {formatDuration(elapsedMin)}
+        </span>
       </button>
     );
   }

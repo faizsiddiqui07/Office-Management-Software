@@ -161,11 +161,7 @@ export default function DashboardPage() {
         Jo banda attendance lagata hi nahi (leadership ke kuch role), uske liye poori
         kataar gayab — khaali div bhi nahi, warna neeche ka faasla do guna lagta hai.
       */}
-      {canMark ? (
-        <div className="flex flex-wrap gap-2.5">
-          <QuickAttendanceAction />
-        </div>
-      ) : null}
+      {canMark ? <QuickAttendanceAction /> : null}
 
       {/* Personal stats — each card gated on the permission that makes it TRUE for this
           person. "Today"/"Overtime" need markAttendance (a role that can't check in was
