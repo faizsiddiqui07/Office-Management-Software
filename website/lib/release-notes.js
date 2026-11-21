@@ -47,6 +47,55 @@
  */
 export const RELEASES = [
   {
+    id: '2026-11-21-rewards-month-chart',
+    ymd: '2026-11-21',
+    title: 'See your points month by month',
+    points: [
+      'Your Rewards page now opens with a chart of the whole financial year — one column per month.',
+      'Each column shows what you earned above the line and what you lost below it, so a month that earned 90 and lost 90 no longer looks like a month where nothing happened.',
+      'Tap any month to open its full list of points underneath.',
+      'The chart starts fresh every 1 April with a single column and fills up to twelve by 31 March.',
+    ],
+  },
+  {
+    id: '2026-11-21-dashboard-leader-bars',
+    ymd: '2026-11-21',
+    title: 'Leaders on your home screen are now a chart',
+    points: [
+      'The task and overtime leaders on your home screen are drawn as bars instead of a plain list.',
+      'Only the top five appear, so you can see who is ahead at a glance.',
+    ],
+  },
+  {
+    id: '2026-11-21-dashboard-pending-tasks',
+    ymd: '2026-11-21',
+    title: 'Pending tasks on your home screen',
+    points: [
+      'Your home screen now shows how many of your tasks are still pending, in place of the pending-leaves count.',
+      'Your pending leave requests have not gone anywhere — they are still listed further down the same page.',
+    ],
+  },
+  {
+    id: '2026-11-21-member-attendance-grid',
+    ymd: '2026-11-21',
+    title: 'A month of someone’s attendance at a glance',
+    points: [
+      'A team member’s page can now show their attendance as a calendar of coloured days instead of a table — use the Table / Grid switch above it.',
+      'Present, from home, on leave, absent and days off each have their own colour, and a late arrival carries a small amber dot.',
+      'Because every weekday sits in its own column, a habit shows up straight away — three late Mondays line up one under the other.',
+      'Tap any day to see that day’s times. The table is still what opens by default.',
+    ],
+  },
+  {
+    id: '2026-11-21-cards-two-up',
+    ymd: '2026-11-21',
+    title: 'More of your figures fit on one screen',
+    points: [
+      'On a phone, the cards at the top of My Summary, Reports and Leaves now sit two to a row.',
+      'Nothing changes on a laptop — the cards stay full size there.',
+    ],
+  },
+  {
     id: '2026-11-20-checkin-button',
     ymd: '2026-11-20',
     title: 'The check-in button now carries your whole day',
