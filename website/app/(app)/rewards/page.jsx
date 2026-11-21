@@ -20,7 +20,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { formatRupees } from '@/lib/expense';
-import { currentMonth, yearOptions, monthsInYear, clampToYear, fyOptions, paramsForSelection } from '@/lib/reward-periods';
+import { currentMonth, yearOptions, monthsInYear, clampToYear, fyOptions, paramsForSelection, fyMonthsToDate } from '@/lib/reward-periods';
+import { PointsTrend } from '@/components/rewards/points-trend';
 import { formatYMD } from '@/lib/leave';
 import { EntryDetailDialog } from '@/components/rewards/entry-detail-dialog';
 import { RecalculatePointsDialog } from '@/components/rewards/recalculate-points-dialog';
@@ -71,10 +72,30 @@ function EntryRow({ entry, isRange, onOpen, onDelete }) {
   );
 }
 
+/**
+ * Trend me kaun se mahine — CHALU FINANCIAL YEAR ke, 1 April se aaj tak.
+ *
+ * Pehle yahan "pichhle 12 mahine" ka chalta hua window tha. Owner ne badalwaya (21 Nov
+ * 2026): poora office FY par chalta hai, to points ka naksha bhi FY ka hona chahiye —
+ * 1 April ko sab reset, ek bar se shuru, aur 31 March tak poore 12.
+ *
+ * Niyam `lib/reward-periods.js` me hai (`fyMonthsToDate`), wahin jahan baaki saara FY ka
+ * hisaab rehta hai — do jagah FY ki ginti rakhna hi wo galti hai jisse dono alag ho
+ * jaate hain.
+ */
+function trendWindow() {
+  return fyMonthsToDate();
+}
+
 /** Leadership drill-down: one person's whole breakdown for the period. */
-function PersonBreakdownDialog({ person, params, label, isRange, onOpenChange, onOpenEntry }) {
+function PersonBreakdownDialog({ person, params, label, isRange, onOpenChange, onOpenEntry, onPickMonth }) {
   const q = useUserBonus(person?.id, params);
   const data = q.data;
+  // Trend ka apna sawaal — upar chune hue period se alag, kyunki wo ek hi mahina ho
+  // sakta hai aur ek mahine ka trend bemaani hai. Dialog band ho to chalta hi nahi
+  // (`useUserBonus` bina id ke disabled hai).
+  const months = React.useMemo(() => trendWindow(), []);
+  const trend = useUserBonus(person?.id, { from: months[0], to: months[months.length - 1] });
   return (
     <Dialog open={!!person} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
@@ -87,6 +108,13 @@ function PersonBreakdownDialog({ person, params, label, isRange, onOpenChange, o
           <span className="text-sm text-muted-foreground">Points · {label}</span>
           <span className="text-base"><Pts n={data?.points ?? 0} /></span>
         </div>
+
+        <PointsTrend
+          entries={trend.data?.entries}
+          months={months}
+          activeMonth={params?.month}
+          onPickMonth={onPickMonth}
+        />
 
         {q.isLoading ? (
           <p className="py-6 text-center text-sm text-muted-foreground">Loading…</p>
@@ -337,6 +365,15 @@ export default function RewardsPage() {
   const { params: mineParams, label: periodLabel } = paramsForSelection(mode, selection);
   const isRange = mode === 'yearly';
 
+  // Trend hamesha CHALU FY ka — upar ke picker se ALAG. Monthly mode page ka default hai
+  // aur wo ek hi mahina deta hai; usse bandhte to chart zyadatar waqt dikhta hi nahi.
+  const trendMonths = React.useMemo(() => trendWindow(), []);
+  const trend = useMyBonus({ from: trendMonths[0], to: trendMonths[trendMonths.length - 1] });
+
+  // Bar par tap = wahi mahina page par khul jaaye. Isiliye chart ke neeche ki poori
+  // list us mahine ki ho jaati hai — chart sirf dekhne ki cheez nahi, chalne ka rasta hai.
+  const openMonth = React.useCallback((ym) => { setMode('monthly'); setMonthly(ym); }, []);
+
   const { data: me } = useMyBonus(mineParams);
   const { data: guide } = useBonusGuide();
 
@@ -429,6 +466,16 @@ export default function RewardsPage() {
             </div>
           )}
 
+          {/* Mahine-dar-mahine — list ke OOPAR, kyunki ye poore saal ka naksha hai aur
+              list uske andar ka ek mahina. Bar par tap karte hi neeche ki list us
+              mahine ki ho jaati hai. */}
+          <PointsTrend
+            entries={trend.data?.entries}
+            months={trendMonths}
+            activeMonth={mode === 'monthly' ? monthly : null}
+            onPickMonth={openMonth}
+          />
+
           {/* My breakdown — now the FIRST thing under the stats. Each row opens its detail;
               a task row shows the whole task. "How points work" moved into a button. */}
           <GlassPanel className="p-2">
@@ -485,6 +532,7 @@ export default function RewardsPage() {
             isRange={isRange}
             onOpenChange={(o) => { if (!o) setPerson(null); }}
             onOpenEntry={setDetailEntry}
+            onPickMonth={openMonth}
           />
           <EntryDetailDialog entry={detailEntry} onOpenChange={(o) => { if (!o) setDetailEntry(null); }} />
         </>

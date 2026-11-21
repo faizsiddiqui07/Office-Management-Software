@@ -133,6 +133,35 @@ export function fyOptions(nowDate = new Date()) {
   return out.reverse();
 }
 
+/**
+ * CHALU FINANCIAL YEAR ke mahine — 1 April se aaj tak (dono shaamil), purane se naye.
+ *
+ * Rewards page ka mahina-dar-mahina chart isi par chalta hai (owner ka faisla, 21 Nov
+ * 2026). Pehle wahan "pichhle 12 mahine" ka chalta hua window tha; use badla isliye gaya
+ * ki poora office FY (Apr–Mar) par chalta hai — leave bhi, aur points bhi. Chalte window
+ * me saal ki shuruaat kahin dikhti hi nahi thi.
+ *
+ * Iska matlab: 1 April ko list EK mahine par aa jaati hai aur saal bhar badhti hai, 31
+ * March tak poore 12. Koi cap lagane ki zaroorat nahi — FY khud hi 12 par rukta hai.
+ *
+ * GO-LIVE SE PEHLE KE MAHINE JAAN-BOOJH KAR SHAAMIL HAIN. App 1 Jul 2026 ko live hui, to
+ * FY 2026–27 me Apr/May/Jun ke khaane hamesha khaali rahenge — un dino ka record ho hi
+ * nahi sakta. Owner ne ye jaante hue chuna ki saal poora dikhe. Agle FY se ye sawaal
+ * apne aap khatam ho jaata hai.
+ */
+export function fyMonthsToDate(nowDate = new Date()) {
+  const { y, m } = nowYM(nowDate);
+  const fy = m >= 4 ? y : y - 1; // Jan–Mar abhi pichhle saal ke FY me hain
+  const cur = currentMonth(nowDate);
+  const out = [];
+  for (let i = 0; i < 12; i += 1) {
+    const ym = addMonths(`${fy}-04`, i);
+    if (ym > cur) break; // aane wale mahine nahi — chart aaj tak ka hai
+    out.push(ym);
+  }
+  return out;
+}
+
 /** For the picked selection, the queryParams to pass to useMyBonus + a human label. */
 export function paramsForSelection(mode, value) {
   if (mode === 'monthly') return { params: { month: value }, label: monthLabel(value) };
