@@ -6,29 +6,68 @@ import { Clock, Trophy } from 'lucide-react';
 import { GlassCard } from '@/components/glass/glass-card';
 import { MonthPicker } from '@/components/ui/month-picker';
 import { api } from '@/lib/api';
-import { cn } from '@/lib/utils';
 import { formatDuration } from '@/lib/time';
 
-// Podium tints for the top three; everyone below is quiet. Bronze needs a lighter
-// tone on the dark card — amber-700 is dark enough to disappear into the glass.
-const RANK = ['text-amber-500', 'text-slate-400', 'text-amber-700 dark:text-amber-500/80'];
-
-function LeaderList({ rows, valueOf, empty, loading }) {
+/**
+ * VERTICAL BAR CHART (owner ka faisla, 21 Nov 2026).
+ *
+ * Pehle ye saadi list thi — naam aur number. Number padh kar dimaag me ye jodna padta
+ * tha ki pehla doosre se kitna aage hai. Khambe wo kaam aankh se kara dete hain.
+ *
+ * SABSE OONCHA KHAMBA = IS LIST KA SABSE BADA. Har card ka apna paimana hai (task ki
+ * ginti aur overtime ke ghante ek paimane par jodna bemaani hota).
+ *
+ * EK HI RANG, ghatati hui gehrai — har bande ko alag rang dene se lagta hai jaise rang
+ * kuch kehta ho, jabki baat sirf kam-zyada ki hai. Kram bayein se dayein hai, isliye
+ * rank ke alag ank ki zaroorat nahi (khambe ki oonchai khud bata deti hai).
+ *
+ * NEECHE SIRF PEHLA NAAM: khamba phone par ~60px chauda hota hai, usme "Ankit Kumar
+ * Kanaujiya" aata hi nahi. Poora naam `title` me hai — hover/long-press par dikh jata hai.
+ *
+ * JAAN-BOOJH KAR SAADA RAKHA: ek baar avatar ke gole, trophy, zameen ki lakeer, "You"
+ * wali pehchaan aur upar uthne wali animation bhi jodi thi — owner ne dekh kar saada
+ * wala hi chuna (21 Nov 2026). Dobara jodne se pehle poochhna.
+ *
+ * Server pehle hi top 5 par kaat kar bhejta hai (dashboard.service.js).
+ */
+function LeaderBars({ rows, topLabel, empty, loading }) {
   if (loading) return <p className="py-6 text-center text-sm text-muted-foreground">Loading…</p>;
   if (!rows?.length) return <p className="py-6 text-center text-sm text-muted-foreground">{empty}</p>;
+  // `|| 1` taaki sab zero hone par 0/0 na ho.
+  const max = Math.max(...rows.map((r) => Number(numberOf(r)) || 0), 0) || 1;
   return (
-    <ol className="space-y-1.5">
-      {rows.map((r, i) => (
-        <li key={`${r.name}-${i}`} className="flex items-center gap-3 rounded-xl px-1.5 py-1.5">
-          <span className={cn('w-5 shrink-0 text-center text-sm font-bold tabular-nums', RANK[i] ?? 'text-muted-foreground')}>
-            {i + 1}
-          </span>
-          <span className="min-w-0 flex-1 truncate text-sm font-medium">{r.name}</span>
-          <span className="shrink-0 text-sm font-semibold tabular-nums text-muted-foreground">{valueOf(r)}</span>
-        </li>
-      ))}
-    </ol>
+    <div className="flex h-44 items-stretch justify-between gap-1.5 sm:gap-2.5">
+      {rows.map((r, i) => {
+        // Kam se kam 3% — warna sabse chhota khamba gayab ho jata hai aur lagta hai
+        // ki banda list me hai hi nahi.
+        const pct = Math.max(3, Math.round(((Number(numberOf(r)) || 0) / max) * 100));
+        return (
+          <div key={`${r.name}-${i}`} className="flex min-w-0 flex-1 flex-col items-center gap-1" title={r.name}>
+            <span className="shrink-0 text-[11px] font-semibold tabular-nums">{topLabel(r)}</span>
+            <div className="flex w-full flex-1 items-end">
+              <div
+                className="w-full rounded-t-md bg-primary transition-[height] duration-500"
+                style={{ height: `${pct}%`, opacity: 1 - i * 0.14 }}
+              />
+            </div>
+            <span className="w-full shrink-0 truncate text-center text-[11px] text-muted-foreground">
+              {firstName(r.name)}
+            </span>
+          </div>
+        );
+      })}
+    </div>
   );
+}
+
+/** Khambe ki oonchai ke liye KACCHA number chahiye — "3h 20m" jaisa likha hua nahi. */
+function numberOf(r) {
+  return r.overtimeMinutes ?? r.count ?? 0;
+}
+
+/** Khambe ke neeche sirf pehla naam — poora naam `title` me rehta hai. */
+function firstName(name) {
+  return String(name || '').trim().split(/\s+/)[0] || name;
 }
 
 /** Fetches a period's leaders. Disabled for 'this' — that data already came with the page. */
@@ -70,10 +109,10 @@ export function Leaderboards({ data }) {
             <p className="text-sm font-medium">Task leaders</p>
             <MonthPicker value={taskSel} onChange={setTaskSel} className="ml-auto" />
           </div>
-          <LeaderList
+          <LeaderBars
             rows={taskRows}
             loading={taskSel !== 'this' && taskQ.isLoading}
-            valueOf={(r) => `${r.count} task${r.count === 1 ? '' : 's'}`}
+            topLabel={(r) => r.count}
             empty="No on-time tasks in this period"
           />
           <p className="mt-3 border-t border-border/50 pt-2 text-xs text-muted-foreground">
@@ -87,10 +126,10 @@ export function Leaderboards({ data }) {
             <p className="text-sm font-medium">Overtime leaders</p>
             <MonthPicker value={otSel} onChange={setOtSel} className="ml-auto" />
           </div>
-          <LeaderList
+          <LeaderBars
             rows={otRows}
             loading={otSel !== 'this' && otQ.isLoading}
-            valueOf={(r) => formatDuration(r.overtimeMinutes)}
+            topLabel={(r) => formatDuration(r.overtimeMinutes)}
             empty="No overtime in this period"
           />
         </GlassCard>

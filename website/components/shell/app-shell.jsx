@@ -131,9 +131,17 @@ export function AppShell({ children }) {
             What it did beyond a plain /todo link was land on a chosen TAB (?tab=assigned).
             That costs one extra tap now — the page's own tabs are right there — and the
             query parameters still work, because notification links use them too. */}
-        {/* Har page ke neeche product ka naam — hardcode, Settings se nahi (owner ka niyam). */}
+        {/* Har page ke neeche product ka naam — hardcode, Settings se nahi (owner ka niyam).
+
+            PHONE PAR NEECHE SIRF `pb-2` (owner, 21 Nov 2026 — "ye space bahot jyada hai").
+            Wajah: is footer ke neeche shell ka apna `max-lg:pb-[4.75rem]` pehle se 76px
+            de raha hai (bottom bar ke liye). Uske OOPAR 32px aur dene se naam aur bar ke
+            beech 55px ki khaali patti ban jaati thi.
+            SHELL WALI 76px KO MAT CHHEDNA — wo naap kar rakhi gayi hai (dekho BottomNav);
+            ghatane par content bar ke peeche chhup jaata hai. `sm` se upar footer apni
+            poori `pb-8` rakhta hai, kyunki wahan bottom bar hai hi nahi. */}
         <footer
-          className={`w-full px-4 pb-8 pt-2 text-center text-[11px] text-muted-foreground sm:px-6 lg:px-8 ${
+          className={`w-full px-4 pb-2 pt-2 text-center text-[11px] text-muted-foreground sm:px-6 sm:pb-8 lg:px-8 ${
             appPane ? 'hidden sm:block' : ''
           }`}
         >

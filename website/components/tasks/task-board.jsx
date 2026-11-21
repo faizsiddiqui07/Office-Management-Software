@@ -805,6 +805,24 @@ function TaskDetailDialog({ view, myId, onClose, onToggle, onEdit, onDelete, onA
   // Reading the server's own answer also means the button can never appear where the
   // review would be refused, or hide from somebody who is allowed.
   const canReview = !!task?.canReview;
+  // Row wala hi raasta — taaki dialog se slide karne par bhi 5 second ki ginti aur Undo
+  // mile. Pehle yahan seedha `onToggle` bula diya tha: kaam to ho jaata tha, par wo
+  // ginti kahin dikhti hi nahi thi (owner ne pakda, 21 Nov 2026).
+  const slide = React.useContext(SlideCtx);
+  const lingering = task ? slide?.linger?.[task.id] : null;
+
+  /*
+   * Ginti poori — ab dialog apne aap band. Task History me ja chuka hai, to use "Pending"
+   * dikhate rehna jhooth hota; aur `view` ek snapshot hai, wo khud nahi badalta.
+   *
+   * `wasLingering` ka pehra zaroori hai: bina iske ye effect har us dialog ko band kar
+   * deta jiski kabhi ginti chali hi nahi (linger shuru se hi null hota hai).
+   */
+  const wasLingering = React.useRef(false);
+  React.useEffect(() => {
+    if (lingering) { wasLingering.current = true; return; }
+    if (wasLingering.current) { wasLingering.current = false; onClose(); }
+  }, [lingering, onClose]);
 
   const Row = ({ label, children }) => (
     <div className="flex items-start justify-between gap-4 py-2">
@@ -849,24 +867,69 @@ function TaskDetailDialog({ view, myId, onClose, onToggle, onEdit, onDelete, onA
                 <ThumbsUp className="size-4" /> Approve
               </Button>
             ) : view.canToggle ? (
-              <>
+              /*
+               * PHONE PAR SLIDE, LAPTOP PAR BUTTON (owner, 21 Nov 2026 — "yaha pe bhi wo
+               * slide wala bnaa sakte hai to jyada acha lagega").
+               *
+               * Wahi niyam jo row par 19 Nov se chal raha hai: galti se ek tap me kaam
+               * "done" na ho jaye. Dialog me wo khatra aur bada hai — yahan ungli Edit
+               * aur Delete ke paas hi hoti hai.
+               *
+               * Laptop par slider nahi: wahan maus se ghasitna tap se bura hai, aur row
+               * par bhi wahan purana tick hi rehta hai — dono jagah ek hi aadat.
+               *
+               * `onToggle` wahi purana raasta hai — approval wale task ka "submit", done
+               * ka "undo", sabki chetavni/confirm waisi ki waisi chalti hai.
+               */
+              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
                 {view.canForward ? (
-                  <Button variant="outline" onClick={() => onForward(task)}>
+                  <Button variant="outline" className="w-full sm:w-auto" onClick={() => onForward(task)}>
                     <Forward className="size-4" /> Forward
                   </Button>
                 ) : null}
-              <Button variant={done || awaiting ? 'outline' : 'default'} onClick={() => onToggle(task)}>
-                {done ? (
-                  <><Undo2 className="size-4" /> Mark not done</>
-                ) : awaiting ? (
-                  <><Undo2 className="size-4" /> Withdraw</>
-                ) : task.requiresApproval ? (
-                  <><Send className="size-4" /> Submit for approval</>
-                ) : (
-                  <><Check className="size-4" /> Mark as done</>
-                )}
-              </Button>
-              </>
+                <div className="sm:hidden">
+                  {lingering ? (
+                    /* Ho chuka hai, par dialog KHULA rehta hai aur ginti USI slider me
+                       chalti hai (owner, 21 Nov 2026 — pehle maine dialog band kar diya
+                       tha aur ginti peeche row par chalti thi; wo dikhti hi nahi thi).
+                       Ginti khatam hote hi dialog khud band ho jaata hai — neeche wala
+                       effect dekho. */
+                    <SlideDonePending
+                      secondsLeft={(lingering.until - slide.now) / 1000}
+                      totalSeconds={slide.lingerMs / 1000}
+                      onUndo={lingering.canUndo ? () => slide.undo(task) : null}
+                    />
+                  ) : (
+                    <SlideAction
+                      label={done ? 'Slide to undo' : awaiting ? 'Slide to withdraw' : task.requiresApproval ? 'Slide to submit' : 'Slide to complete'}
+                      Icon={done || awaiting ? Undo2 : task.requiresApproval ? Send : Check}
+                      tone={done ? 'muted' : awaiting ? 'warning' : task.requiresApproval ? 'warning' : 'success'}
+                      busy={slide?.busyId === task.id}
+                      onComplete={() => {
+                        // Withdraw aur undo wahi purana raasta — unki apni chetavni hai
+                        // aur un par ginti ka koi matlab nahi (row par bhi aisa hi hai).
+                        if (done || awaiting || !slide) { onToggle(task); return; }
+                        slide.complete(task);
+                      }}
+                    />
+                  )}
+                </div>
+                <Button
+                  variant={done || awaiting ? 'outline' : 'default'}
+                  className="hidden sm:inline-flex"
+                  onClick={() => onToggle(task)}
+                >
+                  {done ? (
+                    <><Undo2 className="size-4" /> Mark not done</>
+                  ) : awaiting ? (
+                    <><Undo2 className="size-4" /> Withdraw</>
+                  ) : task.requiresApproval ? (
+                    <><Send className="size-4" /> Submit for approval</>
+                  ) : (
+                    <><Check className="size-4" /> Mark as done</>
+                  )}
+                </Button>
+              </div>
             ) : (
               <Button variant="outline" onClick={onClose}>
                 Close

@@ -115,6 +115,22 @@ export default function DashboardPage() {
     enabled: !!user,
   });
 
+  /*
+   * Apne PENDING TASK ki ginti — owner ne dashboard par "Pending leaves" ki jagah yahi
+   * maanga (21 Nov 2026). Chhutti ki ginti kahin gayi nahi: isi page par neeche "My
+   * pending leaves" ka poora section pehle se hai.
+   *
+   * queryKey JAAN-BOOJH KAR wahi hai jo To-Do page use karta hai (`['tasks','summary']`)
+   * — isse dono screen ek hi jawab baantte hain aur dashboard par ek bhi extra request
+   * nahi jaati. Dashboard sabse zyada khulne wala page hai; yahan ek fazool call bhi
+   * mehngi padti hai (pehle ek bhaari read se 9.5s wala page-load ka hadsa ho chuka hai).
+   */
+  const { data: taskSum } = useQuery({
+    queryKey: ['tasks', 'summary'],
+    queryFn: () => api.get('/tasks/summary'),
+    staleTime: 60 * 1000,
+  });
+
   if (isLoading || !data) {
     return (
       <div className="space-y-8">
@@ -186,16 +202,14 @@ export default function DashboardPage() {
             hint="days available"
           />
         ) : null}
-        {canApplyLeave ? (
-          <StatCard
-            tightOnPhone
-            label="Pending leaves"
-            value={myPendingLeaves.length}
-            icon={Inbox}
-            tone={myPendingLeaves.length ? 'warning' : 'default'}
-            hint="awaiting approval"
-          />
-        ) : null}
+        <StatCard
+          tightOnPhone
+          label="Pending tasks"
+          value={taskSum?.mine?.pending ?? 0}
+          icon={ListTodo}
+          tone={taskSum?.mine?.pending ? 'warning' : 'default'}
+          hint={taskSum?.mine?.pending ? 'still to finish' : 'all clear'}
+        />
         {canMark ? (
           <StatCard
             tightOnPhone
