@@ -15,6 +15,8 @@ import {
   Coins,
   Download,
   Home,
+  LayoutGrid,
+  List,
   ListTodo,
   Plane,
   ShieldAlert,
@@ -41,6 +43,7 @@ import { StatusBadge, STATUS_TONES } from '@/components/glass/status-badge';
 import { EmptyState } from '@/components/glass/empty-state';
 import { LoadingState } from '@/components/glass/skeletons';
 import { DataTable } from '@/components/glass/data-table';
+import { AttendanceHeatmap } from '@/components/attendance/attendance-heatmap';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useUserBonus } from '@/lib/bonus';
 import { formatRupees } from '@/lib/expense';
@@ -103,6 +106,16 @@ export default function UserDossierPage() {
   const [preset, setPreset] = React.useState('month');
   const [from, setFrom] = React.useState(monthStart());
   const [to, setTo] = React.useState(daysAgo(0));
+  // Attendance tab: table ya jaali — EK WAQT ME EK.
+  //
+  // Pehle jaali table ke OOPAR chipki rehti thi, aur dono me data bilkul ek hi tha —
+  // owner ne tokaa: "data to ek hi hai dono me". Ab switcher hai, aur default TABLE hai
+  // (unka hi faisla): jaali khaas mauke ki cheez hai — "ye deri har Monday ko to nahi
+  // pad rahi" — roz ka kaam table se hota hai.
+  //
+  // Yaad JAAN-BOOJH KAR nahi rakhi ja rahi (localStorage nahi). Owner ka niyam hai ki
+  // default table rahe; yaad rakhne ka matlab hota ki agli baar jaali khul jaati.
+  const [attView, setAttView] = React.useState('table');
   const [ledgerBusy, setLedgerBusy] = React.useState(false);
   const [reportBusy, setReportBusy] = React.useState(false);
 
@@ -332,9 +345,46 @@ export default function UserDossierPage() {
                 </p>
               ) : null}
               {(att.days ?? att.records).length ? (
-                // The full day-by-day sheet — present, late, ABSENT and on-leave days all
-                // show, not just the days that happen to have a check-in row.
-                <DataTable columns={attColumns} data={att.days ?? att.records} searchPlaceholder="Search by date…" pageSize={15} emptyMessage="No attendance in this range." />
+                // Dono roop EK HI array se bante hain (`att.days`), isliye inme farak ho hi
+                // nahi sakta — bas dikhane ka tareeka alag hai.
+                //
+                // `att.records` purana rasta hai (server `days` na bheje to). Us soorat me
+                // jaali khud `null` de deti hai, kyunki uski rows me `dateYMD` nahi hota.
+                <div className="space-y-3">
+                  {/* Switcher ka dhaancha wahi hai jo Calendar page ke Month/Agenda ka hai
+                      (holiday-calendar.jsx) — ek hi app me do alag tarah ke switcher nahi. */}
+                  <div className="flex justify-end">
+                    <div className="flex rounded-lg bg-muted/40 p-0.5">
+                      <button
+                        type="button"
+                        onClick={() => setAttView('table')}
+                        aria-pressed={attView === 'table'}
+                        className={cn(
+                          'inline-flex min-h-10 items-center gap-1 rounded-md px-3 py-1 text-xs font-medium sm:min-h-0 sm:px-2.5',
+                          attView === 'table' ? 'bg-background shadow-sm' : 'text-muted-foreground',
+                        )}
+                      >
+                        <List className="size-3.5" /> Table
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAttView('grid')}
+                        aria-pressed={attView === 'grid'}
+                        className={cn(
+                          'inline-flex min-h-10 items-center gap-1 rounded-md px-3 py-1 text-xs font-medium sm:min-h-0 sm:px-2.5',
+                          attView === 'grid' ? 'bg-background shadow-sm' : 'text-muted-foreground',
+                        )}
+                      >
+                        <LayoutGrid className="size-3.5" /> Grid
+                      </button>
+                    </div>
+                  </div>
+                  {attView === 'grid' ? (
+                    <AttendanceHeatmap days={att.days ?? att.records} from={from} to={to} />
+                  ) : (
+                    <DataTable columns={attColumns} data={att.days ?? att.records} searchPlaceholder="Search by date…" pageSize={15} emptyMessage="No attendance in this range." />
+                  )}
+                </div>
               ) : (
                 <EmptyState icon={CalendarClock} title="No attendance records" description="Nothing marked in this date range." />
               )}
