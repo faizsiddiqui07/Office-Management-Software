@@ -128,7 +128,7 @@ export function MyReportCard() {
           <p className="text-sm text-muted-foreground">
             Period: <span className="font-medium text-foreground">{data.period.label}</span>
           </p>
-          <div className={cn('grid gap-3', selfTracks ? 'sm:grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-1')}>
+          <div className={cn('grid gap-3', selfTracks ? 'grid-cols-2 lg:grid-cols-4' : 'grid-cols-1')}>
             {selfTracks && t ? (
               <Mini
                 label="Attendance"

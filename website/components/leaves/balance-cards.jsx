@@ -32,8 +32,8 @@ export function BalanceCards() {
   const offset = circ * (1 - frac);
 
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-      <GlassCard className="flex items-center gap-5 p-5 sm:col-span-2">
+    <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-5">
+      <GlassCard className="col-span-2 flex items-center gap-4 p-4 sm:gap-5 sm:p-5">
         <svg width="120" height="120" viewBox="0 0 120 120" className="-rotate-90 shrink-0">
           <circle cx="60" cy="60" r={r} fill="none" strokeWidth="10" className="stroke-border" />
           <circle
@@ -58,8 +58,9 @@ export function BalanceCards() {
         </div>
       </GlassCard>
 
-      <StatCard label="Used" value={used} icon={CalendarX} tone="warning" hint={`of ${total} quota`} />
+      <StatCard tightOnPhone label="Used" value={used} icon={CalendarX} tone="warning" hint={`of ${total} quota`} />
       <StatCard
+        tightOnPhone
         label="Pending"
         value={pending}
         icon={Hourglass}
@@ -69,6 +70,7 @@ export function BalanceCards() {
       {/* Separate from the leave quota on purpose — WFH deducts nothing from it. */}
       {wfh ? (
         <StatCard
+          tightOnPhone
           label="Work from home"
           value={`${wfh.remaining} left`}
           icon={Home}

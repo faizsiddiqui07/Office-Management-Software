@@ -34,7 +34,7 @@ function Stat({ icon: Icon, label, value, hint, tone = 'default' }) {
         <Icon className="size-3.5 shrink-0" />
         <span className="truncate">{label}</span>
       </div>
-      <p className={cn('mt-1 text-2xl font-semibold tabular-nums tracking-tight', tone === 'warn' && 'text-amber-600 dark:text-amber-300', tone === 'good' && 'text-success')}>
+      <p className={cn('mt-1 text-xl font-semibold tabular-nums tracking-tight sm:text-2xl', tone === 'warn' && 'text-amber-600 dark:text-amber-300', tone === 'good' && 'text-success')}>
         {value}
       </p>
       {hint ? <p className="mt-0.5 break-words text-xs text-muted-foreground">{hint}</p> : null}
@@ -180,7 +180,7 @@ export default function MyStandingPage() {
               </div>
             ) : null}
 
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
               {shows.leave && now.leave ? (
                 <Stat
                   icon={CalendarDays}
@@ -259,7 +259,7 @@ export default function MyStandingPage() {
               </span>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
               {shows.attendance && att ? (
                 <>
                   <Stat
