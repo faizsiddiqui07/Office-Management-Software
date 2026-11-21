@@ -9,6 +9,7 @@ import { GlassCard } from '@/components/glass/glass-card';
 import { EmptyState } from '@/components/glass/empty-state';
 import { useContacts, useUserChats, useUserChatMessages, chatInitials, chatTime, dayLabel } from '@/lib/chat';
 import { prettyBytes } from '@/lib/chat-media';
+import { useViewportFill } from '@/lib/use-viewport-fill';
 
 /**
  * CEO & President ke liye — kisi employee ki chat nikalna.
@@ -62,15 +63,60 @@ export function ChatRecords() {
   const pickPerson = (u) => { setPerson(u); setChat(null); };
   const pickChat = (c) => setChat(c);
 
+  // OONCHAI EK JAGAH, NAAPI HUI — `calc(100dvh-Xrem)` nahi (bug, 21 Nov 2026).
+  //
+  // Pehle DONO pane par `h-[calc(100dvh-20rem)] lg:h-[calc(100dvh-16rem)]` tha. Phone par
+  // (375x812) wo 492px banta hai — do pane ek doosre ke neeche = 984px, screen 812 ki.
+  // Natija: page khud scroll karta tha AUR dono pane apne andar scroll karte the, yaani
+  // ek baat-cheet padhne ke liye teen scroll se ladna padta tha. Aur 20rem/16rem dono
+  // anumaan the: topbar, page header aur footer har breakpoint par alag jagah lete hain.
+  //
+  // Ab oonchai `useViewportFill` naapta hai, aur wo bhi GRID par — ek hi jagah. Grid ke
+  // bachche apne aap puri row bhar lete hain (`align-items: stretch`), to hook ek hi
+  // baar lagta hai. Dono card par alag-alag hook lagana galat hota: jo pane phone par
+  // `display:none` hai uska `getBoundingClientRect().top` 0 aata hai, to uski height
+  // bakwaas nikalti aur dikhne par theek bhi nahi hoti (hook sirf resize par naapta hai).
+  //
+  // `min-h-[340px]` sirf PEHLE frame ke liye hai — hook `useEffect` me chalta hai, to
+  // ek frame ke liye koi oonchai honi chahiye. Jaan-boojh kar chhoti rakhi hai: badi
+  // rakhne par pehle frame me page uchhal kar lamba ho jaata.
+  const paneRef = useViewportFill({
+    min: 320,
+    // Pane ke NEECHE jo kuch dikhna chahiye uski jagah. Teen cheezein hain, aur teeno
+    // naapi jaati hain, maani nahi (dekho app-shell.jsx):
+    //   footer           — "ManagiBot | A product of BrainQbit"
+    //   main ka pb       — page ka apna neeche wala padding
+    //   uske parent ka pb — phone/tablet par bottom nav ke liye rakhi hui 4.75rem
+    // Teesri wali chhoot jaati to pane bottom nav ke peeche chala jaata.
+    reserve: (el) => {
+      let px = 0;
+      const footer = document.querySelector('footer');
+      if (footer && getComputedStyle(footer).display !== 'none') {
+        px += footer.getBoundingClientRect().height;
+      }
+      const main = el.closest('main');
+      if (main) {
+        px += parseFloat(getComputedStyle(main).paddingBottom) || 0;
+        if (main.parentElement) px += parseFloat(getComputedStyle(main.parentElement).paddingBottom) || 0;
+      }
+      return px;
+    },
+  });
+
   // `minmax(0,1fr)` — warna lambe message wali chat ka min-content 280px wali list ko
   // nichod deta hai (wahi galti Attendance page par naapi gayi thi).
+  //
+  // PHONE/TABLET PAR EK WAQT ME EK PANE. `lg` se neeche grid ek column ka hai, to pehle
+  // dono pane ek doosre ke neeche aate the. Ab banda chunne se pehle sirf list, chunne ke
+  // baad sirf dayaan pane — aur wapsi ke liye header me back button. `lg` se upar dono
+  // bagal-bagal, jaise pehle.
   //
   // Ye tippani `return (` ke BAAD JSX comment ki tarah nahi likhi ja sakti: wahan
   // `{/* */}` tippani nahi, ek object literal padha jaata hai aur build girti hai.
   return (
-    <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
+    <div ref={paneRef} className="grid min-h-[340px] gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
       {/* Kiski chat */}
-      <GlassCard className="flex h-[calc(100dvh-20rem)] min-h-[340px] flex-col overflow-hidden p-0 lg:h-[calc(100dvh-16rem)]">
+      <GlassCard className={cn('flex min-h-0 flex-col overflow-hidden p-0', person && 'max-lg:hidden')}>
         <div className="shrink-0 p-3">
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -110,7 +156,7 @@ export function ChatRecords() {
       </GlassCard>
 
       {/* Uski chats, aur khuli hui chat */}
-      <GlassCard className="flex h-[calc(100dvh-20rem)] min-h-[340px] flex-col overflow-hidden p-0 lg:h-[calc(100dvh-16rem)]">
+      <GlassCard className={cn('flex min-h-0 flex-col overflow-hidden p-0', !person && 'max-lg:hidden')}>
         {!person ? (
           <div className="grid h-full place-items-center p-6">
             <EmptyState
@@ -121,9 +167,21 @@ export function ChatRecords() {
           </div>
         ) : !chat ? (
           <>
-            <div className="shrink-0 border-b border-border/60 px-4 py-3">
-              <p className="text-sm font-semibold">{person.name}&apos;s chats</p>
-              <p className="text-xs text-muted-foreground">Select a conversation to open it.</p>
+            <div className="flex shrink-0 items-center gap-2 border-b border-border/60 px-3 py-3 lg:px-4">
+              {/* Phone/tablet par logon ki list chhupi hui hai, to wapas jaane ka ek hi
+                  rasta ye hai. `lg` se upar list bagal me hi khadi hai, isliye wahan nahi. */}
+              <button
+                type="button"
+                onClick={() => setPerson(null)}
+                className="rounded-full p-1.5 hover:bg-foreground/10 lg:hidden"
+                aria-label="Back to the list of people"
+              >
+                <ArrowLeft className="size-4" />
+              </button>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold">{person.name}&apos;s chats</p>
+                <p className="text-xs text-muted-foreground">Select a conversation to open it.</p>
+              </div>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-2">
               {loadingChats ? (

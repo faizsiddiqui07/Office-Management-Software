@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Check, Clock, Download, Home, LogOut, Pencil, TriangleAlert, UserCheck, UserPlus, Users, UserX } from 'lucide-react';
+import { CalendarOff, Check, Clock, Download, Home, Hourglass, LogOut, Pencil, TriangleAlert, UserCheck, UserPlus, Users, UserX } from 'lucide-react';
 import { api, downloadFile, API_BASE_URL } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can, roleName } from '@/lib/permissions';
@@ -134,6 +134,28 @@ async function downloadCsv(path, filename) {
   await downloadFile(`${API_BASE}/api${path}`, filename);
 }
 
+/**
+ * FILTER KA KEY SCREEN PAR NAHI DIKHNA CHAHIYE.
+ *
+ * Pehle do jagah seedha `statusFilter` chhap raha tha, to "From home" chunne par likha
+ * aata tha "No wfh staff for this day." aur "Not checked out" par "No open staff for this
+ * day." — ye 21 Nov 2026 se pehle bhi aisa hi tha, bas kisi ki nazar nahi padi. Us din
+ * `onleave` aur `awaited` jude, aur "No onleave staff for this day." saaf dikhne laga.
+ *
+ * Do alag lafz chahiye the: ek chip wali adhoori baat ke liye ("showing on leave") aur ek
+ * poore vaaky ke liye ("Nobody was on leave on this day.") — ek hi lafz dono me theek nahi
+ * baithta. Isliye dono yahan likhe hain.
+ */
+const FILTER_COPY = {
+  present: { chip: 'everyone working', empty: 'Nobody was working on this day.' },
+  late: { chip: 'late arrivals', empty: 'Nobody arrived late on this day.' },
+  absent: { chip: 'absent', empty: 'Nobody was absent on this day.' },
+  wfh: { chip: 'working from home', empty: 'Nobody worked from home on this day.' },
+  onleave: { chip: 'on leave', empty: 'Nobody was on leave on this day.' },
+  awaited: { chip: 'not in yet', empty: 'Nobody is still expected on this day.' },
+  open: { chip: 'not checked out', empty: 'Everybody who checked in also checked out on this day.' },
+};
+
 export function EveryoneTab() {
   const { user } = useAuth();
   const qc = useQueryClient();
@@ -240,6 +262,15 @@ export function EveryoneTab() {
     () => rows.reduce((sum, r) => sum + (r.attendance?.overtimeMinutes || 0), 0),
     [rows],
   );
+  // KYUN YE GINTI YAHAN BANTI HAI: baaki saare aankde server ke `summary` me aate hain,
+  // par "off today" wahan nahi hai. Server do aisi status deta hai jo na hazri hain na
+  // gair-hazri — HOLIDAY (company ki chhutti ya us bande ka apna weekly off) aur BIRTHDAY
+  // (uska apna din, jo usi ke liye chhutti hai). Inhe gine bina tiles ka jod "Total staff"
+  // se kabhi nahi milta, aur Sunday ko to poora roster inhi do me hota hai.
+  const offToday = React.useMemo(
+    () => rows.filter((r) => r.status === 'HOLIDAY' || r.status === 'BIRTHDAY').length,
+    [rows],
+  );
 
   // Selfie ka column SIRF us din dikhta hai jis din kisi ne selfie se attendance lagayi ho.
   // Site par jaane wale ginti ke log hain aur ginti ke din — baaki poore mahine ye column
@@ -260,6 +291,13 @@ export function EveryoneTab() {
       if (statusFilter === 'late') return r.status === 'LATE' && !r.attendance?.excused; // excused = on-duty, not late
       if (statusFilter === 'absent') return r.status === 'ABSENT';
       if (statusFilter === 'wfh') return r.status === 'WFH';
+      // Ye do case 21 Nov 2026 tak NAHI the — tile bhi nahi tha aur filter bhi nahi, to
+      // "aaj kaun chhutti par hai" aur "kaun abhi tak nahi aaya" ka jawab is tab par kahin
+      // nahi milta tha, jabki dono ginti server pehle se bhej raha tha.
+      if (statusFilter === 'onleave') return r.status === 'ON_LEAVE';
+      // "Abhi tak nahi aaya" — jiski shift khatam nahi hui, use gair-hazir maana hi nahi
+      // jaata (wo aa sakta hai). Din guzarne par ye khud ABSENT ban jaate hain.
+      if (statusFilter === 'awaited') return r.status === 'AWAITED';
       // Checked in but never checked out — a forgotten clock-out.
       if (statusFilter === 'open') return r.attendance?.checkInAt && !r.attendance?.checkOutAt;
       return true;
@@ -281,8 +319,19 @@ export function EveryoneTab() {
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 sm:gap-3 xl:grid-cols-7">
-        <StatTile label="Total staff" value={summary?.total ?? '—'} icon={Users} onClick={() => setStatusFilter(null)} active={statusFilter === null} />
+      {/* NAAP: 9 tile hain (pehle 7 the). `xl:grid-cols-5` + overtime ka `xl:col-span-2`
+          = theek do poori kataar, koi adhoora khaana nahi. `sm` par 3 ke hisaab se teen
+          kataar — pehle jitni hi. Phone par 2 ke hisaab se paanch kataar (pehle chaar thi):
+          do naye tile ka yahi daam hai, aur dono bina filter ke bekaar the. */}
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3 xl:grid-cols-5">
+        <StatTile
+          label="Total staff"
+          value={summary?.total ?? '—'}
+          icon={Users}
+          hint={offToday ? `${offToday} off today` : undefined}
+          onClick={() => setStatusFilter(null)}
+          active={statusFilter === null}
+        />
         <StatTile
           label="Present"
           value={(summary?.present ?? 0) + (summary?.late ?? 0)}
@@ -303,6 +352,23 @@ export function EveryoneTab() {
         />
         <StatTile label="Absent" value={summary?.absent ?? 0} icon={UserX} tone="destructive" onClick={() => toggleFilter('absent')} active={statusFilter === 'absent'} />
         <StatTile
+          label="On leave"
+          value={summary?.onLeave ?? 0}
+          icon={CalendarOff}
+          tone="info"
+          onClick={() => toggleFilter('onleave')}
+          active={statusFilter === 'onleave'}
+        />
+        {/* Tone jaan-boojh kar `default` hai, warning nahi: inka faisla hua hi nahi hai.
+            Wahi soch dashboard ke donut me likhi hai — "neutral, not judged yet". */}
+        <StatTile
+          label="Not in yet"
+          value={summary?.awaited ?? 0}
+          icon={Hourglass}
+          onClick={() => toggleFilter('awaited')}
+          active={statusFilter === 'awaited'}
+        />
+        <StatTile
           label="Not checked out"
           value={summary?.openCheckIn ?? 0}
           icon={LogOut}
@@ -315,7 +381,7 @@ export function EveryoneTab() {
           value={totalOvertime ? formatDuration(totalOvertime) : '0m'}
           icon={Clock}
           tone="success"
-          className="col-span-2 sm:col-span-1"
+          className="col-span-2 sm:col-span-1 xl:col-span-2"
         />
       </div>
 
@@ -347,7 +413,7 @@ export function EveryoneTab() {
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Tip: tap a card to filter{statusFilter ? ` (showing ${statusFilter})` : ''}, tap a row for full details{canExcuse ? ' or to excuse a late' : ''}.
+        Tip: tap a card to filter{statusFilter ? ` (showing ${FILTER_COPY[statusFilter]?.chip ?? statusFilter})` : ''}, tap a row for full details{canExcuse ? ' or to excuse a late' : ''}.
       </p>
 
       {joinedLater.length ? (
@@ -371,7 +437,7 @@ export function EveryoneTab() {
           data={filteredRows}
           searchPlaceholder="Search staff…"
           pageSize={10}
-          emptyMessage={statusFilter ? `No ${statusFilter} staff for this day.` : 'No staff found.'}
+          emptyMessage={statusFilter ? (FILTER_COPY[statusFilter]?.empty ?? 'No staff match this filter for this day.') : 'No staff found.'}
           onRowClick={setSelected}
         />
       )}

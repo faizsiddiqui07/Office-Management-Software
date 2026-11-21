@@ -85,8 +85,26 @@ function PendingList() {
   const range = resolvePeriod(period);
   const rows = isPeriodActive(range) ? requests.filter((r) => inPeriod(r.dateYMD, range)) : requests;
 
+  // KAUN SI ROW CHAL RAHI HAI — ye alag se yaad rakhna padta hai (bug, 21 Nov 2026).
+  //
+  // Pehle har row ke dono button par `disabled={decide.isPending}` tha. Mutation EK hai
+  // aur poori list use karti hai, to pehli row par Approve dabate hi SAARI rows ke
+  // Approve aur Reject ek saath dead ho jaate the — phone par lagta tha list hi jam gayi.
+  //
+  // `decide.variables` se kaam nahi chalta: wo sirf AAKHRI mutate call ka hisaab rakhta
+  // hai, to do row ek saath chalein to nishaan pichhli row se kood kar nayi row par chala
+  // jaata. Isliye id → decision ka apna naksha, jisme ek saath kai row reh sakti hain.
+  //
+  // Nishaan spinner se nahi, BUTTON KE LAFZ se badalta hai: Lite mode (`data-lite`) har
+  // animation band kar deta hai, to ghoomta spinner wahan ruka hua dikhta hai aur button
+  // "marda" lagta hai — yahi shikayat pehle bhi aa chuki hai.
+  const [busy, setBusy] = React.useState({});
   const decide = useMutation({
     mutationFn: ({ id, decision }) => api.post(`/regularizations/${id}/decide`, { decision }),
+    onMutate: ({ id, decision }) => { setBusy((p) => ({ ...p, [id]: decision })); },
+    onSettled: (_d, _e, v) => {
+      setBusy((p) => { const next = { ...p }; delete next[v.id]; return next; });
+    },
     onSuccess: (_d, v) => {
       toast.success(v.decision === 'APPROVED' ? 'Approved — attendance updated' : 'Request rejected');
       qc.invalidateQueries({ queryKey: ['regularizations'] });
@@ -118,20 +136,24 @@ function PendingList() {
           No pending correction is dated in this window — try a wider one.
         </GlassCard>
       ) : null}
-      {rows.map((r) => (
-        <GlassCard key={r.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <RequestDetails r={r} />
-          <div className="flex shrink-0 flex-wrap items-center gap-3 sm:gap-2">
-            <Button variant="outline" className="h-10 sm:h-8" onClick={() => decide.mutate({ id: r.id, decision: 'REJECTED' })} disabled={decide.isPending}>
-              <X className="size-4" /> Reject
-            </Button>
-            <Button className="h-10 sm:h-8" onClick={() => decide.mutate({ id: r.id, decision: 'APPROVED' })} disabled={decide.isPending}>
-              <Check className="size-4" /> Approve
-            </Button>
-            <DeleteButton id={r.id} />
-          </div>
-        </GlassCard>
-      ))}
+      {rows.map((r) => {
+        // Sirf ISI row ka haal — baaki rows chaalu rehti hain.
+        const running = busy[r.id] || null;
+        return (
+          <GlassCard key={r.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <RequestDetails r={r} />
+            <div className="flex shrink-0 flex-wrap items-center gap-3 sm:gap-2">
+              <Button variant="outline" className="h-10 sm:h-8" onClick={() => decide.mutate({ id: r.id, decision: 'REJECTED' })} disabled={!!running}>
+                <X className="size-4" /> {running === 'REJECTED' ? 'Rejecting…' : 'Reject'}
+              </Button>
+              <Button className="h-10 sm:h-8" onClick={() => decide.mutate({ id: r.id, decision: 'APPROVED' })} disabled={!!running}>
+                <Check className="size-4" /> {running === 'APPROVED' ? 'Approving…' : 'Approve'}
+              </Button>
+              <DeleteButton id={r.id} />
+            </div>
+          </GlassCard>
+        );
+      })}
     </div>
   );
 }

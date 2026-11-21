@@ -722,9 +722,24 @@ export default function SettingsPage() {
           {/* Bonus points — self-contained (its own load/save via /bonus/config). */}
           <BonusSettings />
 
-          {/* Sticky save bar — appears only when something changed, always in reach on mobile. */}
+          {/* Sticky save bar — appears only when something changed, always in reach on mobile.
+
+              PHONE/TABLET PAR YE BAR BOTTOM NAV KE OOPAR RUKTI HAI (bug, 21 Nov 2026).
+              Pehle sirf `bottom-3` tha, yaani screen ke neeche se 12px. Bottom nav
+              `fixed bottom-0 z-40` hai aur uski row `h-[3.25rem]` = 52px (bottom-nav.jsx),
+              to bar ka neeche ka ~40px hissa nav ke PEECHE chala jaata tha — aur z-40 > z-30,
+              to nav jeet jaati thi. Natija: setting badal kar "Save settings" ka button aadha
+              dikhta tha aur lagta tha save karne ka rasta hi nahi hai. Page ke ekdum neeche
+              pahunchne par bar nikal aati thi, isliye ye pakad me nahi aaya tha.
+
+              Offset haath se naapa hua number NAHI hai: nav ki apni declared height
+              (3.25rem) + uska safe-area padding + 12px ki wahi khaali jagah jo `bottom-3`
+              deta hai. Nav ki height badli to sirf wahan badlo, yahan apne aap chalegi.
+              `lg` se upar nav hoti hi nahi, to wahan purana `bottom-3` hi rehta hai —
+              aur safe-area ka padding bhi sirf wahan chahiye, warna phone par do baar jud
+              jaata (ek baar nav ke andar, ek baar yahan). */}
           {dirty ? (
-            <div className="sticky bottom-3 z-30 pb-[env(safe-area-inset-bottom)]">
+            <div className="sticky bottom-3 z-30 max-lg:bottom-[calc(3.25rem+env(safe-area-inset-bottom,0px)+0.75rem)] lg:pb-[env(safe-area-inset-bottom)]">
               <div className="flex items-center justify-between gap-3 rounded-2xl border border-border/60 bg-card/90 p-3 shadow-glass ring-1 ring-white/10 backdrop-blur-2xl">
                 <p className="min-w-0 truncate text-sm text-muted-foreground">Unsaved changes</p>
                 <div className="flex shrink-0 items-center gap-2">
