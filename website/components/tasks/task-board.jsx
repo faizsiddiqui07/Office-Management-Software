@@ -29,7 +29,7 @@ import { TaskDialog } from './task-dialog';
 import { AssignDialog } from './assign-dialog';
 import { ForwardDialog } from './forward-dialog';
 import { DateRange } from '@/components/ui/date-range';
-import { PDF_SCOPES, downloadTasksPdf, isOverdue, todayYMD, onTimeUntil } from '@/lib/task';
+import { PDF_SCOPES, downloadTasksPdf, isOverdue, isDueToday, todayYMD, onTimeUntil } from '@/lib/task';
 import { RichText } from '@/components/ui/rich-text';
 
 // WHICH date a range means, per tab. My tasks and Assigned are lists of work still to be
@@ -362,10 +362,52 @@ function ReminderChips({ task, done }) {
  */
 const SlideCtx = React.createContext(null);
 
+/**
+ * Due date ka chip — teen haalat, EK hi jagah.
+ *
+ * Component isliye banaya ki yahi markup pehle DO jagah hubahu likha tha: flat TaskRow
+ * aur DatedTaskList ki chhoti row (PersonFolder ke andar). Is file me ye galti ho chuki
+ * hai — ReminderChips sirf flat row me laga tha aur folder wali row me chhoot gaya tha
+ * (uski tippani upar line ~335 par hai). Ab nayi haalat ek jagah judegi to dono me lagegi.
+ *
+ * AAJ ko alag dikhana hi iska maksad hai (owner, 22 Nov 2026). Pehle sirf do roop the —
+ * overdue laal, baaki sab bhoora — to "aaj shaam tak" aur "teen hafte baad" bilkul ek
+ * jaise padhte the. Jabki aaj hi wo AAKHRI din hai jab kaam waqt par khatam ho sakta
+ * hai; kal ko wahi task laal ho jaayega.
+ *
+ * Aaj ke liye LAFZ bhi badalta hai — "Due today", tareekh nahi. Tareekh chhapne par aadmi
+ * ko khud ginna padta hai ki wo din aaj hai ya nahi; wahi ginti to ye chip bacha raha hai.
+ *
+ * Rang amber hai, laal nahi: kaam abhi bigda nahi, bas aaj ka din hai. Laal overdue ke
+ * liye hi bacha rehna chahiye, warna dono ek jaise dikhne lagenge aur hum wahi dikkat
+ * doosre roop me bana denge.
+ *
+ * KOI ANIMATION NAHI (pulse waghairah): Lite mode (om_lite_ui) har animation band kar
+ * deta hai, to animation par tika nishaan wahan gayab ho jaata. Rang aur lafz dono
+ * haalat me ek jaise kaam karte hain.
+ */
+function DueChip({ ymd, done, awaiting }) {
+  if (!ymd) return null;
+  // Nipta hua kaam, ya approval me atka kaam — uspar deadline ka nishaan bemaani hai.
+  // Yahi shart pehle se overdue par thi; today par bhi wahi honi chahiye.
+  const live = !done && !awaiting;
+  const overdue = live && isOverdue(ymd);
+  const today = live && isDueToday(ymd);
+  return (
+    <span
+      className={cn(
+        overdue && 'font-medium text-destructive',
+        today && 'font-medium text-amber-600 dark:text-amber-300',
+      )}
+    >
+      {today ? 'Due today' : 'Due ' + fmtDate(ymd)}
+    </span>
+  );
+}
+
 function TaskRow({ task, myId, canToggle, onToggle, onEdit, onDelete, onOpen, assignerView = false, allowEdit }) {
   const done = task.status === 'DONE';
   const awaiting = task.awaitingApproval;
-  const overdue = !done && !awaiting && isOverdue(task.dueYMD);
   // I'm on this row because I was tagged, not because it's mine to do.
   const tagged = !assignerView && onlyTagged(task, myId);
   // Where the task comes from. For a tagged row that is its OWNER — the person actually
@@ -501,7 +543,7 @@ function TaskRow({ task, myId, canToggle, onToggle, onEdit, onDelete, onOpen, as
               </span>
             </span>
           ) : null}
-          {task.dueYMD ? <span className={cn(overdue && 'font-medium text-destructive')}>Due {fmtDate(task.dueYMD)}</span> : null}
+          <DueChip ymd={task.dueYMD} done={done} awaiting={awaiting} />
           <ReminderChips task={task} done={done} />
           {task.requiresApproval && !done && !awaiting && !task.canReview ? <span className="inline-flex items-center gap-1 text-primary"><ThumbsUp className="size-3" /> Needs approval</span> : null}
           {done && task.completedAt ? <span className="text-success">Done {fmtDate(task.completedAt)}{task.completedBy && task.completedBy.id !== myId ? ` · by ${task.completedBy.name}` : ''}</span> : null}
@@ -580,7 +622,6 @@ function DatedTaskList({ tasks, myId, dateKey, ascending = false, onEdit, onDele
           {g.items.map((t) => {
             const done = t.status === 'DONE';
             const awaiting = t.awaitingApproval;
-            const overdue = !done && !awaiting && isOverdue(t.dueYMD);
             // Per row, not per folder: a folder can hold work that is mine to finish
             // alongside work I'm only tagged on, and the server refuses the second.
             const rowToggle = canToggle && canCompleteTask(t, myId);
@@ -616,7 +657,7 @@ function DatedTaskList({ tasks, myId, dateKey, ascending = false, onEdit, onDele
                 <div className="min-w-0 flex-1">
                   <p className={cn('text-sm font-medium', done && 'text-muted-foreground line-through')}>{t.title}</p>
                   <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
-                    {t.dueYMD ? <span className={cn(overdue && 'font-medium text-destructive')}>Due {fmtDate(t.dueYMD)}</span> : null}
+                    <DueChip ymd={t.dueYMD} done={done} awaiting={awaiting} />
                     <ReminderChips task={t} done={done} />
                     {done && t.completedAt ? <span className="text-success">Done {fmtDate(t.completedAt)}{t.completedBy?.name ? ` · by ${t.completedBy.name}` : ''}</span> : null}
                     {t.siblings?.length ? <SiblingProgress siblings={t.siblings} selfDone={done} /> : null}
@@ -783,6 +824,9 @@ function TaskDetailDialog({ view, myId, onClose, onToggle, onEdit, onDelete, onA
   const done = task?.status === 'DONE';
   const awaiting = task?.awaitingApproval;
   const overdue = task && !done && !awaiting && isOverdue(task.dueYMD);
+  // Row par "Due today" dikhta hai, to dialog kholne par wo gayab nahi hona chahiye —
+  // warna aadmi ko lagega ki usne galat padha tha.
+  const dueToday = task && !done && !awaiting && isDueToday(task.dueYMD);
   // Only assigned tasks can ever earn points — a personal to-do never does, so don't ask.
   const bonusQ = useQuery({
     queryKey: ['task-bonus', task?.id],
@@ -1105,7 +1149,17 @@ function TaskDetailDialog({ view, myId, onClose, onToggle, onEdit, onDelete, onA
                 )}
               </Row>
             ) : null}
-            <Row label="Due date">{task.dueYMD ? fmtDate(task.dueYMD) : '—'}</Row>
+            {/* Row par chip "Due today" kehta hai; dialog kholne par wo baat gayab na ho,
+                warna aadmi ko lagega usne galat padha tha. Yahan alag pill ki jagah isi row
+                ko rang diya — us badge kataar me "Pending" pehle se amber hai. */}
+            <Row label="Due date">
+              {task.dueYMD ? (
+                <span className={cn(dueToday && 'font-medium text-amber-600 dark:text-amber-300')}>
+                  {fmtDate(task.dueYMD)}
+                  {dueToday ? ' · Today' : ''}
+                </span>
+              ) : '—'}
+            </Row>
             {/* Yaad yahan POORE lafzon me, TAREEKH ke saath — row ka chip tang jagah me
                 sirf waqt dikhata hai, aur "kis din ka waqt" wahi sawaal hai jo owner ne
                 poochha tha (19 Nov 2026). Band ho chuke kaam par ye bemaani hai. */}

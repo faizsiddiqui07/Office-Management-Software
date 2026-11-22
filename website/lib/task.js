@@ -26,6 +26,22 @@ export function isOverdue(dueYMD) {
   return !!dueYMD && dueYMD < todayYMD();
 }
 
+/**
+ * Is a YYYY-MM-DD due date TODAY (company time)?
+ *
+ * `isOverdue` jaan-boojh kar aaj ko BAHAR rakhta hai (`< todayYMD()`) — aaj ka din
+ * abhi bacha hai, to aaj ka kaam late nahi hai. Wo theek hai, par uska side-effect
+ * yahi bug tha: row par AAJ due kaam aur TEEN HAFTE baad wala kaam bilkul ek jaise
+ * dikhte the, jabki aaj hi wo aakhri din hai jab use waqt par khatam kiya ja sakta hai.
+ *
+ * Dono taraf saada string comparison hai (`dueYMD` DB me 'YYYY-MM-DD' string hai, Date
+ * nahi), isliye yahan wo timezone wala jaal hai hi nahi jisme ISO instant ek din peechhe
+ * khisak jaata hai. `todayYMD()` company time (Asia/Kolkata) par chalta hai.
+ */
+export function isDueToday(dueYMD) {
+  return !!dueYMD && dueYMD === todayYMD();
+}
+
 /** 'YYYY-MM-DD' + n days, still as 'YYYY-MM-DD'. */
 export function addDaysYMD(ymd, n) {
   const d = new Date(`${ymd}T00:00:00Z`);
