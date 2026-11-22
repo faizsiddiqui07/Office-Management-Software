@@ -47,6 +47,27 @@
  */
 export const RELEASES = [
   {
+    id: '2026-11-22-due-today',
+    ymd: '2026-11-22',
+    title: 'A task due today now says so',
+    points: [
+      'A task due today used to look exactly like one due in three weeks — the same grey date on the row.',
+      'It now reads “Due today” in amber, so the one day that still counts stands out from the rest of the list.',
+      'Overdue work stays red, and anything further out stays as it was.',
+      'Open the task and the due date says “Today” there too.',
+    ],
+  },
+  {
+    id: '2026-11-22-team-tap-to-call',
+    ymd: '2026-11-22',
+    title: 'Call or email someone straight from Team',
+    points: [
+      'On the Team page, tap a phone number to open your dialer with it already filled in — no more copying it across by hand.',
+      'Tap an email address to start a new mail to that person.',
+      'Tapping anywhere else on the card still opens their full profile, exactly as before.',
+    ],
+  },
+  {
     id: '2026-11-21-rewards-month-chart',
     ymd: '2026-11-21',
     title: 'See your points month by month',
