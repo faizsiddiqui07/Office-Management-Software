@@ -25,10 +25,33 @@ function initials(name = '') {
   );
 }
 
+/**
+ * Number par tap karne se dialer khule, email par mail app (owner, 22 Nov 2026).
+ * Pehle dono saada text the — log number dekh kar haath se dialer me type karte the.
+ *
+ * YE DO LINE KA KAAM NAHI THA, aur wajah ye hai: poora card pehle ek next/link <Link>
+ * ke ANDAR lipta tha. <a> ke andar <a> invalid HTML hai — React hydration par shikayat
+ * karta hai aur browser DOM ko khud se todkar dobara jamata hai, yaani ye chup-chaap
+ * bigadta (build phir bhi pass ho jaati). Upar se andar wale link ka click bubble hokar
+ * /users/:id par le jaata — dialer khulne ki jagah page badal jaata.
+ *
+ * Isliye ab "stretched link" wala tareeka hai: GlassCard khud relative hai, naam wala
+ * <Link> apne after:absolute after:inset-0 se poore card ko clickable banata hai, aur
+ * contact wale <a> uske OOPAR (relative z-10) baithte hain. Natija: card pehle jaisa
+ * poora-clickable rehta hai, nested anchor banta hi nahi, aur number/email apna kaam
+ * karte hain. Card ka <Link> se wapas lapetna mat — wahi purani dikkat lautegi.
+ *
+ * tel: ke href me number SAAF karke jaata hai. Phone par koi validation kahin nahi hai
+ * (profile/page.jsx ka Input plain hai, backend seedha assign karta hai), aur
+ * placeholder "+91 …" hai — to asli data me space, dash, bracket sab mil sakta hai.
+ * Dikhane wala text jaisa type hua tha waisa hi rehta hai; sirf href saaf hota hai.
+ */
 function MemberCard({ u }) {
+  // Sirf ank aur agla + bacha lo — "+91 88403-18212" jaisa likha number bhi dial ho jaaye.
+  const phone = String(u.phone || '').trim();
+  const telHref = phone ? 'tel:' + phone.replace(/[^0-9+]/g, '') : null;
   return (
-    <Link href={`/users/${u.id}`} className="block transition hover:opacity-95">
-      <GlassCard className="flex items-start gap-3 p-4 transition hover:shadow-glow">
+    <GlassCard className="relative flex items-start gap-3 p-4 transition hover:shadow-glow focus-within:ring-1 focus-within:ring-primary/40">
       {u.avatarUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={u.avatarUrl} alt="" className="size-12 shrink-0 rounded-full object-cover ring-1 ring-border/50" />
@@ -39,7 +62,12 @@ function MemberCard({ u }) {
       )}
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <p className="truncate font-semibold leading-tight">{u.name}</p>
+          <p className="truncate font-semibold leading-tight">
+            {/* after:inset-0 — yahi poore card ko clickable banata hai, bina card ko <a> me lapete. */}
+            <Link href={`/users/${u.id}`} className="after:absolute after:inset-0 after:rounded-[inherit] hover:underline">
+              {u.name}
+            </Link>
+          </p>
           {u.employmentType === 'PART_TIME' ? (
             <span className="shrink-0 rounded-full bg-warning/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 ring-1 ring-warning/25 dark:text-amber-300">
               Part-time
@@ -56,19 +84,26 @@ function MemberCard({ u }) {
           {u.email ? (
             <div className="flex items-center gap-1.5">
               <Mail className="size-3 shrink-0" />
-              <span className="truncate">{u.email}</span>
+              {/* relative z-10 — stretched link ke OOPAR, warna card ka click ise kha jaata. */}
+              <a
+                href={`mailto:${u.email}`}
+                className="relative z-10 truncate hover:text-foreground hover:underline"
+              >
+                {u.email}
+              </a>
             </div>
           ) : null}
-          {u.phone ? (
+          {telHref ? (
             <div className="flex items-center gap-1.5">
               <Phone className="size-3 shrink-0" />
-              <span className="truncate">{u.phone}</span>
+              <a href={telHref} className="relative z-10 truncate tabular-nums hover:text-foreground hover:underline">
+                {phone}
+              </a>
             </div>
           ) : null}
         </div>
       </div>
-      </GlassCard>
-    </Link>
+    </GlassCard>
   );
 }
 
