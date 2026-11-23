@@ -460,6 +460,50 @@
   transition-duration: 0.001ms !important;
 }
 
+/* ────────────────────────────────────────────────────────────
+   Theme badalne ka fade (owner, 23 Nov 2026)
+
+   Toggle dabate hi rang EK DAM badalta tha. `theme-switching` class <html> par
+   chipakti hai (lib/use-theme-transition.js), rang badalte hain, aur ~300ms baad
+   class hat jaati hai.
+
+   TEEN CHEEZEIN IS RULE KO HARA SAKTI THIN — teenon ka hisaab specificity se:
+
+   1. next-themes ka `disableTransitionOnChange` switch ke waqt
+      `* { transition: none !important }` chipkata hai. Uski specificity (0,0,0) hai,
+      is rule ki (0,1,1) — to yahan hum jeette hain. Wo flag JAAN-BOOJH KAR laga
+      rehne diya: uske bina phone ka system theme khud badalne par (shaam ko dark)
+      sirf `transition-colors` wali cheezein fade hotin, baaki snap — aadha-adhoora.
+      Ab fade sirf tab hota hai jab banda khud toggle dabaye.
+
+   2. LITE MODE ka `:root[data-lite=true] *` wala rule (0,3,0) hai — is rule se ZYADA.
+      Yaani Lite mode me fade apne aap nahi hota, aur yahi chahiye: Lite purane phone
+      ke liye hai, aur ek saath SAARE element par transition uske liye sabse bhaari
+      cheez hogi. JS me iski koi alag jaanch nahi hai — ek hi jagah, yahin.
+
+   3. REDUCED MOTION ka rule (0,0,0) hai, yaani is rule se HAAR jaata. Isliye poora
+      block `prefers-reduced-motion: no-preference` ke andar hai — jisne motion band
+      kar rakhi hai, uske liye ye CSS banti hi nahi.
+
+   `transition` shorthand ki jagah longhand isliye: Lite aur reduced-motion dono sirf
+   `transition-duration` par chalte hain, to unka jeetna saaf dikhna chahiye.
+
+   box-shadow jaan-boojh kar chhoda hai — har element par shadow animate karna sabse
+   mehnga kaam hai, aur baaki sab ghulte waqt shadow ka snap kisi ko dikhta nahi.
+   ──────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: no-preference) {
+  html.theme-switching,
+  html.theme-switching *,
+  html.theme-switching *::before,
+  html.theme-switching *::after {
+    /* Duration lib/use-theme-transition.js ke THEME_FADE_MS se mel khani chahiye. */
+    transition-property: background-color, border-color, color, fill, stroke !important;
+    transition-duration: 300ms !important;
+    transition-timing-function: ease !important;
+    transition-delay: 0s !important;
+  }
+}
+
 /* …except the three dots on the launch screen: with them frozen, a slow /bootstrap
    (retries can run 15 s) looks like a hung app. Three tiny dots cost nothing. */
 :root[data-lite='true'] .launch-dots i {

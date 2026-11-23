@@ -1,12 +1,12 @@
 'use client';
 
 import * as React from 'react';
-import { useTheme } from 'next-themes';
+import { useThemeTransition } from '@/lib/use-theme-transition';
 import { Moon, Sun } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export function ThemeToggle({ className }) {
-  const { resolvedTheme, setTheme } = useTheme();
+  const { resolvedTheme, setThemeSmooth } = useThemeTransition();
   const [mounted, setMounted] = React.useState(false);
   React.useEffect(() => setMounted(true), []);
 
@@ -16,7 +16,7 @@ export function ThemeToggle({ className }) {
     <button
       type="button"
       aria-label="Toggle theme"
-      onClick={() => setTheme(isDark ? 'light' : 'dark')}
+      onClick={() => setThemeSmooth(isDark ? 'light' : 'dark')}
       className={cn(
         'glass-subtle relative inline-flex size-8 items-center justify-center rounded-xl text-foreground/80 ring-1 ring-border/60 transition-colors hover:text-foreground',
         className,

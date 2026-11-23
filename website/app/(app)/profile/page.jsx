@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { useTheme } from 'next-themes';
+import { useThemeTransition } from '@/lib/use-theme-transition';
 import { toast } from 'sonner';
 import { Camera, CircleUser, Gauge, KeyRound, Loader2, Monitor, Moon, Sun, Trash2, UserCog } from 'lucide-react';
 import { api, ApiError, setAuthToken } from '@/lib/api';
@@ -29,7 +29,7 @@ function initialsOf(name = '') {
 
 export default function ProfilePage() {
   const { user, refresh } = useAuth();
-  const { theme, setTheme } = useTheme();
+  const { theme, setThemeSmooth } = useThemeTransition();
   const { lite, setLiteMode } = useLiteMode();
 
   const [form, setForm] = React.useState({ name: '', phone: '', dateOfBirth: '', avatarUrl: '' });
@@ -231,7 +231,7 @@ export default function ProfilePage() {
               <button
                 key={t.value}
                 type="button"
-                onClick={() => setTheme(t.value)}
+                onClick={() => setThemeSmooth(t.value)}
                 className={cn(
                   'flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium ring-1 transition-colors',
                   theme === t.value ? 'bg-primary/12 text-primary ring-primary/25' : 'glass ring-border hover:bg-muted/40',
