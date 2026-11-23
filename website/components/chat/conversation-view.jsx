@@ -20,6 +20,12 @@ import { RichText } from '@/components/ui/rich-text';
 import { plainText } from '@/lib/rich-text';
 import { toggleWrap, enterInList } from '@/lib/note-editing';
 
+// Composer kitni line tak badhega, uske baad andar scroll. Owner ne "do-teen line"
+// kaha tha (23 Nov 2026); 3 par rakha hai. Isse zyada karne par phone par list ka
+// hissa itna chhota ho jaata hai ki jisko jawab de rahe ho wahi message dikhna band
+// ho jaata hai — yahi wajah hai ki ye 5-6 nahi hai.
+const COMPOSER_MAX_LINES = 3;
+
 /** Sent / delivered / read — sirf apne bheje hue message par. */
 function Ticks({ msg, peerDelivered, peerRead }) {
   if (!msg.mine) return null;
@@ -285,6 +291,66 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
   // pane ki height badalti, observer phir chalta... ek keyboard ki harkat se kai jhatke.
   // Ab sirf list ka scrollTop, aur andar wali content bhi dekhi jaati hai — photo baad me
   // load hokar badi ho to bhi list neeche bani rahe.
+  // ── Composer ki oonchai: 1 line se 3 line tak ────────────────────────────
+  //
+  // Pehle box `rows={1}` par JAMA tha. Teen line likhne par text uske ANDAR scroll
+  // hota tha aur caret neeche rehta tha, to message ki SHURUAAT upar nikal kar gayab
+  // ho jaati — owner ki shikayat (23 Nov 2026) bilkul yahi thi. `max-h-32` pehle se
+  // likha hua tha, jaise kisi ne badhne ki guinjaish soch rakhi ho, par badhane wala
+  // code kabhi laga hi nahi — wo mara hua CSS tha.
+  //
+  // GHAR KA TAREEKA `field-sizing-content` HAI (ui/textarea.jsx), par yahan JS se kiya
+  // gaya, jaan-boojh kar: `field-sizing` abhi Chrome/Edge aur naye Safari tak hi hai —
+  // purane iOS Safari aur Firefox me wo chup-chaap kuch nahi karta. Shikayat PHONE ki
+  // hai, aur is office ke log iPhone par hain, to "zyadatar jagah chalega" kaafi nahi.
+  // JS har jagah chalta hai. Buddy ka composer (buddy-chat.jsx) me bhi yahi bug hai,
+  // bilkul yahi mara hua `max-h-28` ke saath; wahan jodna ho to ye helper lib/ me
+  // utha lena, dobara mat likhna.
+  //
+  // Teen line ki hadd PIXEL me fix nahi ki ja sakti: composer `text-base md:text-sm`
+  // hai (phone par 16px — iOS ka zoom rokne ke liye, sajawat nahi), to line-height
+  // phone aur laptop par alag hai. Isliye hadd element ki APNI computed line-height se
+  // banti hai, jisse dono jagah theek 3 line banti hai.
+  const fitComposer = React.useCallback(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    const cs = window.getComputedStyle(el);
+    const line = parseFloat(cs.lineHeight) || 20;
+    const pads = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+    // box-sizing border-box hai, par scrollHeight me border GINA NAHI jaata — isliye
+    // use alag se jodna padta hai, warna box har baar 2px chhota rehta aur ek patli si
+    // scrollbar hamesha dikhti.
+    const borders = parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
+    const cap = line * COMPOSER_MAX_LINES + pads + borders;
+    // Pehle gira do: scrollHeight sirf content ke hisaab se tabhi milta hai jab box
+    // uspar thopa hua na ho. Ye line hatate hi box kabhi chhota nahi hoga — text mitao
+    // to bhi bada hi raha aayega.
+    el.style.height = 'auto';
+    const want = el.scrollHeight + borders;
+    el.style.height = Math.min(want, cap) + 'px';
+    // Teen line se aage hi scrollbar — usse pehle wo bina matlab jhalakti hai.
+    el.style.overflowY = want > cap ? 'auto' : 'hidden';
+  }, []);
+
+  // `text` par: har akshar pe dobara naapo. Bhejne ke baad text khaali hota hai, to
+  // yahi effect box ko wapas ek line par le aata hai.
+  // useLayoutEffect isliye ki naap paint se PEHLE ho — warna har akshar par box ek
+  // frame purani oonchai me dikh kar phir kood-ta.
+  React.useLayoutEffect(() => {
+    fitComposer();
+  }, [text, fitComposer]);
+
+  // Screen ghoomne ya chaudai badalne par font `text-base` se `md:text-sm` par chala
+  // jaata hai, yaani line-height badal jaati hai — tab purani oonchai galat ho jaati.
+  React.useEffect(() => {
+    const onResize = () => fitComposer();
+    window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', onResize);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      window.removeEventListener('orientationchange', onResize);
+    };
+  }, [fitComposer]);
   React.useEffect(() => {
     const box = scrollRef.current;
     if (!box || typeof ResizeObserver === 'undefined') return undefined;
@@ -582,7 +648,7 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
                uske baad bubbles dono taraf se kate hue dikhte hain. Isi liye is project ke
                apne ui/input.jsx aur ui/textarea.jsx bhi `text-base md:text-sm` hain; ye
                composer seedha <textarea> hai, isliye wo niyam yahan chhoot gaya tha. */
-            className="max-h-32 min-h-9 flex-1 resize-none rounded-xl border border-border/60 bg-background/50 px-3 py-2 text-base outline-none focus-visible:ring-2 focus-visible:ring-primary/50 md:text-sm"
+            className="max-h-24 min-h-9 flex-1 resize-none rounded-xl border border-border/60 bg-background/50 px-3 py-2 text-base outline-none focus-visible:ring-2 focus-visible:ring-primary/50 md:text-sm"
           />
           <Button
             type="submit"
