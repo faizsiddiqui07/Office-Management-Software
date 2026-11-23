@@ -47,6 +47,26 @@
  */
 export const RELEASES = [
   {
+    id: '2026-11-23-chat-box-grows',
+    ymd: '2026-11-23',
+    title: 'The chat box grows as you type',
+    points: [
+      'Writing a longer message on your phone used to push the beginning out of sight — the box stayed one line tall and scrolled inside itself.',
+      'It now grows with you, up to three lines, so you can read the whole message before you send it.',
+      'Longer than that and it scrolls, as before. Enter still sends; Shift and Enter still start a new line.',
+    ],
+  },
+  {
+    id: '2026-11-23-theme-fade',
+    ymd: '2026-11-23',
+    title: 'Light and dark now fade into each other',
+    points: [
+      'Switching between light and dark used to snap over in one jarring step.',
+      'The colours now fade across, which is easier on the eyes at night.',
+      'If you have Lite mode on, or your phone is set to reduce motion, the switch stays instant as before.',
+    ],
+  },
+  {
     id: '2026-11-22-due-today',
     ymd: '2026-11-22',
     title: 'A task due today now says so',
