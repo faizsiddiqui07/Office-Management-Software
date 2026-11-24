@@ -77,7 +77,8 @@ function markOf(c) {
   return null;
 }
 
-function describe(c, ymd) {
+/** `withDate` false karne par tareekh nahi aati — phone par wo apni hi kataar me alag likhti hai. */
+function describe(c, ymd, withDate = true) {
   if (!c) return 'Nothing recorded';
   const s = cellStatus(c);
   const bits = [attendanceStatusLabel(s) === '—' ? 'Not in yet' : attendanceStatusLabel(s)];
@@ -89,24 +90,74 @@ function describe(c, ymd) {
   else if (c.in) bits.push('No check-out');
   if (c.w) bits.push(`Worked ${formatDuration(c.w)}`);
   if (c.ot) bits.push(`Overtime ${formatDuration(c.ot)}`);
-  return `${longDate(ymd)} — ${bits.join(' · ')}`;
+  return withDate ? `${longDate(ymd)} — ${bits.join(' · ')}` : bits.join(' · ');
 }
 
-/** Us din kitne aaye — jaali ke theek upar, usi khambon par. */
+/**
+ * Us din kitne log AAYE — ginti upar, khamba neeche, jaali ke usi khambon par.
+ *
+ * GINTI KHAMBE KE UPAR HAI, ANDAR NAHI (owner ne andar poocha tha, 24 Nov 2026): khamba
+ * `bg-foreground/25` hai, yaani halka grey. Uspar `text-foreground` light mode me to padh
+ * aata hai par dark mode me ujla-par-ujla ho jaata hai, aur ulta rang (`text-background`)
+ * light mode me safed-par-safed. Upar rakhne se dono theme me ek hi rang chalta hai aur
+ * chhote khambe par bhi ginti kat-ti nahi. Khambe ko 40px par rok kar ginti ke liye apni
+ * 14px ki kataar rakhi hai, to ginti kabhi khambe par nahi chadhti.
+ *
+ * GINTI SIRF CHAUDE CARD PAR, aur hadd naap kar chuni gayi hai. Teen jagah naapa:
+ *   • phone, card 343px  → khamba 9.0px.  Ank 5.2px ka samaa to jaata hai, par beech me 3.8px
+ *     bachte hain, to poori kataar "80999999289890" jaisi EK LAMBI SANKHYA bun jaati hai
+ *     (screenshot le kar dekha). Aur "11" 10.4px ka hai — wo khaane se bahar hi nikal jaata.
+ *   • tablet, card 710px → khamba 12.3px. "11" 11.7px ka — sirf 0.6px bachta hai, yaani do
+ *     ank chipak jaate hain. (Card 672px par naam aur "in/due" ke khambe 232px le lete hain,
+ *     isliye chaudai badhne par bhi khambe turant chaude nahi hote.)
+ *   • laptop, card 1050px → khamba 23.9px. "11" ke baad 12px khaali — yahan padhne me aaram.
+ *
+ * Isliye hadd @3xl (card 768px) hai. Usse chhote par ginti KHOYI nahi jaati — kisi bhi din
+ * par tap karo, neeche wali line "9 of 10 in that day" bata deti hai.
+ *
+ * TEEN ALAG HAALAT, TEEN ALAG SHAKL:
+ *   • Us din kisi ko aana hi nahi tha (Sunday / company holiday) — kuch nahi, khaali khamba.
+ *   • Aana tha par koi nahi aaya — khamba nahi, par ek feeka "0". Ye farak zaroori hai:
+ *     "office band tha" aur "office khula tha, koi nahi aaya" ek jaise nahi dikhne chahiye.
+ *   • Koi aaya — ginti aur khamba.
+ *   • AANE WALA din — kuch nahi, chahe us din ka record ho (pehle se manzoor chhutti). Us din
+ *     abhi koi aa hi nahi sakta tha, to "0" likhna jhooth hota.
+ *
+ * PEHLE 0 PAR BHI KHAMBA BAN RAHA THA: `Math.max(8, ...)` wali kam-se-kam oonchai 1 bande ke
+ * liye rakhi thi, par wo 0 par bhi lag jaati thi — 16 Oct (1 banda) 4px ka aur 17 Oct (0 log)
+ * 3px ka, dono ek jaise. Ab farsh sirf tab lagta hai jab koi sach me aaya ho.
+ */
 function DayBars({ totals, max }) {
   return (
-    <span aria-hidden className="flex h-10 items-end gap-px">
-      {totals.map((d) => {
-        // Kam se kam 2px, warna "1 aaya" aur "koi nahi aaya" ek jaise dikhte hain.
-        const pc = d.due ? Math.max(8, Math.round((d.came / max) * 100)) : 0;
-        return (
+    <span aria-hidden className="block">
+      {/* Ginti. Phone par khamba ~9px chauda hota hai, to wahan 8px ka ank — "11" bhi samaa
+          jaata hai (naapa gaya). Chaude card par 9px. */}
+      <span className="hidden h-3.5 items-end gap-px @3xl:flex">
+        {totals.map((d) => (
+          <span
+            key={d.ymd}
+            className={cn(
+              'min-w-0 flex-1 text-center text-[9px] font-semibold leading-none tabular-nums',
+              d.came ? 'text-foreground' : 'text-muted-foreground/60',
+            )}
+          >
+            {d.due && d.past ? d.came : ''}
+          </span>
+        ))}
+      </span>
+      <span className="flex h-10 items-end gap-px @3xl:mt-0.5">
+        {totals.map((d) => (
           <span key={d.ymd} className="flex min-w-0 flex-1 items-end" style={{ height: '100%' }}>
-            {d.due ? (
-              <span className="w-full rounded-t-[2px] bg-foreground/25" style={{ height: `${pc}%` }} />
+            {d.came ? (
+              <span
+                className="w-full rounded-t-[2px] bg-foreground/25"
+                // Kam se kam 8% — warna 11 me se 1 banda 4px ka ho kar gayab ho jaata hai.
+                style={{ height: `${Math.max(8, Math.round((d.came / max) * 100))}%` }}
+              />
             ) : null}
           </span>
-        );
-      })}
+        ))}
+      </span>
     </span>
   );
 }
@@ -124,7 +175,7 @@ export function TeamMonth({ monthKey, onOpenDay }) {
   const view = React.useMemo(() => {
     if (!data?.rows) return null;
     const { rows, days, today } = data;
-    const totals = dayTotals(rows, days);
+    const totals = dayTotals(rows, days, today);
     const max = Math.max(1, ...totals.map((d) => d.due));
     const folded = rows.map((r) => ({ ...r, t: foldRow(r) }));
     const head = monthHeadline(rows, days, today);
@@ -147,6 +198,9 @@ export function TeamMonth({ monthKey, onOpenDay }) {
   const { days, today, rows, totals, max, head, joinedLater } = view;
   const pickedCell = picked ? rows[picked.ri]?.cells[picked.ci] : null;
   const pickedYMD = picked ? days[picked.ci] : null;
+  // Us poore DIN ki ginti — phone par ginti wali kataar chhupi hoti hai, to "us din kitne
+  // aaye" ka jawab yahi ek jagah bachti hai.
+  const pickedDay = picked ? totals[picked.ci] : null;
   // Usi kataar me ek din idhar-udhar. Mahine ke sire par ruk jaata hai.
   const step = (n) => setPicked((p) => (p ? { ...p, ci: Math.min(days.length - 1, Math.max(0, p.ci + n)) } : p));
 
@@ -220,7 +274,14 @@ export function TeamMonth({ monthKey, onOpenDay }) {
         {/* Upar ki do kataar: kitne aaye, aur tareekh. Khambe neeche ki jaali se mel khate
             hain, isliye teenon ek hi grid par hain. */}
         <div className={cn('grid items-end gap-x-3 px-2', GRID)}>
-          <span className="hidden text-[10px] uppercase tracking-wide text-muted-foreground @2xl:block">People in</span>
+          {/* `self-start` aur ye padding: bars aur tareekh dono EK hi khaane me hain, aur grid
+              `items-end` par hai — to label neeche gir kar TAREEKHON ke bagal baith jaata tha,
+              yaani wo unka naam lagta tha. pt se wo ginti+khambe ke saamne aa jaata hai. */}
+          {/* Label bhi ginti ke saath aata hai — bina ginti ke wo sirf khambon ka naam hai,
+              aur wo @2xl par bhi theek padhta hai. */}
+          <span className="hidden self-start text-[10px] uppercase tracking-wide text-muted-foreground @2xl:block @3xl:pt-5">
+            People in
+          </span>
           <span className="col-span-2 @2xl:col-span-1">
             <DayBars totals={totals} max={max} />
             <span aria-hidden className="mt-1 flex gap-px">
@@ -243,7 +304,11 @@ export function TeamMonth({ monthKey, onOpenDay }) {
               })}
             </span>
           </span>
-          <span className="hidden text-right text-[10px] uppercase tracking-wide text-muted-foreground @2xl:block">In / due</span>
+          {/* Pehle "due" tha — owner ko uljhan bhara laga (24 Nov 2026), wo "baaki hai" jaisa
+              padhta hai jabki matlab hai "us bande ke kaam ke din". "Workdays" saaf tha par itna
+              lamba ki khamba 96px le leta tha aur jaali ke din patle pad jaate the; isliye "WD",
+              aur uska matlab neeche footnote me. */}
+          <span className="hidden text-right text-[10px] uppercase tracking-wide text-muted-foreground @2xl:block">In / WD</span>
         </div>
 
         <ul className="mt-1">
@@ -307,12 +372,21 @@ export function TeamMonth({ monthKey, onOpenDay }) {
           ))}
         </ul>
 
-        {/* Tap par poori baat — ek hi line, taaki jaali apni jagah se na hile. */}
-        <div className="mt-2 flex min-h-9 flex-wrap items-center gap-x-3 gap-y-1 px-2 text-xs text-muted-foreground">
+        {/* Tap par poori baat.
+
+            PHONE PAR DO KATAAR, CHAUDE PAR EK (owner, 24 Nov 2026). Pehle teeno cheezein ek hi
+            kataar me thin: teer, poora matn, aur "Open Sun 15 Nov" ka button. Phone par matn ke
+            liye beech me sirf ~120px bachte the, to wo PAANCH line me tut kar bura dikhta tha.
+
+            Ab `order` + `basis-full` se phone par pehli kataar me teer, tareekh aur button rehte
+            hain, aur poora matn neeche apni poori chaudai me. @2xl par sab wapas ek kataar me.
+            Tareekh ab matn se nikaal kar teeron ke bagal rakhi hai — teer usi ko aage-peechhe
+            karte hain, to wo wahin padhni chahiye. */}
+        <div className="mt-2 flex min-h-9 flex-wrap items-center gap-x-2 gap-y-1 px-2 text-xs text-muted-foreground">
           {picked ? (
             <>
               {/* 9px ke khaane par ungli theek nahi padti — in do teeron se din sudhar jaata hai. */}
-              <span className="flex shrink-0 items-center gap-0.5">
+              <span className="order-1 flex shrink-0 items-center gap-0.5">
                 <button
                   type="button"
                   onClick={() => step(-1)}
@@ -332,16 +406,24 @@ export function TeamMonth({ monthKey, onOpenDay }) {
                   <ChevronRight className="size-4" />
                 </button>
               </span>
-              <span className="min-w-0 flex-1">
-                <span className="font-medium text-foreground">{rows[picked.ri].user.name}</span> · {describe(pickedCell, pickedYMD)}
-              </span>
+              <span className="order-2 shrink-0 font-medium text-foreground">{longDate(pickedYMD)}</span>
               <button
                 type="button"
                 onClick={() => onOpenDay?.(pickedYMD)}
-                className="ml-auto inline-flex min-h-9 shrink-0 items-center rounded-lg px-2.5 text-xs font-medium text-primary ring-1 ring-primary/30 hover:bg-primary/10 sm:min-h-0 sm:py-1"
+                className="order-3 ml-auto inline-flex min-h-9 shrink-0 items-center rounded-lg px-2.5 text-xs font-medium text-primary ring-1 ring-primary/30 hover:bg-primary/10 @2xl:order-4 sm:min-h-0 sm:py-1"
               >
-                Open {longDate(pickedYMD)}
+                Open day
               </button>
+              {/* basis-full = phone par apni poori kataar; @2xl par wapas beech me. */}
+              <span className="order-4 min-w-0 basis-full @2xl:order-3 @2xl:flex-1 @2xl:basis-auto">
+                <span className="font-medium text-foreground">{rows[picked.ri].user.name}</span> — {describe(pickedCell, pickedYMD, false)}
+                {pickedDay?.due ? (
+                  <>
+                    {' · '}
+                    <span className="font-medium text-foreground">{pickedDay.came} of {pickedDay.due}</span> in that day
+                  </>
+                ) : null}
+              </span>
             </>
           ) : (
             <span>Tap any day for its times. Tap a name for that person’s page.</span>
@@ -361,7 +443,7 @@ export function TeamMonth({ monthKey, onOpenDay }) {
           </span>
           Late
         </span>
-        <span>In / due counts only the days that were working days for that person.</span>
+        <span><span className="font-medium text-foreground">WD = workdays</span> — it leaves out Sundays, holidays and each person’s own days off.</span>
       </div>
 
       {joinedLater?.length ? (

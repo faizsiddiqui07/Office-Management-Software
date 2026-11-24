@@ -60,8 +60,16 @@ export function foldRow(row) {
   return t;
 }
 
-/** Har din ka jod — "us din kitne aaye, kitne aane the". */
-export function dayTotals(rows, days) {
+/**
+ * Har din ka jod — "us din kitne aaye, kitne aane the".
+ *
+ * `past` zaroori hai: aane wale din par ginti dikhani hi nahi (owner, 24 Nov 2026). Aam taur
+ * par aage ke din ka koi khaana hota hi nahi, par EK haalat me hota hai — jab kisi ki aage ki
+ * chhutti pehle se manzoor ho, ya office-wide WFH declare ho chuki ho. Tab us din ka record
+ * ban jaata hai aur bina is jaanch ke wahan "0" chhap jaata, jabki us din abhi koi aa hi nahi
+ * sakta tha.
+ */
+export function dayTotals(rows, days, today = '') {
   return days.map((ymd, i) => {
     let came = 0;
     let due = 0;
@@ -74,7 +82,7 @@ export function dayTotals(rows, days) {
       if (!OFF.has(s)) due += 1;
       if (IN.has(s)) came += 1;
     }
-    return { ymd, came, due, anyone };
+    return { ymd, came, due, anyone, past: !today || ymd <= today };
   });
 }
 
@@ -93,7 +101,7 @@ export function monthHeadline(rows, days, today) {
   //    aaye to ginti 0 of 1 banti hai — poore mahine ka sabse bura anupaat, jabki office
   //    us din khulta hi nahi. Pehla roop yahi chun raha tha ("Sun 20 Sept — 0 of 1").
   //    Isliye sirf wahi din gine jaate hain jin par kam se kam AADHE log due the.
-  const all = dayTotals(rows, days).filter((d) => d.anyone && d.due > 0 && d.ymd < today);
+  const all = dayTotals(rows, days, today).filter((d) => d.anyone && d.due > 0 && d.ymd < today);
   const busiest = Math.max(0, ...all.map((d) => d.due));
   const normal = all.filter((d) => d.due * 2 >= busiest);
   const thin = normal.sort((a, b) => a.came / a.due - b.came / b.due || a.came - b.came)[0] || null;
