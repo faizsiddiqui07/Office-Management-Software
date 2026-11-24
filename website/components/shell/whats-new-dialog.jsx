@@ -5,6 +5,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Sparkles, Check, ArrowDown } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { can } from '@/lib/permissions';
 import { RELEASES } from '@/lib/release-notes';
 import { companyYMDHM, companyYMD, formatClock } from '@/lib/time';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
@@ -34,6 +35,15 @@ import { cn } from '@/lib/utils';
  *
  * NAYE BANDE KO PURANI BAATEIN NAHI: jo update uske account banne se PEHLE ka hai wo chhant
  * jaata hai. Warna pehle hi din ko bande ko unn badlavon ki list milti jo usne dekhe hi nahi.
+ *
+ * JO CHEEZ DIKHTI HI NAHI, USKA UPDATE BHI NAHI (owner, 24 Nov 2026): card par `needs` likha
+ * ho to wo sirf un logon ko jaata hai jinke paas wo ijaazat hai. Office Boy ko ye padhwana ki
+ * "ab poori team ka mahina ek jaali me dikhta hai" bemaani bhi hai aur galat bhi — wo page
+ * uske liye khulta hi nahi, aur usse ye pata chalta hai ki leadership kya-kya dekh sakti hai.
+ *
+ * CHHANTA HUA CARD "PADH LIYA" ME BHI NAHI JAATA — uski id kabhi `seenReleases` me nahi
+ * daali jaati. Ye jaan-boojh kar hai: kisi din us bande ko wo ijaazat mil jaaye to update usi
+ * din uske saamne aa jaayega, jab wo uske kaam ka ho.
  */
 export function WhatsNewDialog() {
   const { user } = useAuth();
@@ -116,7 +126,10 @@ export function WhatsNewDialog() {
         && (!joinedYMD || !r.ymd || r.ymd >= joinedYMD)
         // Jiska waqt abhi nahi aaya wo abhi nahi dikhta. Dono taraf ek hi roop
         // ('YYYY-MM-DD HH:mm', company time), isliye seedhi akshar-tulna kaafi hai.
-        && (!r.liveAt || r.liveAt <= nowHM),
+        && (!r.liveAt || r.liveAt <= nowHM)
+        // Jis cheez ki ijaazat hi nahi, uska update bhi nahi. `can()` wahi hai jo page ko
+        // khulne deta hai, to dono kabhi alag nahi bol sakte.
+        && (!r.needs || can(user, r.needs)),
     );
   }, [user, nowHM]);
 

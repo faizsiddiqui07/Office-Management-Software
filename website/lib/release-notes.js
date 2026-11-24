@@ -18,6 +18,25 @@
  *
  * Yahan jo likha hai wahi sabko dikhega, isliye jo sach me badla ho wahi likho.
  *
+ * ── SIRF KUCH LOGON KO DIKHANA HO TO: `needs` ────────────────────────────────────
+ * `needs: 'viewEveryone'` — ye card SIRF unhe dikhega jinke paas wo ijaazat hai; baaki
+ * sabke liye wo hai hi nahi (owner ka faisla, 24 Nov 2026).
+ *
+ * KAB LAGAO: jab update ek aise page ya button ka ho jo har kisi ke liye khulta hi nahi.
+ * Office Boy ko ye padhwana ki "ab poori team ka mahina ek jaali me dikhta hai" do tarah se
+ * galat hai — wo page uske liye khulta nahi, aur usse ye pata chal jaata hai ki leadership
+ * kya-kya dekh sakti hai.
+ *
+ * KAB NA LAGAO: aam update par. Default SABKO dikhana hi hai, aur wahi theek hai.
+ *
+ * Naam wahi likho jo lib/permissions.js janta hai (jaise viewEveryone, approveLeave,
+ * manageSettings) — wahi `can()` page ko khulne dene ke liye bhi istemaal hota hai, to
+ * modal aur page kabhi alag nahi bolenge. Galat naam likhne par card KISI ko nahi dikhega,
+ * isliye naam dekh kar likhna.
+ *
+ * CHHANTA HUA CARD "PADH LIYA" ME NAHI JAATA — baad me kisi ko wo ijaazat mile to update
+ * usi din uske saamne aa jaayega.
+ *
  * ── BAAD ME DIKHANA HO TO: `liveAt` ───────────────────────────────────────────────
  * `liveAt: '2026-11-19 23:00'` (company time, 'YYYY-MM-DD HH:mm') — us waqt se PEHLE
  * ye update kisi ko nahi dikhta. Bina `liveAt` ke update turant dikhta hai.
@@ -46,6 +65,33 @@
  *     ya der se dekhega.
  */
 export const RELEASES = [
+  {
+    id: '2026-11-24-attendance-day-timeline',
+    ymd: '2026-11-24',
+    // Attendance ka Everyone tab isi ijaazat ke peeche hai, to card bhi.
+    needs: 'viewEveryone',
+    title: 'See the whole day at a glance on Attendance',
+    points: [
+      'Attendance \u2192 Everyone now has a Table / Timeline switch. The table is still what opens.',
+      'Timeline draws each person as a bar from when they came in to when they left, so you can see at a glance who was here when, who came late and by how much, and who stayed on.',
+      'Each bar sits on that person\u2019s own shift, so someone who starts at 11 is not read as late at 10:30.',
+      'A day with no check-out fades out instead of ending, because nobody knows when that person left.',
+      'Tapping a row opens the same details box as the table, so you can still fix times from there.',
+    ],
+  },
+  {
+    id: '2026-11-24-attendance-team-month',
+    ymd: '2026-11-24',
+    needs: 'viewEveryone',
+    title: 'A whole month of the team on one screen',
+    points: [
+      'The same page now has a Day / Month switch. Day is still what opens.',
+      'Month shows every person as a row and every date as a square, so a habit shows up straight away \u2014 one person late again and again reads across a row, and a morning the whole office was late reads down a column.',
+      'It opens with the answers already written out: who was late most, who forgot to check out most, and which day had the fewest people in.',
+      'Tap Late, Absent, On leave, From home or No check-out to keep only those days and sort the list by who has the most.',
+      'Tap any square for that day\u2019s times, or a name for that person\u2019s page.',
+    ],
+  },
   {
     id: '2026-11-23-chat-box-grows',
     ymd: '2026-11-23',
