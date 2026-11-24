@@ -94,7 +94,20 @@ async function bundle() {
   }
 }
 
-/** Sirf external packages (aur unki dependencies) ka node_modules — poora 22 MB nahi. */
+/**
+ * Sirf external packages (aur unki dependencies) ka node_modules — poora 22 MB nahi.
+ *
+ * REPO KA LOCKFILE SAATH JAATA HAI, aur ye zaroori hai. Pehle yahan `--no-package-lock` tha,
+ * yaani npm har baar sab kuch TAAZA resolve karta tha — jo bhi aaj sabse naya ho wahi. 24 Nov
+ * 2026 ko isi wajah se zip banni band ho gayi: kisi naye `@react-pdf` sub-package ne
+ * `@react-pdf/hyphenate@^0.1.1` maanga, jabki npm par us package ka sirf `0.1.0` hai — yaani
+ * `ETARGET: No matching version found`. Hamare apne lockfile me wo package hai hi nahi; wahan
+ * `@react-pdf/renderer` 4.5.1 ka chalta hua ped likha hai.
+ *
+ * Lock dene se npm wahi version chunta hai jo yahan local par mahinon se chal rahe hain, aur
+ * zip us cheez ki copy banti hai jo jaanchi ja chuki hai — kisi aur ke us din publish kiye
+ * hue package ki nahi. Deploy ka package har baar badalta rehna waise bhi theek nahi tha.
+ */
 function installExternals() {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
   const deps = {};
@@ -103,8 +116,12 @@ function installExternals() {
     deps[name] = pkg.dependencies[name];
   }
   fs.writeFileSync(path.join(stage, 'package.json'), JSON.stringify({ name: 'lambda-bundle', private: true, type: 'module', dependencies: deps }, null, 2));
+  // Lock yahan copy hota hai (upar wali tippani dekho). package.json alag hai, isliye npm ise
+  // hukm nahi, salah ki tarah padhta hai: jo version pehle se likha hai aur abhi bhi range me
+  // baithta hai, wahi uthaata hai — baaki ke liye naya resolve karta hai.
+  fs.copyFileSync(path.join(root, 'package-lock.json'), path.join(stage, 'package-lock.json'));
   const t = Date.now();
-  execSync('npm install --omit=dev --no-audit --no-fund --no-package-lock --loglevel=error', { cwd: stage, stdio: 'inherit' });
+  execSync('npm install --omit=dev --no-audit --no-fund --loglevel=error', { cwd: stage, stdio: 'inherit' });
   const count = fs.readdirSync(path.join(stage, 'node_modules')).filter((d) => !d.startsWith('.')).length;
   console.log(`   node_modules:    ${count} top-level packages (externals only)  (${Date.now() - t} ms)`);
 }
