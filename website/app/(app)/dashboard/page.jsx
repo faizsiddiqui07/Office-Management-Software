@@ -342,9 +342,14 @@ export default function DashboardPage() {
         <section className="space-y-3">
           <SectionTitle>Company analytics</SectionTitle>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard label="Headcount" value={analytics.headcount} icon={Users} tone="default" hint="active employees" />
+          {/* Phone par DO-DO ki kataar — wahi jo upar "Team today" aur apne wale tile par hai
+              (owner, 24 Nov 2026). Pehle ye chaar card phone par ek-ek karke neeche jaate the,
+              yaani sirf inhe dekhne me char screen scroll. `tightOnPhone` sirf phone par padding,
+              icon aur ank chhota karta hai; laptop par tile poore ke poore rehte hain. */}
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+            <StatCard tightOnPhone label="Headcount" value={analytics.headcount} icon={Users} tone="default" hint="active employees" />
             <StatCard
+              tightOnPhone
               label="Attendance rate"
               value={`${analytics.attendanceRate}%`}
               icon={TrendingUp}
@@ -352,6 +357,7 @@ export default function DashboardPage() {
               hint={analytics.breakdown?.awaited ? `${analytics.breakdown.awaited} not in yet` : 'present today'}
             />
             <StatCard
+              tightOnPhone
               label="Pending approvals"
               value={analytics.pendingApprovalsCount ?? analytics.pendingApprovals.length}
               icon={Inbox}
@@ -359,6 +365,7 @@ export default function DashboardPage() {
               hint="leave requests"
             />
             <StatCard
+              tightOnPhone
               label="Open tasks"
               value={analytics.openTasks}
               icon={ListTodo}
