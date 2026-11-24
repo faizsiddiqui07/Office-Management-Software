@@ -1,7 +1,7 @@
 import express from 'express';
 import { requireAuth } from '../middleware/auth.js';
 import { requirePermission } from '../middleware/requirePermission.js';
-import { checkIn, checkOut, today, list, overview, exportCsv, matrixCsv, setRecord, excuse, selfieSlip, selfieView } from '../controllers/attendance.controller.js';
+import { checkIn, checkOut, today, list, overview, month, exportCsv, matrixCsv, setRecord, excuse, selfieSlip, selfieView } from '../controllers/attendance.controller.js';
 
 export const attendanceRouter = express.Router();
 
@@ -16,6 +16,8 @@ attendanceRouter.get('/today', today);
 attendanceRouter.post('/selfie-upload', requirePermission('markAttendance'), selfieSlip);
 attendanceRouter.get('/:id/selfie/:which', selfieView);
 attendanceRouter.get('/overview', requirePermission('viewEveryone'), overview);
+// Poore mahine ka grid — wahi darwaza jo overview aur matrix.csv ka hai.
+attendanceRouter.get('/month', requirePermission('viewEveryone'), month);
 attendanceRouter.get('/export.csv', exportCsv);
 attendanceRouter.get('/matrix.csv', requirePermission('viewEveryone'), matrixCsv);
 attendanceRouter.put('/record', requirePermission('approveRegularization'), setRecord);

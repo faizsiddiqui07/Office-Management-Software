@@ -180,6 +180,17 @@ export async function overview(req, res, next) {
   }
 }
 
+/** Poore mahine ka team grid (screen ke liye JSON). CSV wala matrixCsv alag hai. */
+export async function month(req, res, next) {
+  try {
+    const monthKey = String(req.query.month || '');
+    if (!/^\d{4}-\d{2}$/.test(monthKey)) return res.status(400).json(fail('BAD_MONTH', 'Expected month=YYYY-MM'));
+    res.json(ok(await svc.attendanceMonth(monthKey)));
+  } catch (err) {
+    handleErr(res, err, next);
+  }
+}
+
 /** Month payroll sheet: employee × day matrix + totals, as CSV. */
 export async function matrixCsv(req, res, next) {
   try {

@@ -3,18 +3,21 @@
 import * as React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { CalendarOff, Check, Clock, Download, Home, Hourglass, LogOut, Pencil, TriangleAlert, UserCheck, UserPlus, Users, UserX } from 'lucide-react';
+import { CalendarOff, CalendarRange, ChartGantt, Check, Clock, Download, Home, Hourglass, List, LogOut, Pencil, TriangleAlert, UserCheck, UserPlus, Users, UserX } from 'lucide-react';
 import { api, downloadFile, API_BASE_URL } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can, roleName } from '@/lib/permissions';
 import { effectiveStatus } from '@/lib/attendance';
 import { DatePicker } from '@/components/ui/date-picker';
+import { MonthPicker } from '@/components/ui/month-picker';
 import { TimePicker } from '@/components/ui/time-picker';
 import { APP_LIVE_YMD } from '@/lib/app-live';
 import { formatYMD } from '@/lib/leave';
 import { AttendanceStatusBadge, attendanceStatusText } from './attendance-status-badge';
 import { DataTable } from '@/components/glass/data-table';
 import { SelfieView } from './selfie-view';
+import { DayTimeline } from './day-timeline';
+import { TeamMonth } from './team-month';
 import { StatTile } from '@/components/glass/stat-tile';
 import { TableSkeleton } from '@/components/glass/skeletons';
 import { QueryError } from '@/components/glass/query-error';
@@ -31,6 +34,20 @@ import {
 } from '@/components/ui/select';
 import { formatTime, formatDuration, todayYMD } from '@/lib/time';
 import { LEAVE_TYPES } from '@/lib/leave';
+
+/**
+ * MonthPicker 'this' ya 'YYYY-MM' deta hai; is tab ki ek hi `date` state hai, to use us mahine
+ * ki pehli tareekh bana dete hain. Isse mahine se din par wapas aate waqt tareekh us mahine me
+ * hi rehti hai, aur Month sheet ka download bhi wahi mahina leta hai.
+ */
+function monthStart(v) {
+  const now = new Date();
+  const ym = /^\d{4}-\d{2}$/.test(String(v)) ? v : `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const first = `${ym}-01`;
+  // Chalu mahine me aaj se aage mat jao — DatePicker ki apni hadd bhi aaj hi hai.
+  const t = todayYMD();
+  return first > t ? t : first;
+}
 
 /** Is there a selfie anywhere in this day's roster? */
 const hasSelfie = (r) => !!(r.attendance?.checkInMeta?.selfieKey || r.attendance?.checkOutMeta?.selfieKey);
@@ -117,6 +134,37 @@ const ALL_COLUMNS = [
   },
 ];
 
+/**
+ * Table | Timeline aur Day | Month — dono ek hi shakl ke. Dhaancha Calendar page ke Month/Agenda
+ * aur team-member page ke Table/Grid wala hai; ek hi app me teen tarah ke switcher nahi.
+ *
+ * COMPONENT KE BAHAR HONA ZAROORI HAI. Andar likha tha to har render par ek NAYA component type
+ * banta tha, aur React purane button hata kar naye laga deta. Keyboard se Enter dabao to jis
+ * button par focus tha wo DOM se hi gayab — focus body par chala jaata aur agla Tab page ke
+ * shuru se chalta. Ye har render par hota tha: query refetch, koi filter dabao, ya dialog me
+ * waqt type karo. Lint isko nahi pakadta (eslint-config-next me wo rule band hai).
+ */
+function Switcher({ value, onChange, options }) {
+  return (
+    <div className="flex rounded-lg bg-muted/40 p-0.5">
+      {options.map((o) => (
+        <button
+          key={o.v}
+          type="button"
+          onClick={() => onChange(o.v)}
+          aria-pressed={value === o.v}
+          className={cn(
+            'inline-flex min-h-10 items-center gap-1 rounded-md px-3 py-1 text-xs font-medium sm:min-h-0 sm:px-2.5',
+            value === o.v ? 'bg-background shadow-sm' : 'text-muted-foreground',
+          )}
+        >
+          <o.icon className="size-3.5" /> {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function Field({ label, value }) {
   return (
     <div className="rounded-lg bg-foreground/[0.04] p-2.5 ring-1 ring-border/50">
@@ -164,6 +212,14 @@ export function EveryoneTab() {
   const [selected, setSelected] = React.useState(null);
   const [statusFilter, setStatusFilter] = React.useState(null); // null | 'present' | 'late' | 'absent'
   const [exporting, setExporting] = React.useState(''); // '' | 'day' | 'month'
+  // Default TABLE, aur chunaav yaad NAHI rakha jaata — wahi niyam jo owner ne team-member
+  // page ke Table/Grid par diya tha: jo hamesha dikhta tha wahi khule, doosra roop ek tap door.
+  const [view, setView] = React.useState('table'); // 'table' | 'timeline'
+  // Din ka roster ya poore mahine ki jaali. DO ALAG SAWAAL hain, isliye do alag darje:
+  // mahine wale roop me upar ke nau card, date picker, table aur timeline — kuch nahi dikhta.
+  // Wo card EK DIN ginte hain; mahine ki jaali ke upar "Late 2" aur jaali me "Late 19" ek
+  // saath chhapta, yaani ek hi lafz ke do jawab.
+  const [scope, setScope] = React.useState('day'); // 'day' | 'month'
 
   const exportDay = async () => {
     setExporting('day');
@@ -190,9 +246,13 @@ export function EveryoneTab() {
     }
   };
 
-  const { data, isLoading, isError, error, refetch } = useQuery({
+  const { data, dataUpdatedAt, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['attendance', 'overview', date],
     queryFn: () => api.get(`/attendance/overview?date=${date}`),
+    // Mahine wale roop me ye request bhejni hi nahi: wahan iska data dikhta hi nahi, par har
+    // baar mahina badalne par `date` badalti hai — yaani naya queryKey aur ek fazool request
+    // EK AISE DIN ke liye jise koi dekh hi nahi raha.
+    enabled: scope === 'day',
   });
 
   const excuseMut = useMutation({
@@ -311,14 +371,69 @@ export function EveryoneTab() {
   const cat = a?.lateReason?.category;
   const note = a?.lateReason?.note;
 
-  // A failed request shows the error ALONE. Leaving the tiles above it reading
-  // "Present 0 / Late 0 / Absent 0" states something about the day that isn't known.
+
+  // `date` se, `data.date` se NAHI: mahine wale roop me din ki query band rehti hai, to uska
+  // purana jawab yahan galat mahina bata sakta tha.
+  const monthKey = date.slice(0, 7);
+
+  if (scope === 'month') {
+    return (
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h3 className="text-sm font-medium text-muted-foreground">Everyone · month at a glance</h3>
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+            {/* allTime band: is jaali me ek waqt me EK hi mahina dikh sakta hai, aur
+                MonthPicker ka "All time" chup-chaap chalu mahine par le jaata tha. */}
+            <MonthPicker allTime={false} value={monthKey} onChange={(v) => setDate(monthStart(v))} />
+            <Button variant="outline" onClick={exportMonth} disabled={!!exporting} className="h-10 sm:h-8">
+              <Download className="size-4" /> {exporting === 'month' ? '…' : 'Month sheet'}
+            </Button>
+            <Switcher
+              value={scope}
+              onChange={setScope}
+              options={[{ v: 'day', label: 'Day', icon: CalendarOff }, { v: 'month', label: 'Month', icon: CalendarRange }]}
+            />
+          </div>
+        </div>
+        <TeamMonth
+          monthKey={monthKey}
+          onOpenDay={(ymd) => {
+            setDate(ymd);
+            setScope('day');
+          }}
+        />
+      </div>
+    );
+  }
+
+  // Request fail ho to error AKELA dikhta hai — upar ke card "Present 0 / Late 0" kehte rehte
+  // to wo us din ke baare me aisi baat kehte jo pata hi nahi hai. Par SWITCHER saath rehta hai,
+  // warna error se nikalne ka koi raasta hi nahi bachta (pehle ye guard mahine wali shakha se
+  // bhi upar thi, to ek fail hui din-wali request poore mahine ki jaali ko kha jaati thi).
   if (isError && !data) {
-    return <QueryError title="Couldn’t load the day’s attendance" error={error} onRetry={refetch} />;
+    return (
+      <div className="space-y-4">
+        <div className="flex justify-end">
+          <Switcher
+            value={scope}
+            onChange={setScope}
+            options={[{ v: 'day', label: 'Day', icon: CalendarOff }, { v: 'month', label: 'Month', icon: CalendarRange }]}
+          />
+        </div>
+        <QueryError title="Couldn’t load the day’s attendance" error={error} onRetry={refetch} />
+      </div>
+    );
   }
 
   return (
     <div className="space-y-4">
+      <div className="flex justify-end">
+        <Switcher
+          value={scope}
+          onChange={setScope}
+          options={[{ v: 'day', label: 'Day', icon: CalendarOff }, { v: 'month', label: 'Month', icon: CalendarRange }]}
+        />
+      </div>
       {/* NAAP: 9 tile hain (pehle 7 the). `xl:grid-cols-5` + overtime ka `xl:col-span-2`
           = theek do poori kataar, koi adhoora khaana nahi. `sm` par 3 ke hisaab se teen
           kataar — pehle jitni hi. Phone par 2 ke hisaab se paanch kataar (pehle chaar thi):
@@ -412,9 +527,19 @@ export function EveryoneTab() {
         </div>
       </div>
 
-      <p className="text-xs text-muted-foreground">
-        Tip: tap a card to filter{statusFilter ? ` (showing ${FILTER_COPY[statusFilter]?.chip ?? statusFilter})` : ''}, tap a row for full details{canExcuse ? ' or to excuse a late' : ''}.
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <p className="min-w-0 text-xs text-muted-foreground">
+          Tip: tap a card to filter{statusFilter ? ` (showing ${FILTER_COPY[statusFilter]?.chip ?? statusFilter})` : ''}, tap a row for full details{canExcuse ? ' or to excuse a late' : ''}.
+        </p>
+        {/* Dono roop ek hi `filteredRows` se bante hain aur ek hi dialog kholte hain. */}
+        <span className="ml-auto">
+          <Switcher
+            value={view}
+            onChange={setView}
+            options={[{ v: 'table', label: 'Table', icon: List }, { v: 'timeline', label: 'Timeline', icon: ChartGantt }]}
+          />
+        </span>
+      </div>
 
       {joinedLater.length ? (
         <div className="flex items-start gap-2 rounded-xl bg-foreground/[0.03] p-3 text-xs text-muted-foreground ring-1 ring-border/50">
@@ -431,6 +556,16 @@ export function EveryoneTab() {
 
       {isLoading ? (
         <TableSkeleton rows={6} cols={8} />
+      ) : view === 'timeline' ? (
+        <DayTimeline
+          rows={filteredRows}
+          allRows={rows}
+          date={data?.date ?? date}
+          isHoliday={data?.isHoliday}
+          asOf={dataUpdatedAt}
+          emptyMessage={statusFilter ? (FILTER_COPY[statusFilter]?.empty ?? 'No staff match this filter for this day.') : 'No staff found.'}
+          onPick={setSelected}
+        />
       ) : (
         <DataTable
           columns={columns}

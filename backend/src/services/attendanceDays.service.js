@@ -31,9 +31,13 @@ import { holidayYMDSet } from './holiday.service.js';
  * @param {string} p.toYMD          'YYYY-MM-DD' — aaj se aage nahi badhaya jata
  * @param {object} p.settings       Setting singleton
  * @param {Date}   [p.now]
+ * @param {Set}    [p.holidays]     poore window ka holiday set, pehle se nikala hua. Team ka
+ *                                  mahina banate waqt 11 log = 11 ek jaisi holiday query hoti
+ *                                  thi; caller ek baar nikaal kar yahan de deta hai. Na do to
+ *                                  pehle jaisa — ye khud nikaal leta hai.
  * @returns {Promise<Array>} naye se purane kram me, har row par `dateYMD`
  */
-export async function buildAttendanceDays({ user, records, fromYMD, toYMD, settings, now = new Date() }) {
+export async function buildAttendanceDays({ user, records, fromYMD, toYMD, settings, now = new Date(), holidays: given = null }) {
   const asRow = (r) => ({
     id: r.id,
     dateYMD: ymdInTz(r.date),
@@ -67,7 +71,9 @@ export async function buildAttendanceDays({ user, records, fromYMD, toYMD, setti
 
   if (!tracksAttendance || countFrom > cappedTo) return records.map(asRow);
 
-  const holidays = await holidayYMDSet(countFrom, cappedTo);
+  // Diya hua set poore mahine ka hota hai — is bande ke window se bada, par `.has(ymd)` sirf
+  // isi window ke din poochhta hai, to jawab wahi rehta hai.
+  const holidays = given ?? (await holidayYMDSet(countFrom, cappedTo));
   const weekend = userWeekendDays(user, settings);
   const recByYmd = new Map(records.map((r) => [ymdInTz(r.date), r]));
 

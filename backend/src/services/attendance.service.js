@@ -728,6 +728,100 @@ export async function attendanceMatrix(monthKey) {
 }
 
 /**
+ * POORE MAHINE KA TEAM GRID — har banda × us mahine ka har din.
+ *
+ * Ek din ka roster `attendanceOverview` deta hai; usse "kaun baar-baar late hai" ya "kis din
+ * office khaali tha" nahi pata chalta — uske liye ek saath poora mahina chahiye.
+ *
+ * Pehle se bana hua `attendanceMatrix` ISKE LIYE NAHI chal sakta: wo sirf CSV ke liye hai aur
+ * har khaane me ek akshar (P/L/A/OL) deta hai — na waqt, na "maaf ki hui deri", na aadha din.
+ * Use badalna bhi theek nahi: wo file app ke bahar padhi jaati hai aur uske khambe ki jagah
+ * par kisi ka hisaab tika ho sakta hai.
+ *
+ * Isliye khaane yahan `buildAttendanceDays` se bante hain — WAHI helper jo team-member page
+ * aur "mera attendance" chalata hai. Matlab ye jaali un dono se kabhi alag nahi bol sakti, aur
+ * Sunday/holiday/absent (jinki DB me row banti hi nahi) apne aap aa jaate hain.
+ *
+ * `attendanceOverview` ko CHHUA NAHI gaya — dashboard, digest aur Buddy sab usi par hain.
+ */
+export async function attendanceMonth(monthKey) {
+  const [y, m] = monthKey.split('-').map(Number);
+  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const from = `${monthKey}-01`;
+  const to = `${monthKey}-${String(lastDay).padStart(2, '0')}`;
+
+  const now = new Date();
+  const settings = await Setting.getSingleton();
+  // Ek baar, sabke liye — warna har bande par ek jaisi holiday query chalti.
+  const holidays = await holidayYMDSet(from, to);
+
+  const allUsers = await User.find({ isActive: true }).select('name employeeId role department employmentType schedule dateOfJoining dateOfBirth').sort({ name: 1 });
+  const roster = allUsers.filter((u) => can({ role: u.role }, 'markAttendance'));
+  const { included: users, joinedLater } = splitByJoining(roster, from, to);
+
+  const records = await Attendance.find({
+    date: { $gte: companyDayFromYMD(from), $lte: companyDayFromYMD(to) },
+  });
+  const mine = new Map();
+  for (const r of records) {
+    const k = String(r.user);
+    if (!mine.has(k)) mine.set(k, []);
+    mine.get(k).push(r);
+  }
+
+  const days = [];
+  for (let d = 1; d <= lastDay; d += 1) days.push(`${monthKey}-${String(d).padStart(2, '0')}`);
+
+  // Khaana chhota rakha hai — 11 log × 31 din = 341 khaane ek jawab me. Naam chhote isliye
+  // hain ki API gzip nahi karta; poore naam client par khul jaate hain (lib/team-month.js).
+  const cell = (d) => ({
+    id: d.id,
+    s: d.status,
+    in: d.checkInAt || null,
+    out: d.checkOutAt || null,
+    w: d.workedMinutes || 0,
+    ot: d.overtimeMinutes || 0,
+    ...(d.excused ? { ex: 1 } : {}),
+    ...(d.halfDayLeave ? { hd: d.halfDayPart || null } : {}),
+    ...(d.offDayWork ? { od: 1 } : {}),
+  });
+
+  const rows = await Promise.all(
+    users.map(async (u) => {
+      const dayRows = await buildAttendanceDays({
+        user: u,
+        records: mine.get(String(u._id)) || [],
+        fromYMD: from,
+        toYMD: to,
+        settings,
+        now,
+        holidays,
+      });
+      const byYMD = new Map(dayRows.map((d) => [d.dateYMD, d]));
+      return {
+        user: {
+          id: String(u._id),
+          name: u.name,
+          employeeId: u.employeeId,
+          department: u.department || null,
+          role: u.role,
+        },
+        joinedYMD: joinedYMD(u),
+        // Is mahine me kis din se ginti shuru (beech me joining hui to wahan se).
+        startedOn: periodStartFor(u, from),
+        // null = us din ka koi faisla nahi (joining se pehle, ya aane wala din).
+        cells: days.map((ymd) => {
+          const d = byYMD.get(ymd);
+          return d ? cell(d) : null;
+        }),
+      };
+    }),
+  );
+
+  return { monthKey, days, today: ymdInTz(now), rows, joinedLater };
+}
+
+/**
  * "Everyone for a date" — every active user with their record (or ABSENT/HOLIDAY
  * when none). ON_LEAVE / holiday-calendar sources wire in once Phases 4 & 6 land.
  */

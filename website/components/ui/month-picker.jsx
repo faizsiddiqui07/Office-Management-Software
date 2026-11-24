@@ -17,8 +17,12 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
  *
  * `value`: 'this' | 'all' | 'YYYY-MM'. `onChange` gets the same. Picking the current month
  * from the grid resolves to 'this', so the live month always reads "This month".
+ *
+ * `allTime={false}` hides the All-time shortcut, for a caller that can only ever show ONE
+ * month (the attendance month grid). Without it that button quietly resolved to the current
+ * month — press "All time" while reading September and you land in November, unexplained.
  */
-export function MonthPicker({ value, onChange, className }) {
+export function MonthPicker({ value, onChange, className, allTime = true }) {
   const now = new Date();
   const curY = now.getUTCFullYear();
   const curM = now.getUTCMonth() + 1; // 1–12
@@ -56,7 +60,9 @@ export function MonthPicker({ value, onChange, className }) {
       <PopoverContent align="end" className="w-56 gap-0 p-2">
         <div className="flex gap-1">
           <button type="button" onClick={() => pick('this')} className={quickCls(value === 'this' || value === curYM)}>This month</button>
-          <button type="button" onClick={() => pick('all')} className={quickCls(value === 'all')}>All time</button>
+          {allTime ? (
+            <button type="button" onClick={() => pick('all')} className={quickCls(value === 'all')}>All time</button>
+          ) : null}
         </div>
 
         <div className="mt-2 mb-1 flex items-center justify-between">
