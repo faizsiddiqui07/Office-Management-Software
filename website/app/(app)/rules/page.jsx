@@ -228,6 +228,11 @@ export default function RulesPage() {
                       {s.rules.length} rule{s.rules.length === 1 ? '' : 's'}
                     </span>
                     {canManage ? (
+                      /* Neeche har RULE ki jodi phone par khadi (ek ke neeche ek) hai, par YAHAN
+                          saath-saath — ye farak naap kar rakha gaya hai (25 Nov 2026). Section ka naam
+                          waise hi ek line me aa jaata hai, to khada karne se chaudai ka koi faayda nahi
+                          hota, bas header 57px se 91px ka ho jaata tha: saaton section milakar lagbhag
+                          240px ka faaltu scroll, aur header me ek badi khaali jagah. */
                       <span className="flex shrink-0 items-center gap-0.5">
                         <Button variant="ghost" size="icon" className="size-8" onClick={() => setSectionDialog({ section: s })} aria-label="Rename section">
                           <Pencil className="size-3.5" />
@@ -248,7 +253,7 @@ export default function RulesPage() {
                             </span>
                             <p className="min-w-0 flex-1 text-sm leading-relaxed">{r.text}</p>
                             {canManage ? (
-                              <span className="flex shrink-0 items-center gap-0.5">
+                              <span className="flex shrink-0 flex-col items-center gap-0.5 sm:flex-row">
                                 <Button variant="ghost" size="icon" className="size-7" onClick={() => setRuleDialog({ sectionId: s.id, rule: r })} aria-label="Edit rule">
                                   <Pencil className="size-3.5" />
                                 </Button>

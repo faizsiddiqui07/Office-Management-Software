@@ -568,10 +568,17 @@ function TaskRow({ task, myId, canToggle, onToggle, onEdit, onDelete, onOpen, as
           <ApprovalState task={task} />
         </div>
       </div>
-      <div className="flex shrink-0 items-center">
+      <div className="flex shrink-0 flex-col items-center sm:flex-row">
         {/* Edit/Delete only on my OWN task. A delegated or shared-with-me task can be
             completed but not changed or removed by me — except a tagged CEO & President,
-            who gets Edit (deadline only) and still no Delete. */}
+            who gets Edit (deadline only) and still no Delete.
+
+            PHONE PAR DONO EK KE NEECHE EK (owner ka faisla, 25 Nov 2026). Saath-saath hone par
+            ye jodi 80px le leti thi aur task ke naam ke liye sirf 227px bachte the — lamba naam
+            paanch line me tut-ta tha. Khade karne se jodi 40px ki ho jaati hai aur naam ko 40px
+            zyada milte hain. Badla hua sauda: button ka khamba 80px unchaa ho jaata hai, to
+            CHHOTE naam wali kataar thodi lambi dikhti hai; owner ne naam ko ahem maana. 'sm' se
+            upar sab waise ka waisa, kyunki laptop par chaudai ki tangi hai hi nahi. */}
         {mayEdit ? (
           <Button variant="ghost" size="icon" className="size-10 sm:size-8" onClick={(e) => { e.stopPropagation(); onEdit(task); }} aria-label="Edit">
             <Pencil className="size-4" />
@@ -679,7 +686,7 @@ function DatedTaskList({ tasks, myId, dateKey, ascending = false, onEdit, onDele
                     <ApprovalState task={t} />
                   </div>
                 </div>
-                <div className="flex shrink-0 items-center">
+                <div className="flex shrink-0 flex-col items-center sm:flex-row">
                   {allowEdit(t) ? (
                     <Button variant="ghost" size="icon" className="size-10 sm:size-7" onClick={(e) => { e.stopPropagation(); onEdit(t); }} aria-label="Edit">
                       <Pencil className="size-3.5" />
