@@ -66,6 +66,45 @@
  */
 export const RELEASES = [
   {
+    id: '2026-11-25-timeline-selfie-label',
+    ymd: '2026-11-25',
+    // Timeline Attendance ke Everyone tab me hai, to card bhi usi ijaazat ke peeche.
+    needs: 'viewEveryone',
+    title: 'A selfie check-out no longer reads as a check-in',
+    points: [
+      'On Attendance \u2192 Everyone \u2192 Timeline, resting on a row shows that person\u2019s whole day in one line.',
+      'When someone marked attendance with a selfie, that line always said \u201cSelfie check-in\u201d \u2014 even on the days the selfie was taken while checking OUT.',
+      'It now says which one it actually was: check-in, check-out, or both.',
+      'Of the 42 selfie days so far, 12 were being described wrongly.',
+    ],
+  },
+  {
+    id: '2026-11-25-phone-task-room',
+    ymd: '2026-11-25',
+    title: 'More room for a task\u2019s name on your phone',
+    points: [
+      'On a phone, the edit and delete buttons on a to-do sat side by side and took a wide strip at the end of the row.',
+      'They now sit one above the other, so the task\u2019s name gets that width instead.',
+      'A long task name that used to wrap over five lines now fits in four.',
+      'On a laptop nothing changes \u2014 the two buttons stay side by side, as before.',
+    ],
+  },
+  {
+    id: '2026-11-25-phone-admin-pages',
+    ymd: '2026-11-25',
+    // Ye paanchon panne leadership ke hain. `needs` ek hi naam leta hai, aur inme sabse
+    // zyada log manageUsers wale hain — isliye card usi ke peeche hai.
+    needs: 'manageUsers',
+    title: 'Pages that did not fit a phone now do',
+    points: [
+      'Users: each person\u2019s card now ends with a \u201cManage user\u201d button instead of a bare three-dot icon, so it is clear what it opens.',
+      'Roles: the role cards ran past the edge of the screen and the whole page slid sideways. They now fit, and a long role name is shortened with a \u2026 instead.',
+      'Expenses: the \u201cAdd expense\u201d button was cut off at the right edge. It now sits fully on screen.',
+      'Reports: the attendance figures were squeezed into three and four lines each. They now read in one or two.',
+      'Rules: with the edit and delete buttons stacked, a rule\u2019s text gets more width \u2014 the whole rule book is about 30 lines shorter on a phone.',
+    ],
+  },
+  {
     id: '2026-11-24-attendance-day-timeline',
     ymd: '2026-11-24',
     // Attendance ka Everyone tab isi ijaazat ke peeche hai, to card bhi.
