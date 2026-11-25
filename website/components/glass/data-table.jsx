@@ -250,10 +250,14 @@ export function DataTable({
                   >
                     {label ? (
                       <span className="shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</span>
-                    ) : (
-                      <span />
-                    )}
-                    <div className="min-w-0 text-right text-sm">
+                    ) : null}
+                    {/* Jis column ka koi naam nahi hai (yaani kaam ke buttons wala) use phone par
+                        POORI kataar milti hai. Pehle yahan ek khaali `<span />` jagah ghere rehta
+                        tha aur button daayein kone me dab jaata tha — Users card me wahi akela ⋮
+                        bina kisi lafz ke baitha tha (owner, 25 Nov 2026). Baaki teen table par
+                        koi farak nahi padta: unke buttons khud `justify-end`/`text-right` se
+                        daayein hi rehte hain, bas ab unke paas jagah zyada hai. */}
+                    <div className={cn('min-w-0 text-right text-sm', !label && 'w-full')}>
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </div>
                   </div>

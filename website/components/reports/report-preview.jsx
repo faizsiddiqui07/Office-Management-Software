@@ -70,10 +70,10 @@ function TasksSection({ data }) {
   return (
     <ReportSection icon={ListTodo} title="Tasks" meta={`${t.done} done · ${t.onTime} on time`}>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Tasks done" value={t.done} icon={ListTodo} tone="default" hint="assigned work only" />
-        <StatCard label="On time" value={t.onTime} icon={UserCheck} tone="success" hint={t.done ? `${Math.round((t.onTime / t.done) * 100)}% of tasks done` : '—'} />
-        <StatCard label="Late" value={t.late} icon={Clock} tone={t.late ? 'warning' : 'default'} hint={`over ${grace} day${grace === 1 ? '' : 's'} past due`} />
-        <StatCard label="Tagged on" value={t.tagged} icon={UserX} tone="info" hint="kept in the loop" />
+        <StatCard tightOnPhone label="Tasks done" value={t.done} icon={ListTodo} tone="default" hint="assigned work only" />
+        <StatCard tightOnPhone label="On time" value={t.onTime} icon={UserCheck} tone="success" hint={t.done ? `${Math.round((t.onTime / t.done) * 100)}% of tasks done` : '—'} />
+        <StatCard tightOnPhone label="Late" value={t.late} icon={Clock} tone={t.late ? 'warning' : 'default'} hint={`over ${grace} day${grace === 1 ? '' : 's'} past due`} />
+        <StatCard tightOnPhone label="Tagged on" value={t.tagged} icon={UserX} tone="info" hint="kept in the loop" />
       </div>
       <DataTable columns={columns} data={data.tasks.perEmployee} searchPlaceholder="Search employees…" pageSize={8} emptyMessage="No task activity." />
       <p className="text-xs text-muted-foreground">
@@ -127,8 +127,8 @@ function RewardsSection({ data }) {
   return (
     <ReportSection icon={Award} title="Rewards" meta={`${r.totals.points} pts${r.rupeesPerPoint ? ` · ${money(r.totals.rupees)}` : ''}`}>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Total points" value={r.totals.points} icon={Award} tone="default" />
-        {r.rupeesPerPoint ? <StatCard label="Total payout" value={money(r.totals.rupees)} icon={Wallet} tone="success" hint={`₹${r.rupeesPerPoint}/point`} /> : null}
+        <StatCard tightOnPhone label="Total points" value={r.totals.points} icon={Award} tone="default" />
+        {r.rupeesPerPoint ? <StatCard tightOnPhone label="Total payout" value={money(r.totals.rupees)} icon={Wallet} tone="success" hint={`₹${r.rupeesPerPoint}/point`} /> : null}
       </div>
       <DataTable columns={columns} data={r.perEmployee} searchPlaceholder="Search employees…" pageSize={8} emptyMessage="No points in this period." />
       <p className="text-xs text-muted-foreground">
@@ -214,11 +214,20 @@ function AttendanceSection({ data }) {
   ];
   return (
     <ReportSection icon={CalendarClock} title="Attendance" meta={workingDaysLabel(data.workingDays)}>
+      {/* `tightOnPhone` — phone par ye tile 153px ke ho jaate hain aur poore naap me label
+          ke liye sirf 55px bachte the: "Attendance rate" (77px chahiye) aur "Overtime"
+          (61px) kinare se BAHAR nikal jaate the, "Absent / Leave / WFH" chaar line me tut
+          kar uska aankda "0 / 0" + "/ 0" do line me baant deta tha. tightOnPhone sirf phone
+          par padding, icon aur ank chhota karta hai (icon 44 -> 32), jisse label ko lagbhag
+          87px mil jaate hain; laptop par tile poore ke poore rehte hain. Owner ne 25 Nov 2026
+          ko pakda. Wahi ilaaj Tasks aur Rewards ki kataaron par bhi hai — wahan label kat to
+          nahi raha tha par "Tasks done" aur "Tagged on" teen-teen line le rahe the, aur ek
+          hi panne par aadhe tile tang aur aadhe poore dikhna aur bhi bura lagta. */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Attendance rate" value={`${t.attendanceRate}%`} icon={UserCheck} tone="success" hint={workingDaysLabel(data.workingDays)} />
-        <StatCard label="Present" value={t.present} icon={CalendarDays} tone="default" hint={t.late ? `${t.late} came late` : 'nobody late'} />
-        <StatCard label="Absent / Leave / WFH" value={`${t.absent} / ${t.onLeave} / ${t.wfh ?? 0}`} icon={UserX} tone="warning" />
-        <StatCard label="Overtime" value={formatDuration(t.overtimeMinutes)} icon={Clock} tone="info" hint={`${formatDuration(t.workedMinutes)} worked`} />
+        <StatCard tightOnPhone label="Attendance rate" value={`${t.attendanceRate}%`} icon={UserCheck} tone="success" hint={workingDaysLabel(data.workingDays)} />
+        <StatCard tightOnPhone label="Present" value={t.present} icon={CalendarDays} tone="default" hint={t.late ? `${t.late} came late` : 'nobody late'} />
+        <StatCard tightOnPhone label="Absent / Leave / WFH" value={`${t.absent} / ${t.onLeave} / ${t.wfh ?? 0}`} icon={UserX} tone="warning" />
+        <StatCard tightOnPhone label="Overtime" value={formatDuration(t.overtimeMinutes)} icon={Clock} tone="info" hint={`${formatDuration(t.workedMinutes)} worked`} />
       </div>
       <DataTable columns={columns} data={data.attendance.perEmployee} searchPlaceholder="Search employees…" pageSize={8} emptyMessage="No employees." />
     </ReportSection>

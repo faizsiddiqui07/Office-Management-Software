@@ -4,7 +4,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Ellipsis, KeyRound, Pencil, Power, Trash2 } from 'lucide-react';
+import { Ellipsis, KeyRound, Pencil, Power, Settings2, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can, roleName } from '@/lib/permissions';
@@ -147,8 +147,23 @@ export function UsersDirectory() {
           canManage || canChangeRoles || canDeactivate || canReset ? (
             <div className="flex justify-end">
               <DropdownMenu>
-                <DropdownMenuTrigger aria-label="More actions" className="inline-flex size-10 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground sm:size-8">
-                  <Ellipsis className="size-4" />
+                {/* EK HI TRIGGER, DO SHAKLEIN (owner ka faisla, 25 Nov 2026).
+
+                    Phone par card ke neeche poori chaudai ka naam-wala button — pehle wahan
+                    sirf ek 40px ka ⋮ baitha tha jiske saath koi lafz nahi tha, to ye pata hi
+                    nahi chalta tha ki wo kis cheez ka button hai. Laptop par wahi purana chhota
+                    ⋮, kyunki wahan har kataar ke aakhir me naam-wala button shor machata.
+
+                    Do alag button (ek phone ka, ek laptop ka) JAAN-BOOJH kar nahi banaye: tab
+                    menu ke chaar item do jagah likhne padte aur ek din wo alag ho jaate. Isliye
+                    ek hi trigger hai, sirf uski shakal `sm:` par badalti hai. */}
+                <DropdownMenuTrigger
+                  aria-label="Manage user"
+                  className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg py-2 text-sm font-medium text-muted-foreground ring-1 ring-border/60 transition-colors hover:bg-foreground/5 hover:text-foreground sm:size-8 sm:gap-0 sm:py-0 sm:ring-0"
+                >
+                  <Settings2 className="size-4 sm:hidden" />
+                  <span className="sm:hidden">Manage user</span>
+                  <Ellipsis className="hidden size-4 sm:block" />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="border-border/60 bg-card/90 ring-1 ring-white/10 backdrop-blur-2xl">
                   {/* Edit opens the full dialog; a role-only steward gets it too, but

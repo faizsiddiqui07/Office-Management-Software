@@ -80,7 +80,13 @@ export function ExpenseDialog({ expense, open: openProp, onOpenChange }) {
       onOpenChange={setOpen}
       trigger={
         isEdit ? undefined : (
-          <Button className="w-full sm:w-auto">
+          // `w-full sm:w-auto` hata diya (owner, 25 Nov 2026). Ye button filter-bar ki usi
+          // kataar me baithta hai jisme Filters aur Export pehle se hain — phone par "poori
+          // chaudai" maangne se wo kataar 375px ki screen se 17px bahar nikal jaati thi aur
+          // "Add expense" ka daayan hissa kat jaata tha. Iska ekmaatra istemaal wahi kataar
+          // hai (expenses/page.jsx -> ExpenseFilterBar ka `addButton`), to apne naap ki
+          // chaudai hi sahi hai; akeli jagah hoti to baat aur hoti.
+          <Button>
             <Plus /> Add expense
           </Button>
         )

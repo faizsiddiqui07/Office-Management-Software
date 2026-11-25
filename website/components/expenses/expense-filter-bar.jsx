@@ -106,8 +106,14 @@ export function ExpenseFilterBar({ filters, onChange, categories = [], onExport,
       </div>
 
       {/* Row 2 — narrowing, then the actions. On a phone the three narrowing controls
-          fold into one button so this stays a single short row. */}
-      <div className="flex items-center gap-2">
+          fold into one button so this stays a single short row.
+
+          `flex-wrap` ek jaal band karne ke liye hai, dikhne ke liye nahi: ye kataar pehle
+          nowrap thi aur daayan guchchha `shrink-0`, yaani jo bhi ismein na samaye wo
+          CHUPCHAAP screen se bahar chala jaata tha — na kuch simatta, na kuch neeche
+          utarta. 25 Nov 2026 ko "Add expense" ke saath yahi hua. Jab sab samaa jaata hai
+          (aam haalat) tab ye class kuch karti hi nahi. */}
+      <div className="flex flex-wrap items-center gap-2">
         <div className="hidden min-w-0 flex-1 items-center gap-2 lg:flex">
           <div className="min-w-0 max-w-xs flex-1">{searchBox('exp-search-lg', 'Search title or vendor…')}</div>
           <div className="w-44 shrink-0">{categorySelect}</div>
