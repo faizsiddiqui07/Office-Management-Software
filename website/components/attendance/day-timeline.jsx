@@ -103,7 +103,17 @@ function fullText(s) {
   if (s.shift && !s.off) bits.push(`Shift ${minToHM(s.shift.start)}–${minToHM(s.shift.end)}`);
   // Row par "· Selfie" dikhta hai, par `aria-label` andar ka saara matn badal deta hai — iske
   // bina screen-reader aur hover dono me ye baat gayab thi.
-  if (a?.checkInMeta?.selfieKey || a?.checkOutMeta?.selfieKey) bits.push('Selfie check-in');
+  //
+  // KAUN SI selfie thi, ye likhna zaroori hai. Pehle yahan dono haalaton me "Selfie check-in"
+  // chhapta tha, to jisne sirf check-OUT selfie se kiya tha, uski tooltip jhooth bolti thi —
+  // owner ne 24 Nov 2026 ko pakda (Manish ki us din ki entry me selfie sirf check-out par hai).
+  // Us waqt prod ke 42 selfie walon dinon me se 12 aise the, aur 6 par dono selfie thin par
+  // tooltip sirf ek ka naam leti thi.
+  const selfieIn = !!a?.checkInMeta?.selfieKey;
+  const selfieOut = !!a?.checkOutMeta?.selfieKey;
+  if (selfieIn || selfieOut) {
+    bits.push(selfieIn && selfieOut ? 'Selfie check-in & check-out' : selfieIn ? 'Selfie check-in' : 'Selfie check-out');
+  }
   return `${s.row.user.name}: ${bits.join(' · ')}`;
 }
 
