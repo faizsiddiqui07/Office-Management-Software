@@ -66,6 +66,19 @@
  */
 export const RELEASES = [
   {
+    id: '2026-11-26-selfie-location-map',
+    ymd: '2026-11-26',
+    // Gate nahi lagaya: selfie apni hi row par har kisi ko dikhti hai (site par kaam karne
+    // walon ko apni), to ye baat unke liye bhi sach hai, sirf leadership ke liye nahi.
+    title: 'See where a selfie was taken, without copying anything',
+    points: [
+      'Opening an attendance selfie now shows the location it was taken from, right under the photo.',
+      'An \u201cOpen in Maps\u201d button takes you straight there \u2014 on a phone it opens the Maps app.',
+      'Until now the only copy of those coordinates was the text printed on the photo itself, so checking a place meant reading them off the picture and typing them into a map by hand, one selfie at a time.',
+      'It also shows how sure the phone was about the location \u2014 for example \u00b112 m \u2014 so a rough reading is easy to spot.',
+    ],
+  },
+  {
     id: '2026-11-25-timeline-selfie-label',
     ymd: '2026-11-25',
     // Timeline Attendance ke Everyone tab me hai, to card bhi usi ijaazat ke peeche.
