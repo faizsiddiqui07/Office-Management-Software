@@ -104,8 +104,8 @@ const ALL_COLUMNS = [
       if (!a || (!hasIn && !hasOut)) return <span className="text-xs text-muted-foreground">—</span>;
       return (
         <span className="flex flex-col items-start gap-0.5">
-          {hasIn ? <SelfieView attendanceId={a.id} which="in" /> : null}
-          {hasOut ? <SelfieView attendanceId={a.id} which="out" /> : null}
+          {hasIn ? <SelfieView attendanceId={a.id} which="in" meta={a.checkInMeta} /> : null}
+          {hasOut ? <SelfieView attendanceId={a.id} which="out" meta={a.checkOutMeta} /> : null}
         </span>
       );
     },

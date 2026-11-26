@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Camera, Loader2 } from 'lucide-react';
+import { Camera, ExternalLink, Loader2, MapPin } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
@@ -19,7 +19,57 @@ import { ZoomableImage } from '@/components/ui/zoomable-image';
  * Kaun dekh sakta hai, ye server tay karta hai (apni row hamesha, baaki tabhi jab
  * viewEveryone ho) — client sirf button dikhata hai.
  */
-export function SelfieView({ attendanceId, which = 'in', label }) {
+/**
+ * Jahan se selfie li gayi thi — padhne layak, aur ek tap me map par.
+ *
+ * PEHLE KYA KARNA PADTA THA (owner, 26 Nov 2026): selfie kholo, photo par CHHAPE hue
+ * lat/lng padho, haath se copy karo, map kholo, wahan paste karo — tab jaa kar pata
+ * chalta tha ki banda tha kahan. Har ek selfie ke liye.
+ *
+ * Aankde photo ke pixel me to hain hi (selfie-attendance.jsx wahan stamp karta hai), par
+ * wo record par bhi sach me save hote hain — `checkInMeta.lat/lng`. Wahi yahan dikhaye
+ * ja rahe hain; KOI BACKEND BADLAAV NAHI, ye data pehle se aa raha tha, bas kisi ne
+ * use dikhaya nahi tha.
+ *
+ * SELFIE PAR "OFFICE SE KITNI DOOR" NAHI DIKHA SAKTE: selfie wale raaste par geo-fence
+ * jaan-bujh kar skip hoti hai (site walon ke liye hi to hai), isliye attendance.service
+ * ka selfieGeoMeta() sirf lat/lng/accuracy likhta hai — `distance` likhta hi nahi. Isliye
+ * jawab map hi hai, koi ek aankda nahi.
+ *
+ * LINK HAI, EMBEDDED MAP NAHI: embed karne par har dialog khulte hi coordinates bahar
+ * chale jaate, chahe dekhne wale ko zaroorat ho ya na ho. Link par wo tabhi jaate hain
+ * jab koi jaan-bujh kar tap kare.
+ */
+function SelfieWhere({ meta }) {
+  const lat = Number(meta?.lat);
+  const lng = Number(meta?.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  // Google ka documented format — laptop par site, phone par seedha Maps app.
+  const url = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+  const acc = Number(meta?.accuracy);
+  return (
+    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-foreground/[0.04] px-3 py-2">
+      <span className="inline-flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+        <MapPin className="size-3.5 shrink-0" />
+        <span className="min-w-0 tabular-nums">
+          {lat.toFixed(6)}°, {lng.toFixed(6)}°
+          {Number.isFinite(acc) ? <span className="ml-1.5">±{Math.round(acc)} m</span> : null}
+        </span>
+      </span>
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-primary ring-1 ring-primary/30 transition-colors hover:bg-primary/10"
+      >
+        Open in Maps
+        <ExternalLink className="size-3.5" />
+      </a>
+    </div>
+  );
+}
+
+export function SelfieView({ attendanceId, which = 'in', label, meta }) {
   const [open, setOpen] = React.useState(false);
   const { data, isLoading, error } = useQuery({
     queryKey: ['attendance', 'selfie', attendanceId, which],
@@ -77,6 +127,8 @@ export function SelfieView({ attendanceId, which = 'in', label }) {
               <ZoomableImage src={data.url} alt="Attendance selfie" />
             </div>
           ) : null}
+          {/* Photo ke neeche, kyunki chehra pehle dekha jaata hai aur jagah uske baad. */}
+          <SelfieWhere meta={meta} />
         </DialogContent>
       </Dialog>
     </span>

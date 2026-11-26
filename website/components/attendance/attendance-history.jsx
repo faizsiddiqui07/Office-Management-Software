@@ -76,8 +76,8 @@ const ALL_COLUMNS = [
       if (!hasIn && !hasOut) return null;
       return (
         <span className="flex flex-col items-start gap-0.5">
-          {hasIn ? <SelfieView attendanceId={r.id} which="in" /> : null}
-          {hasOut ? <SelfieView attendanceId={r.id} which="out" /> : null}
+          {hasIn ? <SelfieView attendanceId={r.id} which="in" meta={r.checkInMeta} /> : null}
+          {hasOut ? <SelfieView attendanceId={r.id} which="out" meta={r.checkOutMeta} /> : null}
         </span>
       );
     },
