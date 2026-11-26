@@ -49,11 +49,18 @@ let selfBacks = 0;
  *
  * ── DO HAALAT JAHAN YE POORA JAADU NAHI KARTA, aur dono jaan-boojh kar chhodi gayi hain ──
  *
- * 1. MODAL KE ANDAR SE KISI LINK PAR JAANA. Tab tak history me hamari entry ke UPAR naya
- *    page aa chuka hota hai, to cleanup `history.back()` NAHI chalata (warna wo abhi-abhi
- *    hui navigation ko hi palat deta — isse bura kuch nahi). Nateeja: ek entry neeche padi
- *    reh jaati hai, yaani naye page se nikalne me ek Back zyada lag sakta hai. Ye aaj ki
- *    haalat se phir bhi behtar hai, jahan HAR Back page chhod deta tha.
+ * 1. MODAL KE ANDAR SE KISI LINK PAR JAANA. Aise me cleanup apni entry hatata hi NAHI —
+ *    kyunki hatane ke liye `history.back()` chalana padta, aur wo abhi-abhi shuru hui
+ *    navigation ko hi palat deta. Nateeja: ek entry peechhe padi reh jaati hai, yaani naye
+ *    page se nikalne me ek Back zyada lag sakta hai. Ye us haalat se laakh guna behtar hai
+ *    jahan page khulta hi na ho.
+ *
+ *    Pehchana KAISE jaata hai, ye yahan ka sabse ahem sabak hai: "URL badla kya" dekh kar
+ *    NAHI. Wo do baar fail hua — router turant URL nahi badalta (dev me ~360ms), to hamara
+ *    back navigation se pehle hi chal jaata tha aur "More" menu se page khulta hi nahi tha.
+ *    Ab hum IRADA dekhte hain, nateeja nahi: kisi link par tap hua tha ya nahi
+ *    (`lastLinkClick`). Click kab hua, ye pakka pata hota hai; router kitni der lega, ye
+ *    kabhi pakka nahi hota.
  *
  * 2. DO MODAL ULTE KRAM ME BAND HON (neeche wala pehle). Tab neeche wale ki entry current
  *    nahi hoti, to wo wahin padi reh jaati hai. Aam taur par upar wala hi pehle band hota
@@ -68,6 +75,31 @@ let selfBacks = 0;
  */
 /** Abhi kis-kis modal ki entry history me hai (id se). Dev ke double-effect ke liye. */
 const live = new Set();
+
+/**
+ * Aakhri baar kisi LINK par kab tap hua — navigation ka seedha nishaan.
+ *
+ * Pehle maine ye waqt dekh kar tay karne ki koshish ki thi ki navigation hua ya nahi (URL
+ * badla ya nahi, thodi der baar-baar dekh kar). Wo fail hua, aur naap ke saath: dev me
+ * route pehli baar khulte waqt URL badalne me ~360ms lagte hain, to 240ms ka intezaar kam
+ * pad gaya aur hamara `history.back()` navigation ko palat gaya. "More" menu se pehla page
+ * khul jaata tha, agle nahi — theek wahi jo owner ne dekha.
+ *
+ * Waqt ka andaza galat tareeka tha. Click KAB hua, ye hum pakke taur par jaante hain —
+ * router kitni der leta hai, wo maayne hi nahi rakhta. Isliye ab IRADA dekhte hain,
+ * nateeja nahi.
+ */
+let lastLinkClick = 0;
+if (typeof window !== 'undefined') {
+  // Capture phase: link ka apna handler navigation rokh bhi de to bhi hume pata chal jaaye.
+  window.addEventListener(
+    'click',
+    (e) => {
+      if (e.target?.closest?.('a[href]')) lastLinkClick = Date.now();
+    },
+    true,
+  );
+}
 
 export function useModalBack(open, close) {
   const id = React.useId();
@@ -95,14 +127,28 @@ export function useModalBack(open, close) {
     return () => {
       window.removeEventListener('popstate', onPop);
       live.delete(id);
+
       // Modal kisi aur tarah se band hua (Close, Escape, bahar tap) — to hamari entry abhi
       // bhi history me sabse upar hai. Use hata do, warna agli baar Back dabane par kuch
       // nahi hoga aur user ko lagega button hi kharab hai.
       //
-      // TURANT NAHI, EK TICK BAAD: dev-mode ka doosra run isi beech dobara chal jaata hai.
-      // Agar wo chala to modal sach me band hua hi nahi — tab entry hatani bhi nahi hai.
+      // PAR SABSE PEHLE: AGAR SHAK HO TO HAATH MAT LAGAO.
+      //
+      // Modal ke andar se kisi link par tap karna sabse aam aur sabse khatarnaak soorat
+      // hai: menu band hota hai (yahi cleanup) AUR Next ka router nayi jagah jaa raha hota
+      // hai. Agar hum us pal `history.back()` chala den to wo abhi-abhi shuru hui
+      // navigation hi palat jaati hai — bahar se lagta hai ki page khulta hi nahi. Bottom
+      // bar ke "More" menu se Rewards khol kar owner ne theek yahi pakda (26 Nov 2026).
+      //
+      // Isliye faisla WAQT se nahi, IRADE se hota hai: abhi-abhi kisi link par tap hua tha
+      // ya nahi (upar `lastLinkClick`). Hua tha, to kuch mat karo — router chahe jitni der
+      // le, hum uske raaste me nahi aayenge. Entry ek baar peechhe padi rehti hai (naye page
+      // se nikalne me ek Back zyada) — navigation todne se ye bahut behtar hai.
+      const hrefOnOpen = window.location.href;
       setTimeout(() => {
         if (live.has(id)) return; // dobara mount ho gaya — entry wahin rehne do
+        if (Date.now() - lastLinkClick < 1000) return; // link par tap hua tha — haath mat lagao
+        if (window.location.href !== hrefOnOpen) return; // jagah pehle hi badal chuki
         if (window.history.state?.__modal !== id) return; // beech me kuch aur aa gaya
         selfBacks += 1;
         window.history.back();
