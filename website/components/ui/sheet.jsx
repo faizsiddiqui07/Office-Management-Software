@@ -4,13 +4,30 @@ import * as React from "react"
 import { Dialog as SheetPrimitive } from "@base-ui/react/dialog"
 
 import { cn } from "@/lib/utils"
+import { useModalBack } from "@/lib/use-modal-back"
 import { Button } from "@/components/ui/button"
 import { XIcon } from "lucide-react"
 
-function Sheet({
-  ...props
-}) {
-  return <SheetPrimitive.Root data-slot="sheet" {...props} />;
+function Sheet({ open, defaultOpen, onOpenChange, ...props }) {
+  // Phone ka Back pehle ise band kare, page ko nahi — poora kyun aur kaise
+  // lib/use-modal-back.js me likha hai. Yahan baithne se har sheet ko ye apne aap
+  // milta hai, har call site par yaad rakhne ki zaroorat nahi.
+  //
+  // Khulna-band hona yahan se chalaya jaata hai (chahe call site ne `open` diya ho ya
+  // nahi), kyunki Back dabne par hume KHUD band karna padta hai — aur bina state haath
+  // me liye uncontrolled wale modal ka hamein pata hi nahi chalta ki wo khula hai.
+  const [selfOpen, setSelfOpen] = React.useState(!!defaultOpen);
+  const controlled = open !== undefined;
+  const isOpen = controlled ? open : selfOpen;
+  const change = React.useCallback(
+    (next, ...rest) => {
+      if (!controlled) setSelfOpen(next);
+      onOpenChange?.(next, ...rest);
+    },
+    [controlled, onOpenChange],
+  );
+  useModalBack(isOpen, React.useCallback(() => change(false), [change]));
+  return <SheetPrimitive.Root data-slot="sheet" open={isOpen} onOpenChange={change} {...props} />;
 }
 
 function SheetTrigger({
