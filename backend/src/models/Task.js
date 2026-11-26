@@ -1,5 +1,25 @@
 import mongoose from 'mongoose';
 
+/**
+ * DEADLINE AAKHRI BAAR KISNE KHISKAYI (owner ka faisla, 26 Nov 2026).
+ *
+ * Sirf AAKHRI badlaav rakha jaata hai, poora itihaas nahi — owner ne yahi chuna. Dobara
+ * date badalne par ye stamp bas upar se likh diya jaata hai.
+ *
+ * `from` khaali ho sakta hai (pehle koi date thi hi nahi) aur `to` bhi (date hata di gayi) —
+ * dono soorat asli hain, to dono par khaali string chalti hai. `at` ke null hone ka matlab
+ * hai ki is task par deadline kabhi badli hi nahi; poora `dueChange` tab null rehta hai.
+ */
+const dueChangeSchema = new mongoose.Schema(
+  {
+    by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    from: { type: String, default: '' }, // 'YYYY-MM-DD', ya khaali
+    to: { type: String, default: '' },
+    at: { type: Date, default: null },
+  },
+  { _id: false },
+);
+
 const taskSchema = new mongoose.Schema(
   {
     title: { type: String, required: true, trim: true },
@@ -16,6 +36,8 @@ const taskSchema = new mongoose.Schema(
     // owner keeps it in their own to-do; each collaborator sees it in "assigned to
     // me". Status is SHARED — whoever completes it, it's done for everyone.
     collaborators: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }], default: [], index: true },
+    // Deadline aakhri baar kisne khiskayi — upar dueChangeSchema dekho. `null` = kabhi nahi badli.
+    dueChange: { type: dueChangeSchema, default: null },
     // Set (to a shared random id) when the SAME work is assigned to several people at
     // once — links those independent copies. Each person completes their OWN copy
     // (per-person completion); the batch is fully done only when everyone's is. The

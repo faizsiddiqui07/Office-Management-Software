@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { AlarmClock, AlertTriangle, Award, Check, CheckCircle2, ClipboardList, Clock, Download, Eye, EyeOff, FolderOpen, Forward, ListTodo, Pencil, Search, Send, ThumbsUp, Trash2, Undo2, UserRound, Users, X } from 'lucide-react';
+import { AlarmClock, AlertTriangle, Award, CalendarClock, Check, CheckCircle2, ClipboardList, Clock, Download, Eye, EyeOff, FolderOpen, Forward, ListTodo, Pencil, Search, Send, ThumbsUp, Trash2, Undo2, UserRound, Users, X } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -248,6 +248,55 @@ function ApprovalState({ task, className }) {
  * side is looking: the assigner learns it was seen, the assignee is reassured that the
  * assigner knows.
  */
+/**
+ * "Deadline kisne khiskayi" — task par hi, taaki poochhna na pade.
+ *
+ * Pehle date chupchaap badal jaati thi: jisko task mila use sirf "X updated it" milta tha
+ * aur jise tag kiya gaya use kuch bhi nahi. Task par bhi koi nishaan nahi tha, to agle din
+ * koi ye saabit nahi kar sakta tha ki tareekh khiski bhi thi (owner ka faisla, 26 Nov 2026).
+ *
+ * SIRF AAKHRI BADLAAV dikhta hai, poora itihaas nahi — owner ne yahi chuna. Server bhi
+ * wahi ek stamp rakhta hai (Task.dueChange), to dono hamesha ek hi baat kehte hain.
+ *
+ * "Kab se kab" DONO likhe jaate hain. Sirf nayi date dikhane se ye pata hi nahi chalta ki
+ * samay mila hai ya chhin gaya — aur yahi wo baat hai jo bande ko sach me chahiye.
+ *
+ * Amber isliye ki is panne par amber ka matlab pehle se "dhyaan do" hai (jaise "(late)").
+ * Rang akela nishaan nahi hai: icon, naam aur dono tareekhein saath likhi hoti hain.
+ */
+function DueMoved({ task, myId }) {
+  const c = task.dueChange;
+  if (!c?.at || !c.by) return null;
+  const who = c.by.id === myId ? 'You' : c.by.name;
+  if (!who) return null;
+  return (
+    <span
+      className="inline-flex flex-wrap items-center gap-x-1 gap-y-0.5 text-amber-600 dark:text-amber-300"
+      title={`${who === 'You' ? 'You' : who} changed the deadline on ${fmtDateTime(c.at)}`}
+    >
+      <CalendarClock className="size-3.5 shrink-0" />
+      <span className="font-medium">{who}</span>
+      {c.to ? (
+        <>
+          moved the deadline
+          {c.from ? (
+            <>
+              <span className="text-muted-foreground">{fmtDate(c.from)}</span>
+              <span className="text-muted-foreground">→</span>
+            </>
+          ) : null}
+          <span className="font-medium">{fmtDate(c.to)}</span>
+        </>
+      ) : (
+        <>
+          removed the deadline
+          {c.from ? <span className="text-muted-foreground">(was {fmtDate(c.from)})</span> : null}
+        </>
+      )}
+    </span>
+  );
+}
+
 function SeenState({ task, myId }) {
   if (!task.assignedBy) return null; // a personal note has nobody to report to
   const mine = task.owner?.id === myId;
@@ -563,6 +612,7 @@ function TaskRow({ task, myId, canToggle, onToggle, onEdit, onDelete, onOpen, as
               <Clock className="size-3" /> Yours is still open
             </span>
           ) : null; })()}
+          <DueMoved task={task} myId={myId} />
           <ForwardTrail task={task} myId={myId} />
           <SeenState task={task} myId={myId} />
           <ApprovalState task={task} />
@@ -681,6 +731,7 @@ function DatedTaskList({ tasks, myId, dateKey, ascending = false, onEdit, onDele
                     {/* The hand-off trail belongs here too. It only rendered in the flat
                         row, so a task that had come down a chain lost its origin the
                         moment it landed inside a person's folder. */}
+                    <DueMoved task={t} myId={myId} />
                     <ForwardTrail task={t} myId={myId} />
                     <SeenState task={t} myId={myId} />
                     <ApprovalState task={t} />

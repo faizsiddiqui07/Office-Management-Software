@@ -95,6 +95,22 @@ export const taskNews = (taskTitle, sentence, { due, note } = {}) => ({
   message: [sentence, due ? `due ${dayInWords(due)}` : '', note].filter(Boolean).join(' \u00b7 '),
 });
 
+/**
+ * Deadline khiskne ki khabar — EK hi jagah se, taaki assigner, assignee aur tag kiye hue
+ * log teeno ek hi baat padhein (owner ka faisla, 26 Nov 2026).
+ *
+ * "Kab se kab" dono likhe jaate hain. Sirf nayi date likhne se bande ko ye pata nahi
+ * chalta ki use aage khiskaya gaya hai ya peechhe — aur wahi sabse ahem baat hai.
+ * Date poori tarah hata di gayi ho to "removed", aur pehle koi date thi hi nahi to
+ * "was" wala hissa aata hi nahi.
+ */
+export const dueMoveNews = (taskTitle, actorName, from, to) =>
+  taskNews(
+    taskTitle,
+    to ? `${actorName} moved the deadline` : `${actorName} removed the deadline`,
+    { due: to, note: from ? `was ${dayInWords(from)}` : '' },
+  );
+
 export async function eodDigest(dateYMD) {
   const forwardedParentIds = await Task.distinct('forwardedFrom', { forwardedFrom: { $ne: null } });
   const rows = await Task.aggregate([
@@ -301,6 +317,8 @@ async function populated(task) {
   await task.populate('owner', 'name');
   await task.populate('assignedBy', 'name');
   await task.populate('collaborators', 'name');
+  // Bina iske task par sirf ek id aati hai aur "kisne badli" likha hi nahi ja sakta.
+  await task.populate('dueChange.by', 'name');
   await task.populate('completedBy', 'name');
   await task.populate('approvedBy', 'name');
   await task.populate('originalAssignedBy', 'name');
@@ -1041,12 +1059,17 @@ export async function updateTask(actor, id, data) {
     const editSet = applyAll ? members : members.filter((mm) => String(mm._id) === String(id));
     let changedCount = 0;
     let dueMoved = false; // for the "your deadline was moved" note to the assigner, below
+    let dueWas = ''; // jo date PEHLE thi — tag kiye hue logon ke message ke liye
     const cascadeRoots = []; // copies whose CONTENT changed → push the same content down their forward chains
     for (const mm of editSet) {
       let changed = false;
       let contentChanged = false;
       let dueChanged = false;
+      // Purani date ISSE PEHLE pakdo ki patch use dhak de — stamp aur dono message, teeno
+      // ko "pehle kya thi" chahiye.
+      const dueBefore = mm.dueYMD || '';
       for (const f of contentFields) if (patch[f] !== undefined && mm[f] !== patch[f]) { if (f === 'dueYMD') dueChanged = true; mm[f] = patch[f]; changed = true; contentChanged = true; }
+      if (dueChanged) mm.dueChange = { by: actor._id, from: dueBefore, to: mm.dueYMD || '', at: new Date() };
       // Yaad ka waqt har us copy par jo is edit ke dayre me hai. Ye CONTENT nahi hai —
       // isliye `contentChanged` nahi chhedte: na receipt mitti hai, na ye forward chain
       // me neeche jaata hai (har copy ki apni baari, apna reminder).
@@ -1071,7 +1094,7 @@ export async function updateTask(actor, id, data) {
       if (changed) {
         await mm.save();
         changedCount += 1;
-        if (dueChanged) dueMoved = true;
+        if (dueChanged) { dueMoved = true; dueWas = dueBefore; }
         // Moving the due date must re-price the bonus for THIS copy. A finished task is
         // re-scored against its new deadline (a due date pushed past the completion day
         // turns a late −score into an on-time +score, and vice-versa); an unfinished one
@@ -1089,7 +1112,17 @@ export async function updateTask(actor, id, data) {
           } catch (e) { console.error('bonus hook (due-date edit) failed', e?.message); }
         }
         if (mm.status !== 'DONE' && String(mm.owner) !== String(actor._id)) {
-          await notify({ user: mm.owner, type: 'TASK_ASSIGNED', ...taskNews(mm.title, `${actor.name} updated it`, { due: mm.dueYMD }), link: todoLink(mm._id) });
+          await notify({
+            user: mm.owner,
+            type: 'TASK_ASSIGNED',
+            // Deadline khiski ho to NAAM lekar batao. Pehle yahan bhi sirf "updated it"
+            // jaata tha — jisse kaam karne wale ko ye pata hi nahi chalta tha ki uski
+            // tareekh badal gayi hai, jabki uske liye wahi sabse badi khabar hai.
+            ...(dueChanged
+              ? dueMoveNews(mm.title, actor.name, dueBefore, mm.dueYMD)
+              : taskNews(mm.title, `${actor.name} updated it`, { due: mm.dueYMD })),
+            link: todoLink(mm._id),
+          });
         }
       }
     }
@@ -1103,7 +1136,9 @@ export async function updateTask(actor, id, data) {
       for (const d of descendants) {
         let dChanged = false;
         let dueChanged = false;
+        const dueBefore = d.dueYMD || '';
         for (const f of contentFields) if (patch[f] !== undefined && d[f] !== patch[f]) { if (f === 'dueYMD') dueChanged = true; d[f] = patch[f]; dChanged = true; }
+        if (dueChanged) d.dueChange = { by: actor._id, from: dueBefore, to: d.dueYMD || '', at: new Date() };
         if (dChanged) {
           if (d.seenAt) d.seenAt = null; // rewritten under them → earn a fresh receipt
           await d.save();
@@ -1116,7 +1151,14 @@ export async function updateTask(actor, id, data) {
             } catch (e) { console.error('bonus hook (due-date cascade) failed', e?.message); }
           }
           if (d.status !== 'DONE') {
-            await notify({ user: d.owner, type: 'TASK_ASSIGNED', ...taskNews(d.title, `${actor.name} updated it`, { due: d.dueYMD }), link: todoLink(d._id) });
+            await notify({
+              user: d.owner,
+              type: 'TASK_ASSIGNED',
+              ...(dueChanged
+                ? dueMoveNews(d.title, actor.name, dueBefore, d.dueYMD)
+                : taskNews(d.title, `${actor.name} updated it`, { due: d.dueYMD })),
+              link: todoLink(d._id),
+            });
           }
         }
       }
@@ -1130,13 +1172,35 @@ export async function updateTask(actor, id, data) {
       await notify({
         user: task.assignedBy,
         type: 'TASK_ASSIGNED',
-        ...taskNews(
-          task.title,
-          patch.dueYMD ? `${actor.name} moved the deadline` : `${actor.name} removed the deadline`,
-          { due: patch.dueYMD },
-        ),
+        ...dueMoveNews(task.title, actor.name, dueWas, patch.dueYMD),
         link: todoLink(id),
       });
+    }
+
+    // TAG KIYE HUE LOGON KO BHI (owner ka faisla, 26 Nov 2026).
+    //
+    // Upar ke dono loop sirf KAAM KARNE WALON ko batate hain, aur upar wala block sirf
+    // assigner ko. Jise sirf TAG kiya gaya hai — wo na owner hai na assigner — uske paas
+    // deadline khiskne ki khabar kisi bhi raaste se nahi pahunchti thi. Niyam ULTA laga
+    // hua tha: tag kiya hua CEO date badle to assigner ko pata chal jaata tha, par
+    // assigner badle to tag kiye hue ko kuch nahi — jabki wahi banda is task par nazar
+    // rakhe baitha hai, aur (lib/taskApprovers.js ke mutabiq) use approve bhi karna pad
+    // sakta hai.
+    //
+    // Ek baar per save, har copy par nahi — tag poori batch par ek hi hota hai, aur upar
+    // wale tag-block ne wahi list har copy par likh di hai.
+    if (dueMoved) {
+      const tagged = members[0]?.collaborators || [];
+      const dueNow = patch.dueYMD !== undefined ? patch.dueYMD : (members[0]?.dueYMD || '');
+      for (const cid of tagged) {
+        if (String(cid) === String(actor._id)) continue; // jisne khud badli, use nahi
+        await notify({
+          user: cid,
+          type: 'TASK_ASSIGNED',
+          ...dueMoveNews(task.title, actor.name, dueWas, dueNow),
+          link: taggedLink(members[0]?._id),
+        });
+      }
     }
 
     const rep = (await Task.findById(id)) || members[0];
@@ -1145,10 +1209,20 @@ export async function updateTask(actor, id, data) {
   }
 
   // ── Owner editing their own (personal) task ──────────────────────────────────────
+  // Apna task bhi TAG kiya ja sakta hai (shared "project" task). Us soorat me deadline
+  // khiskne par tag walon ka haal wahi hai jo assigned task me tha — unhe kuch pata nahi
+  // chalta tha. Stamp aur khabar dono yahan bhi (owner ka faisla, 26 Nov 2026).
+  const dueBefore = task.dueYMD || '';
+  // Jo pehle se tag the — unhi ko deadline wali khabar jaani chahiye. Jo ISI save me naye
+  // tag hue unhe neeche "tagged you" mil hi raha hai, aur usmein nayi date likhi hoti hai;
+  // dono bhejna ek hi baat do baar hai.
+  const taggedBefore = (task.collaborators || []).map(String);
   for (const f of contentFields) if (patch[f] !== undefined) task[f] = patch[f];
+  const ownDueChanged = (task.dueYMD || '') !== dueBefore;
+  if (ownDueChanged) task.dueChange = { by: actor._id, from: dueBefore, to: task.dueYMD || '', at: new Date() };
   Object.assign(task, reminders);
   if (data.collaborators !== undefined && isOwner && !task.assignedBy) {
-    const before = new Set((task.collaborators || []).map(String));
+    const before = new Set(taggedBefore);
     const resolved = await resolveCollaborators(actor, data.collaborators, task.collaborators || []);
     task.collaborators = resolved;
     for (const cid of resolved) {
@@ -1158,6 +1232,19 @@ export async function updateTask(actor, id, data) {
     }
   }
   await task.save();
+  if (ownDueChanged) {
+    const stillTagged = new Set((task.collaborators || []).map(String));
+    for (const cid of taggedBefore) {
+      if (!stillTagged.has(cid)) continue; // isi save me tag se hata diya gaya
+      if (cid === String(actor._id)) continue;
+      await notify({
+        user: cid,
+        type: 'TASK_ASSIGNED',
+        ...dueMoveNews(task.title, actor.name, dueBefore, task.dueYMD),
+        link: taggedLink(task._id),
+      });
+    }
+  }
   return populated(task);
 }
 
@@ -1360,7 +1447,7 @@ export async function listTasks(actor, { scope = 'mine', status, search, period,
     // but listed by `createdAt`, so picking a range reshuffled nothing visible and the
     // filter read as dead. A deadline window sorts soonest-first; `submittedAt` first for
     // the approval queue, so the longest wait is on top.
-    Task.find(filter).sort(awaiting ? { submittedAt: 1 } : onDue ? { dueYMD: 1 } : { [dateField]: -1 }).skip(skip).limit(limit).populate('owner', 'name').populate('assignedBy', 'name').populate('collaborators', 'name').populate('completedBy', 'name').populate('approvedBy', 'name').populate('originalAssignedBy', 'name'),
+    Task.find(filter).sort(awaiting ? { submittedAt: 1 } : onDue ? { dueYMD: 1 } : { [dateField]: -1 }).skip(skip).limit(limit).populate('owner', 'name').populate('assignedBy', 'name').populate('collaborators', 'name').populate('completedBy', 'name').populate('approvedBy', 'name').populate('originalAssignedBy', 'name').populate('dueChange.by', 'name'),
     Task.countDocuments(filter),
   ]);
 
