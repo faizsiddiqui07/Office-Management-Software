@@ -4,7 +4,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Award, Coins, Gift, Info, Sparkles, Trash2, TrendingDown, TrendingUp, ChevronRight } from 'lucide-react';
+import { Award, BarChart3, Coins, Gift, Info, Sparkles, Table as TableIcon, Trash2, TrendingDown, TrendingUp, ChevronRight } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can, roleName } from '@/lib/permissions';
@@ -22,6 +22,7 @@ import { cn } from '@/lib/utils';
 import { formatRupees } from '@/lib/expense';
 import { currentMonth, yearOptions, monthsInYear, clampToYear, fyOptions, paramsForSelection, fyMonthsToDate } from '@/lib/reward-periods';
 import { PointsTrend } from '@/components/rewards/points-trend';
+import { LeaderboardChart } from '@/components/rewards/leaderboard-chart';
 import { formatYMD } from '@/lib/leave';
 import { EntryDetailDialog } from '@/components/rewards/entry-detail-dialog';
 import { RecalculatePointsDialog } from '@/components/rewards/recalculate-points-dialog';
@@ -41,6 +42,35 @@ function fmtDateFull(v) {
   return fmtDate(v, { day: '2-digit', month: 'short', year: 'numeric' });
 }
 const money = (n) => formatRupees(n);
+
+/**
+ * Table / Graphs ka switch — abhi SIRF leaderboard par.
+ *
+ * Iska jodwa attendance/everyone-tab.jsx me hai (Table / Timeline). Jaan-boojh kar abhi
+ * saanjha component nahi banaya: ye roop khud aazmaish par hai (owner, 26 Nov 2026 —
+ * "rakhna hai ya nahi baad me final karte hai"). Jo kal hat sakta hai, uske liye do jagah
+ * ka saanjha component banana ulta kaam hai. Rakhne ka faisla ho jaye to dono ek jagah.
+ */
+function ViewSwitch({ value, onChange, options }) {
+  return (
+    <div className="flex rounded-lg bg-muted/40 p-0.5">
+      {options.map((o) => (
+        <button
+          key={o.v}
+          type="button"
+          onClick={() => onChange(o.v)}
+          aria-pressed={value === o.v}
+          className={cn(
+            'inline-flex min-h-10 items-center gap-1 rounded-md px-3 py-1 text-xs font-medium sm:min-h-0 sm:px-2.5',
+            value === o.v ? 'bg-background shadow-sm' : 'text-muted-foreground',
+          )}
+        >
+          <o.icon className="size-3.5" /> {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
 const Pts = ({ n }) => <span className={n < 0 ? 'font-medium text-destructive' : 'font-medium text-emerald-600 dark:text-emerald-300'}>{n > 0 ? `+${n}` : n}</span>;
 
 
@@ -218,6 +248,8 @@ function LeadershipTools({ isOwner, onDelete, periodParams, periodLabel, onOpenP
   const users = (usersData?.users ?? []).filter((u) => u.isActive);
   const items = cfg?.manualItems ?? [];
 
+  // 'table' | 'graph' — Table hi khulta hai: jo aaj dikhta hai wahi kal bhi khule.
+  const [boardView, setBoardView] = React.useState('table');
   const [userId, setUserId] = React.useState('');
   const [itemId, setItemId] = React.useState('custom');
   const [points, setPoints] = React.useState('');
@@ -287,8 +319,21 @@ function LeadershipTools({ isOwner, onDelete, periodParams, periodLabel, onOpenP
       </GlassPanel>
 
       <GlassPanel className="p-2">
-        <div className="flex items-center gap-2 px-3 py-2 text-sm font-semibold"><TrendingUp className="size-4 text-primary" /> Leaderboard · {periodLabel}</div>
-        {board.data?.length ? (
+        {/* Ek hi data, do roop (owner, 26 Nov 2026). List rank, role aur andar jaane ka
+            raasta deti hai; chart sirf ek sawaal ka jawab deta hai — FARAK KITNA hai. */}
+        <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+          <span className="inline-flex items-center gap-2 text-sm font-semibold"><TrendingUp className="size-4 text-primary" /> Leaderboard · {periodLabel}</span>
+          {board.data?.length ? (
+            <ViewSwitch
+              value={boardView}
+              onChange={setBoardView}
+              options={[{ v: 'table', label: 'Table', icon: TableIcon }, { v: 'graph', label: 'Graph', icon: BarChart3 }]}
+            />
+          ) : null}
+        </div>
+        {board.data?.length && boardView === 'graph' ? (
+          <LeaderboardChart rows={board.data} onOpenPerson={onOpenPerson} />
+        ) : board.data?.length ? (
           <ul className="divide-y divide-border/50">
             {board.data.map((r, i) => (
               <li key={r.id}>
