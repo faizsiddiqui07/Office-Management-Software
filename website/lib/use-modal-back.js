@@ -3,6 +3,25 @@
 import * as React from 'react';
 
 /**
+ * Hamari APNI `history.back()` kitni baar chali hai, jiska popstate abhi aana baaki hai.
+ *
+ * Ye ginti kyun chahiye — ek asli bug jo 26 Nov 2026 ko live jaane ke baad pakda gaya:
+ * modal band hone par cleanup apni entry hatane ke liye `history.back()` chalata hai. Wo
+ * back ASYNC hai, aur uska popstate tab aata hai jab tak koi DOOSRA modal apna listener
+ * laga chuka hota hai. Wo listener use user ka Back samajh kar apne modal ko band kar
+ * deta hai.
+ *
+ * Sabse saaf roop Users page par dikha: "Manage user" se Edit kholo — wo dialog KHULA HUA
+ * HI mount hota hai (`open={!!editing}`), to React dev-mode ka double-effect push → back →
+ * push kar deta tha, aur beech ka back naye listener se takra kar dialog ko usi pal band
+ * kar deta tha. Bahar se lagta tha ki button hi kaam nahi kar raha.
+ *
+ * Isliye jo back HUMNE khud chalaya hai use gin kar chhod diya jaata hai. Ye dev-mode ki
+ * baat nahi hai — do modal tezi se khulne-band hone par asli build me bhi yahi hota.
+ */
+let selfBacks = 0;
+
+/**
  * PHONE KA BACK BUTTON PEHLE MODAL BAND KARE, PAGE NAHI.
  *
  * KYA DIKKAT THI (owner, 26 Nov 2026): phone par koi bhi modal khol kar Back dabao — modal
@@ -47,6 +66,9 @@ import * as React from 'react';
  * @param {boolean} open    Modal abhi khula hai ya nahi.
  * @param {() => void} close Band karne ka tareeka (Back dabne par yahi chalega).
  */
+/** Abhi kis-kis modal ki entry history me hai (id se). Dev ke double-effect ke liye. */
+const live = new Set();
+
 export function useModalBack(open, close) {
   const id = React.useId();
   // Taaza `close` har render par chahiye, par uski wajah se effect dobara nahi chalna
@@ -57,16 +79,37 @@ export function useModalBack(open, close) {
   React.useEffect(() => {
     if (!open || typeof window === 'undefined') return undefined;
 
-    window.history.pushState({ __modal: id }, '');
-    const onPop = () => closeRef.current?.();
+    live.add(id);
+    // PUSH SIRF TAB JAB HAMARI ENTRY PEHLE SE NA HO. React dev-mode har effect ko do baar
+    // chalata hai (chalao → saaf karo → phir chalao). Bina is jaanch ke dono baar ek-ek
+    // entry jud jaati aur Back do baar dabana padta.
+    if (window.history.state?.__modal !== id) window.history.pushState({ __modal: id }, '');
+
+    const onPop = () => {
+      // Ye back humne khud chalaya tha (neeche cleanup me) — user ka Back nahi hai.
+      if (selfBacks > 0) { selfBacks -= 1; return; }
+      closeRef.current?.();
+    };
     window.addEventListener('popstate', onPop);
 
     return () => {
       window.removeEventListener('popstate', onPop);
+      live.delete(id);
       // Modal kisi aur tarah se band hua (Close, Escape, bahar tap) — to hamari entry abhi
       // bhi history me sabse upar hai. Use hata do, warna agli baar Back dabane par kuch
       // nahi hoga aur user ko lagega button hi kharab hai.
-      if (window.history.state?.__modal === id) window.history.back();
+      //
+      // TURANT NAHI, EK TICK BAAD: dev-mode ka doosra run isi beech dobara chal jaata hai.
+      // Agar wo chala to modal sach me band hua hi nahi — tab entry hatani bhi nahi hai.
+      setTimeout(() => {
+        if (live.has(id)) return; // dobara mount ho gaya — entry wahin rehne do
+        if (window.history.state?.__modal !== id) return; // beech me kuch aur aa gaya
+        selfBacks += 1;
+        window.history.back();
+        // Agar kisi wajah se popstate aaya hi nahi (jaise history me peechhe kuch tha hi
+        // nahi), to ginti atak jaati aur user ka AGLA asli Back chup-chaap kha liya jaata.
+        setTimeout(() => { if (selfBacks > 0) selfBacks -= 1; }, 300);
+      }, 0);
     };
   }, [open, id]);
 }
