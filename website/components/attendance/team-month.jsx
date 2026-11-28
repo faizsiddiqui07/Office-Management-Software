@@ -70,7 +70,13 @@ const CHIPS = [
   { key: 'wfh', label: 'From home', swatch: 'bg-primary/50' },
 ];
 
-/** Khaane ka chhota nishaan: deri (amber) ya aadha din (neela). */
+/**
+ * Khaane ka chhota nishaan: deri (amber) ya aadha din (neela).
+ *
+ * Nishaan khaane ke BEECH me baithta hai, kone me nahi (owner, 28 Nov 2026). Kone me wo
+ * khaane ki apni kinaari se chipka hua lagta tha — khaas kar bagal wale khaane ke saath,
+ * jahan do nishaan paas-paas aa jaate the. Beech me aankh use khaane ka hissa padhti hai.
+ */
 function markOf(c) {
   if (MARKS.late(c)) return 'bg-warning';
   if (c?.hd) return 'bg-info';
@@ -353,7 +359,7 @@ export function TeamMonth({ monthKey, onOpenDay }) {
                       )}
                     >
                       {mark ? (
-                        <span className={cn('absolute right-px top-px size-1 rounded-full @2xl:size-1.5', mark, dim && 'opacity-0')} />
+                        <span className={cn('absolute left-1/2 top-1/2 size-1 -translate-x-1/2 -translate-y-1/2 rounded-full @2xl:size-1.5', mark, dim && 'opacity-0')} />
                       ) : null}
                     </button>
                   );
@@ -439,9 +445,20 @@ export function TeamMonth({ monthKey, onOpenDay }) {
         <span className="inline-flex items-center gap-1.5"><span className="size-3 rounded-[3px] bg-muted ring-1 ring-inset ring-border" /> Day off</span>
         <span className="inline-flex items-center gap-1.5">
           <span className="relative size-3 rounded-[3px] bg-success/20 ring-1 ring-inset ring-success/30">
-            <span className="absolute right-px top-px size-1.5 rounded-full bg-warning" />
+            <span className="absolute left-1/2 top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-warning" />
           </span>
           Late
+        </span>
+        {/* Neela dot — jaali me ye pehle se dikhta tha par legend me likha hi nahi tha
+            (owner, 28 Nov 2026): banda aadha din aaya, aadhe din ki chhutti. Khaana hara
+            hi rehta hai (wo aaya to tha), isliye namoona bhi hara hai — baat dot ki hai.
+            Shabd wahi jo khaane ki tooltip me hai ('Half day'), warna ek hi cheez do naam
+            se dikhti. */}
+        <span className="inline-flex items-center gap-1.5">
+          <span className="relative size-3 rounded-[3px] bg-success/20 ring-1 ring-inset ring-success/30">
+            <span className="absolute left-1/2 top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-info" />
+          </span>
+          Half day
         </span>
         <span><span className="font-medium text-foreground">WD = workdays</span> — it leaves out Sundays, holidays and each person’s own days off.</span>
       </div>
