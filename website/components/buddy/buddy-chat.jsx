@@ -2,11 +2,12 @@
 
 import * as React from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { Send, Check, X } from 'lucide-react';
+import { Send, Check, X, Loader2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { firstName } from '@/lib/name';
+import { useCalm } from '@/lib/lite-mode';
 import { BuddyBlob } from './buddy-blob';
 
 /**
@@ -46,6 +47,8 @@ function Bubble({ role, text }) {
 }
 
 export function BuddyChat({ userName }) {
+  // Lite me Lottie load hi nahi hota — neeche "thinking…" wali row dekho.
+  const { lite } = useCalm();
   const [turns, setTurns] = React.useState([]);
   const [draft, setDraft] = React.useState('');
   // Ek waqt me ek hi tajweez. Yahan sirf `id` aur dikhane wali line rehti hai — kya
@@ -219,8 +222,18 @@ export function BuddyChat({ userName }) {
         {askIt.isPending ? (
           <div className="flex items-center gap-2 px-1">
             {/* Jawab me 2–4 second lagte hain, isliye kuch na kuch hilta rehna chahiye —
-                warna lagta hai app atak gayi. */}
-            <BuddyBlob size={26} eager />
+                warna lagta hai app atak gayi.
+                LITE MODE ME BLOB KI JAGAH SPINNER (owner, 28 Nov 2026): Lite me Lottie
+                jaan-boojh kar load hi nahi hota (buddy-blob.jsx — 70KB bachane ke liye,
+                aur wo faisla sahi hai), to yahan ek SA-THIR dot 2–4 second baitha reh
+                jaata tha. Bilkul 31 Oct wali "Refresh button marda lagta hai" wali
+                shikayat. `.animate-spin` ko Lite me pehle se chhoot hai (globals.css),
+                isliye wahi yahan sabse sasta aur sabse saaf jawab hai. */}
+            {lite ? (
+              <Loader2 className="size-[26px] shrink-0 animate-spin p-1 text-muted-foreground" />
+            ) : (
+              <BuddyBlob size={26} eager />
+            )}
             <span className="text-xs text-muted-foreground">thinking…</span>
           </div>
         ) : null}

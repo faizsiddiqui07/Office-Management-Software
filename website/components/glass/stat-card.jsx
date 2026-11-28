@@ -3,6 +3,7 @@
 import { motion, useReducedMotion } from 'framer-motion';
 import { ArrowDownRight, ArrowUpRight, Minus } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useCalm } from '@/lib/lite-mode';
 
 const toneIcon = {
   default: 'bg-primary/12 text-primary ring-primary/20',
@@ -29,6 +30,23 @@ export function StatCard({ label, value, icon: Icon, hint, tone = 'default', tre
   // Ek jagah tay, taaki chhe jagah `compact ? … : tight ? … : …` na likhna pade.
   const pick = (full, phone, small) => (compact ? small : tightOnPhone ? phone : full);
   const reduce = useReducedMotion();
+  // Lite mode me ye entrance BAND (owner, 28 Nov 2026). Dashboard par ek saath 13 card
+  // uthte hain, 450ms har ek — nirī sajawat, aur theek us phone par jiske liye Lite hai.
+  //
+  // PEHLE SIRF `duration: 0` kiya tha — aur browser me chala kar dekha ki usse 20 me se
+  // 9 card GAYAB ho gaye (`opacity: 0; translateY(10px)` par jam gaye). Wajah: `useCalm`
+  // apna jawab effect ke BAAD deta hai, to dashboard ka data aane par jo card BAAD me
+  // mount hote hain wo pehle hi render se `duration: 0` paate hain — framer unhe apni
+  // shuruaati (invisible) haalat se hilata hi nahi.
+  //
+  // Isliye `initial` bhi band karna padta hai: `initial={false}` par framer element ko
+  // seedha apni aakhri haalat me rakhta hai, animate karta hi nahi. Yahi raasta `reduce`
+  // ke liye pehle se chal raha hai, to ye aajmaaya hua hai.
+  //
+  // `animate` ko chhua NAHI: jo card flip se PEHLE mount ho chuke hain wo beech raaste me
+  // hain, aur unka target chhin lene par wo wahin jam jaate.
+  const { still } = useCalm();
+  const calm = reduce || still;
   const TrendIcon =
     trend?.direction === 'up' ? ArrowUpRight : trend?.direction === 'down' ? ArrowDownRight : Minus;
   const trendColor =
@@ -40,9 +58,9 @@ export function StatCard({ label, value, icon: Icon, hint, tone = 'default', tre
 
   return (
     <motion.div
-      initial={reduce ? false : { opacity: 0, y: 10 }}
+      initial={calm ? false : { opacity: 0, y: 10 }}
       animate={reduce ? undefined : { opacity: 1, y: 0 }}
-      transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+      transition={{ duration: still ? 0 : 0.45, ease: [0.22, 1, 0.36, 1] }}
       className={cn('glass glass-highlight rounded-2xl', pick('p-5', 'p-3.5 sm:p-5', 'p-4'), className)}
     >
       <div className={cn('flex items-start justify-between', pick('gap-3', 'gap-2 sm:gap-3', 'gap-2'))}>

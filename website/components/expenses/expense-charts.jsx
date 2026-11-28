@@ -3,6 +3,7 @@
 import { Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { GlassCard } from '@/components/glass/glass-card';
 import { cn } from '@/lib/utils';
+import { liteOn } from '@/lib/lite-mode';
 import { categoryColor, categoryLabel, formatAxisMoney, formatMoney, formatMoneyShort, monthLabelShort } from '@/lib/expense';
 
 const tooltipStyle = {
@@ -23,6 +24,18 @@ function Empty({ children = 'No spending in this period' }) {
  * scope line above carries a removable chip for whatever is active.
  */
 export function ExpenseCharts({ summary, filters, onChange, categories = [] }) {
+  // Lite mode me chart ki entrance animation band (owner, 28 Nov 2026).
+  //
+  // `liteOn()` SEEDHA render me padha jaa raha hai, `useCalm()` se nahi — aur ye yahan
+  // surakshit hai kyunki ye module `dynamic(..., { ssr: false })` se aata hai, yaani
+  // server par rendar hota hi nahi, to hydration mismatch ka sawaal nahi. Hook use karne
+  // par wo apna jawab EFFECT ke baad deta, aur tab tak recharts apni 1.5 second wali
+  // animation shuru kar chuka hota — yaani Lite ka matlab hi na rehta.
+  //
+  // `'auto'` jaan-boojh kar, `true` nahi: us haalat me recharts KHUD `prefers-reduced-
+  // motion` dekhta hai (uska apna niyam). `true` likhte hi wo uska hisaab bhi band ho
+  // jaata, aur motion mana karne wale bande par animation chalne lagti.
+  const still = liteOn();
   const set = (patch) => onChange({ ...filters, ...patch });
 
   // Colour comes from the office's configured category order, so a category keeps the
@@ -62,6 +75,7 @@ export function ExpenseCharts({ summary, filters, onChange, categories = [] }) {
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
+                  isAnimationActive={still ? false : 'auto'}
                   data={byCategory}
                   dataKey="value"
                   nameKey="name"
@@ -127,6 +141,7 @@ export function ExpenseCharts({ summary, filters, onChange, categories = [] }) {
                 <YAxis tickFormatter={formatAxisMoney} tickLine={false} axisLine={false} width={48} tick={{ fontSize: 11, fill: 'currentColor' }} />
                 <Tooltip formatter={(v) => formatMoney(v)} cursor={{ fill: 'rgba(127,127,127,0.08)' }} contentStyle={tooltipStyle} />
                 <Bar
+                  isAnimationActive={still ? false : 'auto'}
                   dataKey="total"
                   radius={[6, 6, 0, 0]}
                   maxBarSize={48}

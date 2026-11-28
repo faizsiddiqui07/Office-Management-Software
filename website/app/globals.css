@@ -710,3 +710,60 @@
     scroll-behavior: auto;
   }
 }
+
+/* ────────────────────────────────────────────────────────────
+   GHADI SE CHALNE WALI PATTI — `.tick-bar` (owner, 28 Nov 2026)
+
+   DIKKAT KYA THI: "lite mode on karke task done karo to animation bahot atak-atak ke
+   chalta hai." Wajah Lite mode ki apni ek chhupi hui keemat hai. Aisi pattiyan do hisson
+   se banti hain: ek JS timer har thodi der me nayi chaudai likhta hai, aur ek CSS
+   transition un do padaavon ke BEECH ko bhar kar use chikna dikhata hai. Lite mode
+   transition-duration ko 0.001ms kar deta hai — yaani beech bharna band, aur sirf padaav
+   bachte hain. Browser me naapa (Lite on, task done): patti 340 → 304 → 269 → 236 → 202
+   → 168 → 134 → 100 → 66 px, yaani 9 saaf dikhne wale ~34px ke jhatke. Patti chalti nahi
+   thi, KOOD-ti thi.
+
+   DO JAGAH YE HO RAHA THA:
+     • task done hone ke baad wali 5-second ki patti (500ms ka tick)
+     • check-out ke 30 minute wale lock ki patli lakeer (1 second ka tick, POORE 30 MINUTE)
+
+   ILAAJ: us transition ko Lite mode me wapas chalne do — par PEHLE use sasta banao.
+   `width` badalne par browser har frame par layout + paint dobara karta hai; `transform`
+   sirf compositor ka kaam hai. Isliye patti ab poori chaudai ki rehti hai aur `scaleX()`
+   se sikudti hai. Nateeja: Lite mode me motion wapas aa gayi AUR wo pehle se halki hai —
+   yaani jin phone ke liye Lite banaya gaya hai, unka bhi fayda hua, nuksan nahi.
+
+   HAR PATTI APNA WAQT KHUD BATATI HAI (`--tick-ms`), aur wo apne timer ke barabar hona
+   chahiye — 500ms ka tick + 500ms ki transition = ek padaav khatam hote hi agla shuru.
+   Kam rakha to beech me patti ruki dikhegi; zyada rakha to wo apne hi waqt se peechhe
+   chalti rahegi.
+
+   `prefers-reduced-motion` ALAG CHEEZ HAI, aur ise Lite ke saath mat milao: Lite ka
+   matlab "mera phone kamzor hai", reduced-motion ka matlab "mujhe hilti hui cheezein
+   nahi chahiye". Isliye chhoot wala niyam `no-preference` ke andar hai, aur jisne motion
+   mana ki hai uske liye patti bilkul chhup jaati hai — jo baat batani hai wo waise bhi
+   SHABDON me likhi hai ("3s", "28:14"), patti sirf sajawat hai.
+   ──────────────────────────────────────────────────────────── */
+@layer components {
+  .tick-bar {
+    transform-origin: left center;
+    transition-property: transform;
+    transition-timing-function: linear;
+    transition-duration: var(--tick-ms, 500ms);
+  }
+}
+
+/* Lite mode ki chhoot. Specificity (0,3,0) upar wale `*` wale niyam ke barabar hai, to
+   jeet SOURCE ORDER se hoti hai — isliye ye block file me Lite wale block ke BAAD hona
+   chahiye. Hilao mat. (Wahi tareeka jo `.animate-spin` par pehle se chal raha hai.) */
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-lite='true'] .tick-bar {
+    transition-duration: var(--tick-ms, 500ms) !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tick-bar {
+    display: none;
+  }
+}

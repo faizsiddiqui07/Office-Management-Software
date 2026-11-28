@@ -220,7 +220,16 @@ export function SlideDonePending({ secondsLeft, totalSeconds, onUndo, undoLabel 
       onClick={(e) => e.stopPropagation()}
       className="relative mt-2 flex h-9 w-full select-none items-center gap-2 overflow-hidden rounded-full bg-success/10 px-3 ring-1 ring-success/30"
     >
-      <span aria-hidden className="absolute inset-y-0 left-0 bg-success/15 transition-[width] duration-500 ease-linear" style={{ width: `${pct * 100}%` }} />
+      {/* `width` nahi, `scaleX` — poora kyun, globals.css ke ".tick-bar" wale hisse me
+          likha hai. Chhota saar: Lite mode transition maar deta tha aur patti har 500ms
+          par ek jhatke se kood-ti thi; ab transition wapas hai aur transform hone ki wajah
+          se pehle se sasti bhi. `--tick-ms` neeche ke timer (task-board.jsx ka 500ms wala
+          setInterval) ke barabar rehna chahiye. */}
+      <span
+        aria-hidden
+        className="tick-bar absolute inset-y-0 left-0 w-full bg-success/15"
+        style={{ '--tick-ms': '500ms', transform: `scaleX(${pct})` }}
+      />
       <Check className="relative size-3.5 shrink-0 text-success" />
       <span className="relative min-w-0 flex-1 truncate text-xs font-medium text-success">
         {/* Ginti kabhi poore waqt se zyada na dikhe aur 0 par na pahunche — `min` upar ki

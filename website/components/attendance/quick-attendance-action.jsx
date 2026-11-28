@@ -131,8 +131,16 @@ export function QuickAttendanceAction() {
           <Clock className="size-4 shrink-0" />
           Check out in <span className="font-semibold tabular-nums text-foreground">{fmtCountdown(cooldownLeftMs)}</span>
         </span>
+        {/* `width` nahi, `scaleX` — poora kyun globals.css ke ".tick-bar" wale hisse me
+            hai. Lite mode me ye lakeer POORE 30 MINUTE tak har second ek jhatka khaati
+            thi. Andar ka `rounded-full` bhi hata diya: bahar wala span pehle se
+            `overflow-hidden rounded-full` hai, aur scale hone par apna radius chipta ho
+            jaata. `--tick-ms` upar wale 1-second tick ke barabar hona chahiye. */}
         <span className="h-1 w-full overflow-hidden rounded-full bg-foreground/10">
-          <span className="block h-full rounded-full bg-primary/60 transition-[width] duration-1000 ease-linear" style={{ width: `${cooldownDone}%` }} />
+          <span
+            className="tick-bar block h-full w-full bg-primary/60"
+            style={{ '--tick-ms': '1000ms', transform: `scaleX(${cooldownDone / 100})` }}
+          />
         </span>
         <span className="text-xs">
           Checked in {formatTime(record.checkInAt)} · locked for {cooldownMin} min

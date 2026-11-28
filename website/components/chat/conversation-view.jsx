@@ -561,9 +561,15 @@ export function ConversationView({ conversationId, peer, onBack, showBack = fals
         {upload.progress !== null ? (
           <div className="mb-2 flex items-center gap-3 rounded-lg bg-foreground/[0.05] px-3 py-2">
             <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-foreground/10">
+              {/* `width` nahi, `scaleX` — poora kyun globals.css ke ".tick-bar" wale
+                  hisse me hai. Yahi wo teesri patti hai jo Lite mode me sarakne ki jagah
+                  kood-ti thi (XHR ka har progress event ek chhalaang). Andar ka
+                  `rounded-full` hata diya: bahar wala div pehle se `overflow-hidden
+                  rounded-full` hai, aur scale hone par andar ka radius chipta ho jaata.
+                  `--tick-ms` upar wali purani 200ms ke barabar hai. */}
               <div
-                className="h-full rounded-full bg-primary transition-[width] duration-200"
-                style={{ width: `${upload.progress}%` }}
+                className="tick-bar h-full w-full bg-primary"
+                style={{ '--tick-ms': '200ms', transform: `scaleX(${(upload.progress || 0) / 100})` }}
               />
             </div>
             <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{upload.progress}%</span>

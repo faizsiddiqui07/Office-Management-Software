@@ -16,6 +16,7 @@ import {
 } from 'recharts';
 import { formatMoney } from '@/lib/expense';
 import { formatDuration } from '@/lib/time';
+import { liteOn } from '@/lib/lite-mode';
 
 const ATT_COLORS = {
   present: 'var(--chart-3)',
@@ -74,6 +75,18 @@ function GlassTooltip({ active, payload, label, formatter }) {
 }
 
 export function AttendanceDonut({ breakdown, rate }) {
+  // Lite mode me chart ki entrance animation band (owner, 28 Nov 2026).
+  //
+  // `liteOn()` SEEDHA render me padha jaa raha hai, `useCalm()` se nahi — aur ye yahan
+  // surakshit hai kyunki ye module `dynamic(..., { ssr: false })` se aata hai, yaani
+  // server par rendar hota hi nahi, to hydration mismatch ka sawaal nahi. Hook use karne
+  // par wo apna jawab EFFECT ke baad deta, aur tab tak recharts apni 1.5 second wali
+  // animation shuru kar chuka hota — yaani Lite ka matlab hi na rehta.
+  //
+  // `'auto'` jaan-boojh kar, `true` nahi: us haalat me recharts KHUD `prefers-reduced-
+  // motion` dekhta hai (uska apna niyam). `true` likhte hi wo uska hisaab bhi band ho
+  // jaata, aur motion mana karne wale bande par animation chalne lagti.
+  const still = liteOn();
   // WFH must be a slice of its own, or people working from home vanish from the donut
   // and its total stops matching the headcount. Same for "not in yet" (awaited) and a
   // part-timer's off-day — without them the morning donut showed 2 people as the whole
@@ -92,6 +105,7 @@ export function AttendanceDonut({ breakdown, rate }) {
           <ResponsiveContainer width="100%" height={220}>
             <PieChart>
               <Pie
+                isAnimationActive={still ? false : 'auto'}
                 data={data}
                 dataKey="value"
                 nameKey="name"
@@ -126,6 +140,7 @@ export function AttendanceDonut({ breakdown, rate }) {
 }
 
 export function ExpenseTrendChart({ data }) {
+  const still = liteOn(); // dekho AttendanceDonut ki tippani
   // This month's spend, one point per day. The axis shows the day number (1, 5, 10…) so
   // 31 of them stay readable; the tooltip carries the full date.
   const rows = (data ?? []).map((d) => ({
@@ -154,7 +169,7 @@ export function ExpenseTrendChart({ data }) {
           tickFormatter={(v) => `₹${compact(v)}`}
         />
         <Tooltip content={<GlassTooltip formatter={(v) => formatMoney(Math.round(v * 100))} />} />
-        <Line type="monotone" dataKey="total" name="Spend" stroke="var(--chart-1)" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+        <Line isAnimationActive={still ? false : 'auto'} type="monotone" dataKey="total" name="Spend" stroke="var(--chart-1)" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
       </LineChart>
     </ResponsiveContainer>
   );
